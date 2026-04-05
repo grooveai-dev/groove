@@ -8,6 +8,7 @@ packages/daemon/test/
 .claude/
 .groove/
 GROOVE_*.md
+GROOVE_AGENT_LOGS/
 GROVE_*.md
 AGENTS_REGISTRY.md
 example/

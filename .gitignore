@@ -3,6 +3,7 @@
 
 # Then whitelist only what should be in the repo
 !.gitignore
+!.npmignore
 !package.json
 !package-lock.json
 !LICENSE

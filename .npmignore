@@ -1,0 +1,16 @@
+# Only needed for npm — .gitignore is whitelist-based which confuses npm
+# This file tells npm what to EXCLUDE
+
+# Tests
+packages/daemon/test/
+
+# Dev files
+.claude/
+.groove/
+GROOVE_*.md
+GROVE_*.md
+AGENTS_REGISTRY.md
+example/
+*.log
+.DS_Store
+.env*

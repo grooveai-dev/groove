@@ -1,0 +1,50 @@
+{
+  "name": "groove-ai",
+  "version": "0.1.0",
+  "description": "Agent orchestration layer for AI coding tools. Coordinate multiple AI agents, eliminate cold-start, save 40-60% on tokens.",
+  "license": "FSL-1.1-Apache-2.0",
+  "homepage": "https://grooveai.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/groove-ai/groove"
+  },
+  "bugs": {
+    "url": "https://github.com/groove-ai/groove/issues"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "orchestration",
+    "claude",
+    "codex",
+    "coding",
+    "multi-agent",
+    "context",
+    "token"
+  ],
+  "bin": {
+    "groove": "./packages/cli/bin/groove.js"
+  },
+  "workspaces": [
+    "packages/daemon",
+    "packages/cli",
+    "packages/gui"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev:daemon": "npm run dev -w packages/daemon",
+    "dev:gui": "npm run dev -w packages/gui",
+    "build": "npm run build -w packages/gui",
+    "build:gui": "npm run build -w packages/gui",
+    "test": "npm test -w packages/daemon",
+    "prepublishOnly": "npm run build:gui"
+  },
+  "files": [
+    "packages/",
+    "LICENSE",
+    "README.md",
+    "CLAUDE.md"
+  ]
+}

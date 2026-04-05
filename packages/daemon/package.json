@@ -1,0 +1,18 @@
+{
+  "name": "@groove-ai/daemon",
+  "version": "0.1.0",
+  "description": "GROOVE daemon — agent orchestration engine",
+  "license": "FSL-1.1-Apache-2.0",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "ws": "^8.17.0",
+    "express": "^4.21.0",
+    "minimatch": "^10.0.0"
+  }
+}

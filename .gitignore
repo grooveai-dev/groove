@@ -1,0 +1,35 @@
+# Ignore everything by default
+*
+
+# Then whitelist only what should be in the repo
+!.gitignore
+!package.json
+!package-lock.json
+!LICENSE
+!README.md
+!CLAUDE.md
+!favicon.png
+!groove-logo.png
+
+# Source packages
+!packages/
+!packages/daemon/
+!packages/daemon/**
+!packages/cli/
+!packages/cli/**
+!packages/gui/
+!packages/gui/**
+
+# But still ignore generated/installed stuff inside packages
+packages/gui/dist/
+**/node_modules/
+**/*.log
+**/*.pid
+**/.DS_Store
+
+# Never commit these
+.env
+.env.*
+credentials.json
+.groove/
+.claude/

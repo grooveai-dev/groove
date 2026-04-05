@@ -1,0 +1,98 @@
+#!/usr/bin/env node
+
+// GROOVE CLI — Entry Point
+// FSL-1.1-Apache-2.0 — see LICENSE
+
+import { program } from 'commander';
+import { start } from '../src/commands/start.js';
+import { stop } from '../src/commands/stop.js';
+import { spawn } from '../src/commands/spawn.js';
+import { kill } from '../src/commands/kill.js';
+import { agents } from '../src/commands/agents.js';
+import { status } from '../src/commands/status.js';
+import { nuke } from '../src/commands/nuke.js';
+import { rotate } from '../src/commands/rotate.js';
+import { teamSave, teamLoad, teamList, teamDelete, teamExport, teamImport } from '../src/commands/team.js';
+import { approvals, approve, reject } from '../src/commands/approve.js';
+import { providers, setKey } from '../src/commands/providers.js';
+import { configShow, configSet } from '../src/commands/config.js';
+
+program
+  .name('groove')
+  .description('Agent orchestration layer for AI coding tools')
+  .version('0.1.0');
+
+program
+  .command('start')
+  .description('Start the GROOVE daemon')
+  .option('-p, --port <port>', 'Port to run on', '3141')
+  .action(start);
+
+program
+  .command('stop')
+  .description('Stop the GROOVE daemon')
+  .action(stop);
+
+program
+  .command('spawn')
+  .description('Spawn a new AI agent')
+  .option('-r, --role <role>', 'Agent role (e.g., backend, frontend, devops)')
+  .option('-s, --scope <patterns...>', 'File scope patterns')
+  .option('-p, --provider <provider>', 'AI provider', 'claude-code')
+  .option('-m, --model <model>', 'Model to use')
+  .option('--prompt <prompt>', 'Initial prompt for the agent')
+  .action(spawn);
+
+program
+  .command('kill <id>')
+  .description('Kill a running agent')
+  .action(kill);
+
+program
+  .command('agents')
+  .description('List all agents')
+  .action(agents);
+
+program
+  .command('status')
+  .description('Show daemon status')
+  .action(status);
+
+program
+  .command('nuke')
+  .description('Kill all agents and stop the daemon')
+  .action(nuke);
+
+program
+  .command('rotate <id>')
+  .description('Rotate an agent (kill + respawn with fresh context)')
+  .action(rotate);
+
+// Teams
+const team = program.command('team').description('Manage saved agent teams');
+team.command('save <name>').description('Save current agents as a team').action(teamSave);
+team.command('load <name>').description('Load and spawn a saved team').action(teamLoad);
+team.command('list').description('List saved teams').action(teamList);
+team.command('delete <name>').description('Delete a saved team').action(teamDelete);
+team.command('export <name>').description('Export team as JSON').action(teamExport);
+team.command('import <file>').description('Import team from JSON file').action(teamImport);
+
+// Approvals
+program.command('approvals').description('List pending approvals').action(approvals);
+program.command('approve <id>').description('Approve a pending request').action(approve);
+program
+  .command('reject <id>')
+  .description('Reject a pending request')
+  .option('--reason <reason>', 'Rejection reason')
+  .action(reject);
+
+// Providers
+program.command('providers').description('List available AI providers').action(providers);
+program.command('set-key <provider> <key>').description('Set API key for a provider').action(setKey);
+
+// Config
+const config = program.command('config').description('View and modify configuration');
+config.command('show').description('Show current configuration').action(configShow);
+config.command('set <key> <value>').description('Set a configuration value').action(configSet);
+
+program.parse();

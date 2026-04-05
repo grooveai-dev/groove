@@ -1,0 +1,18 @@
+{
+  "name": "fullstack",
+  "description": "Backend + Frontend agents with scoped file ownership",
+  "agents": [
+    {
+      "role": "backend",
+      "scope": ["src/api/**", "src/server/**", "src/lib/**", "src/db/**"],
+      "provider": "claude-code",
+      "prompt": "You are the backend agent. Build and maintain the server-side code, APIs, database logic, and server utilities."
+    },
+    {
+      "role": "frontend",
+      "scope": ["src/components/**", "src/views/**", "src/pages/**", "src/styles/**", "src/hooks/**"],
+      "provider": "claude-code",
+      "prompt": "You are the frontend agent. Build and maintain the UI components, views, pages, styles, and client-side logic."
+    }
+  ]
+}

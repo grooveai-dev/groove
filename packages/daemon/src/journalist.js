@@ -1,0 +1,534 @@
+// GROOVE — The Journalist (Context Synthesis Engine)
+// FSL-1.1-Apache-2.0 — see LICENSE
+
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'fs';
+import { resolve } from 'path';
+import { execFile } from 'child_process';
+import { getProvider } from './providers/index.js';
+
+const DEFAULT_INTERVAL = 120_000; // 2 minutes
+const MAX_LOG_CHARS = 20_000; // ~5k tokens budget for synthesis input
+
+export class Journalist {
+  constructor(daemon) {
+    this.daemon = daemon;
+    this.interval = null;
+    this.cycleCount = 0;
+    this.lastCycleAt = null;
+    this.lastLogSizes = {}; // agentId -> last known log byte size
+    this.synthesizing = false;
+    this.lastSynthesis = null; // last synthesis result text
+    this.history = []; // recent synthesis summaries
+  }
+
+  start(intervalMs = DEFAULT_INTERVAL) {
+    if (this.interval) return;
+
+    // Run first cycle immediately, then on interval
+    this.cycle();
+    this.interval = setInterval(() => this.cycle(), intervalMs);
+    console.log(`  Journalist started (every ${intervalMs / 1000}s)`);
+  }
+
+  stop() {
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = null;
+    }
+  }
+
+  async cycle() {
+    if (this.synthesizing) return; // Don't overlap
+
+    const agents = this.daemon.registry.getAll();
+    const activeAgents = agents.filter((a) => a.status === 'running');
+
+    // Skip if no active agents
+    if (activeAgents.length === 0) return;
+
+    // Smart scheduling: skip if no new log output since last cycle
+    if (this.lastCycleAt && !this.hasNewActivity(activeAgents)) {
+      return;
+    }
+
+    this.synthesizing = true;
+    this.cycleCount++;
+    this.lastCycleAt = Date.now();
+
+    try {
+      // 1. Collect and filter recent logs
+      const filteredLogs = this.collectFilteredLogs(activeAgents);
+
+      // 2. Run AI synthesis (or fallback to structural summary)
+      const synthesis = await this.synthesize(activeAgents, filteredLogs);
+
+      // 3. Write outputs
+      this.writeProjectMap(synthesis.projectMap);
+      this.writeDecisionsLog(synthesis.decisions);
+      this.writeAgentSessionLogs(activeAgents, filteredLogs);
+
+      this.lastSynthesis = synthesis;
+      this.history.push({
+        cycle: this.cycleCount,
+        timestamp: new Date().toISOString(),
+        agentCount: activeAgents.length,
+        summary: synthesis.summary,
+      });
+      // Keep last 50 entries
+      if (this.history.length > 50) this.history = this.history.slice(-50);
+
+      this.daemon.broadcast({
+        type: 'journalist:cycle',
+        data: {
+          cycle: this.cycleCount,
+          agentCount: activeAgents.length,
+          summary: synthesis.summary,
+          projectMap: synthesis.projectMap,
+        },
+      });
+    } catch (err) {
+      console.error('  Journalist cycle failed:', err.message);
+    } finally {
+      this.synthesizing = false;
+    }
+  }
+
+  // --- Log collection & filtering ---
+
+  hasNewActivity(agents) {
+    for (const agent of agents) {
+      const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.name}.log`);
+      if (!existsSync(logPath)) continue;
+      try {
+        const size = statSync(logPath).size;
+        if (size !== (this.lastLogSizes[agent.id] || 0)) return true;
+      } catch { /* ignore */ }
+    }
+    return false;
+  }
+
+  collectFilteredLogs(agents) {
+    const result = {};
+
+    for (const agent of agents) {
+      const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.name}.log`);
+      if (!existsSync(logPath)) {
+        result[agent.id] = { agent, entries: [] };
+        continue;
+      }
+
+      try {
+        const content = readFileSync(logPath, 'utf8');
+        const size = Buffer.byteLength(content);
+        this.lastLogSizes[agent.id] = size;
+
+        const entries = this.filterLog(content, agent);
+        result[agent.id] = { agent, entries };
+      } catch {
+        result[agent.id] = { agent, entries: [] };
+      }
+    }
+
+    return result;
+  }
+
+  filterLog(rawLog, agent) {
+    // Parse stream-json lines and extract meaningful events
+    const entries = [];
+    const lines = rawLog.split('\n');
+
+    for (const line of lines) {
+      // Skip empty lines and GROOVE spawn headers
+      if (!line.trim() || line.startsWith('[')) continue;
+
+      try {
+        const data = JSON.parse(line);
+
+        // Tool use (file edits, commands)
+        if (data.type === 'assistant' && data.message?.content) {
+          const content = data.message.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'tool_use') {
+                entries.push({
+                  type: 'tool',
+                  tool: block.name,
+                  input: this.summarizeToolInput(block.name, block.input),
+                  timestamp: data.timestamp,
+                });
+              } else if (block.type === 'text' && block.text) {
+                // Only keep substantial text (decisions, explanations)
+                const text = block.text.trim();
+                if (text.length > 50) {
+                  entries.push({ type: 'thinking', text: text.slice(0, 500), timestamp: data.timestamp });
+                }
+              }
+            }
+          }
+        }
+
+        // Result / completion
+        if (data.type === 'result') {
+          entries.push({
+            type: 'result',
+            text: typeof data.result === 'string' ? data.result.slice(0, 500) : '',
+            cost: data.total_cost_usd,
+            turns: data.num_turns,
+            duration: data.duration_ms,
+          });
+        }
+      } catch {
+        // Not JSON — check for plain text signals
+        if (line.includes('Error') || line.includes('error')) {
+          entries.push({ type: 'error', text: line.trim().slice(0, 200) });
+        }
+      }
+    }
+
+    return entries;
+  }
+
+  summarizeToolInput(toolName, input) {
+    if (!input) return '';
+    switch (toolName) {
+      case 'Write':
+      case 'Edit':
+        return input.file_path || input.path || '';
+      case 'Read':
+        return input.file_path || input.path || '';
+      case 'Bash':
+        return (input.command || '').slice(0, 100);
+      case 'Glob':
+      case 'Grep':
+        return input.pattern || '';
+      default:
+        return JSON.stringify(input).slice(0, 100);
+    }
+  }
+
+  // --- AI Synthesis ---
+
+  async synthesize(agents, filteredLogs) {
+    // Build synthesis prompt from filtered logs
+    const prompt = this.buildSynthesisPrompt(agents, filteredLogs);
+
+    // Try headless AI call for synthesis
+    try {
+      const result = await this.callHeadless(prompt);
+      return this.parseSynthesisResult(result, agents);
+    } catch (err) {
+      // Fallback to structural summary (no AI call)
+      console.error('  Journalist AI synthesis unavailable:', err.message);
+      return this.buildStructuralSummary(agents, filteredLogs);
+    }
+  }
+
+  buildSynthesisPrompt(agents, filteredLogs) {
+    const parts = [
+      'You are The Journalist for GROOVE, an agent orchestration system.',
+      'Analyze the following agent activity logs and produce a synthesis.',
+      '',
+      'Output EXACTLY this format (use these exact headers):',
+      '',
+      '## Project Map',
+      '(What has been built/changed, organized by area. Be specific about files and functions.)',
+      '',
+      '## Decisions',
+      '(Key architectural and implementation decisions agents made, with reasoning.)',
+      '',
+      '## Summary',
+      '(2-3 sentence overview of current progress.)',
+      '',
+      '---',
+      '',
+    ];
+
+    // Add agent logs, budget-trimmed
+    let totalChars = 0;
+    for (const [agentId, { agent, entries }] of Object.entries(filteredLogs)) {
+      if (entries.length === 0) continue;
+
+      parts.push(`### Agent: ${agent.name} (${agent.role}, scope: ${agent.scope?.join(', ') || 'unrestricted'})`);
+
+      for (const entry of entries.slice(-100)) { // Last 100 events per agent
+        const line = this.formatEntry(entry);
+        if (totalChars + line.length > MAX_LOG_CHARS) break;
+        parts.push(line);
+        totalChars += line.length;
+      }
+      parts.push('');
+    }
+
+    return parts.join('\n');
+  }
+
+  formatEntry(entry) {
+    switch (entry.type) {
+      case 'tool':
+        return `- [tool] ${entry.tool}: ${entry.input}`;
+      case 'thinking':
+        return `- [thought] ${entry.text.slice(0, 200)}`;
+      case 'result':
+        return `- [result] ${entry.text.slice(0, 200)} (${entry.turns} turns, ${entry.duration}ms)`;
+      case 'error':
+        return `- [error] ${entry.text}`;
+      default:
+        return `- [${entry.type}] ${entry.text || ''}`;
+    }
+  }
+
+  async callHeadless(prompt) {
+    const provider = getProvider('claude-code');
+    if (!provider || !provider.constructor.isInstalled()) {
+      throw new Error('No provider available for synthesis');
+    }
+
+    // Use headless mode with cheapest model
+    const { command, args, env } = provider.buildHeadlessCommand(prompt);
+
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      const proc = execFile(command, args, {
+        env: { ...process.env, ...env },
+        cwd: this.daemon.projectDir,
+        maxBuffer: 1024 * 1024 * 5,
+        timeout: 60_000,
+      }, (err, stdout, stderr) => {
+        if (err) return reject(err);
+
+        // Parse stream-json output to extract the result text
+        const lines = stdout.split('\n');
+        for (const line of lines) {
+          try {
+            const data = JSON.parse(line);
+            if (data.type === 'result' && data.result) {
+              return resolve(data.result);
+            }
+          } catch { /* skip */ }
+        }
+
+        // Fallback: return raw stdout
+        resolve(stdout);
+      });
+    });
+  }
+
+  parseSynthesisResult(text, agents) {
+    // Parse the structured output from AI
+    const sections = {
+      projectMap: '',
+      decisions: '',
+      summary: '',
+    };
+
+    const mapMatch = text.match(/## Project Map\n([\s\S]*?)(?=## Decisions|## Summary|$)/);
+    const decMatch = text.match(/## Decisions\n([\s\S]*?)(?=## Project Map|## Summary|$)/);
+    const sumMatch = text.match(/## Summary\n([\s\S]*?)(?=## Project Map|## Decisions|$)/);
+
+    sections.projectMap = this.buildProjectMapMd(
+      agents,
+      mapMatch ? mapMatch[1].trim() : 'No changes detected.'
+    );
+    sections.decisions = decMatch ? decMatch[1].trim() : '';
+    sections.summary = sumMatch ? sumMatch[1].trim() : 'Synthesis cycle complete.';
+
+    return sections;
+  }
+
+  // --- Fallback structural summary (no AI) ---
+
+  buildStructuralSummary(agents, filteredLogs) {
+    const mapParts = [];
+    const decisions = [];
+    const summaryParts = [];
+
+    for (const [agentId, { agent, entries }] of Object.entries(filteredLogs)) {
+      const tools = entries.filter((e) => e.type === 'tool');
+      const errors = entries.filter((e) => e.type === 'error');
+      const writes = tools.filter((t) => t.tool === 'Write' || t.tool === 'Edit');
+      const reads = tools.filter((t) => t.tool === 'Read');
+
+      mapParts.push(`### ${agent.name} (${agent.role})`);
+      if (writes.length > 0) {
+        mapParts.push(`Files modified:`);
+        const files = [...new Set(writes.map((w) => w.input).filter(Boolean))];
+        files.forEach((f) => mapParts.push(`- ${f}`));
+      }
+      if (reads.length > 0) {
+        const files = [...new Set(reads.map((r) => r.input).filter(Boolean))];
+        mapParts.push(`Files read: ${files.slice(0, 10).join(', ')}`);
+      }
+      if (errors.length > 0) {
+        mapParts.push(`Errors: ${errors.length}`);
+      }
+      mapParts.push(`Activity: ${entries.length} events, ${tools.length} tool calls`);
+      mapParts.push('');
+
+      summaryParts.push(`${agent.name}: ${tools.length} tool calls, ${writes.length} writes`);
+
+      // Extract decisions from thinking entries
+      const thoughts = entries.filter((e) => e.type === 'thinking');
+      for (const t of thoughts.slice(-3)) {
+        if (t.text.length > 100) {
+          decisions.push(`- **${agent.name}**: ${t.text.slice(0, 200)}`);
+        }
+      }
+    }
+
+    return {
+      projectMap: this.buildProjectMapMd(agents, mapParts.join('\n')),
+      decisions: decisions.join('\n'),
+      summary: summaryParts.join('. ') || 'No activity.',
+    };
+  }
+
+  buildProjectMapMd(agents, content) {
+    return [
+      `# GROOVE Project Map`,
+      ``,
+      `*Auto-generated by The Journalist. Cycle ${this.cycleCount}. Updated: ${new Date().toISOString()}*`,
+      ``,
+      `## Active Agents`,
+      ``,
+      ...agents.map((a) =>
+        `- **${a.name}** (${a.role}) — ${a.provider} — ${a.scope?.join(', ') || 'unrestricted'} — tokens: ${a.tokensUsed}`
+      ),
+      ``,
+      `## Activity`,
+      ``,
+      content,
+    ].join('\n');
+  }
+
+  // --- File outputs ---
+
+  writeProjectMap(content) {
+    writeFileSync(resolve(this.daemon.projectDir, 'GROOVE_PROJECT_MAP.md'), content);
+  }
+
+  writeDecisionsLog(decisions) {
+    if (!decisions) return;
+
+    const path = resolve(this.daemon.projectDir, 'GROOVE_DECISIONS.md');
+    const header = `# GROOVE Decisions Log\n\n*Auto-generated by The Journalist.*\n\n`;
+
+    let existing = '';
+    if (existsSync(path)) {
+      existing = readFileSync(path, 'utf8').replace(/^# GROOVE Decisions Log[\s\S]*?\n\n/, '');
+    }
+
+    const entry = `## Cycle ${this.cycleCount} — ${new Date().toISOString()}\n\n${decisions}\n\n`;
+    writeFileSync(path, header + entry + existing);
+  }
+
+  writeAgentSessionLogs(agents, filteredLogs) {
+    const logsDir = resolve(this.daemon.projectDir, 'GROOVE_AGENT_LOGS');
+    mkdirSync(logsDir, { recursive: true });
+
+    const dateStr = new Date().toISOString().split('T')[0];
+
+    for (const [agentId, { agent, entries }] of Object.entries(filteredLogs)) {
+      if (entries.length === 0) continue;
+
+      const agentDir = resolve(logsDir, agent.name);
+      mkdirSync(agentDir, { recursive: true });
+
+      const logPath = resolve(agentDir, `${dateStr}-session.md`);
+      const content = [
+        `# ${agent.name} — Session Log`,
+        ``,
+        `*Updated: ${new Date().toISOString()}*`,
+        ``,
+        `- Role: ${agent.role}`,
+        `- Provider: ${agent.provider}`,
+        `- Scope: ${agent.scope?.join(', ') || 'unrestricted'}`,
+        `- Tokens: ${agent.tokensUsed}`,
+        ``,
+        `## Activity`,
+        ``,
+        ...entries.slice(-100).map((e) => this.formatEntry(e)),
+      ].join('\n');
+
+      writeFileSync(logPath, content);
+    }
+  }
+
+  // --- Handoff Brief for Context Rotation ---
+
+  async generateHandoffBrief(agent) {
+    const filteredLogs = this.collectFilteredLogs([agent]);
+    const agentLog = filteredLogs[agent.id];
+    const entries = agentLog?.entries || [];
+
+    // Get current project map for context
+    const mapPath = resolve(this.daemon.projectDir, 'GROOVE_PROJECT_MAP.md');
+    const projectMap = existsSync(mapPath) ? readFileSync(mapPath, 'utf8') : '';
+
+    // Build a focused handoff brief
+    const toolSummary = entries
+      .filter((e) => e.type === 'tool')
+      .map((e) => `- ${e.tool}: ${e.input}`)
+      .slice(-30)
+      .join('\n');
+
+    const errorSummary = entries
+      .filter((e) => e.type === 'error')
+      .map((e) => `- ${e.text}`)
+      .slice(-10)
+      .join('\n');
+
+    const resultSummary = entries
+      .filter((e) => e.type === 'result')
+      .map((e) => e.text)
+      .slice(-3)
+      .join('\n');
+
+    return [
+      `# Agent Handoff Brief`,
+      ``,
+      `You are continuing the work of **${agent.name}** (role: ${agent.role}).`,
+      `This is a context rotation — the previous session is being replaced to keep context fresh.`,
+      ``,
+      `## Your Identity`,
+      `- Role: ${agent.role}`,
+      `- Scope: ${agent.scope?.join(', ') || 'unrestricted'}`,
+      `- Provider: ${agent.provider}`,
+      ``,
+      `## Previous Session`,
+      `- Tokens used: ${agent.tokensUsed}`,
+      `- Tool calls: ${entries.filter((e) => e.type === 'tool').length}`,
+      ``,
+      toolSummary ? `### Recent tool calls\n${toolSummary}\n` : '',
+      resultSummary ? `### Last results\n${resultSummary}\n` : '',
+      errorSummary ? `### Unresolved errors\n${errorSummary}\n` : '',
+      `## Current Project State`,
+      ``,
+      projectMap ? projectMap.slice(0, 3000) : 'No project map available yet.',
+      ``,
+      `## Instructions`,
+      ``,
+      `Continue the work from where the previous session left off.`,
+      `Review AGENTS_REGISTRY.md for team awareness.`,
+      agent.prompt ? `\nOriginal task: ${agent.prompt}` : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  // --- Accessors ---
+
+  getLastSynthesis() {
+    return this.lastSynthesis;
+  }
+
+  getHistory() {
+    return this.history;
+  }
+
+  getStatus() {
+    return {
+      running: !!this.interval,
+      cycleCount: this.cycleCount,
+      lastCycleAt: this.lastCycleAt,
+      synthesizing: this.synthesizing,
+    };
+  }
+}

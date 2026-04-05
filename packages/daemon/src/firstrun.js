@@ -1,0 +1,96 @@
+// GROOVE — First-Run Detection & Setup
+// FSL-1.1-Apache-2.0 — see LICENSE
+
+import { existsSync, writeFileSync, readFileSync } from 'fs';
+import { resolve } from 'path';
+import { listProviders } from './providers/index.js';
+
+const DEFAULT_CONFIG = {
+  version: '0.1.0',
+  port: 3141,
+  journalistInterval: 120,
+  rotationThreshold: 0.75,
+  autoRotation: true,
+  qcThreshold: 4,
+  maxAgents: 10,
+  defaultProvider: 'claude-code',
+};
+
+export function isFirstRun(grooveDir) {
+  return !existsSync(resolve(grooveDir, 'config.json'));
+}
+
+export function runFirstTimeSetup(grooveDir) {
+  console.log('');
+  console.log('  ┌─────────────────────────────────────────┐');
+  console.log('  │          Welcome to GROOVE               │');
+  console.log('  │   Agent orchestration for AI coding      │');
+  console.log('  └─────────────────────────────────────────┘');
+  console.log('');
+
+  // Scan for providers
+  const providers = listProviders();
+  const installed = providers.filter((p) => p.installed);
+  const notInstalled = providers.filter((p) => !p.installed);
+
+  console.log('  Scanning for AI providers...');
+  console.log('');
+
+  if (installed.length > 0) {
+    console.log(`  Found ${installed.length} provider${installed.length > 1 ? 's' : ''}:`);
+    for (const p of installed) {
+      console.log(`    ✓ ${p.name}`);
+    }
+  } else {
+    console.log('  No AI providers detected.');
+    console.log('  Install at least one to get started:');
+    console.log('    npm i -g @anthropic-ai/claude-code');
+  }
+
+  if (notInstalled.length > 0) {
+    console.log('');
+    console.log('  Available to install:');
+    for (const p of notInstalled) {
+      console.log(`    · ${p.name.padEnd(18)} ${p.installCommand}`);
+    }
+  }
+
+  console.log('');
+  console.log('  Quick start:');
+  console.log('    groove spawn --role backend --prompt "Build the auth API"');
+  console.log('    groove spawn --role frontend --prompt "Build the login page"');
+  console.log('    groove agents');
+  console.log('');
+  console.log('  Docs: https://docs.grooveai.dev');
+  console.log('');
+
+  // Write default config
+  const config = { ...DEFAULT_CONFIG };
+
+  // Auto-detect best default provider
+  if (installed.length > 0) {
+    const preferred = ['claude-code', 'codex', 'gemini', 'aider', 'ollama'];
+    const best = preferred.find((id) => installed.some((p) => p.id === id));
+    if (best) config.defaultProvider = best;
+  }
+
+  writeFileSync(resolve(grooveDir, 'config.json'), JSON.stringify(config, null, 2));
+
+  return config;
+}
+
+export function loadConfig(grooveDir) {
+  const configPath = resolve(grooveDir, 'config.json');
+  if (!existsSync(configPath)) return { ...DEFAULT_CONFIG };
+
+  try {
+    const saved = JSON.parse(readFileSync(configPath, 'utf8'));
+    return { ...DEFAULT_CONFIG, ...saved };
+  } catch {
+    return { ...DEFAULT_CONFIG };
+  }
+}
+
+export function saveConfig(grooveDir, config) {
+  writeFileSync(resolve(grooveDir, 'config.json'), JSON.stringify(config, null, 2));
+}

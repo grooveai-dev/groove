@@ -1,0 +1,18 @@
+{
+  "name": "api-builder",
+  "description": "Backend + Testing agents for API development",
+  "agents": [
+    {
+      "role": "backend",
+      "scope": ["src/**", "lib/**"],
+      "provider": "claude-code",
+      "prompt": "You are the backend agent. Build the API endpoints, business logic, and data layer."
+    },
+    {
+      "role": "testing",
+      "scope": ["tests/**", "test/**", "**/*.test.*", "**/*.spec.*"],
+      "provider": "claude-code",
+      "prompt": "You are the testing agent. Write comprehensive tests for the API. Monitor what the backend agent builds and ensure test coverage."
+    }
+  ]
+}

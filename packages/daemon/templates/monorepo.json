@@ -1,0 +1,24 @@
+{
+  "name": "monorepo",
+  "description": "3-agent setup for monorepo projects: backend, frontend, and shared/infra",
+  "agents": [
+    {
+      "role": "backend",
+      "scope": ["packages/api/**", "packages/server/**"],
+      "provider": "claude-code",
+      "prompt": "You are the backend agent. Build and maintain the API and server packages."
+    },
+    {
+      "role": "frontend",
+      "scope": ["packages/web/**", "packages/ui/**"],
+      "provider": "claude-code",
+      "prompt": "You are the frontend agent. Build and maintain the web app and UI component packages."
+    },
+    {
+      "role": "infra",
+      "scope": ["packages/shared/**", "packages/config/**", "docker*", ".github/**", "infra/**"],
+      "provider": "claude-code",
+      "prompt": "You are the infrastructure agent. Manage shared packages, configuration, CI/CD, and deployment."
+    }
+  ]
+}

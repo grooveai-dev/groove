@@ -43,7 +43,11 @@
     "prepublishOnly": "npm run build:gui"
   },
   "files": [
-    "packages/",
+    "packages/cli/",
+    "packages/daemon/src/",
+    "packages/daemon/package.json",
+    "packages/daemon/templates/",
+    "packages/gui/",
     "LICENSE",
     "README.md",
     "CLAUDE.md"

@@ -29,7 +29,17 @@ describe('Rotator', () => {
           return `Handoff brief for ${agent.name}`;
         },
       },
-      adaptive: null,
+      adaptive: {
+        extractSignals() { return { errorCount: 0, repetitions: 0, scopeViolations: 0, toolCalls: 0, toolFailures: 0, filesWritten: 0 }; },
+        recordSession() { return { score: 70, threshold: 0.75, converged: false }; },
+      },
+      classifier: {
+        agentWindows: {},
+        clearAgent(id) { delete this.agentWindows[id]; },
+      },
+      router: {
+        getMode() { return { mode: 'fixed', fixedModel: null, floorModel: null }; },
+      },
       broadcast(msg) { broadcasts.push(msg); },
     };
 

@@ -9,12 +9,12 @@ import EmptyState from './components/EmptyState';
 import SpawnPanel from './components/SpawnPanel';
 import JournalistFeed from './views/JournalistFeed';
 import TeamSelector from './components/TeamSelector';
-import TokenDashboard from './components/TokenDashboard';
+import CommandCenter from './views/CommandCenter';
 import ApprovalQueue from './components/ApprovalQueue';
 
 const TABS = [
   { id: 'agents', label: 'Agents' },
-  { id: 'tokens', label: 'Tokens' },
+  { id: 'stats', label: 'Stats' },
   { id: 'teams', label: 'Teams' },
   { id: 'approvals', label: 'Approvals' },
 ];
@@ -40,12 +40,9 @@ export default function App() {
       {/* Header */}
       <header style={styles.header}>
         <div style={styles.headerLeft}>
-          <img src="/groove-logo-short.png" alt="GROOVE" style={{ height: 24, opacity: 0.85 }} />
-          <div style={{
-            width: 6, height: 6, borderRadius: '50%',
-            background: connected ? 'var(--green)' : 'var(--red)',
-          }} />
+          <img src="/groove-logo-short.png" alt="GROOVE" style={{ height: 18, marginTop: 3, opacity: 0.85 }} />
         </div>
+
 
         <div style={styles.headerCenter}>
           {connected && TABS.map((tab) => (
@@ -98,13 +95,34 @@ export default function App() {
         </div>
       </header>
 
+      {/* Status pill — bottom left */}
+      <div style={{
+        position: 'fixed', bottom: 10, left: 12, zIndex: 50,
+        display: 'flex', alignItems: 'center', gap: 5,
+      }}>
+        <div style={{
+          width: 5, height: 5, borderRadius: '50%',
+          background: connected ? 'var(--green)' : 'var(--red)',
+          animation: 'pulse 2s infinite',
+        }} />
+        <span style={{
+          fontSize: 9, fontWeight: 600, letterSpacing: 0.8,
+          color: connected ? 'var(--green)' : 'var(--red)',
+          textTransform: 'uppercase',
+          fontFamily: 'var(--font)',
+          animation: 'pulse 3s infinite',
+        }}>
+          {connected ? 'connected' : 'offline'}
+        </span>
+      </div>
+
       {/* Main row */}
       <div style={styles.mainRow}>
         <main style={styles.content}>
           {activeTab === 'agents' && (
             !hasAgents ? <EmptyState /> : <AgentTree />
           )}
-          {activeTab === 'tokens' && <TokenDashboard />}
+          {activeTab === 'stats' && <CommandCenter />}
           {activeTab === 'teams' && <TeamSelector />}
           {activeTab === 'approvals' && <ApprovalQueue />}
         </main>
@@ -139,6 +157,7 @@ const styles = {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     background: 'var(--bg-chrome)',
     flexShrink: 0,
+    position: 'relative',
   },
   headerLeft: {
     display: 'flex', alignItems: 'center', gap: 8,

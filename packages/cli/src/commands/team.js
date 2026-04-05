@@ -57,10 +57,8 @@ export async function teamDelete(name) {
 
 export async function teamExport(name) {
   try {
-    const res = await fetch(`http://localhost:3141/api/teams/${encodeURIComponent(name)}/export`);
-    if (!res.ok) throw new Error((await res.json()).error);
-    const json = await res.text();
-    console.log(json);
+    const data = await apiCall('GET', `/api/teams/${encodeURIComponent(name)}/export`);
+    console.log(JSON.stringify(data, null, 2));
   } catch (err) {
     console.error(chalk.red('  Failed:'), err.message);
     process.exit(1);

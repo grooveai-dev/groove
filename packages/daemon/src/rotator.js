@@ -71,7 +71,15 @@ export class Rotator extends EventEmitter {
     });
 
     try {
-      // 1. Generate handoff brief from Journalist
+      // 1. Record adaptive session so rotation thresholds learn over time
+      const classifierEvents = this.daemon.classifier.agentWindows[agentId] || [];
+      const signals = this.daemon.adaptive.extractSignals(classifierEvents, agent.scope);
+      this.daemon.adaptive.recordSession(agent.provider, agent.role, signals);
+
+      // Clear classifier window for the old agent
+      this.daemon.classifier.clearAgent(agentId);
+
+      // 2. Generate handoff brief from Journalist
       let brief = await journalist.generateHandoffBrief(agent);
 
       // Append additional prompt if provided (used by instruct endpoint)
@@ -79,7 +87,7 @@ export class Rotator extends EventEmitter {
         brief = brief + '\n\n## User Instruction\n\n' + options.additionalPrompt;
       }
 
-      // 2. Record rotation history
+      // 3. Record rotation history
       const record = {
         agentId: agent.id,
         agentName: agent.name,
@@ -90,15 +98,19 @@ export class Rotator extends EventEmitter {
         timestamp: new Date().toISOString(),
       };
 
-      // 3. Kill the old process
+      // 4. Kill the old process
       await processes.kill(agentId);
 
-      // 4. Respawn with handoff brief as the prompt
+      // 5. Respawn with handoff brief as the prompt
+      // Preserve auto routing mode so the router re-evaluates on respawn
+      const routingMode = this.daemon.router.getMode(agentId);
+      const respawnModel = routingMode.mode === 'auto' ? 'auto' : agent.model;
+
       const newAgent = await processes.spawn({
         role: agent.role,
         scope: agent.scope,
         provider: agent.provider,
-        model: agent.model,
+        model: respawnModel,
         prompt: brief,
         workingDir: agent.workingDir,
         name: agent.name, // Keep the same name for continuity

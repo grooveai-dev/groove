@@ -287,7 +287,6 @@ export class Journalist {
     const { command, args, env } = provider.buildHeadlessCommand(prompt);
 
     return new Promise((resolve, reject) => {
-      const chunks = [];
       const proc = execFile(command, args, {
         env: { ...process.env, ...env },
         cwd: this.daemon.projectDir,

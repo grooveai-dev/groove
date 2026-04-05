@@ -30,11 +30,27 @@ export class ProcessManager {
       );
     }
 
+    // Resolve auto model routing before registering
+    let resolvedModel = config.model;
+    const isAutoRouted = config.model === 'auto';
+
     // Register the agent in the registry
     const agent = registry.add({
       ...config,
       provider: config.provider || 'claude-code',
+      model: isAutoRouted ? null : config.model, // Set after routing
     });
+
+    // Auto-route: let the router pick the model based on role/complexity
+    if (isAutoRouted) {
+      const { router } = this.daemon;
+      router.setMode(agent.id, 'auto');
+      const rec = router.recommend(agent.id);
+      if (rec) {
+        resolvedModel = rec.model.id;
+        registry.update(agent.id, { model: resolvedModel, routingMode: 'auto', routingReason: rec.reason });
+      }
+    }
 
     // Register file locks for the agent's scope
     if (agent.scope && agent.scope.length > 0) {
@@ -47,9 +63,10 @@ export class ProcessManager {
     // Update AGENTS_REGISTRY.md (other agents can see this new agent)
     introducer.writeRegistryFile(this.daemon.projectDir);
 
-    // Build spawn command from provider
+    // Build spawn command from provider (use resolved model for auto-routed agents)
     const { command, args, env } = provider.buildSpawnCommand({
       ...agent,
+      model: resolvedModel || agent.model,
       introContext,
     });
 
@@ -90,6 +107,9 @@ export class ProcessManager {
 
       const output = provider.parseOutput(chunk.toString());
       if (output) {
+        // Feed to classifier for complexity tracking (informs model routing)
+        this.daemon.classifier.addEvent(agent.id, output);
+
         const updates = { lastActivity: new Date().toISOString() };
         if (output.tokensUsed) {
           const current = registry.get(agent.id);

@@ -13,7 +13,7 @@ export const useGrooveStore = create((set, get) => ({
   ws: null,
 
   // UI state — unified panel model
-  activeTab: 'agents',       // 'agents' | 'tokens' | 'teams' | 'approvals'
+  activeTab: 'agents',       // 'agents' | 'stats' | 'teams' | 'approvals'
   detailPanel: null,          // null | { type: 'agent', agentId } | { type: 'spawn' } | { type: 'journalist' }
   activityLog: {},
   statusMessage: null,        // inline status text (replaces toast notifications)
@@ -154,16 +154,6 @@ export const useGrooveStore = create((set, get) => ({
     setTimeout(() => {
       if (get().statusMessage === text) set({ statusMessage: null });
     }, 4000);
-  },
-
-  getSelectedAgent() {
-    const { agents, detailPanel } = get();
-    if (detailPanel?.type !== 'agent') return null;
-    return agents.find((a) => a.id === detailPanel.agentId) || null;
-  },
-
-  getAgentActivity(agentId) {
-    return get().activityLog[agentId] || [];
   },
 
   // Agent interaction

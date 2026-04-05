@@ -20,7 +20,7 @@ import { configShow, configSet } from '../src/commands/config.js';
 program
   .name('groove')
   .description('Agent orchestration layer for AI coding tools')
-  .version('0.1.0');
+  .version('0.3.0');
 
 program
   .command('start')

@@ -12,6 +12,17 @@ const MODES = {
   AUTO_FLOOR: 'auto-floor', // Auto, but never below a floor model
 };
 
+// Role-based tier hints for new agents with no classifier data yet
+const ROLE_HINTS = {
+  planner:   'light',
+  docs:      'light',
+  testing:   'medium',
+  backend:   'medium',
+  frontend:  'medium',
+  devops:    'medium',
+  fullstack: 'heavy',
+};
+
 export class ModelRouter {
   constructor(daemon) {
     this.daemon = daemon;
@@ -73,6 +84,14 @@ export class ModelRouter {
       return { model: models[0], mode: config.mode, reason: 'No classifier available' };
     }
 
+    // Use role-based hint when classifier has no activity data yet
+    const hasData = classifier.agentWindows[agentId]?.length > 0;
+    if (!hasData && agent.role && ROLE_HINTS[agent.role]) {
+      const hintTier = ROLE_HINTS[agent.role];
+      const match = models.find((m) => m.tier === hintTier) || models[0];
+      return { model: match, mode: config.mode, reason: `Role hint: ${agent.role} → ${hintTier}` };
+    }
+
     const rec = classifier.getRecommendation(agentId, models);
 
     // Auto-with-floor — ensure we don't go below floor
@@ -101,45 +120,6 @@ export class ModelRouter {
     });
     // Keep last 1000 entries
     if (this.costLog.length > 1000) this.costLog = this.costLog.slice(-1000);
-  }
-
-  // Calculate cost savings from routing vs always using the heaviest model
-  getCostSavings(provider) {
-    const prov = getProvider(provider);
-    if (!prov) return null;
-
-    const models = prov.constructor.models;
-    const heaviest = models.find((m) => m.tier === 'heavy') || models[0];
-
-    const entries = this.costLog.filter((e) => {
-      const agent = this.daemon.registry.get(e.agentId);
-      return agent?.provider === provider;
-    });
-
-    if (entries.length === 0) return { actual: 0, worstCase: 0, saved: 0 };
-
-    let actualTokens = 0;
-    let worstCaseTokens = 0;
-
-    for (const entry of entries) {
-      actualTokens += entry.tokens;
-      worstCaseTokens += entry.tokens; // Same tokens, but...
-      // Real cost comparison would use per-model pricing
-      // For now, track tokens routed to each tier
-    }
-
-    return {
-      totalEntries: entries.length,
-      byTier: this.groupByTier(entries),
-    };
-  }
-
-  groupByTier(entries) {
-    const tiers = { light: 0, medium: 0, heavy: 0 };
-    for (const e of entries) {
-      if (tiers[e.tier] !== undefined) tiers[e.tier] += e.tokens;
-    }
-    return tiers;
   }
 
   getStatus() {

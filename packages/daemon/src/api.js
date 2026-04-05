@@ -285,8 +285,8 @@ export function createApi(app, daemon) {
       if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
       // Build context about the agent's work
-      const activity = daemon.registry.getActivity?.(agent.id) || [];
-      const recentActivity = activity.slice(-20).map((e) => e.text).join('\n');
+      const activity = daemon.classifier?.agentWindows?.[agent.id] || [];
+      const recentActivity = activity.slice(-20).map((e) => e.data || e.text || '').join('\n');
 
       const prompt = [
         `You are answering a question about agent "${agent.name}" (role: ${agent.role}).`,
@@ -335,6 +335,74 @@ export function createApi(app, daemon) {
   // Adaptive thresholds
   app.get('/api/adaptive', (req, res) => {
     res.json(daemon.adaptive.getAllProfiles());
+  });
+
+  // --- Command Center Dashboard ---
+
+  app.get('/api/dashboard', (req, res) => {
+    const agents = daemon.registry.getAll();
+    const tokenSummary = daemon.tokens.getSummary();
+    const rotationStats = daemon.rotator.getStats();
+    const rotationHistory = daemon.rotator.getHistory();
+    const routingStatus = daemon.router.getStatus();
+    const journalistStatus = daemon.journalist.getStatus();
+
+    // Aggregate routing cost log by tier
+    const routingByTier = { light: 0, medium: 0, heavy: 0 };
+    let autoRoutedCount = 0;
+    for (const [, mode] of Object.entries(routingStatus.agentModes || {})) {
+      if (mode.mode === 'auto') autoRoutedCount++;
+    }
+    for (const entry of daemon.router.costLog || []) {
+      if (routingByTier[entry.tier] !== undefined) routingByTier[entry.tier]++;
+    }
+
+    // Per-agent enriched data
+    const agentBreakdown = agents.map((a) => ({
+      id: a.id,
+      name: a.name,
+      role: a.role,
+      status: a.status,
+      provider: a.provider,
+      model: a.model || 'default',
+      routingMode: a.routingMode || 'fixed',
+      routingReason: a.routingReason || null,
+      tokens: a.tokensUsed || 0,
+      contextUsage: a.contextUsage || 0,
+      spawnedAt: a.spawnedAt,
+    }));
+
+    // Adaptive profiles summary
+    const profiles = daemon.adaptive.getAllProfiles();
+    const profileSummary = Object.entries(profiles).map(([key, p]) => ({
+      key,
+      threshold: p.threshold,
+      converged: p.converged,
+      adjustments: p.adjustmentCount,
+    }));
+
+    res.json({
+      tokens: tokenSummary,
+      agents: {
+        total: agents.length,
+        running: agents.filter((a) => a.status === 'running').length,
+        completed: agents.filter((a) => a.status === 'completed').length,
+        crashed: agents.filter((a) => a.status === 'crashed').length,
+        breakdown: agentBreakdown,
+      },
+      routing: {
+        autoRoutedCount,
+        byTier: routingByTier,
+        totalDecisions: daemon.router.costLog?.length || 0,
+      },
+      rotation: {
+        ...rotationStats,
+        history: rotationHistory.slice(-20),
+      },
+      adaptive: profileSummary,
+      journalist: journalistStatus,
+      uptime: process.uptime(),
+    });
   });
 
   // --- Config ---

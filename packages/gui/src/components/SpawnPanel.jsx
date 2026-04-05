@@ -30,7 +30,7 @@ export default function SpawnPanel() {
   const [prompt, setPrompt] = useState('');
   const [permission, setPermission] = useState('auto');
   const [provider, setProvider] = useState('claude-code');
-  const [model, setModel] = useState('');
+  const [model, setModel] = useState('auto');
   const [providerList, setProviderList] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -61,7 +61,7 @@ export default function SpawnPanel() {
     if (p.installed && (p.authType === 'subscription' || p.authType === 'local' || p.hasKey)) {
       // Ready to use
       setProvider(p.id);
-      setModel('');
+      setModel('auto');
       setConnectingProvider(null);
       return;
     }
@@ -82,7 +82,7 @@ export default function SpawnPanel() {
       setApiKeyInput('');
       setConnectingProvider(null);
       setProvider(connectingProvider);
-      setModel('');
+      setModel('auto');
       await fetchProviders(); // Refresh to show updated hasKey status
     } catch {
       // ignore
@@ -112,7 +112,7 @@ export default function SpawnPanel() {
         role: finalRole,
         scope: scopeArr,
         prompt: finalPrompt,
-        model: model || null,
+        model: model || 'auto',
         provider,
         permission,
       });
@@ -351,7 +351,7 @@ export default function SpawnPanel() {
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
                   >
-                    <option value="">Default</option>
+                    <option value="auto">Auto (recommended)</option>
                     {models.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.name} ({m.tier})

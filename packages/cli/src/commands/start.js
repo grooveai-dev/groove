@@ -10,15 +10,17 @@ export async function start(options) {
   try {
     const daemon = new Daemon({ port: parseInt(options.port, 10) });
 
-    process.on('SIGINT', async () => {
-      await daemon.stop();
+    const shutdown = async () => {
+      console.log('\nShutting down...');
+      // Force exit after 3s if stop hangs
+      const forceTimer = setTimeout(() => process.exit(1), 3000);
+      forceTimer.unref();
+      try { await daemon.stop(); } catch { /* ignore */ }
       process.exit(0);
-    });
+    };
 
-    process.on('SIGTERM', async () => {
-      await daemon.stop();
-      process.exit(0);
-    });
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
 
     await daemon.start();
     console.log(chalk.green('Ready.') + ` Open http://localhost:${options.port} for the GUI.`);

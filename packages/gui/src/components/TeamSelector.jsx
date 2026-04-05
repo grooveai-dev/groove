@@ -1,30 +1,20 @@
-// GROOVE GUI — Team Selector
+// GROOVE GUI — Teams View (full-area, rendered in main content)
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGrooveStore } from '../stores/groove';
 
 export default function TeamSelector() {
   const [teams, setTeams] = useState([]);
   const [activeTeam, setActiveTeam] = useState(null);
-  const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveName, setSaveName] = useState('');
-  const addNotification = useGrooveStore((s) => s.addNotification);
-  const ref = useRef();
+  const showStatus = useGrooveStore((s) => s.showStatus);
 
   useEffect(() => {
     fetchTeams();
     const interval = setInterval(fetchTeams, 5000);
     return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    function handleClick(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
   async function fetchTeams() {
@@ -39,11 +29,10 @@ export default function TeamSelector() {
   async function handleLoad(name) {
     try {
       await fetch(`/api/teams/${encodeURIComponent(name)}/load`, { method: 'POST' });
-      addNotification(`Loaded team "${name}"`, 'success');
-      setOpen(false);
+      showStatus(`loaded team "${name}"`);
       fetchTeams();
     } catch {
-      addNotification('Failed to load team', 'error');
+      showStatus('failed to load team');
     }
   }
 
@@ -55,116 +44,119 @@ export default function TeamSelector() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: saveName.trim() }),
       });
-      addNotification(`Saved team "${saveName}"`, 'success');
+      showStatus(`saved team "${saveName}"`);
       setSaveName('');
       setSaving(false);
       fetchTeams();
     } catch {
-      addNotification('Failed to save team', 'error');
+      showStatus('failed to save team');
     }
   }
 
-  async function handleDelete(name, e) {
-    e.stopPropagation();
+  async function handleDelete(name) {
     await fetch(`/api/teams/${encodeURIComponent(name)}`, { method: 'DELETE' });
-    addNotification(`Deleted "${name}"`, 'info');
+    showStatus(`deleted "${name}"`);
     fetchTeams();
   }
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button onClick={() => setOpen(!open)} style={styles.trigger}>
-        {activeTeam ? `Team: ${activeTeam}` : 'Teams'}
-      </button>
+    <div style={styles.container}>
+      <div style={styles.title}>SAVED TEAMS</div>
 
-      {open && (
-        <div style={styles.dropdown}>
-          {teams.length > 0 ? (
-            teams.map((t) => (
-              <div
-                key={t.name}
-                onClick={() => handleLoad(t.name)}
-                style={{
-                  ...styles.item,
-                  background: t.name === activeTeam ? '#1e3a5f20' : 'transparent',
-                }}
-              >
-                <div>
-                  <div style={styles.teamName}>{t.name}</div>
-                  <div style={styles.teamMeta}>{t.agents} agents</div>
-                </div>
-                <button onClick={(e) => handleDelete(t.name, e)} style={styles.deleteBtn}>x</button>
-              </div>
-            ))
-          ) : (
-            <div style={styles.empty}>No saved teams</div>
-          )}
-
-          <div style={styles.divider} />
-
-          {saving ? (
-            <div style={styles.saveRow}>
-              <input
-                style={styles.saveInput}
-                placeholder="Team name..."
-                value={saveName}
-                onChange={(e) => setSaveName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-                autoFocus
-              />
-              <button onClick={handleSave} style={styles.saveBtn}>Save</button>
+      {teams.length === 0 ? (
+        <div style={styles.empty}>No saved teams</div>
+      ) : (
+        teams.map((t) => (
+          <div
+            key={t.name}
+            style={{
+              ...styles.item,
+              background: t.name === activeTeam ? 'var(--bg-hover)' : 'transparent',
+            }}
+          >
+            <div style={{ flex: 1 }}>
+              <div style={styles.teamName}>{'>'} {t.name}</div>
+              <div style={styles.teamMeta}>{t.agents} agents</div>
             </div>
-          ) : (
-            <button onClick={() => setSaving(true)} style={styles.saveTeamBtn}>
-              Save Current as Team
-            </button>
-          )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => handleLoad(t.name)} style={styles.loadBtn}>Load</button>
+              <button onClick={() => handleDelete(t.name)} style={styles.deleteBtn}>x</button>
+            </div>
+          </div>
+        ))
+      )}
+
+      <div style={styles.divider} />
+
+      {saving ? (
+        <div style={styles.saveRow}>
+          <input
+            style={styles.saveInput}
+            placeholder="Team name..."
+            value={saveName}
+            onChange={(e) => setSaveName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+            autoFocus
+          />
+          <button onClick={handleSave} style={styles.saveBtn}>Save</button>
+          <button onClick={() => setSaving(false)} style={styles.cancelBtn}>x</button>
         </div>
+      ) : (
+        <button onClick={() => setSaving(true)} style={styles.saveTeamBtn}>
+          Save Current as Team
+        </button>
       )}
     </div>
   );
 }
 
 const styles = {
-  trigger: {
-    padding: '6px 14px', background: '#1a1a2e',
-    border: '1px solid #2a2a3e', borderRadius: 6,
-    color: '#888', fontSize: 12, cursor: 'pointer',
+  container: {
+    padding: 24, maxWidth: 600, margin: '0 auto',
   },
-  dropdown: {
-    position: 'absolute', top: '100%', right: 0, marginTop: 6,
-    background: '#141420', border: '1px solid #2a2a3e',
-    borderRadius: 10, width: 240, zIndex: 500,
-    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+  title: {
+    fontSize: 11, fontWeight: 600, color: 'var(--text-dim)',
+    textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 16,
   },
   item: {
-    padding: '10px 14px', cursor: 'pointer',
+    padding: '10px 12px',
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    borderBottom: '1px solid #1e1e2e',
+    borderBottom: '1px solid var(--border)',
   },
-  teamName: { fontSize: 13, color: '#ddd', fontWeight: 600 },
-  teamMeta: { fontSize: 11, color: '#666' },
+  teamName: { fontSize: 12, color: 'var(--text-bright)', fontWeight: 600 },
+  teamMeta: { fontSize: 11, color: 'var(--text-dim)', marginTop: 2 },
+  loadBtn: {
+    background: 'transparent', border: 'none',
+    color: 'var(--accent)', fontSize: 11, cursor: 'pointer',
+    fontFamily: 'var(--font)', fontWeight: 600,
+  },
   deleteBtn: {
-    background: 'none', border: 'none', color: '#555',
-    fontSize: 14, cursor: 'pointer', padding: '2px 6px',
+    background: 'none', border: 'none', color: 'var(--text-dim)',
+    fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font)',
   },
-  empty: { padding: 14, color: '#555', fontSize: 12, textAlign: 'center' },
-  divider: { borderTop: '1px solid #1e1e2e' },
+  empty: { padding: 20, color: 'var(--text-dim)', fontSize: 12, textAlign: 'center' },
+  divider: { borderTop: '1px solid var(--border)', margin: '12px 0' },
   saveTeamBtn: {
-    width: '100%', padding: '10px 14px', background: 'none',
-    border: 'none', color: '#3b82f6', fontSize: 12, cursor: 'pointer',
-    textAlign: 'left',
+    background: 'transparent', border: '1px solid var(--accent)',
+    borderRadius: 2, padding: '6px 14px',
+    color: 'var(--accent)', fontSize: 12, cursor: 'pointer',
+    fontFamily: 'var(--font)', fontWeight: 600,
   },
   saveRow: {
-    display: 'flex', padding: '8px', gap: 6,
+    display: 'flex', gap: 6, alignItems: 'center',
   },
   saveInput: {
-    flex: 1, background: '#0d0d18', border: '1px solid #2a2a3e',
-    borderRadius: 6, padding: '6px 8px', color: '#ddd', fontSize: 12,
-    outline: 'none',
+    flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    borderRadius: 2, padding: '6px 8px', color: 'var(--text-primary)', fontSize: 12,
+    fontFamily: 'var(--font)', outline: 'none',
   },
   saveBtn: {
-    padding: '6px 12px', background: '#3b82f6', border: 'none',
-    borderRadius: 6, color: '#fff', fontSize: 12, cursor: 'pointer',
+    padding: '6px 12px', background: 'transparent', border: '1px solid var(--accent)',
+    borderRadius: 2, color: 'var(--accent)', fontSize: 12, cursor: 'pointer',
+    fontFamily: 'var(--font)',
+  },
+  cancelBtn: {
+    background: 'none', border: 'none', color: 'var(--text-dim)',
+    fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font)',
   },
 };

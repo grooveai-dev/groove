@@ -62,7 +62,7 @@ export class ClaudeCodeProvider extends Provider {
   }
 
   buildHeadlessCommand(prompt, model) {
-    const args = ['-p', prompt, '--output-format', 'stream-json'];
+    const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose'];
     if (model) args.push('--model', model);
     return { command: 'claude', args, env: {} };
   }

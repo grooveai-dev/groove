@@ -173,12 +173,24 @@ GROOVE is a process manager, NOT a harness. Hard rules:
 - **Website:** grooveai.dev
 - **Docs:** docs.grooveai.dev
 
-## Current Status (v0.1.0)
+## Current Status (v0.2.0)
 
-All 6 build phases complete. Security audit done. Published to GitHub, pending npm publish.
+Major GUI overhaul complete. All core functionality working.
+
+**v0.2.0 changes:**
+- GUI redesigned: One Dark Pro theme, JetBrains Mono, terminal-native aesthetic
+- Agent Control Panel: 45% sidebar with Chat/Stats/Actions tabs per agent
+- Chat: instruct agents (rotation-based), query agents (headless, non-disruptive), respawn dead agents
+- Stats: live token heartbeat chart (canvas), activity sparkline, burn rate, context gauge
+- Actions: rotate, stop, delete, clone, change model, modify prompt
+- Nodes: NASA-style terminal readouts with status top-bars, heartbeat SVG, compact metrics
+- Spawn Panel: role presets (incl. Planner), permission levels (Always Ask/Auto/Full), provider connection with inline API key entry
+- Tab navigation: Agents/Tokens/Teams/Approvals as full-area views
+- Daemon: POST /api/agents/:id/instruct, POST /api/agents/:id/query, purge dead agents
+- Fix: Ctrl+C graceful shutdown, headless --verbose flag, fitView centering
 
 **Next steps:**
-- Complete npm publish (2FA token setup in progress)
-- Test fresh install flow from npm in groove-dev
-- Iterate on UX based on testing
-- Phase 5+ features: provider onboarding GUI flow, hardware detection for Ollama, model routing in practice
+- Phase 5: Remote access (--host 0.0.0.0 + token URL for VPS/AWS users)
+- Resource monitoring and optimization testing
+- Fresh install flow testing from npm
+- Iterate on UX based on user testing

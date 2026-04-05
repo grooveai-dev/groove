@@ -1,9 +1,9 @@
-// GROOVE GUI — Journalist Feed View
+// GROOVE GUI — Journalist Feed (detail panel)
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import React, { useState, useEffect } from 'react';
 
-export default function JournalistFeed({ onClose }) {
+export default function JournalistFeed() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -16,8 +16,7 @@ export default function JournalistFeed({ onClose }) {
   async function fetchJournalist() {
     try {
       const res = await fetch('/api/journalist');
-      const d = await res.json();
-      setData(d);
+      setData(await res.json());
     } catch { /* ignore */ }
     setLoading(false);
   }
@@ -32,20 +31,17 @@ export default function JournalistFeed({ onClose }) {
   }
 
   return (
-    <div style={styles.panel}>
+    <div style={{ paddingTop: 4 }}>
       <div style={styles.header}>
-        <h3 style={styles.title}>The Journalist</h3>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={triggerCycle} disabled={loading} style={styles.btn}>
-            {loading ? 'Synthesizing...' : 'Run Cycle'}
-          </button>
-          <button onClick={onClose} style={styles.closeBtn}>x</button>
-        </div>
+        <span style={styles.title}>THE JOURNALIST</span>
+        <button onClick={triggerCycle} disabled={loading} style={styles.btn}>
+          {loading ? 'synthesizing...' : 'Run Cycle'}
+        </button>
       </div>
 
       {/* Status */}
       <div style={styles.statusRow}>
-        <span>Status: {data?.running ? 'Active' : 'Stopped'}</span>
+        <span>Status: {data?.running ? 'active' : 'stopped'}</span>
         <span>Cycles: {data?.cycleCount || 0}</span>
         {data?.lastCycleAt && (
           <span>Last: {new Date(data.lastCycleAt).toLocaleTimeString()}</span>
@@ -54,21 +50,21 @@ export default function JournalistFeed({ onClose }) {
 
       {/* Latest synthesis */}
       {data?.lastSynthesis ? (
-        <div style={styles.synthesis}>
-          <div style={styles.sectionLabel}>Summary</div>
-          <div style={styles.summaryBox}>{data.lastSynthesis.summary}</div>
+        <div>
+          <div style={styles.sectionLabel}>SUMMARY</div>
+          <div style={styles.textBox}>{data.lastSynthesis.summary}</div>
 
           {data.lastSynthesis.projectMap && (
             <>
-              <div style={styles.sectionLabel}>Project Map</div>
-              <pre style={styles.mapBox}>{data.lastSynthesis.projectMap}</pre>
+              <div style={styles.sectionLabel}>PROJECT MAP</div>
+              <pre style={styles.codeBox}>{data.lastSynthesis.projectMap}</pre>
             </>
           )}
 
           {data.lastSynthesis.decisions && (
             <>
-              <div style={styles.sectionLabel}>Decisions</div>
-              <pre style={styles.mapBox}>{data.lastSynthesis.decisions}</pre>
+              <div style={styles.sectionLabel}>DECISIONS</div>
+              <pre style={styles.codeBox}>{data.lastSynthesis.decisions}</pre>
             </>
           )}
         </div>
@@ -81,7 +77,7 @@ export default function JournalistFeed({ onClose }) {
       {/* History */}
       {data?.history?.length > 0 && (
         <>
-          <div style={styles.sectionLabel}>History</div>
+          <div style={styles.sectionLabel}>HISTORY</div>
           <div style={styles.historyList}>
             {data.history.slice().reverse().map((h, i) => (
               <div key={i} style={styles.historyEntry}>
@@ -101,58 +97,53 @@ export default function JournalistFeed({ onClose }) {
 }
 
 const styles = {
-  panel: {
-    position: 'absolute', top: 0, right: 0, bottom: 0,
-    width: 420, background: '#111118',
-    borderLeft: '1px solid #222',
-    padding: 20, overflowY: 'auto',
-    zIndex: 100,
-  },
   header: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 10,
   },
-  title: { fontSize: 16, fontWeight: 700, color: '#f0f0f0', margin: 0 },
-  closeBtn: {
-    background: 'none', border: 'none', color: '#666',
-    fontSize: 16, cursor: 'pointer', padding: '2px 6px',
+  title: {
+    fontSize: 11, fontWeight: 600, color: 'var(--text-dim)',
+    textTransform: 'uppercase', letterSpacing: 1.5,
   },
   btn: {
-    padding: '5px 12px', background: '#1e3a5f',
-    border: '1px solid #3b82f640', borderRadius: 6,
-    color: '#3b82f6', fontSize: 11, cursor: 'pointer',
+    padding: '3px 10px',
+    background: 'transparent', border: '1px solid var(--purple)',
+    borderRadius: 2,
+    color: 'var(--purple)', fontSize: 11, cursor: 'pointer',
+    fontFamily: 'var(--font)',
   },
   statusRow: {
-    display: 'flex', gap: 16, fontSize: 11, color: '#666',
-    marginBottom: 16, padding: '8px 0',
-    borderBottom: '1px solid #1e1e2e',
+    display: 'flex', gap: 12, fontSize: 11, color: 'var(--text-dim)',
+    marginBottom: 12, padding: '6px 0',
+    borderBottom: '1px solid var(--border)',
+    flexWrap: 'wrap',
   },
   sectionLabel: {
-    fontSize: 11, color: '#666', textTransform: 'uppercase',
-    letterSpacing: 1, marginBottom: 6, marginTop: 14,
+    fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase',
+    letterSpacing: 1.5, marginBottom: 4, marginTop: 12, fontWeight: 600,
   },
-  summaryBox: {
-    background: '#0d0d18', border: '1px solid #1e1e2e', borderRadius: 8,
-    padding: 12, fontSize: 13, color: '#bbb', lineHeight: 1.5,
+  textBox: {
+    background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 2,
+    padding: 8, fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.5,
   },
-  mapBox: {
-    background: '#0a0a12', border: '1px solid #1e1e2e', borderRadius: 8,
-    padding: 12, fontSize: 11, color: '#888', lineHeight: 1.5,
-    whiteSpace: 'pre-wrap', fontFamily: 'monospace',
-    maxHeight: 300, overflowY: 'auto',
+  codeBox: {
+    background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 2,
+    padding: 8, fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.5,
+    whiteSpace: 'pre-wrap',
+    maxHeight: 200, overflowY: 'auto', margin: 0,
   },
   empty: {
-    color: '#555', fontSize: 13, padding: 20, textAlign: 'center',
+    color: 'var(--text-dim)', fontSize: 12, padding: 16, textAlign: 'center',
   },
   historyList: {
-    maxHeight: 200, overflowY: 'auto',
-    background: '#0a0a12', borderRadius: 8,
-    border: '1px solid #1e1e2e',
+    maxHeight: 160, overflowY: 'auto',
+    background: 'var(--bg-base)', borderRadius: 2,
+    border: '1px solid var(--border)',
   },
   historyEntry: {
-    padding: '6px 10px', borderBottom: '1px solid #141420',
-    fontSize: 11, display: 'flex', gap: 8,
+    padding: '4px 8px', borderBottom: '1px solid var(--bg-surface)',
+    fontSize: 10, display: 'flex', gap: 6,
   },
-  historyTime: { color: '#555', whiteSpace: 'nowrap', fontFamily: 'monospace' },
-  historyText: { color: '#888' },
+  historyTime: { color: 'var(--text-dim)', whiteSpace: 'nowrap' },
+  historyText: { color: 'var(--text-primary)' },
 };

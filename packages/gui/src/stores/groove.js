@@ -12,12 +12,14 @@ export const useGrooveStore = create((set, get) => ({
   connected: false,
   ws: null,
 
-  // UI state
-  selectedAgentId: null,
-  spawnModalOpen: false,
-  journalistOpen: false,
+  // UI state — unified panel model
+  activeTab: 'agents',       // 'agents' | 'tokens' | 'teams' | 'approvals'
+  detailPanel: null,          // null | { type: 'agent', agentId } | { type: 'spawn' } | { type: 'journalist' }
   activityLog: {},
-  notifications: [],
+  statusMessage: null,        // inline status text (replaces toast notifications)
+  commandHistory: [],          // last 50 commands for command bar
+  chatHistory: {},              // { [agentId]: [{ from, text, timestamp, isQuery }] }
+  tokenTimeline: {},            // { [agentId]: [{ t: timestamp, v: tokensUsed }] }
 
   // Connection
   connect() {
@@ -31,9 +33,24 @@ export const useGrooveStore = create((set, get) => ({
       const msg = JSON.parse(event.data);
 
       switch (msg.type) {
-        case 'state':
-          set({ agents: msg.data });
+        case 'state': {
+          // Track token timeline for live charts
+          const timeline = { ...get().tokenTimeline };
+          const now = Date.now();
+          for (const agent of msg.data) {
+            if (!timeline[agent.id]) timeline[agent.id] = [];
+            const arr = timeline[agent.id];
+            const last = arr[arr.length - 1];
+            // Only record if tokens changed or every 5s for heartbeat
+            if (!last || agent.tokensUsed !== last.v || now - last.t > 5000) {
+              arr.push({ t: now, v: agent.tokensUsed || 0 });
+              // Keep last 200 points
+              if (arr.length > 200) timeline[agent.id] = arr.slice(-200);
+            }
+          }
+          set({ agents: msg.data, tokenTimeline: timeline });
           break;
+        }
 
         case 'agent:output': {
           const { agentId, data } = msg;
@@ -51,25 +68,29 @@ export const useGrooveStore = create((set, get) => ({
         case 'agent:exit': {
           const agent = get().agents.find((a) => a.id === msg.agentId);
           const name = agent?.name || msg.agentId;
-          get().addNotification(
-            msg.status === 'completed' ? `${name} completed`
-              : msg.status === 'killed' ? `${name} killed`
-              : `${name} crashed (exit ${msg.code})`,
-            msg.status === 'crashed' ? 'error' : 'info',
-          );
+          const text = msg.status === 'completed' ? `${name} completed`
+            : msg.status === 'killed' ? `${name} killed`
+            : `${name} crashed (exit ${msg.code})`;
+          get().showStatus(text);
           break;
         }
 
         case 'rotation:start':
-          get().addNotification(`Rotating ${msg.agentName}...`, 'info');
+          get().showStatus(`rotating ${msg.agentName}...`);
           break;
 
-        case 'rotation:complete':
-          get().addNotification(`Rotated ${msg.agentName} (saved ${msg.tokensSaved} tokens)`, 'success');
+        case 'rotation:complete': {
+          get().showStatus(`rotated ${msg.agentName} (saved ${msg.tokensSaved} tokens)`);
+          // Auto-update detail panel if the rotated agent was selected
+          const panel = get().detailPanel;
+          if (panel?.type === 'agent' && panel.agentId === msg.oldAgentId && msg.newAgentId) {
+            set({ detailPanel: { type: 'agent', agentId: msg.newAgentId } });
+          }
           break;
+        }
 
         case 'rotation:failed':
-          get().addNotification(`Rotation failed: ${msg.error}`, 'error');
+          get().showStatus(`rotation failed: ${msg.error}`);
           break;
 
         case 'journalist:cycle':
@@ -97,12 +118,12 @@ export const useGrooveStore = create((set, get) => ({
       throw new Error(err.error || 'Spawn failed');
     }
     const agent = await res.json();
-    get().addNotification(`Spawned ${agent.name}`, 'success');
+    get().showStatus(`spawned ${agent.name}`);
     return agent;
   },
 
-  async killAgent(id) {
-    await fetch(`${API_BASE}/api/agents/${id}`, { method: 'DELETE' });
+  async killAgent(id, purge = false) {
+    await fetch(`${API_BASE}/api/agents/${id}?purge=${purge}`, { method: 'DELETE' });
   },
 
   async rotateAgent(id) {
@@ -119,33 +140,82 @@ export const useGrooveStore = create((set, get) => ({
     return res.json();
   },
 
-  // UI actions
-  selectAgent(id) { set({ selectedAgentId: id }); },
-  clearSelection() { set({ selectedAgentId: null }); },
-  openSpawnModal() { set({ spawnModalOpen: true }); },
-  closeSpawnModal() { set({ spawnModalOpen: false }); },
-  toggleJournalist() { set((s) => ({ journalistOpen: !s.journalistOpen })); },
+  // UI actions — unified panel control
+  setActiveTab(tab) { set({ activeTab: tab }); },
 
-  addNotification(text, type = 'info') {
-    const id = Date.now() + Math.random();
-    set((s) => ({
-      notifications: [...s.notifications, { id, text, type, timestamp: Date.now() }],
-    }));
+  openDetail(descriptor) { set({ detailPanel: descriptor }); },
+  closeDetail() { set({ detailPanel: null }); },
+
+  selectAgent(id) { set({ detailPanel: { type: 'agent', agentId: id } }); },
+  clearSelection() { set({ detailPanel: null }); },
+
+  showStatus(text) {
+    set({ statusMessage: text });
     setTimeout(() => {
-      set((s) => ({ notifications: s.notifications.filter((n) => n.id !== id) }));
+      if (get().statusMessage === text) set({ statusMessage: null });
     }, 4000);
   },
 
-  dismissNotification(id) {
-    set((s) => ({ notifications: s.notifications.filter((n) => n.id !== id) }));
-  },
-
   getSelectedAgent() {
-    const { agents, selectedAgentId } = get();
-    return agents.find((a) => a.id === selectedAgentId) || null;
+    const { agents, detailPanel } = get();
+    if (detailPanel?.type !== 'agent') return null;
+    return agents.find((a) => a.id === detailPanel.agentId) || null;
   },
 
   getAgentActivity(agentId) {
     return get().activityLog[agentId] || [];
+  },
+
+  // Agent interaction
+  addChatMessage(agentId, from, text, isQuery = false) {
+    set((s) => {
+      const history = { ...s.chatHistory };
+      if (!history[agentId]) history[agentId] = [];
+      history[agentId] = [...history[agentId].slice(-100), {
+        from, text, timestamp: Date.now(), isQuery,
+      }];
+      return { chatHistory: history };
+    });
+  },
+
+  async instructAgent(id, message) {
+    get().addChatMessage(id, 'user', message, false);
+    get().addChatMessage(id, 'system', 'rotating with instruction...');
+    const res = await fetch(`${API_BASE}/api/agents/${id}/instruct`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      get().addChatMessage(id, 'system', `failed: ${err.error || 'unknown error'}`);
+      throw new Error(err.error || 'Instruction failed');
+    }
+    const newAgent = await res.json();
+    get().addChatMessage(newAgent.id, 'system', 'agent resumed with new context');
+    return newAgent;
+  },
+
+  async queryAgent(id, message) {
+    get().addChatMessage(id, 'user', message, true);
+    const res = await fetch(`${API_BASE}/api/agents/${id}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      get().addChatMessage(id, 'system', `query failed: ${err.error || 'unknown error'}`);
+      throw new Error(err.error || 'Query failed');
+    }
+    const data = await res.json();
+    get().addChatMessage(id, 'agent', data.response);
+    return data;
+  },
+
+  addCommand(text) {
+    set((s) => ({
+      commandHistory: [...s.commandHistory.slice(-49), text],
+    }));
   },
 }));

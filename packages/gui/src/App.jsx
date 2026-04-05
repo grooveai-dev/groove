@@ -1,59 +1,73 @@
 // GROOVE GUI — App Root
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useGrooveStore } from './stores/groove';
 import AgentTree from './views/AgentTree';
-import AgentDetail from './components/AgentDetail';
+import AgentPanel from './components/AgentPanel';
 import EmptyState from './components/EmptyState';
-import SpawnModal from './components/SpawnModal';
-import Notifications from './components/Notifications';
+import SpawnPanel from './components/SpawnPanel';
 import JournalistFeed from './views/JournalistFeed';
 import TeamSelector from './components/TeamSelector';
 import TokenDashboard from './components/TokenDashboard';
 import ApprovalQueue from './components/ApprovalQueue';
 
+const TABS = [
+  { id: 'agents', label: 'Agents' },
+  { id: 'tokens', label: 'Tokens' },
+  { id: 'teams', label: 'Teams' },
+  { id: 'approvals', label: 'Approvals' },
+];
+
 export default function App() {
   const agents = useGrooveStore((s) => s.agents);
   const connected = useGrooveStore((s) => s.connected);
-  const selectedAgentId = useGrooveStore((s) => s.selectedAgentId);
-  const spawnModalOpen = useGrooveStore((s) => s.spawnModalOpen);
-  const journalistOpen = useGrooveStore((s) => s.journalistOpen);
+  const activeTab = useGrooveStore((s) => s.activeTab);
+  const detailPanel = useGrooveStore((s) => s.detailPanel);
+  const statusMessage = useGrooveStore((s) => s.statusMessage);
   const connect = useGrooveStore((s) => s.connect);
-  const openSpawnModal = useGrooveStore((s) => s.openSpawnModal);
-  const toggleJournalist = useGrooveStore((s) => s.toggleJournalist);
+  const setActiveTab = useGrooveStore((s) => s.setActiveTab);
+  const openDetail = useGrooveStore((s) => s.openDetail);
+  const closeDetail = useGrooveStore((s) => s.closeDetail);
 
-  const [rightPanel, setRightPanel] = useState(null); // 'tokens' | 'approvals' | null
-
-  useEffect(() => {
-    connect();
-  }, [connect]);
+  useEffect(() => { connect(); }, [connect]);
 
   const runningCount = agents.filter((a) => a.status === 'running').length;
   const hasAgents = agents.length > 0;
-
-  // Determine which sidebar is showing
-  const showAgentDetail = selectedAgentId && !journalistOpen && !rightPanel;
-  const showJournalist = journalistOpen && !rightPanel;
-
-  function togglePanel(name) {
-    setRightPanel((prev) => prev === name ? null : name);
-  }
 
   return (
     <div style={styles.root}>
       {/* Header */}
       <header style={styles.header}>
         <div style={styles.headerLeft}>
-          <h1 style={styles.logo}>GROOVE</h1>
+          <span style={styles.logo}>GROOVE</span>
           <div style={{
-            ...styles.statusDot,
-            background: connected ? '#22c55e' : '#ef4444',
-            boxShadow: connected ? '0 0 6px #22c55e60' : 'none',
+            width: 6, height: 6, borderRadius: '50%',
+            background: connected ? 'var(--green)' : 'var(--red)',
           }} />
         </div>
 
+        <div style={styles.headerCenter}>
+          {connected && TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                ...styles.tabBtn,
+                color: activeTab === tab.id ? 'var(--text-bright)' : 'var(--text-primary)',
+                borderBottom: activeTab === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
+                background: activeTab === tab.id ? 'var(--bg-active)' : 'transparent',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         <div style={styles.headerRight}>
+          {statusMessage && (
+            <span style={styles.statusText}>{statusMessage}</span>
+          )}
           <span style={styles.agentCount}>
             {runningCount > 0
               ? `${runningCount} running`
@@ -63,17 +77,20 @@ export default function App() {
           </span>
           {connected && (
             <>
-              <TeamSelector />
-              <button onClick={() => togglePanel('tokens')} style={styles.navBtn}>
-                Tokens
-              </button>
-              <button onClick={() => togglePanel('approvals')} style={styles.navBtn}>
-                Approvals
-              </button>
-              <button onClick={toggleJournalist} style={styles.navBtn}>
+              <button
+                onClick={() => detailPanel?.type === 'journalist' ? closeDetail() : openDetail({ type: 'journalist' })}
+                style={{
+                  ...styles.tabBtn,
+                  color: detailPanel?.type === 'journalist' ? 'var(--text-bright)' : 'var(--text-primary)',
+                  borderBottom: detailPanel?.type === 'journalist' ? '2px solid var(--purple)' : '2px solid transparent',
+                }}
+              >
                 Journalist
               </button>
-              <button onClick={openSpawnModal} style={styles.spawnBtn}>
+              <button
+                onClick={() => openDetail({ type: 'spawn' })}
+                style={styles.spawnBtn}
+              >
                 + Spawn
               </button>
             </>
@@ -81,36 +98,30 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main */}
-      <main style={styles.main}>
-        {!hasAgents ? <EmptyState /> : <AgentTree />}
+      {/* Main row */}
+      <div style={styles.mainRow}>
+        <main style={styles.content}>
+          {activeTab === 'agents' && (
+            !hasAgents ? <EmptyState /> : <AgentTree />
+          )}
+          {activeTab === 'tokens' && <TokenDashboard />}
+          {activeTab === 'teams' && <TeamSelector />}
+          {activeTab === 'approvals' && <ApprovalQueue />}
+        </main>
 
-        {/* Sidebars */}
-        {showAgentDetail && <AgentDetail />}
-        {showJournalist && <JournalistFeed onClose={toggleJournalist} />}
-        {rightPanel === 'tokens' && <TokenDashboard onClose={() => setRightPanel(null)} />}
-        {rightPanel === 'approvals' && <ApprovalQueue onClose={() => setRightPanel(null)} />}
-      </main>
-
-      {/* Modals & overlays */}
-      {spawnModalOpen && <SpawnModal />}
-      <Notifications />
-
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-        @keyframes slideIn {
-          from { transform: translateX(20px); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
-        * { box-sizing: border-box; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #2a2a3e; border-radius: 3px; }
-        ::selection { background: #3b82f640; }
-      `}</style>
+        {/* Detail panel — in document flow */}
+        {detailPanel && (
+          <aside style={{
+            ...styles.detailPanel,
+            width: detailPanel.type === 'agent' ? '45%' : 320,
+          }}>
+            <button onClick={closeDetail} style={styles.closeBtn}>x</button>
+            {detailPanel.type === 'agent' && <AgentPanel />}
+            {detailPanel.type === 'spawn' && <SpawnPanel />}
+            {detailPanel.type === 'journalist' && <JournalistFeed />}
+          </aside>
+        )}
+      </div>
     </div>
   );
 }
@@ -119,43 +130,67 @@ const styles = {
   root: {
     width: '100%', height: '100%',
     display: 'flex', flexDirection: 'column',
-    background: '#0a0a0a', color: '#e0e0e0',
+    background: 'var(--bg-base)', color: 'var(--text-primary)',
   },
   header: {
-    padding: '10px 16px',
-    borderBottom: '1px solid #1e1e2e',
+    height: 40,
+    padding: '0 16px',
+    borderBottom: '1px solid var(--border)',
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    background: '#0d0d14',
+    background: 'var(--bg-chrome)',
     flexShrink: 0,
   },
   headerLeft: {
-    display: 'flex', alignItems: 'center', gap: 10,
+    display: 'flex', alignItems: 'center', gap: 8,
   },
   logo: {
-    fontSize: 16, fontWeight: 800, letterSpacing: 3,
-    margin: 0, color: '#e0e0e0',
+    fontSize: 13, fontWeight: 600, letterSpacing: 1.5,
+    color: 'var(--text-bright)',
   },
-  statusDot: {
-    width: 7, height: 7, borderRadius: '50%',
-    transition: 'background 0.3s',
+  headerCenter: {
+    display: 'flex', alignItems: 'center', gap: 0,
   },
   headerRight: {
     display: 'flex', alignItems: 'center', gap: 10,
   },
-  agentCount: { fontSize: 12, color: '#666' },
-  navBtn: {
-    padding: '6px 12px', background: '#1a1a2e',
-    border: '1px solid #2a2a3e', borderRadius: 6,
-    color: '#888', fontSize: 11, fontWeight: 500,
+  tabBtn: {
+    padding: '10px 14px',
+    background: 'transparent',
+    border: 'none',
+    borderBottom: '2px solid transparent',
+    fontSize: 12, fontWeight: 500,
+    fontFamily: 'var(--font)',
     cursor: 'pointer',
+    transition: 'color 0.1s',
   },
   spawnBtn: {
-    padding: '6px 14px', background: '#1e3a5f',
-    border: '1px solid #3b82f640', borderRadius: 6,
-    color: '#3b82f6', fontSize: 12, fontWeight: 600,
+    padding: '4px 12px',
+    background: 'transparent',
+    border: '1px solid var(--accent)',
+    borderRadius: 2,
+    color: 'var(--accent)', fontSize: 12, fontWeight: 600,
+    fontFamily: 'var(--font)',
     cursor: 'pointer',
   },
-  main: {
-    flex: 1, position: 'relative', overflow: 'hidden',
+  agentCount: { fontSize: 11, color: 'var(--text-dim)' },
+  statusText: { fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic' },
+  mainRow: {
+    flex: 1, display: 'flex', overflow: 'hidden',
+  },
+  content: {
+    flex: 1, overflow: 'hidden', position: 'relative',
+  },
+  detailPanel: {
+    width: 320, flexShrink: 0,
+    background: 'var(--bg-chrome)',
+    borderLeft: '1px solid var(--border)',
+    padding: 16, overflowY: 'auto',
+    position: 'relative',
+  },
+  closeBtn: {
+    position: 'absolute', top: 8, right: 10,
+    background: 'none', border: 'none', color: 'var(--text-dim)',
+    fontSize: 14, cursor: 'pointer', fontFamily: 'var(--font)',
+    padding: '2px 6px',
   },
 };

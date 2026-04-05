@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 
-export default function TokenDashboard({ onClose }) {
+export default function TokenDashboard() {
   const [data, setData] = useState(null);
 
   useEffect(() => {
@@ -19,18 +19,15 @@ export default function TokenDashboard({ onClose }) {
     } catch { /* ignore */ }
   }
 
-  if (!data) return null;
+  if (!data) return <div style={styles.empty}>loading...</div>;
 
   const uptime = formatDuration(data.sessionDurationMs);
 
   return (
-    <div style={styles.panel}>
-      <div style={styles.header}>
-        <h3 style={styles.title}>Token Usage</h3>
-        <button onClick={onClose} style={styles.closeBtn}>x</button>
-      </div>
+    <div style={styles.container}>
+      <div style={styles.title}>TOKEN USAGE</div>
 
-      {/* Big numbers */}
+      {/* Stats */}
       <div style={styles.statGrid}>
         <StatCard label="Total Tokens" value={data.totalTokens.toLocaleString()} />
         <StatCard label="Agents" value={data.agentCount} />
@@ -38,51 +35,48 @@ export default function TokenDashboard({ onClose }) {
         <StatCard
           label="Savings"
           value={`${data.savings.percentage}%`}
-          color={data.savings.percentage > 0 ? '#22c55e' : '#666'}
+          color={data.savings.percentage > 0 ? 'var(--green)' : 'var(--text-dim)'}
         />
       </div>
 
       {/* Savings breakdown */}
       {data.savings.total > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <div style={styles.sectionLabel}>Savings Breakdown</div>
+        <div style={{ marginTop: 20 }}>
+          <div style={styles.sectionLabel}>SAVINGS BREAKDOWN</div>
           <div style={styles.breakdownList}>
-            <BreakdownRow
-              label="Context rotation"
-              value={data.savings.fromRotation}
-            />
-            <BreakdownRow
-              label="Conflict prevention"
-              value={data.savings.fromConflictPrevention}
-            />
-            <BreakdownRow
-              label="Cold-start skip"
-              value={data.savings.fromColdStartSkip}
-            />
+            <BreakdownRow label="Context rotation" value={data.savings.fromRotation} />
+            <BreakdownRow label="Conflict prevention" value={data.savings.fromConflictPrevention} />
+            <BreakdownRow label="Cold-start skip" value={data.savings.fromColdStartSkip} />
             <div style={styles.breakdownTotal}>
               <span>Without GROOVE (est.)</span>
-              <span style={{ fontFamily: 'monospace', color: '#ef4444' }}>
-                {data.savings.estimatedWithoutGroove.toLocaleString()} tokens
+              <span style={{ color: 'var(--red)' }}>
+                {data.savings.estimatedWithoutGroove.toLocaleString()}
               </span>
             </div>
           </div>
         </div>
       )}
 
-      {/* Per-agent usage */}
+      {/* Per-agent breakdown */}
       {data.perAgent.length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <div style={styles.sectionLabel}>Per Agent</div>
-          <div style={styles.agentList}>
-            {data.perAgent.map((a) => (
+        <div style={{ marginTop: 20 }}>
+          <div style={styles.sectionLabel}>AGENT BREAKDOWN</div>
+          {data.perAgent.map((a) => {
+            const pct = data.totalTokens > 0 ? (a.tokens / data.totalTokens * 100).toFixed(1) : 0;
+            return (
               <div key={a.agentId} style={styles.agentRow}>
-                <span style={{ color: '#aaa', fontSize: 12 }}>{a.agentId.slice(0, 8)}</span>
-                <span style={{ fontFamily: 'monospace', color: '#ccc', fontSize: 12 }}>
-                  {a.tokens.toLocaleString()}
-                </span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                  <span style={{ color: 'var(--text-primary)', fontSize: 12 }}>{a.agentId.slice(0, 8)}</span>
+                  <span style={{ color: 'var(--text-primary)', fontSize: 12 }}>
+                    {a.tokens.toLocaleString()}  {pct}%
+                  </span>
+                </div>
+                <div style={styles.barTrack}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: 'var(--accent)', borderRadius: 1 }} />
+                </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -92,10 +86,10 @@ export default function TokenDashboard({ onClose }) {
 function StatCard({ label, value, color }) {
   return (
     <div style={styles.stat}>
-      <div style={{ fontSize: 22, fontWeight: 700, color: color || '#f0f0f0', fontFamily: 'monospace' }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: color || 'var(--text-bright)' }}>
         {value}
       </div>
-      <div style={{ fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: 1 }}>
+      <div style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: 1 }}>
         {label}
       </div>
     </div>
@@ -106,7 +100,7 @@ function BreakdownRow({ label, value }) {
   return (
     <div style={styles.breakdownRow}>
       <span>{label}</span>
-      <span style={{ fontFamily: 'monospace' }}>{value.toLocaleString()}</span>
+      <span>{value.toLocaleString()}</span>
     </div>
   );
 }
@@ -121,51 +115,44 @@ function formatDuration(ms) {
 }
 
 const styles = {
-  panel: {
-    position: 'absolute', top: 0, right: 0, bottom: 0,
-    width: 360, background: '#111118',
-    borderLeft: '1px solid #222',
-    padding: 20, overflowY: 'auto',
-    zIndex: 100,
+  container: {
+    padding: 24, maxWidth: 600, margin: '0 auto',
   },
-  header: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    marginBottom: 16,
-  },
-  title: { fontSize: 16, fontWeight: 700, color: '#f0f0f0', margin: 0 },
-  closeBtn: {
-    background: 'none', border: 'none', color: '#666',
-    fontSize: 16, cursor: 'pointer',
+  title: {
+    fontSize: 11, fontWeight: 600, color: 'var(--text-dim)',
+    textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 16,
   },
   statGrid: {
-    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10,
+    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8,
   },
   stat: {
-    background: '#0d0d18', border: '1px solid #1e1e2e', borderRadius: 10,
-    padding: 14, textAlign: 'center',
+    background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 2,
+    padding: 12, textAlign: 'center',
   },
   sectionLabel: {
-    fontSize: 11, color: '#666', textTransform: 'uppercase',
-    letterSpacing: 1, marginBottom: 8,
+    fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase',
+    letterSpacing: 1.5, marginBottom: 8, fontWeight: 600,
   },
   breakdownList: {
-    background: '#0d0d18', border: '1px solid #1e1e2e', borderRadius: 8,
+    background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 2,
     padding: 10,
   },
   breakdownRow: {
     display: 'flex', justifyContent: 'space-between',
-    padding: '4px 0', fontSize: 12, color: '#888',
+    padding: '3px 0', fontSize: 12, color: 'var(--text-primary)',
   },
   breakdownTotal: {
     display: 'flex', justifyContent: 'space-between',
-    padding: '6px 0', fontSize: 12, color: '#aaa',
-    borderTop: '1px solid #1e1e2e', marginTop: 6,
-  },
-  agentList: {
-    background: '#0d0d18', border: '1px solid #1e1e2e', borderRadius: 8,
+    padding: '6px 0', fontSize: 12, color: 'var(--text-bright)',
+    borderTop: '1px solid var(--border)', marginTop: 6,
   },
   agentRow: {
-    display: 'flex', justifyContent: 'space-between',
-    padding: '8px 12px', borderBottom: '1px solid #141420',
+    marginBottom: 10,
+  },
+  barTrack: {
+    height: 3, background: 'var(--text-muted)', borderRadius: 1, overflow: 'hidden',
+  },
+  empty: {
+    padding: 40, textAlign: 'center', color: 'var(--text-dim)', fontSize: 12,
   },
 };

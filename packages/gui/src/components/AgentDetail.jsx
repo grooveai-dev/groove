@@ -1,113 +1,113 @@
-// GROOVE GUI — Agent Detail Sidebar
+// GROOVE GUI — Agent Detail Panel
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import React from 'react';
 import { useGrooveStore } from '../stores/groove';
 
 const STATUS_COLORS = {
-  running: '#22c55e',
-  starting: '#eab308',
-  stopped: '#6b7280',
-  crashed: '#ef4444',
-  completed: '#06b6d4',
-  killed: '#6b7280',
+  running: 'var(--green)',
+  starting: 'var(--amber)',
+  stopped: 'var(--text-dim)',
+  crashed: 'var(--red)',
+  completed: 'var(--accent)',
+  killed: 'var(--text-dim)',
 };
 
 export default function AgentDetail() {
-  const selectedAgentId = useGrooveStore((s) => s.selectedAgentId);
+  const detailPanel = useGrooveStore((s) => s.detailPanel);
   const agents = useGrooveStore((s) => s.agents);
   const killAgent = useGrooveStore((s) => s.killAgent);
   const rotateAgent = useGrooveStore((s) => s.rotateAgent);
-  const clearSelection = useGrooveStore((s) => s.clearSelection);
   const activityLog = useGrooveStore((s) => s.activityLog);
 
-  const agent = agents.find((a) => a.id === selectedAgentId);
-  if (!agent) return null;
+  const agent = agents.find((a) => a.id === detailPanel?.agentId);
+  if (!agent) return <div style={styles.empty}>Agent not found</div>;
 
-  const color = STATUS_COLORS[agent.status] || '#6b7280';
+  const color = STATUS_COLORS[agent.status] || 'var(--text-dim)';
   const contextPct = Math.round((agent.contextUsage || 0) * 100);
   const activity = activityLog[agent.id] || [];
   const isAlive = agent.status === 'running' || agent.status === 'starting';
 
-  function handleKill() {
-    killAgent(agent.id);
-  }
-
   function formatTime(ts) {
     if (!ts) return '-';
-    const d = new Date(ts);
-    return d.toLocaleTimeString();
+    return new Date(ts).toLocaleTimeString();
   }
 
   return (
-    <div style={styles.sidebar}>
+    <div>
       {/* Header */}
       <div style={styles.header}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{
-            width: 10, height: 10, borderRadius: '50%', background: color,
-            boxShadow: isAlive ? `0 0 8px ${color}` : 'none',
+            width: 6, height: 6, borderRadius: '50%', background: color,
+            animation: agent.status === 'running' ? 'pulse 2s infinite' : 'none',
           }} />
-          <h3 style={styles.name}>{agent.name}</h3>
+          <span style={styles.name}>{agent.name}</span>
         </div>
-        <button onClick={clearSelection} style={styles.closeBtn}>x</button>
       </div>
 
-      <div style={styles.statusBadge(color)}>
+      <div style={{
+        display: 'inline-block', marginTop: 6,
+        padding: '2px 6px', borderRadius: 2,
+        fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        background: `color-mix(in srgb, ${color} 12%, transparent)`,
+        color: color,
+      }}>
         {agent.status}
       </div>
 
       {/* Info grid */}
       <div style={styles.infoGrid}>
-        <InfoRow label="ID" value={agent.id} mono />
+        <InfoRow label="ID" value={agent.id} />
         <InfoRow label="Role" value={agent.role} />
         <InfoRow label="Provider" value={agent.provider} />
-        <InfoRow label="Scope" value={agent.scope?.join(', ') || 'unrestricted'} mono />
+        <InfoRow label="Scope" value={agent.scope?.join(', ') || 'unrestricted'} />
         <InfoRow label="Spawned" value={formatTime(agent.spawnedAt)} />
         <InfoRow label="Last Activity" value={formatTime(agent.lastActivity)} />
         <InfoRow label="Tokens" value={agent.tokensUsed?.toLocaleString() || '0'} />
       </div>
 
       {/* Context bar */}
-      <div style={{ marginTop: 16 }}>
-        <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>
-          Context Usage: {contextPct}%
+      <div style={{ marginTop: 14 }}>
+        <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 3 }}>
+          Context: {contextPct}%
         </div>
         <div style={styles.barTrack}>
           <div style={{
-            ...styles.barFill,
-            width: `${contextPct}%`,
-            background: contextPct > 80 ? '#ef4444' : contextPct > 60 ? '#eab308' : '#22c55e',
+            height: '100%', width: `${contextPct}%`, borderRadius: 1,
+            background: contextPct > 80 ? 'var(--red)' : contextPct > 60 ? 'var(--amber)' : 'var(--green)',
+            transition: 'width 0.3s',
           }} />
         </div>
       </div>
 
       {/* Prompt */}
       {agent.prompt && (
-        <div style={{ marginTop: 16 }}>
-          <div style={styles.sectionLabel}>Prompt</div>
+        <div style={{ marginTop: 14 }}>
+          <div style={styles.sectionLabel}>PROMPT</div>
           <div style={styles.promptBox}>{agent.prompt}</div>
         </div>
       )}
 
       {/* Actions */}
       {isAlive && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+        <div style={{ display: 'flex', gap: 6, marginTop: 14 }}>
           <button onClick={() => rotateAgent(agent.id)} style={styles.rotateBtn}>
             Rotate
           </button>
-          <button onClick={handleKill} style={styles.killBtn}>
+          <button onClick={() => killAgent(agent.id)} style={styles.killBtn}>
             Kill
           </button>
         </div>
       )}
 
       {/* Activity log */}
-      <div style={{ marginTop: 20 }}>
-        <div style={styles.sectionLabel}>Activity ({activity.length})</div>
+      <div style={{ marginTop: 16 }}>
+        <div style={styles.sectionLabel}>ACTIVITY ({activity.length})</div>
         <div style={styles.activityScroll}>
           {activity.length === 0 && (
-            <div style={{ color: '#555', fontSize: 12, padding: 8 }}>
+            <div style={{ color: 'var(--text-dim)', fontSize: 11, padding: 8 }}>
               No activity yet...
             </div>
           )}
@@ -127,13 +127,12 @@ export default function AgentDetail() {
   );
 }
 
-function InfoRow({ label, value, mono }) {
+function InfoRow({ label, value }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-      <span style={{ color: '#666', fontSize: 12 }}>{label}</span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+      <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>{label}</span>
       <span style={{
-        color: '#ccc', fontSize: 12,
-        fontFamily: mono ? 'monospace' : 'inherit',
+        color: 'var(--text-primary)', fontSize: 11,
         maxWidth: '60%', textAlign: 'right',
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }}>
@@ -144,66 +143,48 @@ function InfoRow({ label, value, mono }) {
 }
 
 const styles = {
-  sidebar: {
-    position: 'absolute', top: 0, right: 0, bottom: 0,
-    width: 340, background: '#111118',
-    borderLeft: '1px solid #222',
-    padding: 20, overflowY: 'auto',
-    zIndex: 100,
-  },
   header: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    paddingTop: 4,
   },
-  name: { fontSize: 16, fontWeight: 700, color: '#f0f0f0', margin: 0 },
-  closeBtn: {
-    background: 'none', border: 'none', color: '#666',
-    fontSize: 16, cursor: 'pointer', padding: '2px 6px',
-  },
-  statusBadge: (color) => ({
-    display: 'inline-block', marginTop: 8,
-    padding: '3px 10px', borderRadius: 12,
-    fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
-    background: `${color}20`, color, letterSpacing: 0.5,
-  }),
+  name: { fontSize: 14, fontWeight: 600, color: 'var(--text-bright)' },
   infoGrid: {
-    marginTop: 20, borderTop: '1px solid #1e1e2e', paddingTop: 12,
+    marginTop: 14, borderTop: '1px solid var(--border)', paddingTop: 10,
   },
   barTrack: {
-    height: 6, background: '#1a1a2e', borderRadius: 3, overflow: 'hidden',
-  },
-  barFill: {
-    height: '100%', borderRadius: 3, transition: 'width 0.3s ease',
+    height: 2, background: 'var(--text-muted)', borderRadius: 1, overflow: 'hidden',
   },
   sectionLabel: {
-    fontSize: 11, color: '#666', textTransform: 'uppercase',
-    letterSpacing: 1, marginBottom: 6,
+    fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase',
+    letterSpacing: 1.5, marginBottom: 6, fontWeight: 600,
   },
   promptBox: {
-    background: '#0d0d18', border: '1px solid #1e1e2e', borderRadius: 8,
-    padding: 10, fontSize: 12, color: '#aaa', lineHeight: 1.5,
-    fontFamily: 'monospace', whiteSpace: 'pre-wrap',
+    background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 2,
+    padding: 8, fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.5,
+    whiteSpace: 'pre-wrap',
   },
   rotateBtn: {
-    flex: 1, padding: '10px',
-    background: '#1a1a2e', border: '1px solid #3b82f640',
-    borderRadius: 8, color: '#3b82f6', fontSize: 13,
-    fontWeight: 600, cursor: 'pointer',
+    flex: 1, padding: '6px',
+    background: 'transparent', border: '1px solid var(--accent)',
+    borderRadius: 2, color: 'var(--accent)', fontSize: 11,
+    fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)',
   },
   killBtn: {
-    flex: 1, padding: '10px',
-    background: '#2a1015', border: '1px solid #ef444440',
-    borderRadius: 8, color: '#ef4444', fontSize: 13,
-    fontWeight: 600, cursor: 'pointer',
+    flex: 1, padding: '6px',
+    background: 'transparent', border: '1px solid var(--red)',
+    borderRadius: 2, color: 'var(--red)', fontSize: 11,
+    fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)',
   },
   activityScroll: {
-    maxHeight: 300, overflowY: 'auto',
-    background: '#0a0a12', borderRadius: 8,
-    border: '1px solid #1e1e2e',
+    maxHeight: 200, overflowY: 'auto',
+    background: 'var(--bg-base)', borderRadius: 2,
+    border: '1px solid var(--border)',
   },
   activityEntry: {
-    padding: '6px 10px', borderBottom: '1px solid #141420',
-    fontSize: 11, display: 'flex', gap: 8,
+    padding: '4px 8px', borderBottom: '1px solid var(--bg-surface)',
+    fontSize: 10, display: 'flex', gap: 6,
   },
-  activityTime: { color: '#555', whiteSpace: 'nowrap', fontFamily: 'monospace' },
-  activityText: { color: '#999', wordBreak: 'break-word' },
+  activityTime: { color: 'var(--text-dim)', whiteSpace: 'nowrap' },
+  activityText: { color: 'var(--text-primary)', wordBreak: 'break-word' },
+  empty: { color: 'var(--text-dim)', fontSize: 12, padding: 16 },
 };

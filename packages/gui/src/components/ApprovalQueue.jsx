@@ -4,9 +4,9 @@
 import React, { useState, useEffect } from 'react';
 import { useGrooveStore } from '../stores/groove';
 
-export default function ApprovalQueue({ onClose }) {
+export default function ApprovalQueue() {
   const [data, setData] = useState(null);
-  const addNotification = useGrooveStore((s) => s.addNotification);
+  const showStatus = useGrooveStore((s) => s.showStatus);
 
   useEffect(() => {
     fetchApprovals();
@@ -23,7 +23,7 @@ export default function ApprovalQueue({ onClose }) {
 
   async function handleApprove(id) {
     await fetch(`/api/approvals/${id}/approve`, { method: 'POST' });
-    addNotification('Approved', 'success');
+    showStatus('approved');
     fetchApprovals();
   }
 
@@ -33,7 +33,7 @@ export default function ApprovalQueue({ onClose }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason: 'Rejected from GUI' }),
     });
-    addNotification('Rejected', 'info');
+    showStatus('rejected');
     fetchApprovals();
   }
 
@@ -41,42 +41,41 @@ export default function ApprovalQueue({ onClose }) {
   const resolved = data?.resolved || [];
 
   return (
-    <div style={styles.panel}>
-      <div style={styles.header}>
-        <h3 style={styles.title}>Approvals</h3>
-        <button onClick={onClose} style={styles.closeBtn}>x</button>
-      </div>
+    <div style={styles.container}>
+      <div style={styles.title}>PENDING APPROVALS</div>
 
       {/* QC Status */}
       {data?.status && (
         <div style={styles.statusRow}>
-          <span>QC: {data.status.qcActive ? 'Active' : 'Standby'}</span>
+          <span>QC: {data.status.qcActive ? 'active' : 'standby'}</span>
           <span>Conflicts: {data.status.conflicts}</span>
         </div>
       )}
 
       {/* Pending */}
-      <div style={styles.sectionLabel}>Pending ({pending.length})</div>
+      <div style={styles.sectionLabel}>PENDING ({pending.length})</div>
       {pending.length === 0 ? (
         <div style={styles.empty}>No pending approvals</div>
       ) : (
         pending.map((a) => (
           <div key={a.id} style={styles.card}>
             <div style={styles.cardHeader}>
-              <span style={styles.agentName}>{a.agentName}</span>
-              <span style={styles.cardTime}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
+                {a.agentName}
+              </span>
+              <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>
                 {new Date(a.requestedAt).toLocaleTimeString()}
               </span>
             </div>
-            <div style={styles.cardDesc}>
+            <div style={{ fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: 8 }}>
               {a.action?.description || a.action?.type || 'Unknown action'}
             </div>
-            <div style={styles.cardActions}>
+            <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={() => handleApprove(a.id)} style={styles.approveBtn}>
-                Approve
+                APPROVE
               </button>
               <button onClick={() => handleReject(a.id)} style={styles.rejectBtn}>
-                Reject
+                REJECT
               </button>
             </div>
           </div>
@@ -86,13 +85,13 @@ export default function ApprovalQueue({ onClose }) {
       {/* Recent resolved */}
       {resolved.length > 0 && (
         <>
-          <div style={{ ...styles.sectionLabel, marginTop: 16 }}>Recent</div>
+          <div style={{ ...styles.sectionLabel, marginTop: 20 }}>RECENT</div>
           {resolved.slice(-5).reverse().map((a) => (
             <div key={a.id} style={styles.resolvedRow}>
-              <span style={{ color: a.status === 'approved' ? '#22c55e' : '#ef4444' }}>
+              <span style={{ color: a.status === 'approved' ? 'var(--green)' : 'var(--red)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>
                 {a.status}
               </span>
-              <span style={{ color: '#666', fontSize: 11 }}>
+              <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>
                 {a.agentName} — {a.action?.type}
               </span>
             </div>
@@ -104,54 +103,47 @@ export default function ApprovalQueue({ onClose }) {
 }
 
 const styles = {
-  panel: {
-    position: 'absolute', top: 0, right: 0, bottom: 0,
-    width: 360, background: '#111118',
-    borderLeft: '1px solid #222',
-    padding: 20, overflowY: 'auto',
-    zIndex: 100,
+  container: {
+    padding: 24, maxWidth: 600, margin: '0 auto',
   },
-  header: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    marginBottom: 12,
-  },
-  title: { fontSize: 16, fontWeight: 700, color: '#f0f0f0', margin: 0 },
-  closeBtn: {
-    background: 'none', border: 'none', color: '#666',
-    fontSize: 16, cursor: 'pointer',
+  title: {
+    fontSize: 11, fontWeight: 600, color: 'var(--text-dim)',
+    textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 16,
   },
   statusRow: {
-    display: 'flex', gap: 16, fontSize: 11, color: '#666',
-    padding: '8px 0', borderBottom: '1px solid #1e1e2e', marginBottom: 12,
+    display: 'flex', gap: 16, fontSize: 11, color: 'var(--text-dim)',
+    padding: '8px 0', borderBottom: '1px solid var(--border)', marginBottom: 12,
   },
   sectionLabel: {
-    fontSize: 11, color: '#666', textTransform: 'uppercase',
-    letterSpacing: 1, marginBottom: 8,
+    fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase',
+    letterSpacing: 1.5, marginBottom: 8, fontWeight: 600,
   },
-  empty: { color: '#555', fontSize: 12, padding: 12, textAlign: 'center' },
+  empty: { color: 'var(--text-dim)', fontSize: 12, padding: 12, textAlign: 'center' },
   card: {
-    background: '#0d0d18', border: '1px solid #1e1e2e', borderRadius: 10,
-    padding: 14, marginBottom: 8,
+    background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 2,
+    padding: 12, marginBottom: 6,
   },
   cardHeader: {
-    display: 'flex', justifyContent: 'space-between', marginBottom: 6,
+    display: 'flex', justifyContent: 'space-between', marginBottom: 4,
   },
-  agentName: { fontSize: 13, fontWeight: 600, color: '#ddd' },
-  cardTime: { fontSize: 11, color: '#555', fontFamily: 'monospace' },
-  cardDesc: { fontSize: 12, color: '#999', lineHeight: 1.5, marginBottom: 10 },
-  cardActions: { display: 'flex', gap: 8 },
   approveBtn: {
-    flex: 1, padding: '8px', background: '#0a2a15',
-    border: '1px solid #22c55e40', borderRadius: 6,
-    color: '#22c55e', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+    flex: 1, padding: '4px 10px',
+    background: 'rgba(152, 195, 121, 0.12)',
+    border: '1px solid rgba(152, 195, 121, 0.2)',
+    borderRadius: 2,
+    color: 'var(--green)', fontSize: 11, fontWeight: 600,
+    fontFamily: 'var(--font)', cursor: 'pointer',
   },
   rejectBtn: {
-    flex: 1, padding: '8px', background: '#2a0a10',
-    border: '1px solid #ef444440', borderRadius: 6,
-    color: '#ef4444', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+    flex: 1, padding: '4px 10px',
+    background: 'rgba(224, 108, 117, 0.12)',
+    border: '1px solid rgba(224, 108, 117, 0.2)',
+    borderRadius: 2,
+    color: 'var(--red)', fontSize: 11, fontWeight: 600,
+    fontFamily: 'var(--font)', cursor: 'pointer',
   },
   resolvedRow: {
-    display: 'flex', gap: 10, padding: '6px 0',
-    fontSize: 12, borderBottom: '1px solid #141420',
+    display: 'flex', gap: 10, padding: '4px 0',
+    fontSize: 12, borderBottom: '1px solid var(--border)',
   },
 };

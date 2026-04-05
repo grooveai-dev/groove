@@ -56,7 +56,7 @@ export class Rotator extends EventEmitter {
     }
   }
 
-  async rotate(agentId) {
+  async rotate(agentId, options = {}) {
     const { registry, processes, journalist } = this.daemon;
     const agent = registry.get(agentId);
     if (!agent) throw new Error(`Agent ${agentId} not found`);
@@ -72,7 +72,12 @@ export class Rotator extends EventEmitter {
 
     try {
       // 1. Generate handoff brief from Journalist
-      const brief = await journalist.generateHandoffBrief(agent);
+      let brief = await journalist.generateHandoffBrief(agent);
+
+      // Append additional prompt if provided (used by instruct endpoint)
+      if (options.additionalPrompt) {
+        brief = brief + '\n\n## User Instruction\n\n' + options.additionalPrompt;
+      }
 
       // 2. Record rotation history
       const record = {

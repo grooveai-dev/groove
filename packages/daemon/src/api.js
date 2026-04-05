@@ -64,11 +64,23 @@ export function createApi(app, daemon) {
     res.json(agent);
   });
 
-  // Kill an agent
+  // Kill an agent (add ?purge=true to also remove from registry)
   app.delete('/api/agents/:id', async (req, res) => {
     try {
-      await daemon.processes.kill(req.params.id);
-      res.json({ ok: true });
+      const agent = daemon.registry.get(req.params.id);
+      if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+      const isAlive = agent.status === 'running' || agent.status === 'starting';
+      if (isAlive) {
+        await daemon.processes.kill(req.params.id);
+      }
+
+      // Purge from registry if requested or if agent is dead
+      if (req.query.purge === 'true' || !isAlive) {
+        daemon.registry.remove(req.params.id);
+      }
+
+      res.json({ ok: true, purged: req.query.purge === 'true' || !isAlive });
     } catch (err) {
       res.status(400).json({ error: err.message });
     }
@@ -236,6 +248,58 @@ export function createApi(app, daemon) {
     try {
       const newAgent = await daemon.rotator.rotate(req.params.id);
       res.json(newAgent);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Instruct an agent (rotation with user message appended)
+  app.post('/api/agents/:id/instruct', async (req, res) => {
+    try {
+      const { message } = req.body;
+      if (!message || typeof message !== 'string' || !message.trim()) {
+        return res.status(400).json({ error: 'message is required' });
+      }
+      const agent = daemon.registry.get(req.params.id);
+      if (!agent) return res.status(404).json({ error: 'Agent not found' });
+      if (agent.status !== 'running' && agent.status !== 'starting') {
+        return res.status(400).json({ error: 'Agent is not running' });
+      }
+      const newAgent = await daemon.rotator.rotate(req.params.id, {
+        additionalPrompt: message.trim(),
+      });
+      res.json(newAgent);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Query an agent (headless one-shot, agent keeps running)
+  app.post('/api/agents/:id/query', async (req, res) => {
+    try {
+      const { message } = req.body;
+      if (!message || typeof message !== 'string' || !message.trim()) {
+        return res.status(400).json({ error: 'message is required' });
+      }
+      const agent = daemon.registry.get(req.params.id);
+      if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+      // Build context about the agent's work
+      const activity = daemon.registry.getActivity?.(agent.id) || [];
+      const recentActivity = activity.slice(-20).map((e) => e.text).join('\n');
+
+      const prompt = [
+        `You are answering a question about agent "${agent.name}" (role: ${agent.role}).`,
+        `This agent's file scope: ${(agent.scope || []).join(', ') || 'unrestricted'}`,
+        `Provider: ${agent.provider}, Tokens used: ${agent.tokensUsed || 0}`,
+        agent.prompt ? `Original task: ${agent.prompt}` : '',
+        recentActivity ? `\nRecent activity:\n${recentActivity}` : '',
+        `\nUser question: ${message.trim()}`,
+        '\nAnswer concisely based on the agent context above.',
+      ].filter(Boolean).join('\n');
+
+      const response = await daemon.journalist.callHeadless(prompt);
+      res.json({ response, agentId: agent.id, agentName: agent.name });
     } catch (err) {
       res.status(400).json({ error: err.message });
     }

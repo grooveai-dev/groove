@@ -67,7 +67,7 @@ function AgentTreeInner() {
         background: '#181c23',
         color: '#33afbc',
         border: 'none',
-        borderTop: '2px solid #33afbc',
+        borderTop: '1px solid #33afbc',
         borderRadius: 0,
         fontWeight: 700,
         fontSize: 9,

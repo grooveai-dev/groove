@@ -5,7 +5,7 @@ import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 
 const STATUS = {
-  running:   { color: '#98c379', label: 'LIVE',  bar: '#98c379' },
+  running:   { color: '#4ae168', label: 'LIVE',  bar: '#4ae168' },
   starting:  { color: '#e5c07b', label: 'INIT',  bar: '#e5c07b' },
   stopped:   { color: '#5c6370', label: 'STOP',  bar: '#5c6370' },
   crashed:   { color: '#e06c75', label: 'FAIL',  bar: '#e06c75' },
@@ -31,7 +31,7 @@ export default function AgentNode({ data }) {
     <div style={{
       background: '#1e222a',
       border: 'none',
-      borderTop: `2px solid ${sel ? '#33afbc' : s.color}`,
+      borderTop: `1px solid ${sel ? '#33afbc' : s.color}`,
       width: 160,
       cursor: 'pointer',
       opacity: alive ? 1 : 0.45,

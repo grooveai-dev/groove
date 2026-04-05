@@ -42,7 +42,9 @@
     "prepare": "npm install --workspaces --if-present && npm run build:gui || true",
     "prepublishOnly": "npm run build:gui"
   },
-  "files": [
-    "packages/"
+  "bundledDependencies": [
+    "@groove-ai/daemon",
+    "@groove-ai/cli",
+    "@groove-ai/gui"
   ]
 }

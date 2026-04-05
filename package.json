@@ -6,10 +6,10 @@
   "homepage": "https://grooveai.dev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/groove-ai/groove"
+    "url": "https://github.com/grooveai-dev/groove"
   },
   "bugs": {
-    "url": "https://github.com/groove-ai/groove/issues"
+    "url": "https://github.com/grooveai-dev/groove/issues"
   },
   "keywords": [
     "ai",
@@ -39,6 +39,7 @@
     "build": "npm run build -w packages/gui",
     "build:gui": "npm run build -w packages/gui",
     "test": "npm test -w packages/daemon",
+    "prepare": "npm install --workspaces --if-present && npm run build:gui || true",
     "prepublishOnly": "npm run build:gui"
   },
   "files": [

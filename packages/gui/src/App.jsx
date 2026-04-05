@@ -40,7 +40,7 @@ export default function App() {
       {/* Header */}
       <header style={styles.header}>
         <div style={styles.headerLeft}>
-          <img src="/favicon.png" alt="GROOVE" style={{ height: 18, width: 18, opacity: 0.9 }} />
+          <img src="/groove-logo.png" alt="GROOVE" style={{ height: 16, opacity: 0.85 }} />
           <div style={{
             width: 6, height: 6, borderRadius: '50%',
             background: connected ? 'var(--green)' : 'var(--red)',

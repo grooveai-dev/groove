@@ -177,7 +177,7 @@ For normal file edits within your scope, proceed without review.
         this.daemon.classifier.addEvent(agent.id, output);
 
         const updates = { lastActivity: new Date().toISOString() };
-        if (output.tokensUsed) {
+        if (output.tokensUsed !== undefined && output.tokensUsed > 0) {
           const current = registry.get(agent.id);
           if (current) updates.tokensUsed = current.tokensUsed + output.tokensUsed;
         }

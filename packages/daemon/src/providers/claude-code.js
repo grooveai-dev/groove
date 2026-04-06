@@ -143,8 +143,18 @@ export class ClaudeCodeProvider extends Provider {
       }
     }
 
-    // Return the most significant event, or null
-    return events.length > 0 ? events[events.length - 1] : null;
+    if (events.length === 0) return null;
+
+    // Merge events: accumulate tokens across all events in this chunk,
+    // but return the most significant event type (usage > result > activity)
+    const merged = events[events.length - 1];
+    let totalTokens = 0;
+    for (const e of events) {
+      if (e.tokensUsed > 0) totalTokens += e.tokensUsed;
+    }
+    if (totalTokens > 0) merged.tokensUsed = totalTokens;
+
+    return merged;
   }
 
   injectContext(agent, contextMarkdown) {

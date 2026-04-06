@@ -162,7 +162,7 @@ function AgentCard({ agent, total, color }) {
   return (
     <div style={s.agentCard}>
       <div style={s.agentCardRow}>
-        <span style={{ ...s.dot, background: statusColor, ...(alive ? { animation: 'pulse 2s infinite', boxShadow: `0 0 4px ${statusColor}` } : {}) }} />
+        <span style={{ ...s.dot, background: statusColor, ...(alive ? { animation: 'pulse 2s infinite' } : {}) }} />
         <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-bright)' }}>{agent.name}</span>
         <span style={{ fontSize: 9, color: 'var(--text-dim)' }}>{agent.role}</span>
         {agent.routingMode === 'auto' && <span style={s.tagAuto}>AUTO</span>}
@@ -357,14 +357,12 @@ function TelemetryChart({ tokenTimeline, agents }) {
       ctx.fillText(`${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`, x, h - 4);
     }
 
-    // Draw each agent as a filled area + line
+    // Draw each agent — thin flat lines, subtle fill, no neon/glow
     agentIds.forEach((id, idx) => {
       const pts = tokenTimeline[id] || [];
       if (pts.length < 2) return;
 
       const color = COLORS[idx % COLORS.length];
-      const agent = agents.find((a) => a.id === id);
-      const isRunning = agent?.status === 'running';
 
       // Map points to canvas coords
       const coords = pts.map((p) => ({
@@ -372,43 +370,33 @@ function TelemetryChart({ tokenTimeline, agents }) {
         y: padT + (1 - p.v / maxV) * chartH,
       }));
 
-      // Fill area
+      // Subtle fill area
       ctx.beginPath();
       ctx.moveTo(coords[0].x, padT + chartH);
       for (const c of coords) ctx.lineTo(c.x, c.y);
       ctx.lineTo(coords[coords.length - 1].x, padT + chartH);
       ctx.closePath();
       const grad = ctx.createLinearGradient(0, padT, 0, padT + chartH);
-      grad.addColorStop(0, color + '30');
-      grad.addColorStop(1, color + '05');
+      grad.addColorStop(0, color + '18');
+      grad.addColorStop(1, color + '03');
       ctx.fillStyle = grad;
       ctx.fill();
 
-      // Line
+      // Thin flat line — 1px, no shadow/glow
       ctx.beginPath();
       for (let i = 0; i < coords.length; i++) {
         i === 0 ? ctx.moveTo(coords[i].x, coords[i].y) : ctx.lineTo(coords[i].x, coords[i].y);
       }
       ctx.strokeStyle = color;
-      ctx.lineWidth = isRunning ? 2 : 1;
-      if (isRunning) {
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 6;
-      }
+      ctx.lineWidth = 1;
       ctx.stroke();
-      ctx.shadowBlur = 0;
 
-      // End dot
+      // Small end marker — flat, no glow
       const last = coords[coords.length - 1];
-      if (isRunning) {
-        ctx.beginPath();
-        ctx.arc(last.x, last.y, 3, 0, Math.PI * 2);
-        ctx.fillStyle = color;
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 8;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      }
+      ctx.beginPath();
+      ctx.arc(last.x, last.y, 2, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
     });
   }, [tokenTimeline, agents]);
 
@@ -484,14 +472,12 @@ const s = {
   },
   heroCenter: {
     flex: 2, background: 'var(--bg-surface)', border: '1px solid var(--border)',
-    borderTop: `2px solid ${GREEN}`,
+    borderTop: `1px solid ${GREEN}`,
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
     padding: '6px 12px',
-    boxShadow: `0 0 24px rgba(74, 225, 104, 0.08), inset 0 0 40px rgba(74, 225, 104, 0.03)`,
   },
   heroDollar: {
     fontSize: 26, fontWeight: 800, color: GREEN, lineHeight: 1,
-    textShadow: `0 0 16px rgba(74, 225, 104, 0.4)`,
   },
   heroCenterLabel: {
     fontSize: 7, fontWeight: 700, color: 'var(--text-dim)',

@@ -2,103 +2,114 @@
 
 **Orchestrate your AI coding agents. Stop losing context.**
 
-Coordinate multiple AI agents, eliminate cold-start, and save 40-60% on tokens.
+The open-source orchestration layer for AI coding tools. Spawn teams of agents, coordinate their work, and never lose context — with a full GUI dashboard.
 
 [![npm](https://img.shields.io/npm/v/groove-ai)](https://www.npmjs.com/package/groove-ai)
 [![License](https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue)](LICENSE)
 
----
-
-## Quick Start
-
 ```bash
 npm i -g groove-ai
 groove start
-groove spawn --role backend --prompt "Build the auth API"
-groove spawn --role frontend --prompt "Build the login page"
-groove agents
 ```
 
-## What GROOVE Does
+Open `http://localhost:31415` — your command center is ready.
 
-GROOVE is a **process manager** for AI coding agents. It does not wrap or proxy any AI API — it spawns actual AI tool processes (`claude`, `codex`, `aider`, etc.) and adds:
+---
 
-- **Team awareness** — agents know about each other and their file scopes
-- **File conflict prevention** — scoped ownership prevents agents from stepping on each other
-- **The Journalist** — background AI that synthesizes what agents are doing into living documentation
-- **Context rotation** — kills agents approaching context limits and respawns them with fresh context + handoff brief
-- **Adaptive thresholds** — learns the optimal rotation point per provider, per role
-- **Teams** — save/load agent configurations like Docker Compose for AI agents
-- **Model routing** — automatically routes tasks to the cheapest model that can handle them
+## The Problem
+
+AI coding agents waste your money and lose their way:
+
+- **Cold starts** — every new agent spends thousands of tokens re-learning your codebase
+- **Context degradation** — long sessions lead to hallucinations, circular refactors, lost direction
+- **No coordination** — multiple agents edit the same files, create conflicts, duplicate work
+- **Blind spending** — no visibility into token usage, no way to optimize costs
+
+## The Solution
+
+GROOVE sits between you and your AI coding agents. It doesn't replace them — it makes them work together.
+
+### Zero Cold-Start (The Journalist)
+
+A background AI continuously watches all agent activity and synthesizes it into a living project map. When any agent spawns or restarts, it reads one file and knows everything. No re-explaining your codebase. No wasted tokens on orientation.
+
+### Infinite Sessions (Context Rotation)
+
+Instead of letting agents fill their context window until they degrade, GROOVE detects quality decline — error spikes, circular refactors, file churn — and automatically rotates: kill the session, spawn fresh, feed it the Journalist's context. The agent picks up exactly where it left off with a clean window. No compaction. No drift. Works at any codebase scale.
+
+### AI Project Manager
+
+Agents in Auto mode knock on the PM before risky operations (creating files, deleting, modifying config). The PM reviews against the project plan and scope rules, then approves or rejects with reasoning. Full audit trail in the GUI.
+
+### Quick Launch
+
+Spawn a planner, describe your project. The planner writes a detailed plan and recommends a team. Click **Launch Team** — all agents spawn with proper roles, scopes, and prompts. One click from idea to a full team building your app.
+
+### Multi-Agent Coordination
+
+- **Introduction protocol** — every agent knows its teammates, their files, and their work
+- **Scope ownership** — agents stay in their lane (backend touches `src/api/**`, frontend owns `src/components/**`)
+- **Task negotiation** — duplicate roles get assigned non-overlapping work
+- **Knock protocol** — agents signal before shared/destructive actions
+
+## Works With Everything
+
+| Provider | Auth | Models |
+|----------|------|--------|
+| **Claude Code** | Subscription | Opus, Sonnet, Haiku |
+| **Codex** | API Key | o3, o4-mini |
+| **Gemini CLI** | API Key | 2.5 Pro, 2.5 Flash |
+| **Aider** | API Key | Any |
+| **Ollama** | Local | Any |
+
+GROOVE is a process manager — it spawns actual AI tool binaries. It never proxies API calls, never touches OAuth tokens, never impersonates any client. Your AI tools talk directly to their servers.
+
+Works in any terminal, any IDE, any OS. Technical and non-technical users alike.
+
+## The GUI
+
+Open `http://localhost:31415` after starting the daemon:
+
+- **Agent Tree** — visual node graph with Bezier spline connections, role badges, live status
+- **Chat** — instruct agents, query without disrupting, continue completed agents, streaming text
+- **Command Center** — gauge charts, live telemetry, token savings, model routing, adaptive thresholds
+- **Quick Launch** — planner recommends team, one-click to spawn all
+- **PM Review Log** — full audit trail of AI Project Manager decisions
+- **Team Management** — save, load, export, import agent configurations
+
+## Adaptive Model Routing
+
+GROOVE routes tasks to the cheapest model that can handle them. Planners get Opus (deep reasoning). Backends get Sonnet (balanced). Docs get Haiku (fast and cheap). The classifier learns from agent activity and adjusts over time.
+
+| Tier | Cost | Used For |
+|------|------|----------|
+| Heavy (Opus) | $0.045/1K | Planning, architecture, complex refactors |
+| Medium (Sonnet) | $0.009/1K | Backend, frontend, testing |
+| Light (Haiku) | $0.002/1K | Docs, synthesis, simple queries |
 
 ## Architecture
 
 ```
-┌─────────────┐  ┌─────────┐  ┌──────────────┐
-│  groove CLI  │  │   GUI   │  │ Agent Panes  │
-└──────┬──────┘  └────┬────┘  └──────┬───────┘
-       │              │              │
-       ▼              ▼              ▼
-  ┌────────────────────────────────────────┐
-  │           GROOVE DAEMON (:3141)         │
-  │                                        │
-  │  Registry · Introducer · Lock Manager  │
-  │  Journalist · Rotator · Supervisor     │
-  │  Classifier · Router · Teams           │
-  └───────────────────┬────────────────────┘
-                      │
-  ┌───────────────────▼────────────────────┐
-  │  Providers: Claude Code · Codex ·       │
-  │  Gemini · Aider · Ollama (local)       │
-  └────────────────────────────────────────┘
+         ┌─────────────────────────────────────────┐
+         │            GROOVE DAEMON (:31415)        │
+         │                                         │
+         │  Registry · Introducer · Lock Manager   │
+         │  Journalist · Rotator · Adaptive        │
+         │  Classifier · Router · PM · Teams       │
+         │                                         │
+         │  REST API · WebSocket · GUI Server       │
+         └─────────────────┬───────────────────────┘
+                           │
+    ┌──────────────────────▼──────────────────────┐
+    │  Claude Code · Codex · Gemini · Aider · Ollama  │
+    └─────────────────────────────────────────────┘
 ```
-
-## CLI Reference
-
-| Command | Description |
-|---------|-------------|
-| `groove start` | Start the daemon |
-| `groove spawn --role <role>` | Spawn an agent |
-| `groove agents` | List all agents |
-| `groove kill <id>` | Kill an agent |
-| `groove rotate <id>` | Rotate an agent (fresh context) |
-| `groove team save <name>` | Save current agents as a team |
-| `groove team load <name>` | Load and spawn a saved team |
-| `groove providers` | List available AI providers |
-| `groove set-key <provider> <key>` | Set API key |
-| `groove config show` | Show configuration |
-| `groove status` | Daemon status |
-| `groove nuke` | Kill everything |
-
-## GUI
-
-Open `http://localhost:3141` after starting the daemon. Features:
-
-- Agent tree visualization (React Flow)
-- Spawn modal with role presets and provider selection
-- Agent detail sidebar with activity log
-- Context usage bars per agent
-- Token dashboard with savings calculator
-- Journalist feed with live synthesis
-- Team management
-- Approval queue for out-of-scope access
-
-## Providers
-
-| Provider | Auth | Models | Hot-Swap |
-|----------|------|--------|----------|
-| Claude Code | Subscription | Opus, Sonnet, Haiku | Yes |
-| Codex | API Key | o3, o4-mini | No |
-| Gemini CLI | API Key | Pro, Flash | No |
-| Aider | API Key | Any | Yes |
-| Ollama | Local | Any | No |
-
-## Compliance
-
-GROOVE is a **process manager**, not a harness. It spawns actual AI tool binaries — it never touches OAuth tokens, never proxies API calls, and never impersonates any client.
 
 ## Links
 
 - **Website:** [grooveai.dev](https://grooveai.dev)
-- **Docs:** [docs.grooveai.dev](https://docs.grooveai.dev)
-- **License:** [FSL-1.1-Apache-2.0](LICENSE) (converts to Apache 2.0 after 2 years)
+- **Documentation:** [docs.grooveai.dev](https://docs.grooveai.dev)
+- **Changelog:** [docs.grooveai.dev/changelog](https://docs.grooveai.dev/changelog)
+- **GitHub:** [github.com/grooveai-dev/groove](https://github.com/grooveai-dev/groove)
+- **npm:** [npmjs.com/package/groove-ai](https://www.npmjs.com/package/groove-ai)
+- **License:** [FSL-1.1-Apache-2.0](LICENSE) — source-available, converts to Apache 2.0 after 2 years

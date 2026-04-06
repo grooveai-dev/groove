@@ -173,24 +173,25 @@ GROOVE is a process manager, NOT a harness. Hard rules:
 - **Website:** grooveai.dev
 - **Docs:** docs.grooveai.dev
 
-## Current Status (v0.2.0)
+## Current Status (v0.7.1)
 
-Major GUI overhaul complete. All core functionality working.
+Fully functional multi-agent orchestration system. Tested end-to-end: planner → Quick Launch → 4 agents → working app.
 
-**v0.2.0 changes:**
-- GUI redesigned: One Dark Pro theme, JetBrains Mono, terminal-native aesthetic
-- Agent Control Panel: 45% sidebar with Chat/Stats/Actions tabs per agent
-- Chat: instruct agents (rotation-based), query agents (headless, non-disruptive), respawn dead agents
-- Stats: live token heartbeat chart (canvas), activity sparkline, burn rate, context gauge
-- Actions: rotate, stop, delete, clone, change model, modify prompt
-- Nodes: NASA-style terminal readouts with status top-bars, heartbeat SVG, compact metrics
-- Spawn Panel: role presets (incl. Planner), permission levels (Always Ask/Auto/Full), provider connection with inline API key entry
-- Tab navigation: Agents/Tokens/Teams/Approvals as full-area views
-- Daemon: POST /api/agents/:id/instruct, POST /api/agents/:id/query, purge dead agents
-- Fix: Ctrl+C graceful shutdown, headless --verbose flag, fitView centering
+**Key capabilities:**
+- Quick Launch: planner recommends team, one-click spawns all agents
+- AI Project Manager: reviews risky operations in Auto permission mode
+- Chat continuation: reply to completed agents, streaming text, markdown rendering
+- Context chain: planner output flows automatically to builders
+- Journalist: zero cold-start, synthesis on completion, 40K char budget
+- Infinite Sessions: adaptive rotation, degradation detection (file churn, error trends)
+- Token tracking: wired end-to-end, savings data real
+- Unity-style nodes: rounded, Bezier spline connections, role badges
+- Command Center: gauge charts, live telemetry, persistent across tab switches
+- Coordination: knock protocol, task negotiation, memory containment
 
 **Next steps:**
-- Phase 5: Remote access (--host 0.0.0.0 + token URL for VPS/AWS users)
-- Resource monitoring and optimization testing
-- Fresh install flow testing from npm
-- Iterate on UX based on user testing
+- Dashboard polish (Grafana-level wow factor)
+- Monitor/QC agent mode (stay active, loop)
+- Remote access (--host 0.0.0.0 + token auth)
+- Semantic degradation detection
+- Distribution: demo video, HN launch, Twitter content

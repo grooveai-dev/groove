@@ -1,8 +1,9 @@
 {
   "name": "groove-ai",
-  "version": "0.7.1",
-  "description": "Agent orchestration layer for AI coding tools. Coordinate multiple AI agents, eliminate cold-start, save 40-60% on tokens.",
+  "version": "0.7.2",
+  "description": "Open-source agent orchestration layer for AI coding tools. GUI dashboard, multi-agent coordination, zero cold-start (Journalist), infinite sessions (adaptive context rotation), AI Project Manager, Quick Launch. Works with Claude Code, Codex, Gemini CLI, Aider, Ollama.",
   "license": "FSL-1.1-Apache-2.0",
+  "author": "Groove AI <hello@grooveai.dev> (https://grooveai.dev)",
   "homepage": "https://grooveai.dev",
   "repository": {
     "type": "git",
@@ -13,14 +14,29 @@
   },
   "keywords": [
     "ai",
-    "agent",
-    "orchestration",
-    "claude",
-    "codex",
-    "coding",
+    "ai-agent",
+    "ai-coding",
+    "agent-orchestration",
     "multi-agent",
-    "context",
-    "token"
+    "claude",
+    "claude-code",
+    "codex",
+    "gemini",
+    "aider",
+    "ollama",
+    "coding-assistant",
+    "developer-tools",
+    "devtools",
+    "context-window",
+    "token-savings",
+    "model-routing",
+    "orchestration",
+    "gui",
+    "dashboard",
+    "process-manager",
+    "llm",
+    "vscode",
+    "terminal"
   ],
   "bin": {
     "groove": "./packages/cli/bin/groove.js"

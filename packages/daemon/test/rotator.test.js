@@ -41,6 +41,11 @@ describe('Rotator', () => {
       router: {
         getMode() { return { mode: 'fixed', fixedModel: null, floorModel: null }; },
       },
+      tokens: {
+        recordRotation() {},
+        recordColdStartSkipped() {},
+        record() {},
+      },
       broadcast(msg) { broadcasts.push(msg); },
     };
 

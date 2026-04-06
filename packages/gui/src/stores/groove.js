@@ -81,10 +81,23 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'rotation:complete': {
           get().showStatus(`rotated ${msg.agentName} (saved ${msg.tokensSaved} tokens)`);
-          // Auto-update detail panel if the rotated agent was selected
           const panel = get().detailPanel;
           if (panel?.type === 'agent' && panel.agentId === msg.oldAgentId && msg.newAgentId) {
-            set({ detailPanel: { type: 'agent', agentId: msg.newAgentId } });
+            // Copy chat history and timeline BEFORE switching to new agent
+            // (this fires before the HTTP response in instructAgent, preventing empty chat)
+            set((s) => {
+              const chatHistory = { ...s.chatHistory };
+              const tokenTimeline = { ...s.tokenTimeline };
+              const oldChat = chatHistory[msg.oldAgentId] || [];
+              const oldTimeline = tokenTimeline[msg.oldAgentId] || [];
+              if (oldChat.length > 0) chatHistory[msg.newAgentId] = [...oldChat];
+              if (oldTimeline.length > 0) tokenTimeline[msg.newAgentId] = [...oldTimeline];
+              return {
+                chatHistory,
+                tokenTimeline,
+                detailPanel: { type: 'agent', agentId: msg.newAgentId },
+              };
+            });
           }
           break;
         }

@@ -4,14 +4,12 @@
 import { ClaudeCodeProvider } from './claude-code.js';
 import { CodexProvider } from './codex.js';
 import { GeminiProvider } from './gemini.js';
-import { AiderProvider } from './aider.js';
 import { OllamaProvider } from './ollama.js';
 
 const providers = {
   'claude-code': new ClaudeCodeProvider(),
   'codex': new CodexProvider(),
   'gemini': new GeminiProvider(),
-  'aider': new AiderProvider(),
   'ollama': new OllamaProvider(),
 };
 

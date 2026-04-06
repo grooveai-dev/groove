@@ -66,7 +66,7 @@ export function runFirstTimeSetup(grooveDir) {
   const providers = listProviders();
   const installed = providers.filter((p) => p.installed);
   if (installed.length > 0) {
-    const preferred = ['claude-code', 'codex', 'gemini', 'aider', 'ollama'];
+    const preferred = ['claude-code', 'codex', 'gemini', 'ollama'];
     const best = preferred.find((id) => installed.some((p) => p.id === id));
     if (best) config.defaultProvider = best;
   }

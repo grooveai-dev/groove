@@ -52,22 +52,15 @@ export class OllamaProvider extends Provider {
   }
 
   buildSpawnCommand(agent) {
-    // Ollama works best via Aider as a frontend
-    // aider --model ollama/<model> gives a full coding experience
     const model = agent.model || 'qwen2.5-coder:7b';
-
-    const args = [
-      '--model', `ollama/${model}`,
-      '--yes-always',
-      '--no-auto-commits',
-    ];
+    const args = ['run', model];
 
     if (agent.prompt) {
-      args.push('--message', agent.prompt);
+      args.push(agent.prompt);
     }
 
     return {
-      command: 'aider',
+      command: 'ollama',
       args,
       env: { OLLAMA_API_BASE: 'http://localhost:11434' },
     };

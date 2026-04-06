@@ -55,7 +55,7 @@ Each provider implements: `isInstalled()`, `buildSpawnCommand()`, `buildHeadless
 | Claude Code | `claude-code.js` | Subscription | Opus/Sonnet/Haiku | Yes |
 | Codex | `codex.js` | API Key | o3/o4-mini | No |
 | Gemini CLI | `gemini.js` | API Key | Pro/Flash | No |
-| Aider | `aider.js` | API Key | Any | Yes |
+
 | Ollama | `ollama.js` | Local | Any | No |
 
 ### Terminal Adapters (packages/daemon/src/terminal/)

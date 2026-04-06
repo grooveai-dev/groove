@@ -59,7 +59,7 @@ Spawn a planner, describe your project. The planner writes a detailed plan and r
 | **Claude Code** | Subscription | Opus, Sonnet, Haiku |
 | **Codex** | API Key | o3, o4-mini |
 | **Gemini CLI** | API Key | 2.5 Pro, 2.5 Flash |
-| **Aider** | API Key | Any |
+
 | **Ollama** | Local | Any |
 
 GROOVE is a process manager — it spawns actual AI tool binaries. It never proxies API calls, never touches OAuth tokens, never impersonates any client. Your AI tools talk directly to their servers.
@@ -101,7 +101,7 @@ GROOVE routes tasks to the cheapest model that can handle them. Planners get Opu
          └─────────────────┬───────────────────────┘
                            │
     ┌──────────────────────▼──────────────────────┐
-    │  Claude Code · Codex · Gemini · Aider · Ollama  │
+    │  Claude Code · Codex · Gemini · Ollama           │
     └─────────────────────────────────────────────┘
 ```
 

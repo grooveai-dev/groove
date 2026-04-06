@@ -1,7 +1,7 @@
 {
   "name": "groove-dev",
-  "version": "0.8.4",
-  "description": "Open-source agent orchestration layer for AI coding tools. GUI dashboard, multi-agent coordination, zero cold-start (Journalist), infinite sessions (adaptive context rotation), AI Project Manager, Quick Launch. Works with Claude Code, Codex, Gemini CLI, Aider, Ollama.",
+  "version": "0.9.0",
+  "description": "Open-source agent orchestration layer for AI coding tools. GUI dashboard, multi-agent coordination, zero cold-start (Journalist), infinite sessions (adaptive context rotation), AI Project Manager, Quick Launch. Works with Claude Code, Codex, Gemini CLI, Ollama.",
   "license": "FSL-1.1-Apache-2.0",
   "author": "Groove Dev <hello@groovedev.ai> (https://groovedev.ai)",
   "homepage": "https://groovedev.ai",
@@ -22,7 +22,7 @@
     "claude-code",
     "codex",
     "gemini",
-    "aider",
+
     "ollama",
     "coding-assistant",
     "developer-tools",

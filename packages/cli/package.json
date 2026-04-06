@@ -1,6 +1,6 @@
 {
   "name": "@groove-ai/cli",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "GROOVE CLI — manage AI coding agents from your terminal",
   "license": "FSL-1.1-Apache-2.0",
   "type": "module",

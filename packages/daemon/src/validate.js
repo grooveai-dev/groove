@@ -53,6 +53,10 @@ export function validateAgentConfig(config) {
     }
   }
 
+  // Validate permission level
+  const validPermissions = ['auto', 'full'];
+  const permission = validPermissions.includes(config.permission) ? config.permission : 'full';
+
   // Return sanitized config (only known fields)
   return {
     role: config.role,
@@ -62,6 +66,7 @@ export function validateAgentConfig(config) {
     provider: config.provider || 'claude-code',
     model: typeof config.model === 'string' ? config.model : null,
     workingDir: typeof config.workingDir === 'string' ? config.workingDir : undefined,
+    permission,
   };
 }
 

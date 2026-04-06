@@ -117,6 +117,7 @@ export class Rotator extends EventEmitter {
         provider: agent.provider,
         model: respawnModel,
         prompt: brief,
+        permission: agent.permission || 'full',
         workingDir: agent.workingDir,
         name: agent.name, // Keep the same name for continuity
       });

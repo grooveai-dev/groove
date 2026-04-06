@@ -20,6 +20,7 @@ export class Registry extends EventEmitter {
       provider: config.provider || 'claude-code',
       model: config.model || null,
       prompt: config.prompt || '',
+      permission: config.permission || 'full',
       workingDir: config.workingDir || process.cwd(),
       status: 'starting',
       pid: null,

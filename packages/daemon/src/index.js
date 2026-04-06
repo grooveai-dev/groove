@@ -140,19 +140,29 @@ export class Daemon {
       try { unlinkSync(this.pidFile); } catch { /* ignore */ }
     }
 
-    // Check if port is in use by something else
-    const portFree = await new Promise((res) => {
+    // Auto-find an open port if the default is taken
+    const checkPort = (port) => new Promise((res) => {
       const tester = createNetServer();
       tester.once('error', () => res(false));
       tester.once('listening', () => { tester.close(); res(true); });
-      tester.listen(this.port, '127.0.0.1');
+      tester.listen(port, '127.0.0.1');
     }).catch(() => false);
 
-    if (!portFree) {
-      console.error(`\n  Port ${this.port} is in use by another application.`);
-      console.error(`  Try a different port: groove start --port 31416`);
-      console.error(`  Or stop whatever is using port ${this.port}\n`);
-      process.exit(1);
+    if (!(await checkPort(this.port))) {
+      const originalPort = this.port;
+      // Try next 10 ports
+      let found = false;
+      for (let i = 1; i <= 10; i++) {
+        if (await checkPort(this.port + i)) {
+          this.port = this.port + i;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        console.error(`\n  Ports ${originalPort}-${originalPort + 10} are all in use. Free one and try again.\n`);
+        process.exit(1);
+      }
     }
 
     // Restore persisted state
@@ -162,6 +172,8 @@ export class Daemon {
     return new Promise((resolvePromise) => {
       this.server.listen(this.port, '127.0.0.1', () => {
         writeFileSync(this.pidFile, String(process.pid));
+        // Write actual port so CLI can find us (supports auto-port rotation)
+        writeFileSync(resolve(this.grooveDir, 'daemon.port'), String(this.port));
 
         printWelcome(this.port);
 

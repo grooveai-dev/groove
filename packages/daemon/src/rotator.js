@@ -127,6 +127,11 @@ export class Rotator extends EventEmitter {
         registry.update(newAgent.id, { tokensUsed: agent.tokensUsed });
       }
 
+      // Record rotation savings in token tracker
+      this.daemon.tokens.recordRotation(agent.id, agent.tokensUsed);
+      // Each rotation is a cold-start that the Journalist's handoff brief skips
+      this.daemon.tokens.recordColdStartSkipped();
+
       record.newAgentId = newAgent.id;
       record.newTokens = 0;
       this.rotationHistory.push(record);

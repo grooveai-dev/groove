@@ -20,6 +20,7 @@ export const useGrooveStore = create((set, get) => ({
   commandHistory: [],          // last 50 commands for command bar
   chatHistory: {},              // { [agentId]: [{ from, text, timestamp, isQuery }] }
   tokenTimeline: {},            // { [agentId]: [{ t: timestamp, v: tokensUsed }] }
+  dashTelemetry: {},            // { [agentId]: [{ t, v, name }] } — persists across tab switches
 
   // Connection
   connect() {

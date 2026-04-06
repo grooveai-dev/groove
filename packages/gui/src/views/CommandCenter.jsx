@@ -15,8 +15,8 @@ const COST_PER_1K = { heavy: 0.045, medium: 0.009, light: 0.0024 };
 
 export default function CommandCenter() {
   const [data, setData] = useState(null);
-  const [telemetry, setTelemetry] = useState({}); // { agentId: [{t, v}] }
   const agents = useGrooveStore((s) => s.agents);
+  const dashTelemetry = useGrooveStore((s) => s.dashTelemetry);
 
   useEffect(() => {
     fetchDashboard();
@@ -30,21 +30,20 @@ export default function CommandCenter() {
       const d = await res.json();
       setData(d);
 
-      // Build telemetry timeline from API polls — reliable source of truth
-      setTelemetry((prev) => {
-        const next = { ...prev };
+      // Build telemetry in the Zustand store so it persists across tab switches
+      useGrooveStore.setState((s) => {
+        const telem = { ...s.dashTelemetry };
         const now = Date.now();
         for (const agent of d.agents.breakdown) {
-          if (!next[agent.id]) next[agent.id] = [];
-          const arr = next[agent.id];
+          if (!telem[agent.id]) telem[agent.id] = [];
+          const arr = telem[agent.id];
           const last = arr[arr.length - 1];
-          // Record if value changed or 10s elapsed (heartbeat)
           if (!last || agent.tokens !== last.v || now - last.t > 10000) {
             arr.push({ t: now, v: agent.tokens || 0, name: agent.name });
-            if (arr.length > 200) next[agent.id] = arr.slice(-200);
+            if (arr.length > 200) telem[agent.id] = arr.slice(-200);
           }
         }
-        return next;
+        return { dashTelemetry: telem };
       });
     } catch { /* ignore */ }
   }
@@ -61,9 +60,9 @@ export default function CommandCenter() {
   const { tokens, routing, rotation, adaptive, journalist, uptime } = data;
   const agentBreakdown = data.agents.breakdown;
   const estDollarSaved = (tokens.savings.total / 1000) * COST_PER_1K.medium;
-  const runningAgents = agentBreakdown.filter((a) => a.status === 'running');
-  const avgCtx = runningAgents.length > 0
-    ? Math.round(runningAgents.reduce((s, a) => s + (a.contextUsage || 0), 0) / runningAgents.length * 100)
+  // Show max context reached across ALL agents (historical peak, not just running)
+  const maxCtx = agentBreakdown.length > 0
+    ? Math.round(Math.max(...agentBreakdown.map((a) => a.contextUsage || 0)) * 100)
     : 0;
 
   return (
@@ -73,7 +72,7 @@ export default function CommandCenter() {
       <div style={s.heroRow}>
         <div style={s.heroGaugeGroup}>
           <GaugeChart value={tokens.savings.percentage || 0} max={100} label="EFFICIENCY" unit="%" color={GREEN} />
-          <GaugeChart value={avgCtx} max={100} label="AVG CONTEXT" unit="%" color={avgCtx > 80 ? RED : avgCtx > 60 ? AMBER : ACCENT} />
+          <GaugeChart value={maxCtx} max={100} label="PEAK CONTEXT" unit="%" color={maxCtx > 80 ? RED : maxCtx > 60 ? AMBER : ACCENT} />
         </div>
         <div style={s.heroCenter}>
           <div style={s.heroDollar}>{estDollarSaved > 0 ? `$${estDollarSaved.toFixed(2)}` : '$0.00'}</div>
@@ -102,7 +101,7 @@ export default function CommandCenter() {
             ))}
           </span>
         </div>
-        <TelemetryChart tokenTimeline={telemetry} agents={agents} />
+        <TelemetryChart tokenTimeline={dashTelemetry} agents={agents} />
       </div>
 
       {/* ── BOTTOM ROW — Three panels ── */}
@@ -360,10 +359,8 @@ function TelemetryChart({ tokenTimeline, agents }) {
       ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
     }
 
-    // Gather all agent timelines
-    const agentIds = Object.keys(tokenTimeline).filter((id) =>
-      agents.some((a) => a.id === id)
-    );
+    // Gather ALL agent timelines — including completed agents (historical data)
+    const agentIds = Object.keys(tokenTimeline);
 
     if (agentIds.length === 0) {
       ctx.fillStyle = '#3e4451';

@@ -196,7 +196,11 @@ For normal file edits within your scope, proceed without review.
         const updates = { lastActivity: new Date().toISOString() };
         if (output.tokensUsed !== undefined && output.tokensUsed > 0) {
           const current = registry.get(agent.id);
-          if (current) updates.tokensUsed = current.tokensUsed + output.tokensUsed;
+          if (current) {
+            updates.tokensUsed = current.tokensUsed + output.tokensUsed;
+            // Feed token tracker for savings calculations
+            this.daemon.tokens.record(agent.id, output.tokensUsed);
+          }
         }
         if (output.contextUsage !== undefined) {
           updates.contextUsage = output.contextUsage;

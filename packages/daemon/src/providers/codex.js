@@ -32,7 +32,8 @@ export class CodexProvider extends Provider {
   }
 
   buildSpawnCommand(agent) {
-    const args = [];
+    // Use 'codex exec' for non-interactive (headless) operation
+    const args = ['exec'];
 
     if (agent.model) args.push('--model', agent.model);
 

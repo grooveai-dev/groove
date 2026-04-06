@@ -69,7 +69,7 @@ function AgentTreeInner() {
         background: '#252a33',
         color: '#33afbc',
         border: 'none',
-        borderTop: '2px solid #33afbc',
+        borderTop: '1px solid #33afbc',
         borderRadius: 0,
         fontWeight: 800,
         fontSize: 10,
@@ -90,7 +90,7 @@ function AgentTreeInner() {
         type: 'smoothstep',
         style: {
           stroke: isRunning ? '#33afbc' : '#2c313a',
-          strokeWidth: isRunning ? 1.5 : 1,
+          strokeWidth: 1,
         },
         animated: isRunning,
       };

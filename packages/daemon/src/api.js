@@ -341,6 +341,27 @@ export function createApi(app, daemon) {
     res.json(daemon.adaptive.getAllProfiles());
   });
 
+  // --- Codebase Indexer ---
+
+  app.get('/api/indexer', (req, res) => {
+    res.json(daemon.indexer.getStatus());
+  });
+
+  app.get('/api/indexer/workspaces', (req, res) => {
+    res.json({
+      workspaces: daemon.indexer.getWorkspaces(),
+    });
+  });
+
+  app.post('/api/indexer/rescan', (req, res) => {
+    try {
+      daemon.indexer.scan();
+      res.json({ ok: true, ...daemon.indexer.getStatus() });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // --- Project Manager (AI Review Gate) ---
 
   // Agent knocks on PM before risky operations (Auto permission mode)
@@ -401,6 +422,7 @@ export function createApi(app, daemon) {
           provider: config.provider || 'claude-code',
           model: config.model || 'auto',
           permission: config.permission || 'auto',
+          workingDir: config.workingDir || undefined,
         });
         const agent = await daemon.processes.spawn(validated);
         spawned.push({ id: agent.id, name: agent.name, role: agent.role });

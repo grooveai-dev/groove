@@ -224,6 +224,8 @@ export class Journalist {
   }
 
   buildSynthesisPrompt(agents, filteredLogs) {
+    const hasWorkspaces = agents.some((a) => a.workingDir);
+
     const parts = [
       'You are The Journalist for GROOVE, an agent orchestration system.',
       'Analyze the following agent activity logs and produce a synthesis.',
@@ -231,7 +233,9 @@ export class Journalist {
       'Output EXACTLY this format (use these exact headers):',
       '',
       '## Project Map',
-      '(What has been built/changed, organized by area. Be specific about files and functions.)',
+      hasWorkspaces
+        ? '(What has been built/changed, organized by workspace/directory. Use ### subheadings for each workspace.)'
+        : '(What has been built/changed, organized by area. Be specific about files and functions.)',
       '',
       '## Decisions',
       '(Key architectural and implementation decisions agents made, with reasoning.)',
@@ -243,20 +247,31 @@ export class Journalist {
       '',
     ];
 
-    // Add agent logs, budget-trimmed
+    // Group agents by workspace for clarity
+    const grouped = this.groupByWorkspace(agents);
     let totalChars = 0;
-    for (const [agentId, { agent, entries }] of Object.entries(filteredLogs)) {
-      if (entries.length === 0) continue;
 
-      parts.push(`### Agent: ${agent.name} (${agent.role}, scope: ${agent.scope?.join(', ') || 'unrestricted'})`);
-
-      for (const entry of entries.slice(-100)) { // Last 100 events per agent
-        const line = this.formatEntry(entry);
-        if (totalChars + line.length > MAX_LOG_CHARS) break;
-        parts.push(line);
-        totalChars += line.length;
+    for (const [workspace, wsAgents] of grouped) {
+      if (hasWorkspaces) {
+        parts.push(`--- Workspace: ${workspace} ---`);
+        parts.push('');
       }
-      parts.push('');
+
+      for (const agent of wsAgents) {
+        const log = filteredLogs[agent.id];
+        if (!log || log.entries.length === 0) continue;
+
+        const dir = agent.workingDir ? `, dir: ${agent.workingDir}` : '';
+        parts.push(`### Agent: ${agent.name} (${agent.role}${dir}, scope: ${agent.scope?.join(', ') || 'unrestricted'})`);
+
+        for (const entry of log.entries.slice(-100)) {
+          const line = this.formatEntry(entry);
+          if (totalChars + line.length > MAX_LOG_CHARS) break;
+          parts.push(line);
+          totalChars += line.length;
+        }
+        parts.push('');
+      }
     }
 
     return parts.join('\n');
@@ -337,66 +352,94 @@ export class Journalist {
   // --- Fallback structural summary (no AI) ---
 
   buildStructuralSummary(agents, filteredLogs) {
-    const mapParts = [];
     const decisions = [];
     const summaryParts = [];
+    const grouped = this.groupByWorkspace(agents);
+    const workspaceSections = {};
 
-    for (const [agentId, { agent, entries }] of Object.entries(filteredLogs)) {
-      const tools = entries.filter((e) => e.type === 'tool');
-      const errors = entries.filter((e) => e.type === 'error');
-      const writes = tools.filter((t) => t.tool === 'Write' || t.tool === 'Edit');
-      const reads = tools.filter((t) => t.tool === 'Read');
+    for (const [workspace, wsAgents] of grouped) {
+      const mapParts = [];
 
-      mapParts.push(`### ${agent.name} (${agent.role})`);
-      if (writes.length > 0) {
-        mapParts.push(`Files modified:`);
-        const files = [...new Set(writes.map((w) => w.input).filter(Boolean))];
-        files.forEach((f) => mapParts.push(`- ${f}`));
-      }
-      if (reads.length > 0) {
-        const files = [...new Set(reads.map((r) => r.input).filter(Boolean))];
-        mapParts.push(`Files read: ${files.slice(0, 10).join(', ')}`);
-      }
-      if (errors.length > 0) {
-        mapParts.push(`Errors: ${errors.length}`);
-      }
-      mapParts.push(`Activity: ${entries.length} events, ${tools.length} tool calls`);
-      mapParts.push('');
+      for (const agent of wsAgents) {
+        const log = filteredLogs[agent.id];
+        if (!log) continue;
+        const entries = log.entries;
+        const tools = entries.filter((e) => e.type === 'tool');
+        const errors = entries.filter((e) => e.type === 'error');
+        const writes = tools.filter((t) => t.tool === 'Write' || t.tool === 'Edit');
+        const reads = tools.filter((t) => t.tool === 'Read');
 
-      summaryParts.push(`${agent.name}: ${tools.length} tool calls, ${writes.length} writes`);
+        mapParts.push(`### ${agent.name} (${agent.role})`);
+        if (writes.length > 0) {
+          mapParts.push(`Files modified:`);
+          const files = [...new Set(writes.map((w) => w.input).filter(Boolean))];
+          files.forEach((f) => mapParts.push(`- ${f}`));
+        }
+        if (reads.length > 0) {
+          const files = [...new Set(reads.map((r) => r.input).filter(Boolean))];
+          mapParts.push(`Files read: ${files.slice(0, 10).join(', ')}`);
+        }
+        if (errors.length > 0) {
+          mapParts.push(`Errors: ${errors.length}`);
+        }
+        mapParts.push(`Activity: ${entries.length} events, ${tools.length} tool calls`);
+        mapParts.push('');
 
-      // Extract decisions from thinking entries
-      const thoughts = entries.filter((e) => e.type === 'thinking');
-      for (const t of thoughts.slice(-3)) {
-        if (t.text.length > 100) {
-          decisions.push(`- **${agent.name}**: ${t.text.slice(0, 200)}`);
+        summaryParts.push(`${agent.name}: ${tools.length} tool calls, ${writes.length} writes`);
+
+        const thoughts = entries.filter((e) => e.type === 'thinking');
+        for (const t of thoughts.slice(-3)) {
+          if (t.text.length > 100) {
+            decisions.push(`- **${agent.name}**: ${t.text.slice(0, 200)}`);
+          }
         }
       }
+
+      workspaceSections[workspace] = mapParts.join('\n');
     }
 
     return {
-      projectMap: this.buildProjectMapMd(agents, mapParts.join('\n')),
+      projectMap: this.buildProjectMapMd(agents, workspaceSections),
       decisions: decisions.join('\n'),
       summary: summaryParts.join('. ') || 'No activity.',
     };
   }
 
   buildProjectMapMd(agents, content) {
-    return [
+    const hasWorkspaces = agents.some((a) => a.workingDir);
+
+    const lines = [
       `# GROOVE Project Map`,
       ``,
       `*Auto-generated by The Journalist. Cycle ${this.cycleCount}. Updated: ${new Date().toISOString()}*`,
       ``,
       `## Active Agents`,
       ``,
-      ...agents.map((a) =>
-        `- **${a.name}** (${a.role}) — ${a.provider} — ${a.scope?.join(', ') || 'unrestricted'} — tokens: ${a.tokensUsed}`
-      ),
+      ...agents.map((a) => {
+        const dir = a.workingDir ? ` — dir: ${a.workingDir}` : '';
+        return `- **${a.name}** (${a.role}) — ${a.provider}${dir} — ${a.scope?.join(', ') || 'unrestricted'} — tokens: ${a.tokensUsed}`;
+      }),
       ``,
-      `## Activity`,
-      ``,
-      content,
-    ].join('\n');
+    ];
+
+    // Content can be a string (from AI synthesis) or an object of workspace sections (from structural)
+    if (typeof content === 'string') {
+      lines.push(`## Activity`, ``, content);
+    } else {
+      // Workspace-sectioned content: { workspaceName: markdownContent }
+      const entries = Object.entries(content);
+      if (entries.length === 1 && entries[0][0] === 'project root') {
+        // Single workspace = flat layout (backwards compat)
+        lines.push(`## Activity`, ``, entries[0][1]);
+      } else {
+        for (const [workspace, sectionContent] of entries) {
+          if (!sectionContent.trim()) continue;
+          lines.push(`## ${workspace}`, ``, sectionContent);
+        }
+      }
+    }
+
+    return lines.join('\n');
   }
 
   // --- File outputs ---
@@ -459,9 +502,12 @@ export class Journalist {
     const agentLog = filteredLogs[agent.id];
     const entries = agentLog?.entries || [];
 
-    // Get current project map for context
+    // Get current project map — scoped to agent's workspace if applicable
     const mapPath = resolve(this.daemon.projectDir, 'GROOVE_PROJECT_MAP.md');
-    const projectMap = existsSync(mapPath) ? readFileSync(mapPath, 'utf8') : '';
+    const fullMap = existsSync(mapPath) ? readFileSync(mapPath, 'utf8') : '';
+    const projectMap = agent.workingDir
+      ? this.extractWorkspaceSection(fullMap, agent.workingDir)
+      : fullMap;
 
     // Build a focused handoff brief
     const toolSummary = entries
@@ -492,6 +538,7 @@ export class Journalist {
       `- Role: ${agent.role}`,
       `- Scope: ${agent.scope?.join(', ') || 'unrestricted'}`,
       `- Provider: ${agent.provider}`,
+      agent.workingDir ? `- Working directory: ${agent.workingDir}` : '',
       ``,
       `## Previous Session`,
       `- Tokens used: ${agent.tokensUsed}`,
@@ -508,8 +555,50 @@ export class Journalist {
       ``,
       `Continue the work from where the previous session left off.`,
       `Review AGENTS_REGISTRY.md for team awareness.`,
+      agent.workingDir ? `Stay within your working directory: ${agent.workingDir}` : '',
       agent.prompt ? `\nOriginal task: ${agent.prompt}` : '',
     ].filter(Boolean).join('\n');
+  }
+
+  // --- Workspace Grouping ---
+
+  /**
+   * Group agents by workingDir. Returns a Map of workspace → agents[].
+   * Agents with no workingDir go under "project root".
+   */
+  groupByWorkspace(agents) {
+    const groups = new Map();
+    for (const agent of agents) {
+      const key = agent.workingDir || 'project root';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(agent);
+    }
+    return groups;
+  }
+
+  /**
+   * Extract the workspace-specific section from a project map for handoff briefs.
+   * Returns the full map if no workspace match or no workspace sections.
+   */
+  extractWorkspaceSection(projectMap, workingDir) {
+    if (!workingDir || !projectMap) return projectMap;
+
+    // Try to find a section header matching this workspace
+    // Looks for "## packages/frontend" or "## workspace-name" patterns
+    const sectionPattern = new RegExp(
+      `^## ${workingDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b[^\\n]*\\n([\\s\\S]*?)(?=^## |$)`,
+      'm'
+    );
+    const match = projectMap.match(sectionPattern);
+    if (match) {
+      // Include the agents header + the matched workspace section
+      const agentsSection = projectMap.match(/^# GROOVE Project Map[\s\S]*?(?=^## (?!Active))/m);
+      const header = agentsSection ? agentsSection[0] : '';
+      return header + `## ${workingDir}\n` + match[1];
+    }
+
+    // No workspace section found — return full map (truncated)
+    return projectMap;
   }
 
   // --- Agent File Tracking ---

@@ -34,18 +34,29 @@ export default function SpawnPanel() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [workingDir, setWorkingDir] = useState('');
+  const [workspaces, setWorkspaces] = useState([]);
   const [connectingProvider, setConnectingProvider] = useState(null);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [keySaving, setKeySaving] = useState(false);
 
   useEffect(() => {
     fetchProviders();
+    fetchWorkspaces();
   }, []);
 
   async function fetchProviders() {
     try {
       const res = await fetch('/api/providers');
       setProviderList(await res.json());
+    } catch { /* ignore */ }
+  }
+
+  async function fetchWorkspaces() {
+    try {
+      const res = await fetch('/api/indexer/workspaces');
+      const data = await res.json();
+      setWorkspaces(data.workspaces || []);
     } catch { /* ignore */ }
   }
 
@@ -113,6 +124,7 @@ export default function SpawnPanel() {
         model: model || 'auto',
         provider,
         permission,
+        ...(workingDir.trim() ? { workingDir: workingDir.trim() } : {}),
       });
       closeDetail();
     } catch (err) {
@@ -231,6 +243,36 @@ export default function SpawnPanel() {
 
         {showAdvanced && (
           <>
+            {/* Working directory */}
+            <div style={styles.label}>WORKING DIRECTORY</div>
+            <input
+              style={styles.input}
+              placeholder="e.g. packages/frontend (default: project root)"
+              value={workingDir}
+              onChange={(e) => setWorkingDir(e.target.value)}
+            />
+            <div style={styles.hint}>
+              Relative path — agent spawns here and only sees this subtree
+            </div>
+            {workspaces.length > 0 && (
+              <div style={styles.wsRow}>
+                {workspaces.map((ws) => (
+                  <button
+                    key={ws.path}
+                    type="button"
+                    onClick={() => setWorkingDir(ws.path)}
+                    style={{
+                      ...styles.wsBtn,
+                      ...(workingDir === ws.path ? { borderColor: 'var(--accent)', color: 'var(--text-bright)' } : {}),
+                    }}
+                    title={`${ws.name} (${ws.files} files)`}
+                  >
+                    {ws.path}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Provider selector with connection flow */}
             <div style={styles.label}>PROVIDER</div>
             {providerList.map((p) => {
@@ -500,6 +542,16 @@ const styles = {
   },
   hint: {
     fontSize: 10, color: 'var(--text-muted)', marginTop: 3,
+  },
+  wsRow: {
+    display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6,
+  },
+  wsBtn: {
+    background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    borderRadius: 2, padding: '3px 8px',
+    color: 'var(--text-dim)', fontSize: 10, cursor: 'pointer',
+    fontFamily: 'var(--font)',
+    transition: 'color 0.1s, border-color 0.1s',
   },
   error: {
     color: 'var(--red)', fontSize: 11, marginTop: 8,

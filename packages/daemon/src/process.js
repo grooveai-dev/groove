@@ -22,11 +22,12 @@ After completing your plan, you MUST do two things:
 2. Save a machine-readable team config to .groove/recommended-team.json using this EXACT format:
 [
   { "role": "fullstack", "scope": [], "prompt": "Set up project infrastructure: package.json, tsconfig, vite config, dependencies. Once all other agents finish, audit and QC their work, fix any issues, then launch the dev server. Output the localhost URL where the app can be accessed." },
-  { "role": "backend", "scope": ["src/api/**", "src/server/**", "src/db/**", "src/lib/**"], "prompt": "Build the backend: [specific tasks from your plan]" },
-  { "role": "frontend", "scope": ["src/components/**", "src/views/**", "src/pages/**", "src/styles/**"], "prompt": "Build the frontend: [specific tasks from your plan]" }
+  { "role": "backend", "scope": ["src/api/**", "src/server/**", "src/db/**", "src/lib/**"], "workingDir": "packages/backend", "prompt": "Build the backend: [specific tasks from your plan]" },
+  { "role": "frontend", "scope": ["src/components/**", "src/views/**", "src/pages/**", "src/styles/**"], "workingDir": "packages/frontend", "prompt": "Build the frontend: [specific tasks from your plan]" }
 ]
 
 Include only the agents needed. Set appropriate scopes for each role. Write detailed prompts based on your plan so each agent knows exactly what to build.
+If the project is a monorepo or has distinct subdirectories (e.g. packages/, apps/), set "workingDir" to the relative path for each agent so it spawns inside its subdirectory. Omit workingDir for agents that need full project access (like fullstack or planner).
 
 Always include a fullstack agent. Its job: set up infrastructure first, then after all other agents finish, audit their work, fix issues, build the project, launch the dev server, and output the localhost URL so the user can immediately see the result. Include testing/devops only if the project needs them.
 

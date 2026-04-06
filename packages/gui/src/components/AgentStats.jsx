@@ -61,6 +61,7 @@ export default function AgentStats({ agent }) {
           <InfoRow label="Role" value={agent.role} />
           <InfoRow label="Provider" value={agent.provider} />
           <InfoRow label="Model" value={agent.model || 'default'} />
+          {agent.workingDir && <InfoRow label="Directory" value={agent.workingDir} />}
           <InfoRow label="Scope" value={(agent.scope || []).join(', ') || 'unrestricted'} />
           <InfoRow label="Spawned" value={agent.spawnedAt ? new Date(agent.spawnedAt).toLocaleTimeString() : '-'} />
           <InfoRow label="Last Active" value={agent.lastActivity ? new Date(agent.lastActivity).toLocaleTimeString() : '-'} />

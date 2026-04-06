@@ -23,6 +23,7 @@ import { CredentialStore } from './credentials.js';
 import { TaskClassifier } from './classifier.js';
 import { ModelRouter } from './router.js';
 import { ProjectManager } from './pm.js';
+import { CodebaseIndexer } from './indexer.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 
 const DEFAULT_PORT = 31415;
@@ -69,6 +70,7 @@ export class Daemon {
     this.classifier = new TaskClassifier();
     this.router = new ModelRouter(this);
     this.pm = new ProjectManager(this);
+    this.indexer = new CodebaseIndexer(this);
 
     // HTTP + WebSocket server
     this.app = express();
@@ -180,6 +182,9 @@ export class Daemon {
         // Start background services
         this.journalist.start();
         this.rotator.start();
+
+        // Scan codebase for workspace/structure awareness
+        this.indexer.scan();
 
         resolvePromise(this);
       });

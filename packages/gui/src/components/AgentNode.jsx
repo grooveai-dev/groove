@@ -35,10 +35,12 @@ export default function AgentNode({ data }) {
     ? data.tokensUsed > 999 ? `${(data.tokensUsed / 1000).toFixed(1)}k` : `${data.tokensUsed}`
     : '0';
 
-  // Get scope summary for activity text
-  const activity = data.scope?.length > 0
-    ? data.scope[0].replace(/\/\*\*$/, '').replace(/^src\//, '')
-    : data.role;
+  // Get scope summary for activity text — prefer workingDir if set
+  const activity = data.workingDir
+    ? data.workingDir.replace(/^\.\//, '')
+    : data.scope?.length > 0
+      ? data.scope[0].replace(/\/\*\*$/, '').replace(/^src\//, '')
+      : data.role;
 
   return (
     <div style={{

@@ -11,9 +11,9 @@ GROOVE is a lightweight, open-source agent orchestration layer for AI coding too
 ```
 groove/
 ├── packages/
-│   ├── daemon/     — Node.js daemon (port 3141) — the brain
+│   ├── daemon/     — Node.js daemon (port 31415) — the brain
 │   ├── cli/        — `groove` CLI commands (17 commands)
-│   └── gui/        — React + Vite GUI (served by daemon on :3141)
+│   └── gui/        — React + Vite GUI (served by daemon on :31415)
 ├── CLAUDE.md       — this file
 ├── README.md       — public docs
 └── LICENSE         — FSL-1.1-Apache-2.0
@@ -107,7 +107,7 @@ groove reject <id>        — reject a request
 
 ## API Endpoints
 
-All endpoints on `http://localhost:3141/api/`. CORS restricted to localhost.
+All endpoints on `http://localhost:31415/api/`. CORS restricted to localhost.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -126,7 +126,7 @@ All endpoints on `http://localhost:3141/api/`. CORS restricted to localhost.
 
 ## GUI (packages/gui/)
 
-React app served by daemon at `http://localhost:3141`:
+React app served by daemon at `http://localhost:31415`:
 - **AgentTree** — React Flow visualization, click-to-select, animated edges for running agents
 - **SpawnModal** — role presets, dynamic provider/model selector
 - **AgentDetail** — sidebar with info, activity log, context bar, rotate/kill buttons
@@ -153,7 +153,7 @@ React app served by daemon at `http://localhost:3141`:
 
 - All files use ESM (`import`/`export`)
 - License header on every source file: `// FSL-1.1-Apache-2.0 — see LICENSE`
-- Port 3141 for daemon (REST + WebSocket + GUI)
+- Port 31415 for daemon (REST + WebSocket + GUI)
 - `.groove/` directory in project root for runtime state (gitignored)
 - Generated markdown files: `AGENTS_REGISTRY.md`, `GROOVE_PROJECT_MAP.md`, `GROOVE_DECISIONS.md`
 

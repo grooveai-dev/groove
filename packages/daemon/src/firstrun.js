@@ -7,7 +7,7 @@ import { listProviders } from './providers/index.js';
 
 const DEFAULT_CONFIG = {
   version: '0.1.0',
-  port: 3141,
+  port: 31415,
   journalistInterval: 120,
   rotationThreshold: 0.75,
   autoRotation: true,

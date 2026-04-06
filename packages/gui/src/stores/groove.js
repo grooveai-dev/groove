@@ -3,7 +3,7 @@
 
 import { create } from 'zustand';
 
-const WS_URL = `ws://${window.location.hostname}:${window.location.port || 3141}`;
+const WS_URL = `ws://${window.location.hostname}:${window.location.port || 31415}`;
 const API_BASE = '';
 
 export const useGrooveStore = create((set, get) => ({

@@ -25,7 +25,7 @@ export class GeminiProvider extends Provider {
   }
 
   static installCommand() {
-    return 'npm i -g @anthropic-ai/claude-code  # Gemini CLI — check https://ai.google.dev/gemini-api/docs/cli';
+    return 'npm i -g @anthropic-ai/gemini-cli';
   }
 
   buildSpawnCommand(agent) {

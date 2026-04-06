@@ -23,7 +23,7 @@ import { TaskClassifier } from './classifier.js';
 import { ModelRouter } from './router.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig } from './firstrun.js';
 
-const DEFAULT_PORT = 3141;
+const DEFAULT_PORT = 31415;
 
 export { loadConfig, saveConfig } from './firstrun.js';
 

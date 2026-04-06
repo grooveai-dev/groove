@@ -20,12 +20,12 @@ import { configShow, configSet } from '../src/commands/config.js';
 program
   .name('groove')
   .description('Agent orchestration layer for AI coding tools')
-  .version('0.3.0');
+  .version('0.4.0');
 
 program
   .command('start')
   .description('Start the GROOVE daemon')
-  .option('-p, --port <port>', 'Port to run on', '3141')
+  .option('-p, --port <port>', 'Port to run on', '31415')
   .action(start);
 
 program

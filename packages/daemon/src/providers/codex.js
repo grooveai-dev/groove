@@ -37,8 +37,8 @@ export class CodexProvider extends Provider {
 
     if (agent.model) args.push('--model', agent.model);
 
-    // Full autonomous operation — no approval prompts, no sandbox restrictions
-    args.push('-a', 'never', '--sandbox', 'danger-full-access');
+    // Full autonomous operation — no approval prompts, no sandbox
+    args.push('--dangerously-bypass-approvals-and-sandbox');
 
     if (agent.prompt) args.push(agent.prompt);
 

@@ -14,7 +14,7 @@ const MODES = {
 
 // Role-based tier hints for new agents with no classifier data yet
 const ROLE_HINTS = {
-  planner:   'light',
+  planner:   'heavy',    // Planning is foundational — needs deep reasoning
   docs:      'light',
   testing:   'medium',
   backend:   'medium',

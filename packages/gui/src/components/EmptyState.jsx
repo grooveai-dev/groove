@@ -40,10 +40,6 @@ export default function EmptyState() {
             <button onClick={() => openDetail({ type: 'spawn' })} style={styles.spawnBtn}>
               Spawn Agent
             </button>
-            <div style={styles.divider}>or from the terminal</div>
-            <code style={styles.code}>
-              groove spawn --role backend --prompt "Build the auth API"
-            </code>
           </>
         )}
       </div>

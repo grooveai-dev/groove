@@ -89,7 +89,7 @@ function AgentTreeInner() {
         target: node.id,
         type: 'smoothstep',
         style: {
-          stroke: isRunning ? '#33afbc' : '#2c313a',
+          stroke: isRunning ? '#8b929e' : '#2c313a',
           strokeWidth: 1,
         },
         animated: isRunning,

@@ -20,31 +20,27 @@ export function isFirstRun(grooveDir) {
   return !existsSync(resolve(grooveDir, 'config.json'));
 }
 
-export function runFirstTimeSetup(grooveDir) {
-  console.log('');
-  console.log('  ┌─────────────────────────────────────────┐');
-  console.log('  │          Welcome to GROOVE               │');
-  console.log('  │   Agent orchestration for AI coding      │');
-  console.log('  └─────────────────────────────────────────┘');
-  console.log('');
-
-  // Scan for providers
+// Show welcome banner on every startup
+export function printWelcome(port) {
   const providers = listProviders();
   const installed = providers.filter((p) => p.installed);
   const notInstalled = providers.filter((p) => !p.installed);
 
-  console.log('  Scanning for AI providers...');
+  console.log('');
+  console.log('  ┌───────────────────────────────────────┐');
+  console.log('  │         Welcome to GROOVE              │');
+  console.log('  │   Agent orchestration for AI coding    │');
+  console.log('  └───────────────────────────────────────┘');
   console.log('');
 
   if (installed.length > 0) {
-    console.log(`  Found ${installed.length} provider${installed.length > 1 ? 's' : ''}:`);
+    console.log(`  Providers (${installed.length} ready):`);
     for (const p of installed) {
       console.log(`    ✓ ${p.name}`);
     }
   } else {
     console.log('  No AI providers detected.');
-    console.log('  Install at least one to get started:');
-    console.log('    npm i -g @anthropic-ai/claude-code');
+    console.log('  Install at least one:  npm i -g @anthropic-ai/claude-code');
   }
 
   if (notInstalled.length > 0) {
@@ -56,18 +52,19 @@ export function runFirstTimeSetup(grooveDir) {
   }
 
   console.log('');
-  console.log('  Quick start:');
-  console.log('    groove spawn --role backend --prompt "Build the auth API"');
-  console.log('    groove spawn --role frontend --prompt "Build the login page"');
-  console.log('    groove agents');
+  console.log(`  GUI:   http://localhost:${port}`);
+  console.log('  Docs:  https://docs.grooveai.dev');
+  console.log('  GitHub: https://github.com/grooveai-dev/groove');
   console.log('');
-  console.log('  Docs: https://docs.grooveai.dev');
-  console.log('');
+}
 
+export function runFirstTimeSetup(grooveDir) {
   // Write default config
   const config = { ...DEFAULT_CONFIG };
 
   // Auto-detect best default provider
+  const providers = listProviders();
+  const installed = providers.filter((p) => p.installed);
   if (installed.length > 0) {
     const preferred = ['claude-code', 'codex', 'gemini', 'aider', 'ollama'];
     const best = preferred.find((id) => installed.some((p) => p.id === id));

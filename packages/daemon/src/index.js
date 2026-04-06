@@ -22,7 +22,7 @@ import { CredentialStore } from './credentials.js';
 import { TaskClassifier } from './classifier.js';
 import { ModelRouter } from './router.js';
 import { ProjectManager } from './pm.js';
-import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig } from './firstrun.js';
+import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 
 const DEFAULT_PORT = 31415;
 
@@ -144,14 +144,7 @@ export class Daemon {
       this.server.listen(this.port, '127.0.0.1', () => {
         writeFileSync(this.pidFile, String(process.pid));
 
-        console.log('');
-        console.log('  GROOVE daemon running');
-        console.log(`  GUI:       http://localhost:${this.port}`);
-        console.log(`  API:       http://localhost:${this.port}/api`);
-        console.log(`  WebSocket: ws://localhost:${this.port}`);
-        console.log(`  PID:       ${process.pid}`);
-        console.log(`  Project:   ${this.projectDir}`);
-        console.log('');
+        printWelcome(this.port);
 
         // Start background services
         this.journalist.start();

@@ -12,9 +12,9 @@ export class ClaudeCodeProvider extends Provider {
   static command = 'claude';
   static authType = 'subscription';
   static models = [
-    { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', tier: 'heavy' },
-    { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', tier: 'medium' },
-    { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', tier: 'light' },
+    { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', tier: 'heavy', contextWindow: 1_000_000 },
+    { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', tier: 'medium', contextWindow: 200_000 },
+    { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', tier: 'light', contextWindow: 200_000 },
   ];
 
   static isInstalled() {
@@ -127,11 +127,15 @@ export class ClaudeCodeProvider extends Provider {
             turns: data.num_turns,
           });
         } else if (data.type === 'system' && data.subtype === 'usage') {
+          // Use actual context window size from model metadata, not hardcoded 200K
+          // Opus has 1M, Sonnet/Haiku have 200K — rotation must account for this
+          const totalTokens = (data.usage?.cache_read_input_tokens || 0) + (data.usage?.input_tokens || 0);
+          const modelId = data.model || events.find((e) => e.model)?.model;
+          const modelMeta = ClaudeCodeProvider.models.find((m) => m.id === modelId);
+          const contextWindow = modelMeta?.contextWindow || 200_000;
           events.push({
             type: 'usage',
-            contextUsage: data.usage?.cache_read_input_tokens
-              ? (data.usage.cache_read_input_tokens + data.usage.input_tokens) / 200000
-              : undefined,
+            contextUsage: totalTokens > 0 ? totalTokens / contextWindow : undefined,
           });
         }
       } catch {

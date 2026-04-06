@@ -94,14 +94,16 @@ export class AdaptiveThresholds {
   }
 
   scoreSession(signals) {
-    // Score 0-100 based on quality signals
+    // Score 0-100 based on quality signals.
+    // Low score → rotate sooner (threshold decreases)
+    // High score → allow more context (threshold increases)
     let score = 70; // Baseline: decent session
 
     // Error rate: each error costs 5 points
     const errorCount = signals.errorCount || 0;
     score -= errorCount * 5;
 
-    // Repetitions: each detected repetition costs 8 points
+    // Repetitions: each detected repetition costs 8 points (agent repeating itself)
     const repetitions = signals.repetitions || 0;
     score -= repetitions * 8;
 
@@ -109,13 +111,22 @@ export class AdaptiveThresholds {
     const scopeViolations = signals.scopeViolations || 0;
     score -= scopeViolations * 10;
 
-    // Tool call success rate: bonus for high success
+    // Tool call success rate: bonus for high success, penalty for failures
     const toolCalls = signals.toolCalls || 0;
     const toolFailures = signals.toolFailures || 0;
     if (toolCalls > 0) {
       const successRate = (toolCalls - toolFailures) / toolCalls;
       score += Math.round((successRate - 0.8) * 20); // Bonus/penalty around 80%
     }
+
+    // File churn: editing same file 3+ times signals circular refactoring
+    const fileChurn = signals.fileChurn || 0;
+    score -= fileChurn * 12;
+
+    // Error trend: increasing errors in second half = degradation
+    const errorTrend = signals.errorTrend || 0;
+    if (errorTrend > 0) score -= errorTrend * 6;  // getting worse
+    if (errorTrend < 0) score += 3;                // getting better (small bonus)
 
     // Files written: productivity signal
     const filesWritten = signals.filesWritten || 0;
@@ -137,7 +148,8 @@ export class AdaptiveThresholds {
     return maxDelta < 0.01; // All recent adjustments < 1%
   }
 
-  // Extract quality signals from filtered log entries
+  // Extract quality signals from classifier events and filtered log entries.
+  // These signals drive the scoring model that adapts rotation thresholds.
   extractSignals(entries, agentScope) {
     const signals = {
       errorCount: 0,
@@ -146,22 +158,36 @@ export class AdaptiveThresholds {
       toolCalls: 0,
       toolFailures: 0,
       filesWritten: 0,
+      fileChurn: 0,         // same file written 3+ times → possible circular refactoring
+      errorTrend: 0,        // errors increasing in recent window → degradation signal
     };
 
     const recentTools = [];
     const writtenFiles = new Set();
+    const fileWriteCounts = {}; // track how many times each file is written
+    const errorTimestamps = [];
 
     for (const entry of entries) {
       if (entry.type === 'error') {
         signals.errorCount++;
+        errorTimestamps.push(entry.timestamp || Date.now());
       }
 
       if (entry.type === 'tool') {
         signals.toolCalls++;
 
-        // Track file writes
+        // Track file writes and churn
         if (entry.tool === 'Write' || entry.tool === 'Edit') {
-          if (entry.input) writtenFiles.add(entry.input);
+          if (entry.input) {
+            writtenFiles.add(entry.input);
+            fileWriteCounts[entry.input] = (fileWriteCounts[entry.input] || 0) + 1;
+          }
+        }
+
+        // Track tool failures — errors that follow tool calls indicate failure
+        // (stream-json emits tool_use then tool_result with is_error)
+        if (entry.type === 'tool' && entry.isError) {
+          signals.toolFailures++;
         }
 
         // Detect repetitions: same tool+input within last 5 calls
@@ -176,7 +202,6 @@ export class AdaptiveThresholds {
         if (agentScope && agentScope.length > 0 && entry.input) {
           const file = entry.input;
           if (entry.tool === 'Write' || entry.tool === 'Edit') {
-            // Very rough check — real check uses minimatch in LockManager
             const inScope = agentScope.some((pattern) =>
               file.includes(pattern.replace('/**', '').replace('**/', ''))
             );
@@ -187,6 +212,22 @@ export class AdaptiveThresholds {
     }
 
     signals.filesWritten = writtenFiles.size;
+
+    // File churn: count files written 3+ times (circular refactoring signal)
+    for (const count of Object.values(fileWriteCounts)) {
+      if (count >= 3) signals.fileChurn++;
+    }
+
+    // Error trend: compare error rate in first half vs second half of session
+    // Increasing errors = degradation signal
+    if (entries.length >= 6) {
+      const mid = Math.floor(entries.length / 2);
+      const firstHalfErrors = entries.slice(0, mid).filter((e) => e.type === 'error').length;
+      const secondHalfErrors = entries.slice(mid).filter((e) => e.type === 'error').length;
+      // Positive = errors increasing (bad), negative = errors decreasing (good)
+      signals.errorTrend = secondHalfErrors - firstHalfErrors;
+    }
+
     return signals;
   }
 

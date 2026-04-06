@@ -13,9 +13,12 @@ export class Introducer {
     this.daemon = daemon;
   }
 
-  generateContext(newAgent) {
+  generateContext(newAgent, options = {}) {
+    const { taskNegotiation } = options;
     const agents = this.daemon.registry.getAll();
-    const others = agents.filter((a) => a.id !== newAgent.id && a.status === 'running');
+    // Include ALL agents (running + completed) so new agents know what the team did
+    const others = agents.filter((a) => a.id !== newAgent.id &&
+      (a.status === 'running' || a.status === 'starting' || a.status === 'completed'));
 
     const lines = [
       `# GROOVE Agent Context`,
@@ -37,9 +40,30 @@ export class Introducer {
       lines.push(`## Team (${others.length} other agent${others.length > 1 ? 's' : ''})`);
       lines.push('');
 
+      // Collect all files created by teammates for the project files section
+      const allTeamFiles = [];
+
       for (const other of others) {
         const scope = other.scope?.length > 0 ? other.scope.join(', ') : 'unrestricted';
         lines.push(`- **${other.name}** (${other.role}) — scope: ${scope} — ${other.status}`);
+
+        // Get files this agent created/modified
+        const files = this.daemon.journalist?.getAgentFiles(other) || [];
+        if (files.length > 0) {
+          const shown = files.slice(0, 15);
+          lines.push(`  Files: ${shown.join(', ')}${files.length > 15 ? ` (+${files.length - 15} more)` : ''}`);
+          for (const f of files) {
+            allTeamFiles.push({ file: f, agent: other.name, role: other.role });
+          }
+        }
+
+        // For completed agents, include their final result summary
+        if (other.status === 'completed') {
+          const result = this.daemon.journalist?.getAgentResult(other) || '';
+          if (result) {
+            lines.push(`  Result: ${result.slice(0, 500)}`);
+          }
+        }
       }
 
       lines.push('');
@@ -48,7 +72,64 @@ export class Introducer {
       lines.push(`- Stay within your file scope. Do NOT modify files owned by other agents.`);
       lines.push(`- If you need changes outside your scope, document what you need — GROOVE will coordinate.`);
       lines.push(`- Check AGENTS_REGISTRY.md for the latest team state.`);
+
+      // Project files section — tell the new agent what exists and what to read
+      if (allTeamFiles.length > 0) {
+        lines.push('');
+        lines.push(`## Project Files`);
+        lines.push('');
+        lines.push(`Your team has created the following files. **Read relevant ones before starting work** to understand what's been built and planned:`);
+        lines.push('');
+
+        // Group by agent for clarity
+        const byAgent = {};
+        for (const { file, agent, role } of allTeamFiles) {
+          const key = `${agent} (${role})`;
+          if (!byAgent[key]) byAgent[key] = [];
+          byAgent[key].push(file);
+        }
+        for (const [agent, files] of Object.entries(byAgent)) {
+          lines.push(`**${agent}:**`);
+          for (const f of files.slice(0, 20)) {
+            lines.push(`- ${f}`);
+          }
+        }
+      }
     }
+
+    // Task negotiation — when a duplicate role joins, include the work division
+    if (taskNegotiation) {
+      lines.push('');
+      lines.push(`## Task Assignment`);
+      lines.push('');
+      lines.push(`A task coordinator has analyzed the current team's work and assigned your focus area:`);
+      lines.push('');
+      lines.push(taskNegotiation);
+      lines.push('');
+      lines.push(`**Follow this assignment.** Focus on your assigned tasks and do NOT modify files that other same-role agents are actively working on.`);
+    }
+
+    // Knock protocol — coordination for destructive/shared actions
+    const running = others.filter((a) => a.status === 'running' || a.status === 'starting');
+    if (running.length > 0) {
+      lines.push('');
+      lines.push(`## Coordination Protocol`);
+      lines.push('');
+      lines.push(`Before performing shared/destructive actions (restart server, npm install/build, modify package.json, modify shared config), coordinate with your team:`);
+      lines.push(`1. Read \`.groove/coordination.md\` to check for active operations`);
+      lines.push(`2. Write your intent to \`.groove/coordination.md\` (e.g., "backend-1: restarting server")`);
+      lines.push(`3. Proceed only if no conflicting operations are active`);
+      lines.push(`4. Clear your entry from \`.groove/coordination.md\` when done`);
+    }
+
+    // Memory containment — prevent agents from reading/writing auto-memory
+    // which can contain stale context from unrelated sessions in the same dir
+    lines.push('');
+    lines.push(`## Memory Policy`);
+    lines.push('');
+    lines.push(`Ignore auto-memory. Do NOT read or write MEMORY.md or any files in the auto-memory directory.`);
+    lines.push(`GROOVE provides all your project context through handoff briefs, AGENTS_REGISTRY.md, and GROOVE_PROJECT_MAP.md.`);
+    lines.push(`Do NOT save memories — your state is managed by GROOVE's rotation and handoff system.`);
 
     // Add reference to project map if it exists
     const mapPath = resolve(this.daemon.projectDir, 'GROOVE_PROJECT_MAP.md');
@@ -112,6 +193,8 @@ export class Introducer {
       ...running.map((a) => `| ${a.name} | ${a.role} | ${a.scope?.join(', ') || '-'} |`),
       '',
       `See AGENTS_REGISTRY.md for full agent state.`,
+      '',
+      `**Memory policy:** Ignore auto-memory. Do not read or write MEMORY.md. GROOVE manages all context.`,
       '',
       GROOVE_SECTION_END,
     ].filter(Boolean).join('\n');

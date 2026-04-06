@@ -12,10 +12,8 @@ export default function AgentChat({ agent }) {
   const activityLog = useGrooveStore((s) => s.activityLog);
   const instructAgent = useGrooveStore((s) => s.instructAgent);
   const queryAgent = useGrooveStore((s) => s.queryAgent);
-  const spawnAgent = useGrooveStore((s) => s.spawnAgent);
   const showStatus = useGrooveStore((s) => s.showStatus);
   const chatHistory = useGrooveStore((s) => s.chatHistory);
-  const selectAgent = useGrooveStore((s) => s.selectAgent);
 
   const activity = activityLog[agent.id] || [];
   const chats = chatHistory[agent.id] || [];
@@ -39,35 +37,20 @@ export default function AgentChat({ agent }) {
 
     setInput('');
 
-    if (isAlive) {
-      if (isQuery) {
-        setStatus('querying...');
-        try {
-          await queryAgent(agent.id, message);
-        } catch { /* handled in store */ }
-        setStatus(null);
-      } else {
-        setStatus('sending instruction...');
-        try {
-          await instructAgent(agent.id, message);
-        } catch { /* handled in store */ }
-        setStatus(null);
-      }
-    } else {
-      // Agent is dead — respawn with the new message as prompt
-      setStatus('respawning agent...');
+    if (isQuery && isAlive) {
+      // Query — one-shot read-only question, agent keeps running
+      setStatus('querying...');
       try {
-        const newAgent = await spawnAgent({
-          role: agent.role,
-          scope: agent.scope,
-          prompt: message,
-          provider: agent.provider,
-          model: agent.model,
-        });
-        showStatus(`${newAgent.name} respawned`);
-        selectAgent(newAgent.id);
+        await queryAgent(agent.id, message);
+      } catch { /* handled in store */ }
+      setStatus(null);
+    } else {
+      // Instruct — works for both alive (rotation) and dead (continuation) agents
+      setStatus(isAlive ? 'sending...' : 'continuing...');
+      try {
+        await instructAgent(agent.id, message);
       } catch (err) {
-        showStatus(`respawn failed: ${err.message}`);
+        showStatus(`failed: ${err.message}`);
       }
       setStatus(null);
     }
@@ -88,7 +71,7 @@ export default function AgentChat({ agent }) {
           <div style={styles.hint}>
             {isAlive
               ? 'Type a message to instruct this agent. Prefix with ? to query without disrupting.'
-              : 'Agent has stopped. Send a message to respawn with a new task.'}
+              : 'Agent finished. Reply to continue the conversation.'}
           </div>
         )}
         {timeline.map((entry, i) => (
@@ -127,7 +110,7 @@ export default function AgentChat({ agent }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={isAlive ? 'message or ?query...' : 'send to respawn agent...'}
+          placeholder={isAlive ? 'message or ?query...' : 'reply to continue...'}
           disabled={!!status}
           spellCheck={false}
         />
@@ -139,7 +122,7 @@ export default function AgentChat({ agent }) {
             opacity: (!!status || !input.trim()) ? 0.3 : 1,
           }}
         >
-          {isAlive ? 'Send' : 'Respawn'}
+          Send
         </button>
       </div>
     </div>

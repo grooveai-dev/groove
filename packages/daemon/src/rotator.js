@@ -73,8 +73,10 @@ export class Rotator extends EventEmitter {
     try {
       // 1. Record adaptive session so rotation thresholds learn over time
       const classifierEvents = this.daemon.classifier.agentWindows[agentId] || [];
-      const signals = this.daemon.adaptive.extractSignals(classifierEvents, agent.scope);
-      this.daemon.adaptive.recordSession(agent.provider, agent.role, signals);
+      if (classifierEvents.length > 0) {
+        const signals = this.daemon.adaptive.extractSignals(classifierEvents, agent.scope);
+        this.daemon.adaptive.recordSession(agent.provider, agent.role, signals);
+      }
 
       // Clear classifier window for the old agent
       this.daemon.classifier.clearAgent(agentId);
@@ -82,7 +84,7 @@ export class Rotator extends EventEmitter {
       // 2. Generate handoff brief from Journalist
       let brief = await journalist.generateHandoffBrief(agent);
 
-      // Append additional prompt if provided (used by instruct endpoint)
+      // Append additional prompt if provided (used by instruct/continue endpoints)
       if (options.additionalPrompt) {
         brief = brief + '\n\n## User Instruction\n\n' + options.additionalPrompt;
       }
@@ -98,7 +100,10 @@ export class Rotator extends EventEmitter {
         timestamp: new Date().toISOString(),
       };
 
-      // 4. Kill the old process
+      // 4. Kill/clean up the old agent
+      // processes.kill handles both alive and dead agents:
+      // - alive: sends SIGTERM, waits for exit, removes from registry
+      // - dead: just removes from registry and releases locks
       await processes.kill(agentId);
 
       // 5. Respawn with handoff brief as the prompt

@@ -36,8 +36,8 @@ const LIGHT_SIGNALS = [
 
 export class TaskClassifier {
   constructor() {
-    this.windowSize = 10; // Look at last N events to classify
-    this.agentWindows = {}; // agentId -> recent events[]
+    this.windowSize = 50; // Look at last N events — needs to be large enough
+    this.agentWindows = {}; // for degradation detection and adaptive scoring
   }
 
   // Add an event to the classification window

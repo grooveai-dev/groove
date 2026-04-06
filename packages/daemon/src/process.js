@@ -6,6 +6,18 @@ import { createWriteStream, mkdirSync, chmodSync } from 'fs';
 import { resolve } from 'path';
 import { getProvider } from './providers/index.js';
 
+// Role-specific prompt prefixes — applied during spawn regardless of entry point
+// (SpawnPanel, chat continue, CLI, API) for consistency
+const ROLE_PROMPTS = {
+  planner: `You are a planning and architecture agent. Research, analyze, and create plans — do NOT implement code unless explicitly asked. Focus on:
+- Understanding requirements
+- Exploring the codebase
+- Identifying approaches and trade-offs
+- Writing structured plans
+
+`,
+};
+
 function sanitizeFilename(name) {
   return String(name).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
 }
@@ -57,18 +69,43 @@ export class ProcessManager {
       locks.register(agent.id, agent.scope);
     }
 
-    // Generate introduction context (team awareness)
-    const introContext = introducer.generateContext(agent);
+    // Pre-spawn task negotiation — if same-role agents are running,
+    // query them about current work so the new agent gets a clear assignment
+    const sameRole = registry.getAll().filter(
+      (a) => a.role === config.role && a.id !== agent.id &&
+        (a.status === 'running' || a.status === 'starting')
+    );
+    let taskNegotiation = '';
+    if (sameRole.length > 0) {
+      taskNegotiation = await this.negotiateTaskSplit(agent, sameRole);
+    }
+
+    // Generate introduction context (team awareness + negotiation)
+    const introContext = introducer.generateContext(agent, { taskNegotiation });
 
     // Update AGENTS_REGISTRY.md (other agents can see this new agent)
     introducer.writeRegistryFile(this.daemon.projectDir);
 
     // Build spawn command from provider (use resolved model for auto-routed agents)
-    const { command, args, env } = provider.buildSpawnCommand({
+    const spawnConfig = {
       ...agent,
       model: resolvedModel || agent.model,
       introContext,
-    });
+    };
+
+    // Apply role-specific prompt prefix so agents always get their role constraints
+    const rolePrompt = ROLE_PROMPTS[agent.role];
+    if (rolePrompt && spawnConfig.prompt) {
+      if (spawnConfig.prompt.startsWith('# Agent Handoff Brief')) {
+        // Continuation/rotation — append role constraints after the brief
+        spawnConfig.prompt += '\n\n## Role Constraints\n\n' + rolePrompt.trim();
+      } else {
+        // Fresh spawn — prefix the task
+        spawnConfig.prompt = rolePrompt + 'Task: ' + spawnConfig.prompt;
+      }
+    }
+
+    const { command, args, env } = provider.buildSpawnCommand(spawnConfig);
 
     // Set up log capture
     const logDir = resolve(this.daemon.grooveDir, 'logs');
@@ -156,6 +193,12 @@ export class ProcessManager {
         signal,
         status: finalStatus,
       });
+
+      // Trigger journalist synthesis immediately on completion so the project
+      // map is fresh for the next agent that spawns (don't wait for 120s cycle)
+      if (finalStatus === 'completed' && this.daemon.journalist) {
+        this.daemon.journalist.cycle().catch(() => {});
+      }
     });
 
     proc.on('error', (err) => {
@@ -219,5 +262,50 @@ export class ProcessManager {
 
   getRunningCount() {
     return this.handles.size;
+  }
+
+  /**
+   * Query existing same-role agents to negotiate task division.
+   * Uses a headless Claude call to ask what they're doing and what's left.
+   * Falls back to raw file/activity data if headless call fails.
+   */
+  async negotiateTaskSplit(newAgent, existingAgents) {
+    const { journalist } = this.daemon;
+
+    // Gather each existing agent's work context
+    const agentSummaries = existingAgents.map((a) => {
+      const files = journalist.getAgentFiles(a);
+      const result = journalist.getAgentResult(a);
+      return { name: a.name, files, result: result.slice(0, 1500) };
+    });
+
+    // Build negotiation prompt
+    const agentDetails = agentSummaries.map((a) =>
+      `**${a.name}:**\n` +
+      `- Files modified: ${a.files.join(', ') || 'none yet'}\n` +
+      `- Status: ${a.result || 'still working, no output yet'}`
+    ).join('\n\n');
+
+    const prompt = [
+      `You are a GROOVE task coordinator. A new agent "${newAgent.name}" (role: ${newAgent.role}) is joining the team.`,
+      ``,
+      `These agents are already working in the same role:`,
+      ``,
+      agentDetails,
+      ``,
+      `Analyze what each agent is working on and suggest a clear task division for the new agent.`,
+      `Be specific: list which files/features the new agent should focus on, and which to avoid.`,
+      `Keep it concise — 5-10 lines max.`,
+    ].join('\n');
+
+    try {
+      const response = await journalist.callHeadless(prompt);
+      return response;
+    } catch {
+      // Fallback: return raw data for the agent to interpret
+      return agentSummaries.map((a) =>
+        `${a.name} is working on: ${a.files.join(', ') || 'unknown'}`
+      ).join('\n');
+    }
   }
 }

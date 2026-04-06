@@ -38,6 +38,12 @@ export class Daemon {
     mkdirSync(resolve(this.grooveDir, 'logs'), { recursive: true });
     mkdirSync(resolve(this.grooveDir, 'context'), { recursive: true });
 
+    // Initialize coordination file for agent knock protocol
+    const coordPath = resolve(this.grooveDir, 'coordination.md');
+    if (!existsSync(coordPath)) {
+      writeFileSync(coordPath, '# GROOVE Coordination\n\n*Agents write their intent here before shared/destructive actions.*\n\n<!-- No active operations -->\n');
+    }
+
     // First-run detection
     if (isFirstRun(this.grooveDir)) {
       this.config = runFirstTimeSetup(this.grooveDir);

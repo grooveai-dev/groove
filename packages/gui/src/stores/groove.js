@@ -169,8 +169,11 @@ export const useGrooveStore = create((set, get) => ({
   },
 
   async instructAgent(id, message) {
+    const agent = get().agents.find((a) => a.id === id);
+    const isAlive = agent && (agent.status === 'running' || agent.status === 'starting');
+
     get().addChatMessage(id, 'user', message, false);
-    get().addChatMessage(id, 'system', 'rotating with instruction...');
+    get().addChatMessage(id, 'system', isAlive ? 'sending instruction...' : 'continuing conversation...');
     const res = await fetch(`${API_BASE}/api/agents/${id}/instruct`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -182,7 +185,9 @@ export const useGrooveStore = create((set, get) => ({
       throw new Error(err.error || 'Instruction failed');
     }
     const newAgent = await res.json();
-    get().addChatMessage(newAgent.id, 'system', 'agent resumed with new context');
+    // Select the new agent (same name, new ID after rotation/continuation)
+    get().selectAgent(newAgent.id);
+    get().addChatMessage(newAgent.id, 'system', 'agent resumed with context');
     return newAgent;
   },
 

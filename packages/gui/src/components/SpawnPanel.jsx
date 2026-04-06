@@ -103,10 +103,9 @@ export default function SpawnPanel() {
         ? effectiveScope.split(',').map((s) => s.trim()).filter(Boolean)
         : [];
 
-      let finalPrompt = prompt || null;
-      if (isPlanner && finalPrompt) {
-        finalPrompt = `You are a planning and architecture agent. Research, analyze, and create plans — do NOT implement code unless explicitly asked. Focus on:\n- Understanding requirements\n- Exploring the codebase\n- Identifying approaches and trade-offs\n- Writing structured plans\n\nTask: ${finalPrompt}`;
-      }
+      const finalPrompt = prompt || null;
+      // Role-specific prompt prefixes (e.g., planner constraints) are now
+      // applied daemon-side in process.js for consistency across all spawn paths
 
       await spawnAgent({
         role: finalRole,

@@ -254,6 +254,7 @@ export function createApi(app, daemon) {
   });
 
   // Instruct an agent (rotation with user message appended)
+  // Works for both running agents (rotates with handoff) and dead agents (continues conversation)
   app.post('/api/agents/:id/instruct', async (req, res) => {
     try {
       const { message } = req.body;
@@ -262,9 +263,6 @@ export function createApi(app, daemon) {
       }
       const agent = daemon.registry.get(req.params.id);
       if (!agent) return res.status(404).json({ error: 'Agent not found' });
-      if (agent.status !== 'running' && agent.status !== 'starting') {
-        return res.status(400).json({ error: 'Agent is not running' });
-      }
       const newAgent = await daemon.rotator.rotate(req.params.id, {
         additionalPrompt: message.trim(),
       });

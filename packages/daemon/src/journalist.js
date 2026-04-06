@@ -7,7 +7,7 @@ import { execFile } from 'child_process';
 import { getProvider } from './providers/index.js';
 
 const DEFAULT_INTERVAL = 120_000; // 2 minutes
-const MAX_LOG_CHARS = 20_000; // ~5k tokens budget for synthesis input
+const MAX_LOG_CHARS = 40_000; // ~10k tokens budget for synthesis input
 
 export class Journalist {
   constructor(daemon) {
@@ -160,7 +160,7 @@ export class Journalist {
                 // Only keep substantial text (decisions, explanations)
                 const text = block.text.trim();
                 if (text.length > 50) {
-                  entries.push({ type: 'thinking', text: text.slice(0, 500), timestamp: data.timestamp });
+                  entries.push({ type: 'thinking', text: text.slice(0, 2000), timestamp: data.timestamp });
                 }
               }
             }
@@ -171,7 +171,7 @@ export class Journalist {
         if (data.type === 'result') {
           entries.push({
             type: 'result',
-            text: typeof data.result === 'string' ? data.result.slice(0, 500) : '',
+            text: typeof data.result === 'string' ? data.result.slice(0, 3000) : '',
             cost: data.total_cost_usd,
             turns: data.num_turns,
             duration: data.duration_ms,
@@ -283,8 +283,8 @@ export class Journalist {
       throw new Error('No provider available for synthesis');
     }
 
-    // Use headless mode with cheapest model
-    const { command, args, env } = provider.buildHeadlessCommand(prompt);
+    // Use headless mode with Haiku — cheapest model, good enough for synthesis
+    const { command, args, env } = provider.buildHeadlessCommand(prompt, 'claude-haiku-4-5-20251001');
 
     return new Promise((resolve, reject) => {
       const proc = execFile(command, args, {
@@ -502,7 +502,7 @@ export class Journalist {
       errorSummary ? `### Unresolved errors\n${errorSummary}\n` : '',
       `## Current Project State`,
       ``,
-      projectMap ? projectMap.slice(0, 3000) : 'No project map available yet.',
+      projectMap ? projectMap.slice(0, 10000) : 'No project map available yet.',
       ``,
       `## Instructions`,
       ``,
@@ -510,6 +510,73 @@ export class Journalist {
       `Review AGENTS_REGISTRY.md for team awareness.`,
       agent.prompt ? `\nOriginal task: ${agent.prompt}` : '',
     ].filter(Boolean).join('\n');
+  }
+
+  // --- Agent File Tracking ---
+
+  /**
+   * Extract files created/modified by an agent from its raw logs.
+   * Used by the Introducer to tell new agents what their teammates built.
+   */
+  getAgentFiles(agent) {
+    const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.name}.log`);
+    if (!existsSync(logPath)) return [];
+
+    try {
+      const content = readFileSync(logPath, 'utf8');
+      const files = new Set();
+
+      for (const line of content.split('\n')) {
+        if (!line.trim() || line.startsWith('[')) continue;
+        try {
+          const data = JSON.parse(line);
+          if (data.type === 'assistant' && Array.isArray(data.message?.content)) {
+            for (const block of data.message.content) {
+              if (block.type === 'tool_use' && (block.name === 'Write' || block.name === 'Edit')) {
+                const fp = block.input?.file_path || block.input?.path;
+                if (fp) {
+                  // Store relative to project dir for readability
+                  const projDir = this.daemon.projectDir;
+                  const rel = fp.startsWith(projDir) ? fp.slice(projDir.length + 1) : fp;
+                  files.add(rel);
+                }
+              }
+            }
+          }
+        } catch { /* skip non-JSON */ }
+      }
+
+      return [...files];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Get the final result/output text from an agent's logs.
+   * Used to capture planner conclusions, build summaries, etc.
+   */
+  getAgentResult(agent) {
+    const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.name}.log`);
+    if (!existsSync(logPath)) return '';
+
+    try {
+      const content = readFileSync(logPath, 'utf8');
+      let lastResult = '';
+
+      for (const line of content.split('\n')) {
+        try {
+          const data = JSON.parse(line);
+          if (data.type === 'result' && typeof data.result === 'string') {
+            lastResult = data.result;
+          }
+        } catch { /* skip */ }
+      }
+
+      return lastResult.slice(0, 5000);
+    } catch {
+      return '';
+    }
   }
 
   // --- Accessors ---

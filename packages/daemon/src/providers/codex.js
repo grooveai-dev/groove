@@ -36,8 +36,8 @@ export class CodexProvider extends Provider {
 
     if (agent.model) args.push('--model', agent.model);
 
-    // Codex uses full-auto approval mode for autonomous operation
-    args.push('--approval-mode', 'full-auto');
+    // Full autonomous operation — no approval prompts, no sandbox restrictions
+    args.push('-a', 'never', '--sandbox', 'danger-full-access');
 
     if (agent.prompt) args.push(agent.prompt);
 

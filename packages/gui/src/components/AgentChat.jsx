@@ -88,7 +88,7 @@ export default function AgentChat({ agent }) {
             {entry.from === 'agent' && (
               <div style={styles.agentMsg}>
                 <span style={styles.agentLabel}>{agent.name}</span>
-                <div style={styles.agentText}>{entry.text}</div>
+                <div style={styles.agentText}><FormattedText text={entry.text} /></div>
               </div>
             )}
             {entry.from === 'system' && (
@@ -129,6 +129,84 @@ export default function AgentChat({ agent }) {
       </div>
     </div>
   );
+}
+
+// ── FORMATTED TEXT — renders markdown-like agent output cleanly ──
+
+function FormattedText({ text }) {
+  if (!text) return null;
+  const lines = text.split('\n');
+
+  return lines.map((line, i) => {
+    // Headers: ### or ## or #
+    if (/^#{1,3}\s/.test(line)) {
+      const content = line.replace(/^#{1,3}\s+/, '');
+      return <div key={i} style={{ fontWeight: 700, color: 'var(--text-bright)', marginTop: i > 0 ? 6 : 0, marginBottom: 2, fontSize: 11 }}>{renderInline(content)}</div>;
+    }
+
+    // Horizontal rules
+    if (/^[-*_]{3,}\s*$/.test(line)) {
+      return <div key={i} style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />;
+    }
+
+    // List items: - or * or numbered
+    if (/^\s*[-*]\s/.test(line)) {
+      const indent = line.match(/^(\s*)/)[1].length;
+      const content = line.replace(/^\s*[-*]\s+/, '');
+      return <div key={i} style={{ paddingLeft: 8 + indent * 6, position: 'relative' }}>
+        <span style={{ position: 'absolute', left: indent * 6, color: 'var(--text-dim)' }}>-</span>
+        {renderInline(content)}
+      </div>;
+    }
+    if (/^\s*\d+\.\s/.test(line)) {
+      const indent = line.match(/^(\s*)/)[1].length;
+      const num = line.match(/(\d+)\./)[1];
+      const content = line.replace(/^\s*\d+\.\s+/, '');
+      return <div key={i} style={{ paddingLeft: 12 + indent * 6, position: 'relative' }}>
+        <span style={{ position: 'absolute', left: indent * 6, color: 'var(--text-dim)' }}>{num}.</span>
+        {renderInline(content)}
+      </div>;
+    }
+
+    // Empty lines
+    if (!line.trim()) return <div key={i} style={{ height: 4 }} />;
+
+    // Normal text
+    return <div key={i}>{renderInline(line)}</div>;
+  });
+}
+
+function renderInline(text) {
+  // Split on bold (**text**), code (`text`), and italic (*text*)
+  const parts = [];
+  let remaining = text;
+  let key = 0;
+
+  while (remaining.length > 0) {
+    // Bold: **text**
+    const boldMatch = remaining.match(/^(.*?)\*\*(.+?)\*\*(.*)/s);
+    if (boldMatch) {
+      if (boldMatch[1]) parts.push(<span key={key++}>{boldMatch[1]}</span>);
+      parts.push(<span key={key++} style={{ fontWeight: 700, color: 'var(--text-bright)' }}>{boldMatch[2]}</span>);
+      remaining = boldMatch[3];
+      continue;
+    }
+
+    // Inline code: `text`
+    const codeMatch = remaining.match(/^(.*?)`(.+?)`(.*)/s);
+    if (codeMatch) {
+      if (codeMatch[1]) parts.push(<span key={key++}>{codeMatch[1]}</span>);
+      parts.push(<span key={key++} style={{ background: 'var(--bg-base)', padding: '0 3px', borderRadius: 2, color: 'var(--accent)', fontSize: '0.95em' }}>{codeMatch[2]}</span>);
+      remaining = codeMatch[3];
+      continue;
+    }
+
+    // No more patterns — emit rest as plain text
+    parts.push(<span key={key++}>{remaining}</span>);
+    break;
+  }
+
+  return parts.length > 0 ? parts : text;
 }
 
 function parseActivityText(text) {

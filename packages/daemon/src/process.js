@@ -15,6 +15,17 @@ const ROLE_PROMPTS = {
 - Identifying approaches and trade-offs
 - Writing structured plans
 
+After completing your plan, recommend a team of agents to build it. Suggest specific roles with clear responsibilities:
+- Backend: what APIs, database, server logic to build
+- Frontend: what UI, components, pages to build
+- Fullstack: needed for root-level setup (package.json, config files, dependencies, build tooling) — especially important if using Auto permissions since scoped agents cannot create root files
+- Testing: if test coverage is needed
+- DevOps: if CI/CD, Docker, or infrastructure is needed
+
+Format your team recommendation as a clear list the user can follow to spawn agents.
+
+IMPORTANT: Do not use markdown formatting like ** or ### in your output. Write in plain text with clean formatting. Use line breaks, dashes, and indentation for structure.
+
 `,
 };
 

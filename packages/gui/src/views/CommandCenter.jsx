@@ -62,30 +62,13 @@ export default function CommandCenter() {
   return (
     <div style={s.root}>
 
-      {/* ROW 1 — Stat Cards */}
-      <div style={s.statRow}>
-        <StatCard
-          label="Total Tokens"
-          value={fmtNum(tokens.totalTokens)}
-          sub={`${data.agents.total} agent${data.agents.total !== 1 ? 's' : ''}`}
-        />
-        <StatCard
-          label="Estimated Savings"
-          value={estDollarSaved > 0 ? `$${estDollarSaved.toFixed(2)}` : '$0.00'}
-          sub={`${fmtNum(tokens.savings.total)} tokens saved`}
-          color={GREEN}
-        />
-        <StatCard
-          label="Efficiency"
-          value={`${tokens.savings.percentage || 0}%`}
-          sub="vs uncoordinated"
-          color={tokens.savings.percentage > 0 ? GREEN : undefined}
-        />
-        <StatCard
-          label="Rotations"
-          value={rotation.totalRotations}
-          sub={fmtUptime(uptime)}
-        />
+      {/* ROW 1 — Connected Stat Bar */}
+      <div style={s.statBar}>
+        <StatCard label="Total Tokens" value={fmtNum(tokens.totalTokens)} sub={`${data.agents.total} agent${data.agents.total !== 1 ? 's' : ''}`} />
+        <StatCard label="Tokens Saved" value={fmtNum(tokens.savings.total)} sub={`${tokens.savings.percentage || 0}% efficiency`} color={GREEN} />
+        <StatCard label="Est. Savings" value={estDollarSaved > 0 ? `$${estDollarSaved.toFixed(2)}` : '$0.00'} sub="based on token costs" color={GREEN} />
+        <StatCard label="Rotations" value={rotation.totalRotations} sub={`${fmtNum(rotation.totalTokensSaved)} tok recovered`} />
+        <StatCard label="Uptime" value={fmtUptime(uptime)} sub={`${data.agents.running} running`} />
       </div>
 
       {/* ROW 2 — Area Chart + Donut */}
@@ -119,13 +102,16 @@ export default function CommandCenter() {
             <HorizBar label="Conflict Prevention" value={tokens.savings.fromConflictPrevention} max={tokens.savings.total || 1} color={AMBER} />
             <HorizBar label="Cold-Start Skip" value={tokens.savings.fromColdStartSkip} max={tokens.savings.total || 1} color={GREEN} />
             <div style={s.divider} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#5c6370', padding: '4px 0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#8b929e', padding: '4px 0' }}>
               <span>Without Groove</span>
-              <span style={{ color: RED }}>{fmtNum(tokens.savings.estimatedWithoutGroove)}</span>
+              <span style={{ color: RED, fontWeight: 600 }}>{fmtNum(tokens.savings.estimatedWithoutGroove)}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#5c6370', padding: '4px 0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#8b929e', padding: '4px 0' }}>
               <span>With Groove</span>
-              <span style={{ color: GREEN }}>{fmtNum(tokens.totalTokens)}</span>
+              <span style={{ color: GREEN, fontWeight: 600 }}>{fmtNum(tokens.totalTokens)}</span>
+            </div>
+            <div style={{ fontSize: 8, color: '#5c6370', marginTop: 4, lineHeight: 1.4 }}>
+              Calculated from: rotation recovery (30% of degraded context), cold-start prevention (2K tokens/skip), conflict avoidance (500 tokens/conflict).
             </div>
             {journalist.lastSummary && (
               <>
@@ -176,9 +162,9 @@ export default function CommandCenter() {
 function StatCard({ label, value, sub, color }) {
   return (
     <div style={s.statCard}>
-      <div style={{ fontSize: 22, fontWeight: 700, color: color || '#e6e6e6', lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: 9, color: '#5c6370', marginTop: 6, textTransform: 'uppercase', letterSpacing: 1 }}>{label}</div>
-      {sub && <div style={{ fontSize: 9, color: '#3e4451', marginTop: 3 }}>{sub}</div>}
+      <div style={{ fontSize: 10, color: '#8b929e', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: color || '#e6e6e6', lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 9, color: '#6b7280', marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }
@@ -437,13 +423,14 @@ const s = {
   loadingBar: { width: 120, height: 2, background: '#282c34', borderRadius: 1, overflow: 'hidden' },
   loadingFill: { width: '40%', height: '100%', background: ACCENT, animation: 'pulse 1.5s infinite' },
 
-  // Stat cards row
-  statRow: {
-    display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12,
-    flexShrink: 0,
+  // Stat bar — connected, no gaps
+  statBar: {
+    display: 'flex', flexShrink: 0,
+    background: '#282c34', borderRadius: 12, overflow: 'hidden',
   },
   statCard: {
-    background: '#282c34', borderRadius: 12, padding: '16px 18px',
+    flex: 1, padding: '14px 16px',
+    borderRight: '1px solid #1e222a',
     display: 'flex', flexDirection: 'column',
   },
 

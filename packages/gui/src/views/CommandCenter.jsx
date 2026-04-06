@@ -2,19 +2,21 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useGrooveStore } from '../stores/groove';
 
-const COST_PER_1K = { heavy: 0.045, medium: 0.009, light: 0.0024 };
-const ACCENT = '#33afbc';
 const GREEN = '#4ae168';
+const ACCENT = '#33afbc';
 const AMBER = '#e5c07b';
 const RED = '#e06c75';
 const PURPLE = '#c678dd';
 const BLUE = '#61afef';
-const AGENT_COLORS = [ACCENT, AMBER, GREEN, PURPLE, RED, BLUE, '#d19a66'];
+const COLORS = [ACCENT, AMBER, GREEN, PURPLE, RED, BLUE, '#d19a66', '#56b6c2'];
+const COST_PER_1K = { heavy: 0.045, medium: 0.009, light: 0.0024 };
 
 export default function CommandCenter() {
   const [data, setData] = useState(null);
-  const [savingsHistory, setSavingsHistory] = useState([]);
+  const tokenTimeline = useGrooveStore((s) => s.tokenTimeline);
+  const agents = useGrooveStore((s) => s.agents);
 
   useEffect(() => {
     fetchDashboard();
@@ -25,13 +27,7 @@ export default function CommandCenter() {
   async function fetchDashboard() {
     try {
       const res = await fetch('/api/dashboard');
-      const d = await res.json();
-      setData(d);
-      // Track savings over time for accumulation chart
-      setSavingsHistory((prev) => {
-        const next = [...prev, { t: Date.now(), v: d.tokens.savings.total, r: d.tokens.savings.fromRotation, c: d.tokens.savings.fromConflictPrevention, s: d.tokens.savings.fromColdStartSkip }];
-        return next.length > 100 ? next.slice(-100) : next;
-      });
+      setData(await res.json());
     } catch { /* ignore */ }
   }
 
@@ -44,126 +40,120 @@ export default function CommandCenter() {
     );
   }
 
-  const { tokens, agents, routing, rotation, adaptive, journalist, uptime } = data;
+  const { tokens, routing, rotation, adaptive, journalist, uptime } = data;
+  const agentBreakdown = data.agents.breakdown;
   const estDollarSaved = (tokens.savings.total / 1000) * COST_PER_1K.medium;
-  const totalWithout = tokens.savings.estimatedWithoutGroove;
 
   return (
     <div style={s.root}>
 
-      {/* HERO ROW */}
+      {/* ── HERO ROW ── */}
       <div style={s.heroRow}>
-        <HeroStat label="TOKENS USED" value={formatNum(tokens.totalTokens)} sub={`${agents.total} agent${agents.total !== 1 ? 's' : ''}`} />
-        <HeroStat label="TOKENS SAVED" value={formatNum(tokens.savings.total)} color={GREEN} sub={`${tokens.savings.percentage || 0}% efficiency`} />
-
-        <div style={s.heroCenterBox}>
-          <div style={s.heroDollar}>
-            {estDollarSaved > 0 ? `$${estDollarSaved.toFixed(2)}` : '$0.00'}
-          </div>
+        <HeroStat label="TOKENS USED" value={fmtNum(tokens.totalTokens)} />
+        <HeroStat label="TOKENS SAVED" value={fmtNum(tokens.savings.total)} color={GREEN} />
+        <div style={s.heroCenter}>
+          <div style={s.heroDollar}>{estDollarSaved > 0 ? `$${estDollarSaved.toFixed(2)}` : '$0.00'}</div>
           <div style={s.heroCenterLabel}>ESTIMATED SAVINGS</div>
-          <div style={s.heroCenterSub}>
-            {tokens.savings.percentage > 0
-              ? `${tokens.savings.percentage}% more efficient`
-              : 'start agents to track'}
+          {tokens.savings.percentage > 0 && (
+            <div style={s.heroCenterSub}>{tokens.savings.percentage}% more efficient</div>
+          )}
+        </div>
+        <HeroStat label="AGENTS" value={`${data.agents.running} / ${data.agents.total}`} color={data.agents.running > 0 ? GREEN : undefined} />
+        <HeroStat label="ROTATIONS" value={rotation.totalRotations} />
+        <HeroStat label="UPTIME" value={fmtUptime(uptime)} />
+      </div>
+
+      {/* ── MAIN CHART — Full-width live telemetry ── */}
+      <div style={s.chartPanel}>
+        <div style={s.chartHead}>
+          <span>LIVE TELEMETRY</span>
+          <span style={s.chartHeadRight}>
+            {agents.filter((a) => a.status === 'running').map((a, i) => (
+              <span key={a.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 10 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: COLORS[i % COLORS.length], display: 'inline-block' }} />
+                <span style={{ fontSize: 9 }}>{a.name}</span>
+              </span>
+            ))}
+          </span>
+        </div>
+        <TelemetryChart tokenTimeline={tokenTimeline} agents={agents} />
+      </div>
+
+      {/* ── BOTTOM ROW — Three panels ── */}
+      <div style={s.bottomRow}>
+
+        {/* AGENT FLEET */}
+        <div style={s.panel}>
+          <div style={s.panelHead}>AGENT FLEET</div>
+          <div style={s.scrollInner}>
+            {agentBreakdown.length === 0 ? (
+              <div style={s.empty}>No agents spawned</div>
+            ) : agentBreakdown.map((a, i) => (
+              <AgentCard key={a.id} agent={a} total={tokens.totalTokens} color={COLORS[i % COLORS.length]} />
+            ))}
           </div>
         </div>
 
-        <HeroStat label="AGENTS" value={`${agents.running} LIVE`} color={agents.running > 0 ? GREEN : undefined} sub={`${agents.total} total`} />
-        <HeroStat label="ROTATIONS" value={rotation.totalRotations} sub={rotation.totalRotations > 0 ? `${formatNum(rotation.totalTokensSaved)} tok saved` : 'auto-managed'} />
-        <HeroStat label="UPTIME" value={formatUptime(uptime)} sub="daemon session" />
-      </div>
-
-      {/* MAIN GRID */}
-      <div style={s.mainGrid}>
-
-        {/* ROW 1: Charts */}
-        <Panel title="TOKEN BURN RATE" flex={1}>
-          <BurnRateChart agents={agents.breakdown} />
-        </Panel>
-
-        <Panel title="SAVINGS ACCUMULATION" flex={1}>
-          <SavingsChart history={savingsHistory} />
-        </Panel>
-
-        <Panel title="MODEL ROUTING" flex={1}>
-          <RoutingViz routing={routing} agents={agents.breakdown} />
-        </Panel>
-
-        {/* ROW 2: Data */}
-        <Panel title="AGENT FLEET" flex={1}>
+        {/* SAVINGS + ROUTING + ADAPTIVE */}
+        <div style={s.panel}>
+          <div style={s.panelHead}>SAVINGS & ROUTING</div>
           <div style={s.scrollInner}>
-            {agents.breakdown.length === 0 ? (
-              <div style={s.empty}>No agents spawned</div>
-            ) : agents.breakdown.map((a, i) => (
-              <AgentCard key={a.id} agent={a} total={tokens.totalTokens} color={AGENT_COLORS[i % AGENT_COLORS.length]} />
-            ))}
+            <SavingsBlock savings={tokens.savings} />
+            <div style={s.divider} />
+            <RoutingBlock routing={routing} />
+            <div style={s.divider} />
+            <AdaptiveBlock adaptive={adaptive} />
           </div>
-        </Panel>
+        </div>
 
-        <Panel title="ROTATION TIMELINE" flex={1}>
+        {/* JOURNALIST + ROTATION */}
+        <div style={s.panel}>
+          <div style={s.panelHead}>
+            JOURNALIST
+            <span style={{ ...s.liveBadge, background: journalist.running ? GREEN : 'var(--text-dim)' }}>
+              {journalist.running ? 'LIVE' : 'IDLE'}
+            </span>
+          </div>
           <div style={s.scrollInner}>
+            <div style={s.journStats}>
+              <span>{journalist.cycleCount || 0} cycles</span>
+              <span>{journalist.intervalMs ? `${journalist.intervalMs / 1000}s interval` : '120s interval'}</span>
+            </div>
+            {journalist.lastSummary ? (
+              <div style={s.journSummary}>{journalist.lastSummary}</div>
+            ) : (
+              <div style={s.journSummary}>Waiting for first synthesis cycle...</div>
+            )}
+            <div style={{ ...s.divider, margin: '8px 0' }} />
+            <div style={s.miniHead}>ROTATION HISTORY</div>
             {rotation.history.length === 0 ? (
               <div style={s.empty}>No rotations yet</div>
-            ) : rotation.history.slice().reverse().map((r, i) => (
+            ) : rotation.history.slice().reverse().slice(0, 10).map((r, i) => (
               <div key={i} style={s.rotEntry}>
-                <div style={s.rotDot} />
-                <div style={s.rotInfo}>
-                  <span style={s.rotName}>{r.agentName}</span>
-                  <span style={s.rotSaved}>{formatNum(r.oldTokens)} saved</span>
-                </div>
-                <span style={s.rotMeta}>{Math.round((r.contextUsage || 0) * 100)}%</span>
+                <span style={s.rotDot} />
+                <span style={s.rotName}>{r.agentName}</span>
+                <span style={s.rotSaved}>{fmtNum(r.oldTokens)} saved</span>
                 <span style={s.rotTime}>{timeAgo(r.timestamp)}</span>
               </div>
             ))}
           </div>
-        </Panel>
-
-        <div style={s.splitCol}>
-          <Panel title="ADAPTIVE THRESHOLDS" flex={3}>
-            <div style={s.scrollInner}>
-              {adaptive.length === 0 ? (
-                <div style={s.empty}>No learned profiles</div>
-              ) : adaptive.map((p) => (
-                <AdaptiveRow key={p.key} profile={p} />
-              ))}
-            </div>
-          </Panel>
-
-          <Panel title="JOURNALIST" flex={2}>
-            <JournalistPanel journalist={journalist} savings={tokens.savings} />
-          </Panel>
         </div>
-
       </div>
     </div>
   );
 }
 
 // ── HERO STAT ──
-
-function HeroStat({ label, value, color, sub }) {
+function HeroStat({ label, value, color }) {
   return (
     <div style={s.heroStat}>
       <div style={{ fontSize: 16, fontWeight: 700, color: color || 'var(--text-bright)', lineHeight: 1 }}>{value}</div>
       <div style={s.heroStatLabel}>{label}</div>
-      {sub && <div style={s.heroStatSub}>{sub}</div>}
-    </div>
-  );
-}
-
-// ── PANEL WRAPPER ──
-
-function Panel({ title, children, flex = 1 }) {
-  return (
-    <div style={{ ...s.panel, flex }}>
-      <div style={s.panelHead}>{title}</div>
-      {children}
     </div>
   );
 }
 
 // ── AGENT CARD ──
-
 function AgentCard({ agent, total, color }) {
   const pct = total > 0 ? (agent.tokens / total) * 100 : 0;
   const alive = agent.status === 'running';
@@ -171,163 +161,121 @@ function AgentCard({ agent, total, color }) {
 
   return (
     <div style={s.agentCard}>
-      <div style={s.agentCardTop}>
-        <span style={{ ...s.dot, background: statusColor, ...(alive ? { animation: 'pulse 2s infinite', boxShadow: `0 0 6px ${statusColor}` } : {}) }} />
-        <span style={s.agentName}>{agent.name}</span>
-        <span style={s.agentRole}>{agent.role}</span>
+      <div style={s.agentCardRow}>
+        <span style={{ ...s.dot, background: statusColor, ...(alive ? { animation: 'pulse 2s infinite', boxShadow: `0 0 4px ${statusColor}` } : {}) }} />
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-bright)' }}>{agent.name}</span>
+        <span style={{ fontSize: 9, color: 'var(--text-dim)' }}>{agent.role}</span>
         {agent.routingMode === 'auto' && <span style={s.tagAuto}>AUTO</span>}
-        <span style={s.agentTok}>{formatNum(agent.tokens)}</span>
+        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-primary)', marginLeft: 'auto' }}>{fmtNum(agent.tokens)}</span>
       </div>
-      <div style={s.agentCardBottom}>
+      <div style={s.agentBarRow}>
         <div style={s.agentBarTrack}>
           <div style={{ width: `${Math.max(pct, 0.5)}%`, height: '100%', background: color, borderRadius: 1 }} />
         </div>
-        <span style={s.agentModel}>{agent.model || 'default'}</span>
-        <ContextMini value={agent.contextUsage} />
+        <span style={{ fontSize: 8, color: 'var(--text-dim)' }}>{agent.model || 'default'}</span>
+        <CtxGauge value={agent.contextUsage} />
       </div>
     </div>
   );
 }
 
-// ── CONTEXT MINI GAUGE ──
-
-function ContextMini({ value }) {
+function CtxGauge({ value }) {
   const pct = Math.round((value || 0) * 100);
   const color = pct > 80 ? RED : pct > 60 ? AMBER : GREEN;
   return (
-    <div style={s.ctxMini}>
-      <div style={s.ctxMiniTrack}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+      <div style={{ width: 24, height: 3, background: '#2c313a', borderRadius: 1, overflow: 'hidden' }}>
         <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 1 }} />
       </div>
-      <span style={{ fontSize: 8, color: 'var(--text-dim)', minWidth: 20, textAlign: 'right' }}>{pct}%</span>
+      <span style={{ fontSize: 8, color: 'var(--text-dim)', minWidth: 18, textAlign: 'right' }}>{pct}%</span>
     </div>
   );
 }
 
-// ── SAVINGS CHART — Thin vertical bars showing savings accumulation ──
-
-function SavingsChart({ history }) {
-  const containerRef = useRef();
-  const canvasRef = useRef();
-
-  const draw = useCallback(() => {
-    const container = containerRef.current;
-    const canvas = canvasRef.current;
-    if (!container || !canvas) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const w = container.clientWidth;
-    const h = container.clientHeight;
-    if (w === 0 || h === 0) return;
-
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    canvas.style.width = w + 'px';
-    canvas.style.height = h + 'px';
-    const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, w, h);
-
-    // Grid lines
-    ctx.strokeStyle = '#2c313a';
-    ctx.lineWidth = 0.5;
-    for (let i = 1; i < 4; i++) {
-      const y = (i / 4) * h;
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-    }
-
-    if (history.length < 2) {
-      ctx.fillStyle = '#3e4451';
-      ctx.font = '10px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('accumulating data...', w / 2, h / 2);
-      return;
-    }
-
-    const maxV = Math.max(...history.map((h) => h.v), 1);
-    const padB = 16;
-    const padT = 8;
-    const usableH = h - padB - padT;
-
-    // Thin vertical bars — one per data point
-    const barW = 2;
-    const gap = Math.max(Math.floor((w - 20) / history.length) - barW, 2);
-    const totalW = history.length * (barW + gap) - gap;
-    const startX = (w - totalW) / 2;
-
-    history.forEach((point, i) => {
-      const x = startX + i * (barW + gap);
-
-      // Stacked: rotation (accent) + conflicts (amber) + cold-start (green)
-      const rH = (point.r / maxV) * usableH;
-      const cH = (point.c / maxV) * usableH;
-      const sH = (point.s / maxV) * usableH;
-
-      let y = h - padB;
-
-      // Rotation savings
-      if (rH > 0) {
-        ctx.fillStyle = ACCENT;
-        ctx.shadowColor = ACCENT;
-        ctx.shadowBlur = 4;
-        ctx.fillRect(x, y - rH, barW, rH);
-        y -= rH;
-      }
-
-      // Conflict savings
-      if (cH > 0) {
-        ctx.fillStyle = AMBER;
-        ctx.shadowColor = AMBER;
-        ctx.shadowBlur = 4;
-        ctx.fillRect(x, y - cH, barW, cH);
-        y -= cH;
-      }
-
-      // Cold-start savings
-      if (sH > 0) {
-        ctx.fillStyle = GREEN;
-        ctx.shadowColor = GREEN;
-        ctx.shadowBlur = 4;
-        ctx.fillRect(x, y - sH, barW, sH);
-      }
-
-      ctx.shadowBlur = 0;
-    });
-
-    // Legend
-    ctx.font = '8px monospace';
-    const legendY = h - 3;
-    ctx.fillStyle = ACCENT; ctx.fillRect(4, legendY - 5, 6, 2);
-    ctx.fillStyle = '#5c6370'; ctx.fillText('rot', 13, legendY);
-    ctx.fillStyle = AMBER; ctx.fillRect(34, legendY - 5, 6, 2);
-    ctx.fillStyle = '#5c6370'; ctx.fillText('conf', 43, legendY);
-    ctx.fillStyle = GREEN; ctx.fillRect(70, legendY - 5, 6, 2);
-    ctx.fillStyle = '#5c6370'; ctx.fillText('cold', 79, legendY);
-
-    // Max label
-    ctx.fillStyle = '#3e4451';
-    ctx.font = '8px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(formatNum(maxV), 2, padT);
-  }, [history]);
-
-  useEffect(() => { draw(); }, [draw]);
-  useEffect(() => {
-    const obs = new ResizeObserver(draw);
-    if (containerRef.current) obs.observe(containerRef.current);
-    return () => obs.disconnect();
-  }, [draw]);
+// ── SAVINGS BLOCK ──
+function SavingsBlock({ savings }) {
+  const items = [
+    { label: 'Rotation', value: savings.fromRotation, color: ACCENT },
+    { label: 'Conflicts', value: savings.fromConflictPrevention, color: AMBER },
+    { label: 'Cold-start', value: savings.fromColdStartSkip, color: GREEN },
+  ];
+  const total = savings.total || 1;
 
   return (
-    <div ref={containerRef} style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-      <canvas ref={canvasRef} style={{ display: 'block', position: 'absolute', top: 0, left: 0 }} />
+    <div>
+      <div style={s.miniHead}>TOKEN SAVINGS</div>
+      <div style={s.stackedBar}>
+        {items.map((it, i) => it.value > 0 && (
+          <div key={i} style={{ width: `${(it.value / total) * 100}%`, height: '100%', background: it.color }} />
+        ))}
+      </div>
+      {items.map((it, i) => (
+        <div key={i} style={s.savRow}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 6, height: 6, background: it.color, borderRadius: 1, flexShrink: 0 }} />
+            <span>{it.label}</span>
+          </div>
+          <span style={{ fontWeight: 600 }}>{fmtNum(it.value)}</span>
+        </div>
+      ))}
     </div>
   );
 }
 
-// ── BURN RATE CHART — Thin vertical bars per agent ──
+// ── ROUTING BLOCK ──
+function RoutingBlock({ routing }) {
+  const tiers = [
+    { label: 'HEAVY', cost: '$0.045', color: RED, count: routing.byTier.heavy },
+    { label: 'MEDIUM', cost: '$0.009', color: AMBER, count: routing.byTier.medium },
+    { label: 'LIGHT', cost: '$0.002', color: GREEN, count: routing.byTier.light },
+  ];
+  const max = Math.max(...tiers.map((t) => t.count), 1);
 
-function BurnRateChart({ agents }) {
+  return (
+    <div>
+      <div style={s.miniHead}>MODEL ROUTING</div>
+      {tiers.map((t) => (
+        <div key={t.label} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0' }}>
+          <span style={{ fontSize: 8, fontWeight: 700, color: t.color, minWidth: 42 }}>{t.label}</span>
+          <div style={{ flex: 1, height: 4, background: '#2c313a', borderRadius: 1, overflow: 'hidden' }}>
+            <div style={{ width: `${Math.max((t.count / max) * 100, t.count > 0 ? 3 : 0)}%`, height: '100%', background: t.color, borderRadius: 1 }} />
+          </div>
+          <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-bright)', minWidth: 16, textAlign: 'right' }}>{t.count}</span>
+        </div>
+      ))}
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 8, color: 'var(--text-dim)', marginTop: 4 }}>
+        <span>{routing.autoRoutedCount} auto</span>
+        <span>{routing.totalDecisions} total</span>
+      </div>
+    </div>
+  );
+}
+
+// ── ADAPTIVE BLOCK ──
+function AdaptiveBlock({ adaptive }) {
+  if (!adaptive || adaptive.length === 0) return null;
+  return (
+    <div>
+      <div style={s.miniHead}>ADAPTIVE THRESHOLDS</div>
+      {adaptive.map((p) => (
+        <div key={p.key} style={{ padding: '4px 0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, marginBottom: 2 }}>
+            <span style={{ color: 'var(--text-bright)', fontWeight: 600 }}>{p.key}</span>
+            <span style={{ color: p.converged ? GREEN : AMBER, fontSize: 8 }}>
+              {p.converged ? 'CONVERGED' : `${p.adjustments} adj`}
+            </span>
+          </div>
+          <div style={{ height: 5, background: '#2c313a', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ width: `${Math.round(p.threshold * 100)}%`, height: '100%', background: p.converged ? GREEN : ACCENT, borderRadius: 2 }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── TELEMETRY CHART — Full-width area chart with per-agent lines ──
+function TelemetryChart({ tokenTimeline, agents }) {
   const containerRef = useRef();
   const canvasRef = useRef();
 
@@ -348,70 +296,121 @@ function BurnRateChart({ agents }) {
     const ctx = canvas.getContext('2d');
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, w, h);
+
+    const padL = 40, padR = 10, padT = 10, padB = 20;
+    const chartW = w - padL - padR;
+    const chartH = h - padT - padB;
 
     // Grid
     ctx.strokeStyle = '#2c313a';
     ctx.lineWidth = 0.5;
-    for (let i = 1; i < 4; i++) {
-      const y = (i / 4) * h;
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    for (let i = 0; i <= 4; i++) {
+      const y = padT + (i / 4) * chartH;
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
     }
 
-    const active = agents.filter((a) => a.tokens > 0 || a.status === 'running');
-    if (active.length === 0) {
+    // Gather all agent timelines
+    const agentIds = Object.keys(tokenTimeline).filter((id) =>
+      agents.some((a) => a.id === id)
+    );
+
+    if (agentIds.length === 0) {
       ctx.fillStyle = '#3e4451';
-      ctx.font = '10px monospace';
+      ctx.font = '11px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('awaiting telemetry...', w / 2, h / 2);
+      ctx.fillText('Waiting for agent telemetry...', w / 2, h / 2);
       return;
     }
 
-    const maxTok = Math.max(...active.map((a) => a.tokens), 1);
-    const padB = 16;
-    const padT = 4;
-    const usableH = h - padB - padT;
-
-    // Thin bars with generous spacing
-    const barW = 3;
-    const gap = Math.max(Math.floor((w - 24) / active.length) - barW, 8);
-    const totalW = active.length * (barW + gap) - gap;
-    const startX = (w - totalW) / 2;
-
-    active.forEach((agent, i) => {
-      const x = startX + i * (barW + gap);
-      const barH = Math.max((agent.tokens / maxTok) * usableH, 2);
-      const color = AGENT_COLORS[i % AGENT_COLORS.length];
-      const y = h - padB - barH;
-
-      // Glow for running agents
-      if (agent.status === 'running') {
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 8;
+    // Find global time range and max value
+    let minT = Infinity, maxT = 0, maxV = 0;
+    for (const id of agentIds) {
+      const pts = tokenTimeline[id] || [];
+      for (const p of pts) {
+        if (p.t < minT) minT = p.t;
+        if (p.t > maxT) maxT = p.t;
+        if (p.v > maxV) maxV = p.v;
       }
-      ctx.fillStyle = color;
-      ctx.fillRect(x, y, barW, barH);
-      ctx.shadowBlur = 0;
+    }
 
-      // Label below
-      ctx.fillStyle = '#5c6370';
-      ctx.font = '8px monospace';
-      ctx.textAlign = 'center';
-      const lbl = agent.name.length > 10 ? agent.name.slice(0, 9) + '..' : agent.name;
-      ctx.fillText(lbl, x + barW / 2, h - 3);
+    if (maxT === minT) maxT = minT + 60000;
+    if (maxV === 0) maxV = 100;
+    const timeRange = maxT - minT;
 
-      // Value above
-      ctx.fillStyle = '#abb2bf';
-      ctx.font = '9px monospace';
-      const tok = agent.tokens >= 1000 ? `${(agent.tokens / 1000).toFixed(1)}k` : String(agent.tokens);
-      ctx.fillText(tok, x + barW / 2, y - 3);
-      ctx.textAlign = 'left';
-    });
-
-    // Y max
+    // Y-axis labels
     ctx.fillStyle = '#3e4451';
     ctx.font = '8px monospace';
-    ctx.fillText(formatNum(maxTok), 2, padT + 6);
-  }, [agents]);
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= 4; i++) {
+      const val = maxV * (1 - i / 4);
+      const y = padT + (i / 4) * chartH;
+      ctx.fillText(fmtNum(Math.round(val)), padL - 4, y + 3);
+    }
+
+    // X-axis time labels
+    ctx.textAlign = 'center';
+    const timeLabels = 5;
+    for (let i = 0; i <= timeLabels; i++) {
+      const t = minT + (i / timeLabels) * timeRange;
+      const x = padL + (i / timeLabels) * chartW;
+      const d = new Date(t);
+      ctx.fillText(`${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`, x, h - 4);
+    }
+
+    // Draw each agent as a filled area + line
+    agentIds.forEach((id, idx) => {
+      const pts = tokenTimeline[id] || [];
+      if (pts.length < 2) return;
+
+      const color = COLORS[idx % COLORS.length];
+      const agent = agents.find((a) => a.id === id);
+      const isRunning = agent?.status === 'running';
+
+      // Map points to canvas coords
+      const coords = pts.map((p) => ({
+        x: padL + ((p.t - minT) / timeRange) * chartW,
+        y: padT + (1 - p.v / maxV) * chartH,
+      }));
+
+      // Fill area
+      ctx.beginPath();
+      ctx.moveTo(coords[0].x, padT + chartH);
+      for (const c of coords) ctx.lineTo(c.x, c.y);
+      ctx.lineTo(coords[coords.length - 1].x, padT + chartH);
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0, padT, 0, padT + chartH);
+      grad.addColorStop(0, color + '30');
+      grad.addColorStop(1, color + '05');
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Line
+      ctx.beginPath();
+      for (let i = 0; i < coords.length; i++) {
+        i === 0 ? ctx.moveTo(coords[i].x, coords[i].y) : ctx.lineTo(coords[i].x, coords[i].y);
+      }
+      ctx.strokeStyle = color;
+      ctx.lineWidth = isRunning ? 2 : 1;
+      if (isRunning) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 6;
+      }
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // End dot
+      const last = coords[coords.length - 1];
+      if (isRunning) {
+        ctx.beginPath();
+        ctx.arc(last.x, last.y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 8;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    });
+  }, [tokenTimeline, agents]);
 
   useEffect(() => { draw(); }, [draw]);
   useEffect(() => {
@@ -427,158 +426,14 @@ function BurnRateChart({ agents }) {
   );
 }
 
-// ── ROUTING VIZ — Cost-proportional + decisions ──
-
-function RoutingViz({ routing, agents }) {
-  const tiers = [
-    { key: 'heavy', label: 'HEAVY', cost: '$0.045/1k', color: RED, count: routing.byTier.heavy },
-    { key: 'medium', label: 'MEDIUM', cost: '$0.009/1k', color: AMBER, count: routing.byTier.medium },
-    { key: 'light', label: 'LIGHT', cost: '$0.002/1k', color: GREEN, count: routing.byTier.light },
-  ];
-  const maxCount = Math.max(...tiers.map((t) => t.count), 1);
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 10, minHeight: 0, justifyContent: 'center' }}>
-      {tiers.map((t) => (
-        <div key={t.key}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: t.color, letterSpacing: 1 }}>{t.label}</span>
-              <span style={{ fontSize: 8, color: 'var(--text-dim)' }}>{t.cost}</span>
-            </div>
-            <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-bright)' }}>{t.count}</span>
-          </div>
-          <div style={s.routBar}>
-            <div style={{
-              width: `${Math.max((t.count / maxCount) * 100, t.count > 0 ? 2 : 0)}%`, height: '100%',
-              background: `linear-gradient(90deg, ${t.color}, ${t.color}44)`, borderRadius: 1,
-              boxShadow: t.count > 0 ? `0 0 8px ${t.color}44` : 'none',
-            }} />
-          </div>
-        </div>
-      ))}
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--text-dim)', borderTop: '1px solid var(--border)', paddingTop: 6, marginTop: 'auto' }}>
-        <span>{routing.autoRoutedCount} auto-routed</span>
-        <span>{routing.totalDecisions} total decisions</span>
-      </div>
-    </div>
-  );
-}
-
-// ── ADAPTIVE ROW — Threshold + sparkline + signals ──
-
-function AdaptiveRow({ profile }) {
-  const pct = Math.round(profile.threshold * 100);
-  const scores = profile.recentScores || [];
-  const signals = profile.lastSignals;
-
-  return (
-    <div style={s.adaptRow}>
-      <div style={s.adaptTop}>
-        <span style={s.adaptKey}>{profile.key}</span>
-        <span style={{ ...s.adaptConverged, color: profile.converged ? GREEN : AMBER }}>
-          {profile.converged ? 'CONVERGED' : `${profile.adjustments} adj`}
-        </span>
-      </div>
-      <div style={s.adaptMid}>
-        <div style={s.adaptTrack}>
-          <div style={{
-            width: `${pct}%`, height: '100%',
-            background: profile.converged ? GREEN : ACCENT,
-            borderRadius: 2,
-            boxShadow: `0 0 6px ${profile.converged ? GREEN : ACCENT}44`,
-          }} />
-          <span style={s.adaptMarker}>{pct}%</span>
-        </div>
-        {scores.length > 2 && <MiniSparkline data={scores} width={60} height={14} color={ACCENT} />}
-      </div>
-      {signals && (
-        <div style={s.adaptSignals}>
-          {signals.errorCount > 0 && <span style={{ color: RED }}>err:{signals.errorCount}</span>}
-          {signals.repetitions > 0 && <span style={{ color: AMBER }}>rep:{signals.repetitions}</span>}
-          {signals.fileChurn > 0 && <span style={{ color: PURPLE }}>churn:{signals.fileChurn}</span>}
-          {signals.filesWritten > 0 && <span style={{ color: GREEN }}>files:{signals.filesWritten}</span>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── JOURNALIST PANEL ──
-
-function JournalistPanel({ journalist, savings }) {
-  const coldStarts = savings.fromColdStartSkip > 0 ? Math.round(savings.fromColdStartSkip / 2000) : 0;
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 6, minHeight: 0 }}>
-      <div style={s.journStats}>
-        <div style={s.journStat}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: journalist.running ? GREEN : 'var(--text-dim)' }}>
-            {journalist.running ? 'LIVE' : 'IDLE'}
-          </span>
-          <span style={{ fontSize: 7, color: 'var(--text-dim)' }}>STATUS</span>
-        </div>
-        <div style={s.journStat}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-bright)' }}>{journalist.cycleCount || 0}</span>
-          <span style={{ fontSize: 7, color: 'var(--text-dim)' }}>CYCLES</span>
-        </div>
-        <div style={s.journStat}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: GREEN }}>{coldStarts}</span>
-          <span style={{ fontSize: 7, color: 'var(--text-dim)' }}>COLD-STARTS SKIPPED</span>
-        </div>
-      </div>
-      {journalist.lastSummary && (
-        <div style={s.journSummary}>
-          {journalist.lastSummary}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── MINI SPARKLINE — tiny inline chart ──
-
-function MiniSparkline({ data, width, height, color }) {
-  const canvasRef = useRef();
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || data.length < 2) return;
-    const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, width, height);
-
-    const max = Math.max(...data, 1);
-    const min = Math.min(...data, 0);
-    const range = max - min || 1;
-    const step = width / (data.length - 1);
-
-    ctx.beginPath();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    data.forEach((v, i) => {
-      const x = i * step;
-      const y = height - ((v - min) / range) * (height - 2) - 1;
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-  }, [data, width, height, color]);
-
-  return <canvas ref={canvasRef} style={{ width, height, flexShrink: 0 }} />;
-}
-
 // ── HELPERS ──
-
-function formatNum(n) {
+function fmtNum(n) {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
+  return String(n || 0);
 }
 
-function formatUptime(sec) {
+function fmtUptime(sec) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   if (h > 0) return `${h}h ${m}m`;
@@ -593,7 +448,6 @@ function timeAgo(ts) {
 }
 
 // ── STYLES ──
-
 const s = {
   root: {
     width: '100%', height: '100%',
@@ -603,8 +457,6 @@ const s = {
     gap: 10,
     background: 'var(--bg-base)',
   },
-
-  // Loading
   loadingRoot: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
     height: '100%', gap: 12,
@@ -613,65 +465,59 @@ const s = {
     fontSize: 11, fontWeight: 700, color: 'var(--text-dim)',
     letterSpacing: 3, textTransform: 'uppercase',
   },
-  loadingBar: {
-    width: 120, height: 2, background: 'var(--bg-surface)', borderRadius: 1, overflow: 'hidden',
-  },
-  loadingFill: {
-    width: '40%', height: '100%', background: ACCENT,
-    animation: 'pulse 1.5s infinite',
-  },
+  loadingBar: { width: 120, height: 2, background: 'var(--bg-surface)', borderRadius: 1, overflow: 'hidden' },
+  loadingFill: { width: '40%', height: '100%', background: ACCENT, animation: 'pulse 1.5s infinite' },
 
   // Hero row
   heroRow: {
     display: 'flex', alignItems: 'stretch', gap: 8,
-    flexShrink: 0, height: 72,
+    flexShrink: 0, height: 68,
   },
   heroStat: {
-    flex: 1,
-    background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border)',
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-    padding: '6px 8px',
-    borderTop: '2px solid var(--border)',
+    padding: '6px 8px', borderTop: '2px solid var(--border)',
   },
   heroStatLabel: {
     fontSize: 7, fontWeight: 700, color: 'var(--text-dim)',
     textTransform: 'uppercase', letterSpacing: 1.2, marginTop: 3,
   },
-  heroStatSub: {
-    fontSize: 8, color: 'var(--text-dim)', marginTop: 1,
-  },
-
-  // Center hero — the money shot
-  heroCenterBox: {
-    flex: 1.8,
-    background: 'var(--bg-surface)', border: '1px solid var(--border)',
+  heroCenter: {
+    flex: 2, background: 'var(--bg-surface)', border: '1px solid var(--border)',
     borderTop: `2px solid ${GREEN}`,
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-    padding: '6px 8px',
-    boxShadow: `0 0 20px rgba(74, 225, 104, 0.08), inset 0 0 30px rgba(74, 225, 104, 0.03)`,
+    padding: '6px 12px',
+    boxShadow: `0 0 24px rgba(74, 225, 104, 0.08), inset 0 0 40px rgba(74, 225, 104, 0.03)`,
   },
   heroDollar: {
-    fontSize: 22, fontWeight: 800, color: GREEN, lineHeight: 1,
-    textShadow: `0 0 12px rgba(74, 225, 104, 0.4)`,
+    fontSize: 26, fontWeight: 800, color: GREEN, lineHeight: 1,
+    textShadow: `0 0 16px rgba(74, 225, 104, 0.4)`,
   },
   heroCenterLabel: {
     fontSize: 7, fontWeight: 700, color: 'var(--text-dim)',
     textTransform: 'uppercase', letterSpacing: 1.2, marginTop: 4,
   },
-  heroCenterSub: {
-    fontSize: 9, color: GREEN, marginTop: 2, opacity: 0.8,
-  },
+  heroCenterSub: { fontSize: 9, color: GREEN, marginTop: 2, opacity: 0.7 },
 
-  // Main grid — 3 cols x 2 rows
-  mainGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr 1fr',
-    gridTemplateRows: '2fr 3fr',
-    gap: 10,
-    flex: 1, minHeight: 0,
+  // Main chart
+  chartPanel: {
+    flex: 2, minHeight: 0,
+    background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    padding: '8px 12px', display: 'flex', flexDirection: 'column',
   },
+  chartHead: {
+    fontSize: 9, fontWeight: 700, color: 'var(--text-dim)',
+    textTransform: 'uppercase', letterSpacing: 1.5,
+    paddingBottom: 6, flexShrink: 0,
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+  },
+  chartHeadRight: { display: 'flex', alignItems: 'center', color: 'var(--text-dim)' },
 
-  // Panel wrapper
+  // Bottom row — three panels
+  bottomRow: {
+    flex: 3, minHeight: 0,
+    display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10,
+  },
   panel: {
     minHeight: 0, overflow: 'hidden',
     background: 'var(--bg-surface)', border: '1px solid var(--border)',
@@ -682,98 +528,58 @@ const s = {
     textTransform: 'uppercase', letterSpacing: 1.5,
     paddingBottom: 6, marginBottom: 6, flexShrink: 0,
     borderBottom: '1px solid var(--border)',
+    display: 'flex', alignItems: 'center', gap: 8,
   },
-  scrollInner: {
-    flex: 1, minHeight: 0, overflowY: 'auto',
-  },
-  empty: {
-    color: 'var(--text-dim)', fontSize: 10, textAlign: 'center', padding: 16, opacity: 0.6,
-  },
+  scrollInner: { flex: 1, minHeight: 0, overflowY: 'auto' },
+  empty: { color: 'var(--text-dim)', fontSize: 10, textAlign: 'center', padding: 16, opacity: 0.6 },
 
-  // Split column (adaptive + journalist stacked)
-  splitCol: {
-    display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0,
+  // Shared
+  divider: { height: 1, background: 'var(--border)', margin: '6px 0', flexShrink: 0 },
+  miniHead: {
+    fontSize: 8, fontWeight: 700, color: 'var(--text-dim)',
+    textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4,
+  },
+  dot: { width: 6, height: 6, borderRadius: '50%', flexShrink: 0 },
+  liveBadge: {
+    fontSize: 7, fontWeight: 700, color: '#1a1d23',
+    padding: '1px 5px', borderRadius: 2, letterSpacing: 0.5, marginLeft: 'auto',
   },
 
   // Agent cards
-  agentCard: {
-    padding: '6px 0', borderBottom: '1px solid var(--bg-base)',
-  },
-  agentCardTop: {
-    display: 'flex', alignItems: 'center', gap: 6,
-  },
-  agentCardBottom: {
-    display: 'flex', alignItems: 'center', gap: 6, marginTop: 4,
-  },
-  dot: { width: 6, height: 6, borderRadius: '50%', flexShrink: 0 },
-  agentName: { fontSize: 11, color: 'var(--text-bright)', fontWeight: 600 },
-  agentRole: { fontSize: 9, color: 'var(--text-dim)' },
-  agentModel: { fontSize: 8, color: 'var(--text-dim)', marginLeft: 'auto' },
+  agentCard: { padding: '5px 0', borderBottom: '1px solid var(--bg-base)' },
+  agentCardRow: { display: 'flex', alignItems: 'center', gap: 6 },
+  agentBarRow: { display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 },
+  agentBarTrack: { flex: 1, height: 2, background: '#2c313a', borderRadius: 1, overflow: 'hidden' },
   tagAuto: {
     fontSize: 7, fontWeight: 700, color: ACCENT,
-    border: `1px solid ${ACCENT}`, padding: '0 3px', lineHeight: '12px', letterSpacing: 0.5,
+    border: `1px solid ${ACCENT}`, padding: '0 3px', lineHeight: '11px', letterSpacing: 0.5,
   },
-  agentTok: { fontSize: 11, color: 'var(--text-primary)', fontWeight: 600, marginLeft: 'auto' },
-  agentBarTrack: { flex: 1, height: 2, background: '#2c313a', borderRadius: 1, overflow: 'hidden' },
 
-  // Context mini gauge
-  ctxMini: { display: 'flex', alignItems: 'center', gap: 3 },
-  ctxMiniTrack: { width: 30, height: 3, background: '#2c313a', borderRadius: 1, overflow: 'hidden' },
-
-  // Routing
-  routBar: { height: 6, background: '#2c313a', borderRadius: 1, overflow: 'hidden' },
-
-  // Adaptive
-  adaptRow: {
-    padding: '6px 0', borderBottom: '1px solid var(--bg-base)',
-  },
-  adaptTop: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4,
-  },
-  adaptKey: { fontSize: 10, color: 'var(--text-bright)', fontWeight: 600 },
-  adaptConverged: { fontSize: 8, fontWeight: 700, letterSpacing: 0.5 },
-  adaptMid: {
-    display: 'flex', alignItems: 'center', gap: 8,
-  },
-  adaptTrack: {
-    flex: 1, height: 6, background: '#2c313a', borderRadius: 2, overflow: 'hidden', position: 'relative',
-  },
-  adaptMarker: {
-    position: 'absolute', right: 4, top: -1,
-    fontSize: 8, color: 'var(--text-dim)', fontWeight: 600, lineHeight: '8px',
-  },
-  adaptSignals: {
-    display: 'flex', gap: 8, marginTop: 3,
-    fontSize: 8, fontFamily: 'var(--font)',
+  // Savings
+  stackedBar: { height: 8, background: '#2c313a', borderRadius: 2, overflow: 'hidden', display: 'flex', marginBottom: 4 },
+  savRow: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '2px 0', fontSize: 10, color: 'var(--text-primary)',
   },
 
   // Journalist
   journStats: {
-    display: 'flex', gap: 6,
-  },
-  journStat: {
-    flex: 1, background: 'var(--bg-base)', border: '1px solid var(--border)',
-    padding: '6px 4px', textAlign: 'center',
-    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+    display: 'flex', justifyContent: 'space-between',
+    fontSize: 9, color: 'var(--text-dim)', marginBottom: 6,
   },
   journSummary: {
-    flex: 1, fontSize: 9, color: 'var(--text-primary)', lineHeight: 1.5,
-    padding: '6px 4px', background: 'var(--bg-base)', border: '1px solid var(--border)',
-    overflowY: 'auto', whiteSpace: 'pre-wrap',
+    fontSize: 10, color: 'var(--text-primary)', lineHeight: 1.6,
+    padding: '6px 8px', background: 'var(--bg-base)', border: '1px solid var(--border)',
+    overflowY: 'auto', whiteSpace: 'pre-wrap', minHeight: 60, maxHeight: 200, flex: 1,
   },
 
-  // Rotation timeline
+  // Rotation
   rotEntry: {
     display: 'flex', alignItems: 'center', gap: 6,
-    padding: '5px 0', borderBottom: '1px solid var(--bg-base)', fontSize: 10,
+    padding: '3px 0', fontSize: 10,
   },
-  rotDot: {
-    width: 6, height: 6, borderRadius: '50%', background: ACCENT, flexShrink: 0,
-    boxShadow: `0 0 4px ${ACCENT}44`,
-  },
-  rotInfo: { flex: 1, minWidth: 0 },
-  rotName: { color: 'var(--text-bright)', fontWeight: 600, marginRight: 6 },
+  rotDot: { width: 5, height: 5, borderRadius: '50%', background: ACCENT, flexShrink: 0 },
+  rotName: { color: 'var(--text-bright)', fontWeight: 600, flex: 1 },
   rotSaved: { color: GREEN, fontSize: 9, fontWeight: 600 },
-  rotMeta: { fontSize: 9, color: 'var(--text-dim)', minWidth: 24, textAlign: 'right' },
   rotTime: { color: 'var(--text-dim)', fontSize: 9, flexShrink: 0 },
 };

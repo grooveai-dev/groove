@@ -185,7 +185,24 @@ export const useGrooveStore = create((set, get) => ({
       throw new Error(err.error || 'Instruction failed');
     }
     const newAgent = await res.json();
-    // Select the new agent (same name, new ID after rotation/continuation)
+    // Carry chat history from old agent to new (same conversation, new ID)
+    const oldChat = get().chatHistory[id] || [];
+    if (oldChat.length > 0) {
+      set((s) => {
+        const history = { ...s.chatHistory };
+        history[newAgent.id] = [...oldChat];
+        return { chatHistory: history };
+      });
+    }
+    // Also carry token timeline for continuity in stats
+    const oldTimeline = get().tokenTimeline[id] || [];
+    if (oldTimeline.length > 0) {
+      set((s) => {
+        const timeline = { ...s.tokenTimeline };
+        timeline[newAgent.id] = [...oldTimeline];
+        return { tokenTimeline: timeline };
+      });
+    }
     get().selectAgent(newAgent.id);
     get().addChatMessage(newAgent.id, 'system', 'agent resumed with context');
     return newAgent;

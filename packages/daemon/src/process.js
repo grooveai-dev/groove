@@ -194,6 +194,10 @@ For normal file edits within your scope, proceed without review.
         this.daemon.classifier.addEvent(agent.id, output);
 
         const updates = { lastActivity: new Date().toISOString() };
+        // Capture session_id for --resume support (zero cold-start continuation)
+        if (output.sessionId) {
+          updates.sessionId = output.sessionId;
+        }
         if (output.tokensUsed !== undefined && output.tokensUsed > 0) {
           const current = registry.get(agent.id);
           if (current) {
@@ -260,6 +264,135 @@ For normal file edits within your scope, proceed without review.
     });
 
     return agent;
+  }
+
+  /**
+   * Resume a completed agent's session with a new message.
+   * Uses --resume SESSION_ID for zero cold-start continuation.
+   * Falls back to full spawn if no session ID available.
+   */
+  async resume(agentId, message) {
+    const { registry, locks } = this.daemon;
+    const agent = registry.get(agentId);
+    if (!agent) throw new Error(`Agent ${agentId} not found`);
+
+    // If no session ID, fall back to rotation (handoff brief)
+    if (!agent.sessionId) {
+      return this.daemon.rotator.rotate(agentId, { additionalPrompt: message });
+    }
+
+    const provider = getProvider(agent.provider || 'claude-code');
+    if (!provider?.buildResumeCommand) {
+      return this.daemon.rotator.rotate(agentId, { additionalPrompt: message });
+    }
+
+    // Clean up old agent entry but keep the data we need
+    const config = { ...agent };
+    const sessionId = agent.sessionId;
+
+    // Kill if still running, or remove if dead
+    if (this.handles.has(agentId)) {
+      await this.kill(agentId);
+    } else {
+      locks.release(agentId);
+      registry.remove(agentId);
+    }
+
+    // Build resume command
+    const { command, args, env } = provider.buildResumeCommand(sessionId, message, config.model);
+
+    // Set up log capture
+    const logDir = resolve(this.daemon.grooveDir, 'logs');
+    mkdirSync(logDir, { recursive: true });
+    const logPath = resolve(logDir, `${sanitizeFilename(config.name)}.log`);
+    const logStream = createWriteStream(logPath, { flags: 'a', mode: 0o600 });
+
+    const resumeLine = `[${new Date().toISOString()}] GROOVE resuming session: ${command} --resume ${sessionId}\n`;
+    logStream.write(resumeLine);
+
+    // Re-register in registry with same name
+    const newAgent = registry.add({
+      role: config.role,
+      scope: config.scope,
+      provider: config.provider,
+      model: config.model,
+      prompt: config.prompt,
+      permission: config.permission,
+      workingDir: config.workingDir,
+      name: config.name,
+    });
+
+    // Carry cumulative tokens
+    if (config.tokensUsed > 0) {
+      registry.update(newAgent.id, { tokensUsed: config.tokensUsed });
+    }
+
+    // Re-register locks
+    if (newAgent.scope && newAgent.scope.length > 0) {
+      locks.register(newAgent.id, newAgent.scope);
+    }
+
+    // Spawn the resumed process
+    const proc = cpSpawn(command, args, {
+      cwd: config.workingDir || this.daemon.projectDir,
+      env: { ...process.env, ...env, GROOVE_AGENT_ID: newAgent.id, GROOVE_AGENT_NAME: newAgent.name },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: false,
+    });
+
+    if (!proc.pid) {
+      registry.remove(newAgent.id);
+      locks.release(newAgent.id);
+      logStream.end();
+      throw new Error(`Failed to resume — process has no PID`);
+    }
+
+    this.handles.set(newAgent.id, { proc, logStream });
+    registry.update(newAgent.id, { status: 'running', pid: proc.pid });
+
+    // Same stdout/stderr/exit handling as spawn
+    proc.stdout.on('data', (chunk) => {
+      logStream.write(chunk);
+      const output = provider.parseOutput(chunk.toString());
+      if (output) {
+        this.daemon.classifier.addEvent(newAgent.id, output);
+        const updates = { lastActivity: new Date().toISOString() };
+        if (output.sessionId) updates.sessionId = output.sessionId;
+        if (output.tokensUsed !== undefined && output.tokensUsed > 0) {
+          const current = registry.get(newAgent.id);
+          if (current) {
+            updates.tokensUsed = current.tokensUsed + output.tokensUsed;
+            this.daemon.tokens.record(newAgent.id, output.tokensUsed);
+          }
+        }
+        if (output.contextUsage !== undefined) updates.contextUsage = output.contextUsage;
+        registry.update(newAgent.id, updates);
+        this.daemon.broadcast({ type: 'agent:output', agentId: newAgent.id, data: output });
+      }
+    });
+
+    proc.stderr.on('data', (chunk) => { logStream.write(`[stderr] ${chunk}`); });
+
+    proc.on('exit', (code, signal) => {
+      logStream.write(`[${new Date().toISOString()}] Process exited: code=${code} signal=${signal}\n`);
+      logStream.end();
+      this.handles.delete(newAgent.id);
+      const finalStatus = signal === 'SIGTERM' || signal === 'SIGKILL' ? 'killed' : code === 0 ? 'completed' : 'crashed';
+      registry.update(newAgent.id, { status: finalStatus, pid: null });
+      this.daemon.broadcast({ type: 'agent:exit', agentId: newAgent.id, code, signal, status: finalStatus });
+      if (finalStatus === 'completed' && this.daemon.journalist) {
+        this.daemon.journalist.cycle().catch(() => {});
+      }
+    });
+
+    proc.on('error', (err) => {
+      logStream.write(`[error] ${err.message}\n`);
+      logStream.end();
+      this.handles.delete(newAgent.id);
+      registry.update(newAgent.id, { status: 'crashed', pid: null });
+    });
+
+    return newAgent;
   }
 
   async kill(agentId) {

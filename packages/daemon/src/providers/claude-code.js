@@ -61,6 +61,15 @@ export class ClaudeCodeProvider extends Provider {
     };
   }
 
+  buildResumeCommand(sessionId, prompt, model) {
+    // Resume a previous session — preserves full conversation history
+    // No cold start, no handoff brief needed
+    const args = ['--resume', sessionId, '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
+    if (model) args.push('--model', model);
+    if (prompt) args.push(prompt);
+    return { command: 'claude', args, env: {} };
+  }
+
   buildHeadlessCommand(prompt, model) {
     const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose'];
     if (model) args.push('--model', model);
@@ -108,6 +117,11 @@ export class ClaudeCodeProvider extends Provider {
     for (const l of lines) {
       try {
         const data = JSON.parse(l);
+
+        // Capture session_id for --resume support
+        if (data.session_id) {
+          events.push({ type: 'session', sessionId: data.session_id });
+        }
 
         if (data.type === 'assistant') {
           events.push({

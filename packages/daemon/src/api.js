@@ -254,8 +254,9 @@ export function createApi(app, daemon) {
     }
   });
 
-  // Instruct an agent (rotation with user message appended)
-  // Works for both running agents (rotates with handoff) and dead agents (continues conversation)
+  // Instruct an agent — resumes session if possible, falls back to rotation
+  // Resume = zero cold-start (uses --resume SESSION_ID)
+  // Rotation = full handoff brief (only for degradation or no session)
   app.post('/api/agents/:id/instruct', async (req, res) => {
     try {
       const { message } = req.body;
@@ -264,9 +265,13 @@ export function createApi(app, daemon) {
       }
       const agent = daemon.registry.get(req.params.id);
       if (!agent) return res.status(404).json({ error: 'Agent not found' });
-      const newAgent = await daemon.rotator.rotate(req.params.id, {
-        additionalPrompt: message.trim(),
-      });
+
+      // Try session resume first (zero cold-start)
+      // Falls back to rotation if no session ID or provider doesn't support resume
+      const newAgent = agent.sessionId
+        ? await daemon.processes.resume(req.params.id, message.trim())
+        : await daemon.rotator.rotate(req.params.id, { additionalPrompt: message.trim() });
+
       res.json(newAgent);
     } catch (err) {
       res.status(400).json({ error: err.message });

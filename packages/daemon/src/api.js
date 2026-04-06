@@ -365,6 +365,17 @@ export function createApi(app, daemon) {
   app.get('/api/dashboard', (req, res) => {
     const agents = daemon.registry.getAll();
     const tokenSummary = daemon.tokens.getSummary();
+
+    // Token tracker might not have been fed — use registry as source of truth
+    const registryTokens = agents.reduce((sum, a) => sum + (a.tokensUsed || 0), 0);
+    if (registryTokens > tokenSummary.totalTokens) {
+      tokenSummary.totalTokens = registryTokens;
+      // Recalculate savings estimates
+      const estimated = registryTokens + tokenSummary.savings.total;
+      tokenSummary.savings.estimatedWithoutGroove = estimated;
+      tokenSummary.savings.percentage = estimated > 0
+        ? Math.round((tokenSummary.savings.total / estimated) * 100) : 0;
+    }
     const rotationStats = daemon.rotator.getStats();
     const rotationHistory = daemon.rotator.getHistory();
     const routingStatus = daemon.router.getStatus();

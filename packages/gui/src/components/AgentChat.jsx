@@ -352,6 +352,9 @@ function buildTimeline(chats, activity) {
     const parsed = parseActivityText(a.text);
     if (!parsed) continue;
 
+    // Skip raw JSON arrays (team configs, tool results)
+    if (parsed.trimStart().startsWith('[') || parsed.trimStart().startsWith('{')) continue;
+
     // Skip if we have a chat entry near this time from the agent
     const hasChatNear = items.some((it) =>
       Math.abs(it.timestamp - a.timestamp) < 2000 && it.from === 'agent'
@@ -360,7 +363,7 @@ function buildTimeline(chats, activity) {
       items.push({
         timestamp: a.timestamp,
         from: 'agent',
-        text: parsed.slice(0, 500),
+        text: parsed.slice(0, 2000),
       });
     }
   }

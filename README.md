@@ -45,6 +45,15 @@ Agents in Auto mode knock on the PM before risky operations (creating files, del
 
 Spawn a planner, describe your project. The planner writes a detailed plan and recommends a team. Click **Launch Team** — all agents spawn with proper roles, scopes, and prompts. One click from idea to a full team building your app.
 
+### Workspaces (Large Codebase Support)
+
+GROOVE auto-detects monorepo workspaces (npm, pnpm, lerna) and lets you spawn each agent in its own subdirectory. A frontend agent only sees `packages/frontend/`. A backend agent only sees `packages/backend/`. No wasted context on irrelevant code.
+
+- **Codebase indexer** — scans project structure on start, gives every agent instant orientation
+- **Architecture injection** — auto-detects `ARCHITECTURE.md` and injects it into every agent's context
+- **Per-workspace journalist** — synthesis and handoff briefs scoped to each agent's directory
+- **Quick-pick** — detected workspaces appear as buttons in the spawn panel
+
 ### Multi-Agent Coordination
 
 - **Introduction protocol** — every agent knows its teammates, their files, and their work
@@ -56,10 +65,9 @@ Spawn a planner, describe your project. The planner writes a detailed plan and r
 
 | Provider | Auth | Models |
 |----------|------|--------|
-| **Claude Code** | Subscription | Opus, Sonnet, Haiku |
-| **Codex** | API Key | o3, o4-mini |
-| **Gemini CLI** | API Key | 2.5 Pro, 2.5 Flash |
-
+| **Claude Code** | Subscription | Opus 4.6, Sonnet 4.6, Haiku 4.5 |
+| **Codex** | API Key | o3, o4-mini, GPT-4.1, GPT-4.1 Mini, GPT-4.1 Nano |
+| **Gemini CLI** | API Key | 3.1 Pro, 3 Flash, 3.1 Flash Lite, 2.5 Pro, 2.5 Flash |
 | **Ollama** | Local | Any |
 
 GROOVE is a process manager — it spawns actual AI tool binaries. It never proxies API calls, never touches OAuth tokens, never impersonates any client. Your AI tools talk directly to their servers.
@@ -90,19 +98,19 @@ GROOVE routes tasks to the cheapest model that can handle them. Planners get Opu
 ## Architecture
 
 ```
-         ┌─────────────────────────────────────────┐
-         │            GROOVE DAEMON (:31415)        │
-         │                                         │
-         │  Registry · Introducer · Lock Manager   │
-         │  Journalist · Rotator · Adaptive        │
-         │  Classifier · Router · PM · Teams       │
-         │                                         │
-         │  REST API · WebSocket · GUI Server       │
-         └─────────────────┬───────────────────────┘
+    ┌──────────────────────────────────────────────┐
+    │             GROOVE DAEMON (:31415)            │
+    │                                              │
+    │  Registry · Introducer · Lock Manager        │
+    │  Journalist · Rotator · Adaptive · Indexer   │
+    │  Classifier · Router · PM · Teams            │
+    │                                              │
+    │  REST API · WebSocket · GUI Server           │
+    └──────────────────────┬───────────────────────┘
                            │
-    ┌──────────────────────▼──────────────────────┐
-    │  Claude Code · Codex · Gemini · Ollama           │
-    └─────────────────────────────────────────────┘
+    ┌──────────────────────▼───────────────────────┐
+    │   Claude Code · Codex · Gemini CLI · Ollama  │
+    └──────────────────────────────────────────────┘
 ```
 
 ## Links

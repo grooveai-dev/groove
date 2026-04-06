@@ -11,11 +11,11 @@ export class CodexProvider extends Provider {
   static authType = 'api-key';
   static envKey = 'OPENAI_API_KEY';
   static models = [
-    { id: 'gpt-5.4', name: 'GPT-5.4', tier: 'heavy' },
-    { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', tier: 'medium' },
-    { id: 'gpt-5.4-nano', name: 'GPT-5.4 Nano', tier: 'light' },
     { id: 'o3', name: 'o3', tier: 'heavy' },
     { id: 'o4-mini', name: 'o4-mini', tier: 'medium' },
+    { id: 'gpt-4.1', name: 'GPT-4.1', tier: 'heavy' },
+    { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', tier: 'medium' },
+    { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', tier: 'light' },
   ];
 
   static isInstalled() {

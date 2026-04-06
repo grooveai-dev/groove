@@ -165,6 +165,15 @@ For normal file edits within your scope, proceed without review.
     const spawnLine = `[${new Date().toISOString()}] GROOVE spawning: ${command} [${safeArgs.length} args]\n`;
     logStream.write(spawnLine);
 
+    // Inject API key from credential store if the provider needs one
+    const providerMeta = getProvider(agent.provider);
+    if (providerMeta?.constructor?.envKey) {
+      const storedKey = this.daemon.credentials.getKey(agent.provider);
+      if (storedKey) {
+        env[providerMeta.constructor.envKey] = storedKey;
+      }
+    }
+
     // Spawn the process
     const proc = cpSpawn(command, args, {
       cwd: agent.workingDir || this.daemon.projectDir,

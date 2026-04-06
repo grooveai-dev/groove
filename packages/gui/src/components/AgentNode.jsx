@@ -33,7 +33,7 @@ export default function AgentNode({ data }) {
 
   return (
     <div style={{
-      background: '#252a33',
+      background: '#282c34',
       borderTop: `1px solid ${sel ? '#33afbc' : st.color}`,
       width: 180,
       cursor: 'pointer',

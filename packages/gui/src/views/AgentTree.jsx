@@ -66,7 +66,7 @@ function AgentTreeInner() {
       selectable: false,
       draggable: false,
       style: {
-        background: '#252a33',
+        background: '#282c34',
         color: '#33afbc',
         border: 'none',
         borderTop: '1px solid #33afbc',
@@ -136,7 +136,7 @@ function AgentTreeInner() {
       fitView
       fitViewOptions={{ padding: 0.3, maxZoom: 1.4 }}
     >
-      <Background color="#2c313a" gap={24} size={0.5} />
+      <Background color="#3e4451" gap={20} size={1} />
     </ReactFlow>
   );
 }

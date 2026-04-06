@@ -88,7 +88,13 @@ export default function AgentChat({ agent }) {
             {entry.from === 'agent' && (
               <div style={styles.agentMsg}>
                 <span style={styles.agentLabel}>{agent.name}</span>
-                <div style={styles.agentText}><FormattedText text={entry.text} /></div>
+                <div style={styles.agentText}>
+                  {/* Stream the latest agent message, show history instantly */}
+                  {i === timeline.length - 1 && entry.from === 'agent' && Date.now() - entry.timestamp < 5000
+                    ? <StreamingText text={entry.text} />
+                    : <FormattedText text={entry.text} />
+                  }
+                </div>
               </div>
             )}
             {entry.from === 'system' && (
@@ -133,6 +139,39 @@ export default function AgentChat({ agent }) {
         </button>
       </div>
     </div>
+  );
+}
+
+// ── STREAMING TEXT — reveals text progressively for latest agent message ──
+
+function StreamingText({ text }) {
+  const [revealed, setRevealed] = useState(0);
+  const textRef = useRef(text);
+
+  useEffect(() => {
+    // Reset on new text
+    textRef.current = text;
+    setRevealed(0);
+  }, [text]);
+
+  useEffect(() => {
+    if (revealed >= text.length) return;
+    // Reveal 2-4 chars at a time for a smooth streaming feel
+    const chunkSize = Math.random() > 0.7 ? 4 : 2;
+    const timer = setTimeout(() => {
+      setRevealed((r) => Math.min(r + chunkSize, text.length));
+    }, 12);
+    return () => clearTimeout(timer);
+  }, [revealed, text.length]);
+
+  const visibleText = text.slice(0, revealed);
+  const done = revealed >= text.length;
+
+  return (
+    <>
+      <FormattedText text={visibleText} />
+      {!done && <span style={styles.cursor}>|</span>}
+    </>
   );
 }
 
@@ -397,6 +436,12 @@ const styles = {
     borderRadius: 2,
     color: 'var(--accent)', fontSize: 11, fontWeight: 600,
     fontFamily: 'var(--font)', cursor: 'pointer',
+  },
+
+  // Streaming cursor
+  cursor: {
+    color: 'var(--accent)', fontWeight: 400, animation: 'pulse 1s infinite',
+    marginLeft: 1,
   },
 
   // Launch team

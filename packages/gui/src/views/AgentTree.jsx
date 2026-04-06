@@ -10,7 +10,7 @@ import AgentNode from '../components/AgentNode';
 const nodeTypes = { agent: AgentNode };
 
 const MAX_PER_ROW = 4;
-const NODE_X_SPACING = 220;
+const NODE_X_SPACING = 250;
 const NODE_Y_SPACING = 140;
 
 function AgentTreeInner() {
@@ -67,13 +67,13 @@ function AgentTreeInner() {
       draggable: false,
       style: {
         background: '#282c34',
-        color: '#33afbc',
-        border: '1px solid #33afbc',
-        borderRadius: 8,
-        fontWeight: 800,
-        fontSize: 10,
-        letterSpacing: 4,
-        padding: '8px 20px 7px',
+        color: '#e6e6e6',
+        border: '1px solid #3e4451',
+        borderRadius: 24,
+        fontWeight: 600,
+        fontSize: 11,
+        letterSpacing: 6,
+        padding: '10px 36px 9px',
         fontFamily: "'JetBrains Mono', 'SF Mono', Consolas, monospace",
       },
     };

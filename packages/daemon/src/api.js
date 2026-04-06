@@ -4,6 +4,7 @@
 import express from 'express';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { existsSync, readFileSync } from 'fs';
 import { listProviders } from './providers/index.js';
 import { validateAgentConfig } from './validate.js';
 
@@ -358,6 +359,52 @@ export function createApi(app, daemon) {
       history: daemon.pm.getHistory(),
       stats: daemon.pm.getStats(),
     });
+  });
+
+  // --- Recommended Team (from planner) ---
+
+  app.get('/api/recommended-team', (req, res) => {
+    const teamPath = resolve(daemon.grooveDir, 'recommended-team.json');
+    if (!existsSync(teamPath)) {
+      return res.json({ exists: false, agents: [] });
+    }
+    try {
+      const agents = JSON.parse(readFileSync(teamPath, 'utf8'));
+      res.json({ exists: true, agents: Array.isArray(agents) ? agents : [] });
+    } catch {
+      res.json({ exists: false, agents: [] });
+    }
+  });
+
+  app.post('/api/recommended-team/launch', async (req, res) => {
+    const teamPath = resolve(daemon.grooveDir, 'recommended-team.json');
+    if (!existsSync(teamPath)) {
+      return res.status(404).json({ error: 'No recommended team found. Run a planner first.' });
+    }
+    try {
+      const agents = JSON.parse(readFileSync(teamPath, 'utf8'));
+      if (!Array.isArray(agents) || agents.length === 0) {
+        return res.status(400).json({ error: 'Recommended team is empty' });
+      }
+
+      const spawned = [];
+      for (const config of agents) {
+        const validated = validateAgentConfig({
+          role: config.role,
+          scope: config.scope || [],
+          prompt: config.prompt || '',
+          provider: config.provider || 'claude-code',
+          model: config.model || 'auto',
+          permission: config.permission || 'auto',
+        });
+        const agent = await daemon.processes.spawn(validated);
+        spawned.push({ id: agent.id, name: agent.name, role: agent.role });
+      }
+
+      res.json({ launched: spawned.length, agents: spawned });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // --- Command Center Dashboard ---

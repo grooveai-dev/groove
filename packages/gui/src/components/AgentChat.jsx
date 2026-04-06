@@ -104,6 +104,11 @@ export default function AgentChat({ agent }) {
         )}
       </div>
 
+      {/* Launch Team button — shown when planner completes */}
+      {agent.role === 'planner' && agent.status === 'completed' && (
+        <LaunchTeamButton showStatus={showStatus} />
+      )}
+
       {/* Input — always enabled */}
       <div style={styles.inputRow}>
         <input
@@ -127,6 +132,62 @@ export default function AgentChat({ agent }) {
           Send
         </button>
       </div>
+    </div>
+  );
+}
+
+// ── LAUNCH TEAM BUTTON — one-click spawn from planner recommendation ──
+
+function LaunchTeamButton({ showStatus }) {
+  const [team, setTeam] = useState(null);
+  const [launching, setLaunching] = useState(false);
+  const [launched, setLaunched] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/recommended-team')
+      .then((r) => r.json())
+      .then((d) => { if (d.exists && d.agents.length > 0) setTeam(d.agents); })
+      .catch(() => {});
+  }, []);
+
+  async function handleLaunch() {
+    setLaunching(true);
+    try {
+      const res = await fetch('/api/recommended-team/launch', { method: 'POST' });
+      const data = await res.json();
+      if (data.launched) {
+        showStatus(`Launched ${data.launched} agents`);
+        setLaunched(true);
+      } else {
+        showStatus(`Launch failed: ${data.error || 'unknown'}`);
+      }
+    } catch (err) {
+      showStatus(`Launch failed: ${err.message}`);
+    }
+    setLaunching(false);
+  }
+
+  if (!team || launched) return null;
+
+  return (
+    <div style={styles.launchBox}>
+      <div style={styles.launchHeader}>Recommended Team ({team.length} agents)</div>
+      <div style={styles.launchList}>
+        {team.map((a, i) => (
+          <div key={i} style={styles.launchAgent}>
+            <span style={styles.launchRole}>{a.role}</span>
+            <span style={styles.launchPrompt}>{(a.prompt || '').slice(0, 80)}{(a.prompt || '').length > 80 ? '...' : ''}</span>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={handleLaunch}
+        disabled={launching}
+        style={{ ...styles.launchBtn, opacity: launching ? 0.5 : 1 }}
+      >
+        {launching ? 'Launching...' : 'Launch Team'}
+      </button>
     </div>
   );
 }
@@ -336,5 +397,38 @@ const styles = {
     borderRadius: 2,
     color: 'var(--accent)', fontSize: 11, fontWeight: 600,
     fontFamily: 'var(--font)', cursor: 'pointer',
+  },
+
+  // Launch team
+  launchBox: {
+    padding: '8px 0',
+    borderTop: '1px solid var(--border)',
+    flexShrink: 0,
+  },
+  launchHeader: {
+    fontSize: 10, fontWeight: 700, color: 'var(--text-bright)',
+    marginBottom: 6,
+  },
+  launchList: {
+    display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 8,
+  },
+  launchAgent: {
+    display: 'flex', alignItems: 'baseline', gap: 6,
+    fontSize: 10, padding: '2px 0',
+  },
+  launchRole: {
+    fontWeight: 600, color: 'var(--accent)', minWidth: 60,
+  },
+  launchPrompt: {
+    color: 'var(--text-dim)', fontSize: 9,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    flex: 1,
+  },
+  launchBtn: {
+    width: '100%', padding: '8px',
+    background: 'rgba(51, 175, 188, 0.1)', border: '1px solid var(--accent)',
+    color: 'var(--accent)', fontSize: 11, fontWeight: 700,
+    fontFamily: 'var(--font)', cursor: 'pointer',
+    letterSpacing: 0.5,
   },
 };

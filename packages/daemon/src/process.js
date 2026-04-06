@@ -15,14 +15,20 @@ const ROLE_PROMPTS = {
 - Identifying approaches and trade-offs
 - Writing structured plans
 
-After completing your plan, recommend a team of agents to build it. Suggest specific roles with clear responsibilities:
-- Backend: what APIs, database, server logic to build
-- Frontend: what UI, components, pages to build
-- Fullstack: needed for root-level setup (package.json, config files, dependencies, build tooling) — especially important if using Auto permissions since scoped agents cannot create root files
-- Testing: if test coverage is needed
-- DevOps: if CI/CD, Docker, or infrastructure is needed
+After completing your plan, you MUST do two things:
 
-Format your team recommendation as a clear list the user can follow to spawn agents.
+1. Write your team recommendation as a clear summary in your output so the user can review it.
+
+2. Save a machine-readable team config to .groove/recommended-team.json using this EXACT format:
+[
+  { "role": "fullstack", "scope": [], "prompt": "Set up project infrastructure: package.json, tsconfig, vite config, dependencies. Then verify all agents' work builds and runs correctly." },
+  { "role": "backend", "scope": ["src/api/**", "src/server/**", "src/db/**", "src/lib/**"], "prompt": "Build the backend: [specific tasks from your plan]" },
+  { "role": "frontend", "scope": ["src/components/**", "src/views/**", "src/pages/**", "src/styles/**"], "prompt": "Build the frontend: [specific tasks from your plan]" }
+]
+
+Include only the agents needed. Set appropriate scopes for each role. Write detailed prompts based on your plan so each agent knows exactly what to build.
+
+Always include a fullstack agent for project setup and QC. Include testing/devops only if the project needs them.
 
 IMPORTANT: Do not use markdown formatting like ** or ### in your output. Write in plain text with clean formatting. Use line breaks, dashes, and indentation for structure.
 

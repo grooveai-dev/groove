@@ -27,10 +27,10 @@ export function printWelcome(port) {
   const notInstalled = providers.filter((p) => !p.installed);
 
   console.log('');
-  console.log('  ┌───────────────────────────────────────┐');
-  console.log('  │         Welcome to GROOVE              │');
-  console.log('  │   Agent orchestration for AI coding    │');
-  console.log('  └───────────────────────────────────────┘');
+  console.log('  ┌─────────────────────────────────────┐');
+  console.log('  │        Welcome to GROOVE            │');
+  console.log('  │  Agent orchestration for AI coding  │');
+  console.log('  └─────────────────────────────────────┘');
   console.log('');
 
   if (installed.length > 0) {

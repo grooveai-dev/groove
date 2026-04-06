@@ -15,7 +15,7 @@ const COST_PER_1K = { heavy: 0.045, medium: 0.009, light: 0.0024 };
 
 export default function CommandCenter() {
   const [data, setData] = useState(null);
-  const tokenTimeline = useGrooveStore((s) => s.tokenTimeline);
+  const [telemetry, setTelemetry] = useState({}); // { agentId: [{t, v}] }
   const agents = useGrooveStore((s) => s.agents);
 
   useEffect(() => {
@@ -27,7 +27,25 @@ export default function CommandCenter() {
   async function fetchDashboard() {
     try {
       const res = await fetch('/api/dashboard');
-      setData(await res.json());
+      const d = await res.json();
+      setData(d);
+
+      // Build telemetry timeline from API polls — reliable source of truth
+      setTelemetry((prev) => {
+        const next = { ...prev };
+        const now = Date.now();
+        for (const agent of d.agents.breakdown) {
+          if (!next[agent.id]) next[agent.id] = [];
+          const arr = next[agent.id];
+          const last = arr[arr.length - 1];
+          // Record if value changed or 10s elapsed (heartbeat)
+          if (!last || agent.tokens !== last.v || now - last.t > 10000) {
+            arr.push({ t: now, v: agent.tokens || 0, name: agent.name });
+            if (arr.length > 200) next[agent.id] = arr.slice(-200);
+          }
+        }
+        return next;
+      });
     } catch { /* ignore */ }
   }
 
@@ -68,15 +86,15 @@ export default function CommandCenter() {
         <div style={s.chartHead}>
           <span>LIVE TELEMETRY</span>
           <span style={s.chartHeadRight}>
-            {agents.filter((a) => a.status === 'running').map((a, i) => (
+            {data.agents.breakdown.filter((a) => a.tokens > 0).map((a, i) => (
               <span key={a.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 10 }}>
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: COLORS[i % COLORS.length], display: 'inline-block' }} />
-                <span style={{ fontSize: 9 }}>{a.name}</span>
+                <span style={{ fontSize: 9 }}>{a.name} {fmtNum(a.tokens)}</span>
               </span>
             ))}
           </span>
         </div>
-        <TelemetryChart tokenTimeline={tokenTimeline} agents={agents} />
+        <TelemetryChart tokenTimeline={telemetry} agents={agents} />
       </div>
 
       {/* ── BOTTOM ROW — Three panels ── */}

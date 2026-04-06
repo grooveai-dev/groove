@@ -60,6 +60,8 @@ export class GeminiProvider extends Provider {
   parseOutput(line) {
     const trimmed = line.trim();
     if (!trimmed) return null;
-    return { type: 'activity', data: trimmed };
+    // Estimate tokens from output length (~4 chars per token)
+    const estimatedTokens = Math.ceil(trimmed.length / 4);
+    return { type: 'activity', data: trimmed, tokensUsed: estimatedTokens };
   }
 }

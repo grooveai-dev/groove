@@ -60,13 +60,26 @@ export class CodexProvider extends Provider {
   }
 
   parseOutput(line) {
-    // Codex outputs plain text by default
+    // Codex outputs plain text and stderr logging
     const trimmed = line.trim();
     if (!trimmed) return null;
+
+    // Try to parse JSON (codex may output structured data in some modes)
+    try {
+      const data = JSON.parse(trimmed);
+      if (data.usage?.total_tokens) {
+        return { type: 'activity', data: trimmed, tokensUsed: data.usage.total_tokens };
+      }
+    } catch { /* plain text */ }
+
+    // Estimate tokens from text length (~4 chars per token)
+    // Not perfect but gives visibility into activity and burn rate
+    const estimatedTokens = Math.ceil(trimmed.length / 4);
 
     return {
       type: 'activity',
       data: trimmed,
+      tokensUsed: estimatedTokens,
     };
   }
 }

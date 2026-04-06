@@ -1,149 +1,156 @@
-// GROOVE GUI — Approval Queue
+// GROOVE GUI — PM Review History (Approvals Tab)
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import React, { useState, useEffect } from 'react';
-import { useGrooveStore } from '../stores/groove';
 
 export default function ApprovalQueue() {
   const [data, setData] = useState(null);
-  const showStatus = useGrooveStore((s) => s.showStatus);
 
   useEffect(() => {
-    fetchApprovals();
-    const interval = setInterval(fetchApprovals, 3000);
+    fetchHistory();
+    const interval = setInterval(fetchHistory, 4000);
     return () => clearInterval(interval);
   }, []);
 
-  async function fetchApprovals() {
+  async function fetchHistory() {
     try {
-      const res = await fetch('/api/approvals');
+      const res = await fetch('/api/pm/history');
       setData(await res.json());
     } catch { /* ignore */ }
   }
 
-  async function handleApprove(id) {
-    await fetch(`/api/approvals/${id}/approve`, { method: 'POST' });
-    showStatus('approved');
-    fetchApprovals();
-  }
-
-  async function handleReject(id) {
-    await fetch(`/api/approvals/${id}/reject`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason: 'Rejected from GUI' }),
-    });
-    showStatus('rejected');
-    fetchApprovals();
-  }
-
-  const pending = data?.pending || [];
-  const resolved = data?.resolved || [];
+  const history = data?.history || [];
+  const stats = data?.stats || {};
 
   return (
     <div style={styles.container}>
-      <div style={styles.title}>PENDING APPROVALS</div>
+      <div style={styles.header}>
+        <div style={styles.title}>PM REVIEW LOG</div>
+        <div style={styles.subtitle}>AI Project Manager reviews risky agent operations in Auto mode</div>
+      </div>
 
-      {/* QC Status */}
-      {data?.status && (
-        <div style={styles.statusRow}>
-          <span>QC: {data.status.qcActive ? 'active' : 'standby'}</span>
-          <span>Conflicts: {data.status.conflicts}</span>
-        </div>
-      )}
+      {/* Stats bar */}
+      <div style={styles.statsBar}>
+        <Stat label="REVIEWS" value={stats.totalReviews || 0} />
+        <Stat label="APPROVED" value={stats.approved || 0} color="var(--green)" />
+        <Stat label="REJECTED" value={stats.rejected || 0} color="var(--red)" />
+        <Stat label="AVG TIME" value={stats.avgDurationMs ? `${(stats.avgDurationMs / 1000).toFixed(1)}s` : '-'} />
+      </div>
 
-      {/* Pending */}
-      <div style={styles.sectionLabel}>PENDING ({pending.length})</div>
-      {pending.length === 0 ? (
-        <div style={styles.empty}>No pending approvals</div>
-      ) : (
-        pending.map((a) => (
-          <div key={a.id} style={styles.card}>
-            <div style={styles.cardHeader}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
-                {a.agentName}
-              </span>
-              <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>
-                {new Date(a.requestedAt).toLocaleTimeString()}
-              </span>
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: 8 }}>
-              {a.action?.description || a.action?.type || 'Unknown action'}
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button onClick={() => handleApprove(a.id)} style={styles.approveBtn}>
-                APPROVE
-              </button>
-              <button onClick={() => handleReject(a.id)} style={styles.rejectBtn}>
-                REJECT
-              </button>
-            </div>
+      {/* History */}
+      {history.length === 0 ? (
+        <div style={styles.empty}>
+          <div style={styles.emptyTitle}>No reviews yet</div>
+          <div style={styles.emptyDesc}>
+            Spawn agents with Auto permission mode. The AI PM will review risky operations
+            (new files, deletions, config changes) before they happen.
           </div>
-        ))
-      )}
-
-      {/* Recent resolved */}
-      {resolved.length > 0 && (
-        <>
-          <div style={{ ...styles.sectionLabel, marginTop: 20 }}>RECENT</div>
-          {resolved.slice(-5).reverse().map((a) => (
-            <div key={a.id} style={styles.resolvedRow}>
-              <span style={{ color: a.status === 'approved' ? 'var(--green)' : 'var(--red)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>
-                {a.status}
-              </span>
-              <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>
-                {a.agentName} — {a.action?.type}
-              </span>
+        </div>
+      ) : (
+        <div style={styles.list}>
+          {history.slice().reverse().map((r, i) => (
+            <div key={i} style={styles.entry}>
+              <div style={styles.entryTop}>
+                <span style={{
+                  ...styles.verdict,
+                  color: r.approved ? 'var(--green)' : 'var(--red)',
+                  borderColor: r.approved ? 'rgba(74,225,104,0.3)' : 'rgba(224,108,117,0.3)',
+                  background: r.approved ? 'rgba(74,225,104,0.08)' : 'rgba(224,108,117,0.08)',
+                }}>
+                  {r.approved ? 'APPROVED' : 'REJECTED'}
+                </span>
+                <span style={styles.entryAgent}>{r.agent}</span>
+                <span style={styles.entryAction}>{r.action}</span>
+                <span style={styles.entryTime}>{timeAgo(r.timestamp)}</span>
+              </div>
+              <div style={styles.entryFile}>{r.file}</div>
+              {r.description && <div style={styles.entryDesc}>{r.description}</div>}
+              <div style={styles.entryReason}>{r.reason}</div>
             </div>
           ))}
-        </>
+        </div>
       )}
     </div>
   );
 }
 
+function Stat({ label, value, color }) {
+  return (
+    <div style={styles.stat}>
+      <div style={{ fontSize: 16, fontWeight: 700, color: color || 'var(--text-bright)' }}>{value}</div>
+      <div style={{ fontSize: 7, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: 1 }}>{label}</div>
+    </div>
+  );
+}
+
+function timeAgo(ts) {
+  const m = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
+  if (m >= 60) return `${Math.floor(m / 60)}h ago`;
+  if (m > 0) return `${m}m ago`;
+  return 'just now';
+}
+
 const styles = {
   container: {
-    padding: 24, maxWidth: 600, margin: '0 auto',
+    padding: 24, maxWidth: 700, margin: '0 auto',
+  },
+  header: {
+    marginBottom: 16,
   },
   title: {
-    fontSize: 11, fontWeight: 600, color: 'var(--text-dim)',
-    textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 16,
+    fontSize: 11, fontWeight: 700, color: 'var(--text-dim)',
+    textTransform: 'uppercase', letterSpacing: 1.5,
   },
-  statusRow: {
-    display: 'flex', gap: 16, fontSize: 11, color: 'var(--text-dim)',
-    padding: '8px 0', borderBottom: '1px solid var(--border)', marginBottom: 12,
+  subtitle: {
+    fontSize: 10, color: 'var(--text-dim)', marginTop: 4,
   },
-  sectionLabel: {
-    fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase',
-    letterSpacing: 1.5, marginBottom: 8, fontWeight: 600,
+  statsBar: {
+    display: 'flex', gap: 8, marginBottom: 16,
   },
-  empty: { color: 'var(--text-dim)', fontSize: 12, padding: 12, textAlign: 'center' },
-  card: {
-    background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 2,
-    padding: 12, marginBottom: 6,
+  stat: {
+    flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    padding: '8px 10px', textAlign: 'center',
   },
-  cardHeader: {
-    display: 'flex', justifyContent: 'space-between', marginBottom: 4,
+  empty: {
+    textAlign: 'center', padding: '40px 20px',
+    background: 'var(--bg-surface)', border: '1px solid var(--border)',
   },
-  approveBtn: {
-    flex: 1, padding: '4px 10px',
-    background: 'rgba(152, 195, 121, 0.12)',
-    border: '1px solid rgba(152, 195, 121, 0.2)',
-    borderRadius: 2,
-    color: 'var(--green)', fontSize: 11, fontWeight: 600,
-    fontFamily: 'var(--font)', cursor: 'pointer',
+  emptyTitle: {
+    fontSize: 12, color: 'var(--text-primary)', fontWeight: 600, marginBottom: 8,
   },
-  rejectBtn: {
-    flex: 1, padding: '4px 10px',
-    background: 'rgba(224, 108, 117, 0.12)',
-    border: '1px solid rgba(224, 108, 117, 0.2)',
-    borderRadius: 2,
-    color: 'var(--red)', fontSize: 11, fontWeight: 600,
-    fontFamily: 'var(--font)', cursor: 'pointer',
+  emptyDesc: {
+    fontSize: 10, color: 'var(--text-dim)', lineHeight: 1.6, maxWidth: 400, margin: '0 auto',
   },
-  resolvedRow: {
-    display: 'flex', gap: 10, padding: '4px 0',
-    fontSize: 12, borderBottom: '1px solid var(--border)',
+  list: {
+    display: 'flex', flexDirection: 'column', gap: 4,
+  },
+  entry: {
+    background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    padding: '8px 10px',
+  },
+  entryTop: {
+    display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4,
+  },
+  verdict: {
+    fontSize: 8, fontWeight: 700, letterSpacing: 0.5,
+    padding: '1px 5px', border: '1px solid',
+  },
+  entryAgent: {
+    fontSize: 11, fontWeight: 600, color: 'var(--text-bright)',
+  },
+  entryAction: {
+    fontSize: 10, color: 'var(--text-dim)',
+  },
+  entryTime: {
+    fontSize: 9, color: 'var(--text-dim)', marginLeft: 'auto',
+  },
+  entryFile: {
+    fontSize: 10, color: 'var(--accent)', fontFamily: 'var(--font)',
+  },
+  entryDesc: {
+    fontSize: 10, color: 'var(--text-primary)', marginTop: 2,
+  },
+  entryReason: {
+    fontSize: 10, color: 'var(--text-dim)', marginTop: 3, fontStyle: 'italic',
   },
 };

@@ -18,6 +18,13 @@ const ROLE_PROMPTS = {
 `,
 };
 
+// Permission-level prompt instructions
+// "auto" = PM reviews risky ops via API. "full" = no reviews, max speed.
+const PERMISSION_PROMPTS = {
+  auto: null,       // Populated at spawn time with the actual port
+  supervised: null,  // Maps to auto (supervised removed — too expensive)
+};
+
 function sanitizeFilename(name) {
   return String(name).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
 }
@@ -97,11 +104,33 @@ export class ProcessManager {
     const rolePrompt = ROLE_PROMPTS[agent.role];
     if (rolePrompt && spawnConfig.prompt) {
       if (spawnConfig.prompt.startsWith('# Agent Handoff Brief')) {
-        // Continuation/rotation — append role constraints after the brief
         spawnConfig.prompt += '\n\n## Role Constraints\n\n' + rolePrompt.trim();
       } else {
-        // Fresh spawn — prefix the task
         spawnConfig.prompt = rolePrompt + 'Task: ' + spawnConfig.prompt;
+      }
+    }
+
+    // Apply PM review instructions for Auto permission mode
+    // Agents call the PM endpoint before risky operations for AI review
+    const permission = config.permission || 'full';
+    if (permission === 'auto' || permission === 'supervised') {
+      const port = this.daemon.port || 31415;
+      const pmPrompt = `## PM Review (Auto Mode)
+
+Before performing risky operations — creating NEW files, deleting files, modifying package.json or config files, or running destructive commands — get PM approval first:
+
+\`\`\`bash
+curl -s http://localhost:${port}/api/pm/review -X POST -H 'Content-Type: application/json' -d '{"agent":"${agent.name}","action":"ACTION","file":"FILE_PATH","description":"BRIEF_REASON"}'
+\`\`\`
+
+If response says \`"approved":false\`, adjust your approach based on the reason.
+For normal file edits within your scope, proceed without review.
+
+`;
+      if (spawnConfig.prompt.startsWith('# Agent Handoff Brief')) {
+        spawnConfig.prompt += '\n\n' + pmPrompt.trim();
+      } else {
+        spawnConfig.prompt = pmPrompt + spawnConfig.prompt;
       }
     }
 

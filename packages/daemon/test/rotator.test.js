@@ -15,6 +15,7 @@ describe('Rotator', () => {
     const mockRegistry = {
       get(id) { return this.agents.find((a) => a.id === id) || null; },
       getAll() { return this.agents; },
+      update(id, updates) { const a = this.agents.find((x) => x.id === id); if (a) Object.assign(a, updates); return a; },
       agents: [],
     };
 

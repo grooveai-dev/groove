@@ -15,9 +15,8 @@ const ROLE_PRESETS = [
 ];
 
 const PERMISSION_LEVELS = [
-  { id: 'supervised', label: 'Always Ask', desc: 'Approve every file change', icon: '?' },
-  { id: 'auto',       label: 'Auto',       desc: 'Reads are free, writes need approval', icon: '~' },
-  { id: 'full',       label: 'Full Access', desc: 'Agent decides, never asks', icon: '>' },
+  { id: 'auto', label: 'Auto', desc: 'AI PM reviews risky operations before they happen', icon: '~' },
+  { id: 'full', label: 'Full Send', desc: 'No reviews, maximum speed', icon: '>' },
 ];
 
 export default function SpawnPanel() {

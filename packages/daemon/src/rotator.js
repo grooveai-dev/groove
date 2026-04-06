@@ -121,6 +121,11 @@ export class Rotator extends EventEmitter {
         name: agent.name, // Keep the same name for continuity
       });
 
+      // Carry cumulative token stats so the dashboard shows lifetime totals
+      if (agent.tokensUsed > 0) {
+        registry.update(newAgent.id, { tokensUsed: agent.tokensUsed });
+      }
+
       record.newAgentId = newAgent.id;
       record.newTokens = 0;
       this.rotationHistory.push(record);

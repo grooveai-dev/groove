@@ -59,6 +59,7 @@ export default function AgentChat({ agent }) {
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      e.stopPropagation();
       handleSubmit();
     }
   }
@@ -115,6 +116,7 @@ export default function AgentChat({ agent }) {
           spellCheck={false}
         />
         <button
+          type="button"
           onClick={handleSubmit}
           disabled={!!status || !input.trim()}
           style={{

@@ -21,6 +21,7 @@ import { Teams } from './teams.js';
 import { CredentialStore } from './credentials.js';
 import { TaskClassifier } from './classifier.js';
 import { ModelRouter } from './router.js';
+import { ProjectManager } from './pm.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig } from './firstrun.js';
 
 const DEFAULT_PORT = 31415;
@@ -66,6 +67,7 @@ export class Daemon {
     this.credentials = new CredentialStore(this.grooveDir);
     this.classifier = new TaskClassifier();
     this.router = new ModelRouter(this);
+    this.pm = new ProjectManager(this);
 
     // HTTP + WebSocket server
     this.app = express();

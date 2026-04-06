@@ -335,6 +335,31 @@ export function createApi(app, daemon) {
     res.json(daemon.adaptive.getAllProfiles());
   });
 
+  // --- Project Manager (AI Review Gate) ---
+
+  // Agent knocks on PM before risky operations (Auto permission mode)
+  app.post('/api/pm/review', async (req, res) => {
+    try {
+      const { agent, action, file, description } = req.body;
+      if (!agent || !action || !file) {
+        return res.status(400).json({ error: 'agent, action, and file are required' });
+      }
+      const result = await daemon.pm.review({ agent, action, file, description: description || '' });
+      res.json(result);
+    } catch (err) {
+      // On failure, approve by default (don't block agents)
+      res.json({ approved: true, reason: `PM error: ${err.message}. Auto-approved.` });
+    }
+  });
+
+  // PM review history for Approvals tab
+  app.get('/api/pm/history', (req, res) => {
+    res.json({
+      history: daemon.pm.getHistory(),
+      stats: daemon.pm.getStats(),
+    });
+  });
+
   // --- Command Center Dashboard ---
 
   app.get('/api/dashboard', (req, res) => {
@@ -370,14 +395,21 @@ export function createApi(app, daemon) {
       spawnedAt: a.spawnedAt,
     }));
 
-    // Adaptive profiles summary
+    // Adaptive profiles summary — include history for threshold drift charts
     const profiles = daemon.adaptive.getAllProfiles();
     const profileSummary = Object.entries(profiles).map(([key, p]) => ({
       key,
       threshold: p.threshold,
       converged: p.converged,
       adjustments: p.adjustmentCount,
+      recentScores: (p.history || []).slice(-20).map((h) => h.score),
+      thresholdHistory: (p.history || []).slice(-20).map((h) => ({ t: h.timestamp, v: h.newThreshold })),
+      lastSignals: p.history?.length > 0 ? p.history[p.history.length - 1].signals : null,
     }));
+
+    // Journalist — include synthesis summary and recent history
+    const lastSynthesis = daemon.journalist.getLastSynthesis();
+    const journalistHistory = daemon.journalist.getHistory().slice(-10);
 
     res.json({
       tokens: tokenSummary,
@@ -398,7 +430,11 @@ export function createApi(app, daemon) {
         history: rotationHistory.slice(-20),
       },
       adaptive: profileSummary,
-      journalist: journalistStatus,
+      journalist: {
+        ...journalistStatus,
+        lastSummary: lastSynthesis?.summary || '',
+        recentHistory: journalistHistory,
+      },
       uptime: process.uptime(),
     });
   });

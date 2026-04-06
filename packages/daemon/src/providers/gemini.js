@@ -11,9 +11,11 @@ export class GeminiProvider extends Provider {
   static authType = 'api-key';
   static envKey = 'GEMINI_API_KEY';
   static models = [
+    { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', tier: 'heavy' },
+    { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', tier: 'medium' },
+    { id: 'gemini-3.1-flash-lite-preview', name: 'Gemini 3.1 Flash Lite', tier: 'light' },
     { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', tier: 'heavy' },
     { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', tier: 'medium' },
-    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', tier: 'light' },
   ];
 
   static isInstalled() {

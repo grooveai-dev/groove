@@ -1,7 +1,8 @@
 // GROOVE Daemon — Entry Point
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { createServer } from 'http';
+import { createServer as createHttpServer } from 'http';
+import { createServer as createNetServer } from 'net';
 import { resolve } from 'path';
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
 import express from 'express';
@@ -71,7 +72,7 @@ export class Daemon {
 
     // HTTP + WebSocket server
     this.app = express();
-    this.server = createServer(this.app);
+    this.server = createHttpServer(this.app);
     this.wss = new WebSocketServer({
       server: this.server,
       maxPayload: 1024 * 1024, // 1MB max message
@@ -123,17 +124,35 @@ export class Daemon {
   }
 
   async start() {
-    // Check for existing daemon
+    // Kill any existing daemon on our port
     if (existsSync(this.pidFile)) {
       const existingPid = parseInt(readFileSync(this.pidFile, 'utf8'), 10);
       try {
         process.kill(existingPid, 0); // Signal 0 = check if alive
-        console.error(`GROOVE daemon already running (PID ${existingPid})`);
-        process.exit(1);
+        console.log(`  Stopping previous daemon (PID ${existingPid})...`);
+        process.kill(existingPid, 'SIGTERM');
+        // Wait briefly for clean shutdown
+        await new Promise((r) => setTimeout(r, 1000));
+        try { process.kill(existingPid, 'SIGKILL'); } catch { /* already dead */ }
       } catch {
-        // PID file is stale — previous daemon crashed
-        unlinkSync(this.pidFile);
+        // PID file is stale
       }
+      try { unlinkSync(this.pidFile); } catch { /* ignore */ }
+    }
+
+    // Check if port is in use by something else
+    const portFree = await new Promise((res) => {
+      const tester = createNetServer();
+      tester.once('error', () => res(false));
+      tester.once('listening', () => { tester.close(); res(true); });
+      tester.listen(this.port, '127.0.0.1');
+    }).catch(() => false);
+
+    if (!portFree) {
+      console.error(`\n  Port ${this.port} is in use by another application.`);
+      console.error(`  Try a different port: groove start --port 31416`);
+      console.error(`  Or stop whatever is using port ${this.port}\n`);
+      process.exit(1);
     }
 
     // Restore persisted state

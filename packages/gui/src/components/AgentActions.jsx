@@ -176,7 +176,9 @@ export default function AgentActions({ agent }) {
       </div>
 
       {/* Model selector */}
-      <div style={{ ...styles.sectionLabel, marginTop: 20 }}>MODEL</div>
+      <div style={{ ...styles.sectionLabel, marginTop: 20 }}>
+        MODEL {agent.routingMode === 'auto' && <span style={{ color: 'var(--accent)', fontWeight: 400, textTransform: 'none' }}> — auto-routed</span>}
+      </div>
       <select
         style={styles.select}
         value={selectedModel}
@@ -235,7 +237,7 @@ export default function AgentActions({ agent }) {
       <ConfigRow label="ID" value={agent.id} />
       <ConfigRow label="Role" value={agent.role} />
       <ConfigRow label="Provider" value={agent.provider} />
-      <ConfigRow label="Model" value={agent.model || 'default'} />
+      <ConfigRow label="Model" value={agent.routingMode === 'auto' ? `auto (${agent.model || 'pending'})` : agent.model || 'default'} />
       <ConfigRow label="Scope" value={(agent.scope || []).join(', ') || 'unrestricted'} />
       <ConfigRow label="Status" value={agent.status} />
     </div>

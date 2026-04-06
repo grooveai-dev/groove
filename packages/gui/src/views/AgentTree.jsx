@@ -2,7 +2,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import React, { useMemo, useCallback, useEffect, useRef } from 'react';
-import { ReactFlow, Background, useReactFlow } from '@xyflow/react';
+import { ReactFlow, Background, useReactFlow, ReactFlowProvider } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useGrooveStore } from '../stores/groove';
 import AgentNode from '../components/AgentNode';
@@ -10,8 +10,8 @@ import AgentNode from '../components/AgentNode';
 const nodeTypes = { agent: AgentNode };
 
 const MAX_PER_ROW = 4;
-const NODE_X_SPACING = 240;
-const NODE_Y_SPACING = 120;
+const NODE_X_SPACING = 220;
+const NODE_Y_SPACING = 130;
 
 function AgentTreeInner() {
   const agents = useGrooveStore((s) => s.agents);
@@ -32,14 +32,14 @@ function AgentTreeInner() {
       type: 'agent',
       position: {
         x: (i % MAX_PER_ROW) * NODE_X_SPACING,
-        y: 70 + Math.floor(i / MAX_PER_ROW) * NODE_Y_SPACING,
+        y: 80 + Math.floor(i / MAX_PER_ROW) * NODE_Y_SPACING,
       },
       data: { ...agent, selected: agent.id === selectedAgentId },
       draggable: true,
     }));
 
     const runningRows = Math.ceil(running.length / MAX_PER_ROW) || 1;
-    const doneStartY = 70 + runningRows * NODE_Y_SPACING + 30;
+    const doneStartY = 80 + runningRows * NODE_Y_SPACING + 40;
 
     const doneNodes = done.map((agent, i) => ({
       id: agent.id,
@@ -56,35 +56,45 @@ function AgentTreeInner() {
 
     const maxPerRow = Math.min(Math.max(running.length, done.length, 1), MAX_PER_ROW);
     const totalWidth = maxPerRow * NODE_X_SPACING;
+
+    // GROOVE root node — the command hub
     const grooveNode = {
       id: 'groove-root',
       type: 'default',
-      position: { x: (totalWidth - NODE_X_SPACING) / 2 + 60, y: 0 },
+      position: { x: (totalWidth - NODE_X_SPACING) / 2 + 10, y: 0 },
       data: { label: 'GROOVE' },
       selectable: false,
       draggable: false,
       style: {
-        background: '#181c23',
+        background: '#252a33',
         color: '#33afbc',
         border: 'none',
-        borderTop: '1px solid #33afbc',
+        borderTop: '2px solid #33afbc',
         borderRadius: 0,
-        fontWeight: 700,
-        fontSize: 9,
-        letterSpacing: 3,
-        padding: '4px 12px 3px',
+        fontWeight: 800,
+        fontSize: 10,
+        letterSpacing: 4,
+        padding: '6px 20px 5px',
         fontFamily: "'JetBrains Mono', 'SF Mono', Consolas, monospace",
+        boxShadow: '0 0 16px rgba(51, 175, 188, 0.12), 0 1px 3px rgba(0,0,0,0.3)',
       },
     };
 
-    const edges = allAgentNodes.map((node) => ({
-      id: `groove-${node.id}`,
-      source: 'groove-root',
-      target: node.id,
-      type: 'step',
-      style: { stroke: 'var(--text-muted)', strokeWidth: 1 },
-      animated: agents.find((a) => a.id === node.id)?.status === 'running',
-    }));
+    const edges = allAgentNodes.map((node) => {
+      const agent = agents.find((a) => a.id === node.id);
+      const isRunning = agent?.status === 'running';
+      return {
+        id: `groove-${node.id}`,
+        source: 'groove-root',
+        target: node.id,
+        type: 'smoothstep',
+        style: {
+          stroke: isRunning ? '#33afbc' : '#2c313a',
+          strokeWidth: isRunning ? 1.5 : 1,
+        },
+        animated: isRunning,
+      };
+    });
 
     return { nodes: [grooveNode, ...allAgentNodes], edges };
   }, [agents, selectedAgentId]);
@@ -98,7 +108,6 @@ function AgentTreeInner() {
     prevCountRef.current = currentCount;
   }, [agents.length, fitView]);
 
-  // Also fit on initial mount
   useEffect(() => {
     setTimeout(() => fitView({ padding: 0.3, maxZoom: 1.4, duration: 0 }), 100);
   }, []);
@@ -127,13 +136,10 @@ function AgentTreeInner() {
       fitView
       fitViewOptions={{ padding: 0.3, maxZoom: 1.4 }}
     >
-      <Background color="#3e4451" gap={20} size={1} />
+      <Background color="#2c313a" gap={24} size={0.5} />
     </ReactFlow>
   );
 }
-
-// Wrapper needed because useReactFlow must be inside ReactFlowProvider
-import { ReactFlowProvider } from '@xyflow/react';
 
 export default function AgentTree() {
   return (

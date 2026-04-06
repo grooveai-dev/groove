@@ -1,6 +1,6 @@
 {
   "name": "@groove-ai/gui",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "GROOVE GUI — visual agent control plane",
   "license": "FSL-1.1-Apache-2.0",
   "type": "module",

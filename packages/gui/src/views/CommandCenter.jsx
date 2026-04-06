@@ -61,24 +61,32 @@ export default function CommandCenter() {
   const { tokens, routing, rotation, adaptive, journalist, uptime } = data;
   const agentBreakdown = data.agents.breakdown;
   const estDollarSaved = (tokens.savings.total / 1000) * COST_PER_1K.medium;
+  const runningAgents = agentBreakdown.filter((a) => a.status === 'running');
+  const avgCtx = runningAgents.length > 0
+    ? Math.round(runningAgents.reduce((s, a) => s + (a.contextUsage || 0), 0) / runningAgents.length * 100)
+    : 0;
 
   return (
     <div style={s.root}>
 
-      {/* ── HERO ROW ── */}
+      {/* ── HERO ROW — Gauges + Money Shot ── */}
       <div style={s.heroRow}>
-        <HeroStat label="TOKENS USED" value={fmtNum(tokens.totalTokens)} />
-        <HeroStat label="TOKENS SAVED" value={fmtNum(tokens.savings.total)} color={GREEN} />
+        <div style={s.heroGaugeGroup}>
+          <GaugeChart value={tokens.savings.percentage || 0} max={100} label="EFFICIENCY" unit="%" color={GREEN} />
+          <GaugeChart value={avgCtx} max={100} label="AVG CONTEXT" unit="%" color={avgCtx > 80 ? RED : avgCtx > 60 ? AMBER : ACCENT} />
+        </div>
         <div style={s.heroCenter}>
           <div style={s.heroDollar}>{estDollarSaved > 0 ? `$${estDollarSaved.toFixed(2)}` : '$0.00'}</div>
           <div style={s.heroCenterLabel}>ESTIMATED SAVINGS</div>
-          {tokens.savings.percentage > 0 && (
-            <div style={s.heroCenterSub}>{tokens.savings.percentage}% more efficient</div>
-          )}
+          <div style={s.heroSubStats}>
+            <span>{fmtNum(tokens.totalTokens)} used</span>
+            <span>{fmtNum(tokens.savings.total)} saved</span>
+          </div>
         </div>
-        <HeroStat label="AGENTS" value={`${data.agents.running} / ${data.agents.total}`} color={data.agents.running > 0 ? GREEN : undefined} />
-        <HeroStat label="ROTATIONS" value={rotation.totalRotations} />
-        <HeroStat label="UPTIME" value={fmtUptime(uptime)} />
+        <div style={s.heroGaugeGroup}>
+          <GaugeChart value={data.agents.running} max={Math.max(data.agents.total, 1)} label="AGENTS" unit={`/${data.agents.total}`} color={ACCENT} />
+          <GaugeChart value={rotation.totalRotations} max={Math.max(rotation.totalRotations, 10)} label="ROTATIONS" unit="" color={PURPLE} />
+        </div>
       </div>
 
       {/* ── MAIN CHART — Full-width live telemetry ── */}
@@ -161,12 +169,37 @@ export default function CommandCenter() {
   );
 }
 
-// ── HERO STAT ──
-function HeroStat({ label, value, color }) {
+// ── GAUGE CHART — Semicircle arc gauge ──
+function GaugeChart({ value, max, label, unit, color }) {
+  const pct = max > 0 ? Math.min(value / max, 1) : 0;
+  const r = 32;
+  const cx = 40;
+  const cy = 38;
+  const circumHalf = Math.PI * r;
+  const dashLen = pct * circumHalf;
+
   return (
-    <div style={s.heroStat}>
-      <div style={{ fontSize: 16, fontWeight: 700, color: color || 'var(--text-bright)', lineHeight: 1 }}>{value}</div>
-      <div style={s.heroStatLabel}>{label}</div>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+      <svg width="80" height="48" viewBox="0 0 80 48">
+        {/* Track */}
+        <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
+          fill="none" stroke="#2c313a" strokeWidth="4" strokeLinecap="round" />
+        {/* Value arc */}
+        <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
+          fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"
+          strokeDasharray={`${dashLen} ${circumHalf}`}
+          style={{ transition: 'stroke-dasharray 0.5s ease' }} />
+        {/* Value text */}
+        <text x={cx} y={cy - 6} textAnchor="middle" fill="#e6e6e6"
+          fontSize="14" fontWeight="700" fontFamily="JetBrains Mono, monospace">
+          {typeof value === 'number' ? Math.round(value) : value}
+        </text>
+        <text x={cx} y={cy + 4} textAnchor="middle" fill="#5c6370"
+          fontSize="7" fontFamily="JetBrains Mono, monospace">
+          {unit}
+        </text>
+      </svg>
+      <span style={{ fontSize: 7, fontWeight: 700, color: '#5c6370', textTransform: 'uppercase', letterSpacing: 1, marginTop: -2 }}>{label}</span>
     </div>
   );
 }
@@ -476,37 +509,37 @@ const s = {
 
   // Hero row
   heroRow: {
-    display: 'flex', alignItems: 'stretch', gap: 8,
-    flexShrink: 0, height: 68,
+    display: 'flex', alignItems: 'stretch', gap: 10,
+    flexShrink: 0, height: 90,
   },
-  heroStat: {
-    flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border)',
-    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-    padding: '6px 8px', borderTop: '2px solid var(--border)',
-  },
-  heroStatLabel: {
-    fontSize: 7, fontWeight: 700, color: 'var(--text-dim)',
-    textTransform: 'uppercase', letterSpacing: 1.2, marginTop: 3,
+  heroGaugeGroup: {
+    flex: 1, display: 'flex', gap: 4,
+    background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    borderRadius: 8, padding: '6px 4px', alignItems: 'center',
   },
   heroCenter: {
-    flex: 2, background: 'var(--bg-surface)', border: '1px solid var(--border)',
-    borderTop: `1px solid ${GREEN}`,
+    flex: 1.2, background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    borderRadius: 8,
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-    padding: '6px 12px',
+    padding: '8px 16px',
   },
   heroDollar: {
-    fontSize: 26, fontWeight: 800, color: GREEN, lineHeight: 1,
+    fontSize: 28, fontWeight: 800, color: GREEN, lineHeight: 1,
   },
   heroCenterLabel: {
     fontSize: 7, fontWeight: 700, color: 'var(--text-dim)',
     textTransform: 'uppercase', letterSpacing: 1.2, marginTop: 4,
   },
-  heroCenterSub: { fontSize: 9, color: GREEN, marginTop: 2, opacity: 0.7 },
+  heroSubStats: {
+    display: 'flex', gap: 12, marginTop: 4,
+    fontSize: 9, color: '#5c6370',
+  },
 
   // Main chart
   chartPanel: {
     flex: 2, minHeight: 0,
     background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    borderRadius: 8,
     padding: '8px 12px', display: 'flex', flexDirection: 'column',
   },
   chartHead: {
@@ -525,6 +558,7 @@ const s = {
   panel: {
     minHeight: 0, overflow: 'hidden',
     background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    borderRadius: 8,
     padding: '8px 10px', display: 'flex', flexDirection: 'column',
   },
   panelHead: {

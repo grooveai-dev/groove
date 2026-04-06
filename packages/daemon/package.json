@@ -1,6 +1,6 @@
 {
   "name": "@groove-ai/daemon",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "GROOVE daemon — agent orchestration engine",
   "license": "FSL-1.1-Apache-2.0",
   "type": "module",

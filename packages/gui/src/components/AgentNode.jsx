@@ -1,4 +1,4 @@
-// GROOVE GUI — Agent Node Component
+// GROOVE GUI — Agent Node Component (Unity/n8n inspired)
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import React from 'react';
@@ -13,123 +13,105 @@ const STATUS = {
   killed:    { color: '#5c6370', label: 'KILL' },
 };
 
+const ROLE_COLORS = {
+  planner:   '#c678dd',
+  backend:   '#33afbc',
+  frontend:  '#e5c07b',
+  fullstack: '#4ae168',
+  testing:   '#61afef',
+  devops:    '#d19a66',
+  docs:      '#5c6370',
+};
+
 export default function AgentNode({ data }) {
   const st = STATUS[data.status] || STATUS.stopped;
-  const ctx = Math.round((data.contextUsage || 0) * 100);
   const alive = data.status === 'running' || data.status === 'starting';
   const sel = data.selected;
-
-  const scope = data.scope?.length > 0
-    ? data.scope[0].replace(/\/\*\*$/, '') + (data.scope.length > 1 ? ` +${data.scope.length - 1}` : '')
-    : 'unrestricted';
+  const roleColor = ROLE_COLORS[data.role] || '#33afbc';
+  const ctx = Math.round((data.contextUsage || 0) * 100);
 
   const tokens = data.tokensUsed > 0
     ? data.tokensUsed > 999 ? `${(data.tokensUsed / 1000).toFixed(1)}k` : `${data.tokensUsed}`
     : '0';
 
-  const model = data.model
-    ? data.model.replace('claude-', '').replace('-20251001', '').replace('-4-6', '').replace('-4-5', '')
-    : 'default';
-
   return (
     <div style={{
       background: '#282c34',
-      borderTop: `1px solid ${sel ? '#33afbc' : st.color}`,
-      width: 180,
+      border: sel ? '1px solid #33afbc' : '1px solid #3e4451',
+      borderRadius: 8,
+      width: 170,
       cursor: 'pointer',
       fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', Consolas, monospace",
       fontSize: 10,
-      lineHeight: 1.4,
       overflow: 'hidden',
+      transition: 'border-color 0.2s',
     }}>
-      <Handle type="target" position={Position.Top} style={{ background: st.color, width: 4, height: 4, border: 'none', minWidth: 4, minHeight: 4, top: -2 }} />
+      {/* Target handle — circular port */}
+      <Handle type="target" position={Position.Top} style={{
+        background: '#282c34', border: `2px solid ${sel ? '#33afbc' : '#3e4451'}`,
+        width: 8, height: 8, borderRadius: '50%', top: -4,
+      }} />
 
-      {/* Header: name + status */}
+      {/* Header */}
       <div style={{
-        padding: '6px 8px 5px',
+        padding: '8px 10px 6px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        borderBottom: '1px solid #2c313a',
       }}>
         <span style={{
-          color: '#e6e6e6',
-          fontWeight: 700,
-          fontSize: 11,
-          letterSpacing: 0.3,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          flex: 1,
+          color: '#e6e6e6', fontWeight: 700, fontSize: 11,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
         }}>
           {data.name}
         </span>
+        {/* Status dot */}
+        <div style={{
+          width: 6, height: 6, borderRadius: '50%', background: st.color, flexShrink: 0,
+          ...(alive ? { animation: 'pulse 2s infinite' } : {}),
+        }} />
+      </div>
+
+      {/* Role badge */}
+      <div style={{ padding: '0 10px 6px' }}>
         <span style={{
-          color: st.color,
-          fontSize: 7,
-          fontWeight: 700,
-          letterSpacing: 1.2,
-          marginLeft: 6,
-          flexShrink: 0,
+          fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1,
+          color: roleColor, background: roleColor + '18', padding: '2px 6px', borderRadius: 3,
         }}>
-          {st.label}
+          {data.role}
         </span>
       </div>
 
-      {/* Body */}
-      <div style={{ padding: '5px 8px 6px' }}>
-        {/* Role + model */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span style={{ color: '#8b929e', fontSize: 9 }}>{data.role}</span>
-          <span style={{ color: '#5c6370', fontSize: 8 }}>{model}</span>
-        </div>
-
-        {/* Scope */}
-        <div style={{ color: '#6b7280', fontSize: 8, marginBottom: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {scope}
-        </div>
-
-        {/* Context bar */}
-        <div style={{ height: 2, background: '#1a1e25', borderRadius: 1 }}>
-          <div style={{
-            height: '100%',
-            width: `${Math.max(ctx, 1)}%`,
-            background: ctx > 80 ? '#e06c75' : ctx > 60 ? '#e5c07b' : '#33afbc',
-            borderRadius: 1,
-            transition: 'width 0.5s ease',
-          }} />
-        </div>
-
-        {/* Metrics row */}
-        <div style={{
-          marginTop: 4, display: 'flex', justifyContent: 'space-between',
-          color: '#8b929e', fontSize: 9,
-        }}>
-          <span>CTX <span style={{ color: '#abb2bf', fontWeight: 600 }}>{ctx}%</span></span>
-          <span>TOK <span style={{ color: '#abb2bf', fontWeight: 600 }}>{tokens}</span></span>
-        </div>
-
-        {/* Activity indicator for live agents — neural flow effect */}
-        {alive && (
-          <div style={{
-            marginTop: 5,
-            height: 2,
-            background: '#1a1e25',
-            borderRadius: 1,
-            overflow: 'hidden',
-            position: 'relative',
-          }}>
-            <div style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '200%',
-              height: '100%',
-              background: `linear-gradient(90deg, transparent 0%, transparent 25%, ${st.color}44 35%, ${st.color} 50%, ${st.color}44 65%, transparent 75%, transparent 100%)`,
-              animation: 'neuralFlow 2s linear infinite',
-              borderRadius: 1,
-            }} />
-          </div>
-        )}
+      {/* Metrics — minimal */}
+      <div style={{
+        padding: '4px 10px 6px',
+        borderTop: '1px solid #2c313a',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      }}>
+        <span style={{ color: '#8b929e', fontSize: 9 }}>
+          {tokens} <span style={{ color: '#5c6370' }}>tok</span>
+        </span>
+        <span style={{ color: '#8b929e', fontSize: 9 }}>
+          {ctx}% <span style={{ color: '#5c6370' }}>ctx</span>
+        </span>
       </div>
 
-      <Handle type="source" position={Position.Bottom} style={{ background: st.color, width: 4, height: 4, border: 'none', minWidth: 4, minHeight: 4, bottom: -2 }} />
+      {/* Activity bar for live agents */}
+      {alive && (
+        <div style={{
+          height: 2, background: '#1a1e25', overflow: 'hidden',
+        }}>
+          <div style={{
+            width: '200%', height: '100%',
+            background: `linear-gradient(90deg, transparent 25%, ${st.color}44 35%, ${st.color} 50%, ${st.color}44 65%, transparent 75%)`,
+            animation: 'neuralFlow 2s linear infinite',
+          }} />
+        </div>
+      )}
+
+      {/* Source handle — circular port */}
+      <Handle type="source" position={Position.Bottom} style={{
+        background: '#282c34', border: `2px solid ${sel ? '#33afbc' : '#3e4451'}`,
+        width: 8, height: 8, borderRadius: '50%', bottom: -4,
+      }} />
     </div>
   );
 }

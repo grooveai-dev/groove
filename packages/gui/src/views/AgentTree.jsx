@@ -11,7 +11,7 @@ const nodeTypes = { agent: AgentNode };
 
 const MAX_PER_ROW = 4;
 const NODE_X_SPACING = 220;
-const NODE_Y_SPACING = 130;
+const NODE_Y_SPACING = 140;
 
 function AgentTreeInner() {
   const agents = useGrooveStore((s) => s.agents);
@@ -39,7 +39,7 @@ function AgentTreeInner() {
     }));
 
     const runningRows = Math.ceil(running.length / MAX_PER_ROW) || 1;
-    const doneStartY = 80 + runningRows * NODE_Y_SPACING + 40;
+    const doneStartY = 80 + runningRows * NODE_Y_SPACING + 50;
 
     const doneNodes = done.map((agent, i) => ({
       id: agent.id,
@@ -57,29 +57,28 @@ function AgentTreeInner() {
     const maxPerRow = Math.min(Math.max(running.length, done.length, 1), MAX_PER_ROW);
     const totalWidth = maxPerRow * NODE_X_SPACING;
 
-    // GROOVE root node — the command hub
+    // GROOVE root node — clean, rounded, matching
     const grooveNode = {
       id: 'groove-root',
       type: 'default',
-      position: { x: (totalWidth - NODE_X_SPACING) / 2 + 10, y: 0 },
+      position: { x: (totalWidth - NODE_X_SPACING) / 2 + 25, y: 0 },
       data: { label: 'GROOVE' },
       selectable: false,
       draggable: false,
       style: {
         background: '#282c34',
         color: '#33afbc',
-        border: 'none',
-        borderTop: '1px solid #33afbc',
-        borderRadius: 0,
+        border: '1px solid #33afbc',
+        borderRadius: 8,
         fontWeight: 800,
         fontSize: 10,
         letterSpacing: 4,
-        padding: '6px 20px 5px',
+        padding: '8px 20px 7px',
         fontFamily: "'JetBrains Mono', 'SF Mono', Consolas, monospace",
-        boxShadow: '0 0 16px rgba(51, 175, 188, 0.12), 0 1px 3px rgba(0,0,0,0.3)',
       },
     };
 
+    // Bezier spline edges — the brand
     const edges = allAgentNodes.map((node) => {
       const agent = agents.find((a) => a.id === node.id);
       const isRunning = agent?.status === 'running';
@@ -87,9 +86,9 @@ function AgentTreeInner() {
         id: `groove-${node.id}`,
         source: 'groove-root',
         target: node.id,
-        type: 'smoothstep',
+        type: 'default', // Bezier curve (spline)
         style: {
-          stroke: isRunning ? '#8b929e' : '#2c313a',
+          stroke: isRunning ? '#5c6370' : '#2c313a',
           strokeWidth: 1,
         },
         animated: isRunning,
@@ -99,7 +98,6 @@ function AgentTreeInner() {
     return { nodes: [grooveNode, ...allAgentNodes], edges };
   }, [agents, selectedAgentId]);
 
-  // Fit + center on first load and when agent count changes
   useEffect(() => {
     const currentCount = agents.length;
     if (currentCount !== prevCountRef.current) {

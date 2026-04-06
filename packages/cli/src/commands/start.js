@@ -1,7 +1,7 @@
 // GROOVE CLI — start command
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { Daemon } from '@groove-ai/daemon';
+import { Daemon } from '@groove-dev/daemon';
 import chalk from 'chalk';
 
 export async function start(options) {

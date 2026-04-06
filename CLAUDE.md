@@ -168,10 +168,10 @@ GROOVE is a process manager, NOT a harness. Hard rules:
 
 ## Distribution
 
-- **npm:** `npm i -g groove-ai` (published as `groove-ai`)
+- **npm:** `npm i -g groove-dev` (published as `groove-dev`)
 - **GitHub:** `github.com/grooveai-dev/groove`
-- **Website:** grooveai.dev
-- **Docs:** docs.grooveai.dev
+- **Website:** groovedev.ai
+- **Docs:** docs.groovedev.ai
 
 ## Current Status (v0.7.1)
 

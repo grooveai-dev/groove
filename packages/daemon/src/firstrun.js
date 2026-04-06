@@ -53,7 +53,7 @@ export function printWelcome(port) {
 
   console.log('');
   console.log(`  GUI:   http://localhost:${port}`);
-  console.log('  Docs:  https://docs.grooveai.dev');
+  console.log('  Docs:  https://docs.groovedev.ai');
   console.log('  GitHub: https://github.com/grooveai-dev/groove');
   console.log('');
 }

@@ -4,11 +4,11 @@
 
 The open-source orchestration layer for AI coding tools. Spawn teams of agents, coordinate their work, and never lose context — with a full GUI dashboard.
 
-[![npm](https://img.shields.io/npm/v/groove-ai)](https://www.npmjs.com/package/groove-ai)
+[![npm](https://img.shields.io/npm/v/groove-dev)](https://www.npmjs.com/package/groove-dev)
 [![License](https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue)](LICENSE)
 
 ```bash
-npm i -g groove-ai
+npm i -g groove-dev
 groove start
 ```
 
@@ -107,9 +107,9 @@ GROOVE routes tasks to the cheapest model that can handle them. Planners get Opu
 
 ## Links
 
-- **Website:** [grooveai.dev](https://grooveai.dev)
-- **Documentation:** [docs.grooveai.dev](https://docs.grooveai.dev)
-- **Changelog:** [docs.grooveai.dev/changelog](https://docs.grooveai.dev/changelog)
+- **Website:** [groovedev.ai](https://groovedev.ai)
+- **Documentation:** [docs.groovedev.ai](https://docs.groovedev.ai)
+- **Changelog:** [docs.groovedev.ai/changelog](https://docs.groovedev.ai/changelog)
 - **GitHub:** [github.com/grooveai-dev/groove](https://github.com/grooveai-dev/groove)
-- **npm:** [npmjs.com/package/groove-ai](https://www.npmjs.com/package/groove-ai)
+- **npm:** [npmjs.com/package/groove-dev](https://www.npmjs.com/package/groove-dev)
 - **License:** [FSL-1.1-Apache-2.0](LICENSE) — source-available, converts to Apache 2.0 after 2 years

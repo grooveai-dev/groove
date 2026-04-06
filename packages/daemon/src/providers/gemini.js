@@ -35,10 +35,12 @@ export class GeminiProvider extends Provider {
     const args = [];
 
     if (agent.model) args.push('--model', agent.model);
-    if (agent.prompt) args.push(agent.prompt);
 
-    // Sandbox mode off for full filesystem access
-    args.push('--sandbox', 'false');
+    // YOLO mode — auto-approve all tool calls (file writes, shell commands)
+    // Without this, Gemini in headless mode can only output text
+    args.push('--yolo');
+
+    if (agent.prompt) args.push(agent.prompt);
 
     return {
       command: 'gemini',

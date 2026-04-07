@@ -107,9 +107,9 @@
       { "key": "GOOGLE_REFRESH_TOKEN", "label": "Refresh Token", "required": true, "hidden": true }
     ],
     "setupSteps": [
-      "Click 'Connect with Google' below",
-      "Sign in and authorize Groove to access your calendar",
-      "That's it — your credentials are stored securely"
+      "Click 'Connect with Google' below to sign in",
+      "Authorize Groove to access your calendar",
+      "Done — credentials are encrypted and stored locally"
     ],
     "featured": false,
     "downloads": 0,
@@ -137,9 +137,9 @@
       { "key": "GOOGLE_REFRESH_TOKEN", "label": "Refresh Token", "required": true, "hidden": true }
     ],
     "setupSteps": [
-      "Click 'Connect with Google' below",
-      "Sign in and authorize Groove to access your email",
-      "That's it — your credentials are stored securely"
+      "Click 'Connect with Google' below to sign in",
+      "Authorize Groove to access your email",
+      "Done — credentials are encrypted and stored locally"
     ],
     "featured": false,
     "downloads": 0,
@@ -221,9 +221,9 @@
       { "key": "GOOGLE_REFRESH_TOKEN", "label": "Refresh Token", "required": true, "hidden": true }
     ],
     "setupSteps": [
-      "Click 'Connect with Google' below",
-      "Sign in and authorize Groove to access your Drive",
-      "That's it — your credentials are stored securely"
+      "Click 'Connect with Google' below to sign in",
+      "Authorize Groove to access your Drive",
+      "Done — credentials are encrypted and stored locally"
     ],
     "featured": false,
     "downloads": 0,

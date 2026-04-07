@@ -221,105 +221,96 @@ function CredentialModal({ integration, onClose }) {
           {/* OAuth flow for Google integrations */}
           {isOAuth && (
             <div style={{ marginBottom: 16 }}>
-              {oauthStatus === 'checking' && (
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', padding: 16 }}>
-                  Checking Google OAuth setup...
-                </div>
-              )}
+              {/* Always show the primary Connect button */}
+              <button
+                onClick={oauthStatus === 'ready' ? handleOAuthConnect : () => setShowGoogleSetup(true)}
+                disabled={oauthStatus === 'checking' || oauthStatus === 'connecting'}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  width: '100%', padding: '12px 16px', marginBottom: 12,
+                  background: oauthStatus === 'connecting' ? 'var(--bg-active)' : '#4285f4',
+                  color: '#fff', border: 'none', borderRadius: 6,
+                  fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  fontFamily: 'var(--font)',
+                  opacity: oauthStatus === 'checking' ? 0.5 : 1,
+                }}
+              >
+                {oauthStatus === 'checking' ? 'Checking...'
+                  : oauthStatus === 'connecting' ? 'Waiting for authorization...'
+                  : `Connect with Google`}
+              </button>
 
-              {oauthStatus === 'not-configured' && !showGoogleSetup && (
+              {/* First-time setup: show inline when Connect is clicked and OAuth not configured */}
+              {showGoogleSetup && oauthStatus === 'not-configured' && (
                 <div style={{
-                  padding: 16, borderRadius: 8,
-                  background: 'rgba(229, 192, 123, 0.06)', border: '1px solid var(--amber)',
+                  padding: 14, borderRadius: 8,
+                  background: 'var(--bg-surface)', border: '1px solid var(--border)',
                 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--amber)', marginBottom: 8 }}>
-                    One-time Google setup needed
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-bright)', marginBottom: 8 }}>
+                    First-time setup (one time for all Google services)
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.5, marginBottom: 12 }}>
-                    To connect Google services, you need a Google Cloud project with OAuth credentials.
-                    This is a one-time setup that works for Gmail, Calendar, and Drive.
+                  <div style={{ fontSize: 10, color: 'var(--text-dim)', lineHeight: 1.6, marginBottom: 10 }}>
+                    Create a free Google Cloud OAuth app to let Groove connect on your behalf:
                   </div>
+
                   <a
-                    href="https://console.cloud.google.com/apis/credentials"
+                    href="https://console.cloud.google.com/apis/credentials/oauthclient"
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 4,
-                      fontSize: 11, color: 'var(--accent)', textDecoration: 'none',
-                      marginBottom: 12,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      padding: '8px 14px', marginBottom: 10,
+                      background: 'var(--bg-active)', color: 'var(--accent)',
+                      border: '1px solid var(--accent)', borderRadius: 6,
+                      fontSize: 11, fontWeight: 600, textDecoration: 'none',
                     }}
                   >
                     Open Google Cloud Console {'\u2197'}
                   </a>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
-                    1. Create a project (or select existing){'\n'}
-                    2. Configure OAuth consent screen (External, add your email as test user){'\n'}
-                    3. Create OAuth Client ID (Desktop app){'\n'}
-                    4. Copy the Client ID and Client Secret below
-                  </div>
-                  <button
-                    onClick={() => setShowGoogleSetup(true)}
-                    style={{ ...modal.saveBtn, width: '100%' }}
-                  >
-                    I have my Client ID and Secret
-                  </button>
-                </div>
-              )}
 
-              {oauthStatus === 'not-configured' && showGoogleSetup && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div>
-                    <label style={modal.label}>Google OAuth Client ID</label>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: 12 }}>
+                    1. Create a project if you don't have one{'\n'}
+                    2. Set up OAuth consent screen (External, add your email as test user){'\n'}
+                    3. Create credentials {'\u2192'} OAuth client ID {'\u2192'} Desktop app{'\n'}
+                    4. Paste the Client ID and Secret below:
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <input
                       value={googleClientId}
                       onChange={(e) => setGoogleClientId(e.target.value)}
-                      placeholder="123456789.apps.googleusercontent.com"
+                      placeholder="Client ID (e.g. 123456.apps.googleusercontent.com)"
                       style={modal.input}
                     />
-                  </div>
-                  <div>
-                    <label style={modal.label}>Google OAuth Client Secret</label>
                     <input
                       type="password"
                       value={googleClientSecret}
                       onChange={(e) => setGoogleClientSecret(e.target.value)}
-                      placeholder="GOCSPX-..."
+                      placeholder="Client Secret (e.g. GOCSPX-...)"
                       style={modal.input}
                     />
+                    <button
+                      onClick={async () => {
+                        await handleGoogleSetup();
+                        // After saving, immediately trigger the OAuth connect flow
+                        if (googleClientId && googleClientSecret) {
+                          setTimeout(() => handleOAuthConnect(), 500);
+                        }
+                      }}
+                      disabled={saving || !googleClientId || !googleClientSecret}
+                      style={{
+                        ...modal.saveBtn, width: '100%',
+                        opacity: saving || !googleClientId || !googleClientSecret ? 0.4 : 1,
+                      }}
+                    >
+                      {saving ? 'Saving...' : 'Save & Connect'}
+                    </button>
                   </div>
-                  <button
-                    onClick={handleGoogleSetup}
-                    disabled={saving || !googleClientId || !googleClientSecret}
-                    style={{
-                      ...modal.saveBtn, width: '100%',
-                      opacity: saving || !googleClientId || !googleClientSecret ? 0.4 : 1,
-                    }}
-                  >
-                    {saving ? 'Saving...' : 'Save Google OAuth Credentials'}
-                  </button>
-                  <div style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center' }}>
-                    Stored encrypted, only on this machine. One-time setup for all Google integrations.
+
+                  <div style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', marginTop: 6 }}>
+                    One-time setup. Works for Gmail, Calendar, and Drive. Encrypted on this machine only.
                   </div>
                 </div>
-              )}
-
-              {(oauthStatus === 'ready' || oauthStatus === 'connecting') && (
-                <button
-                  onClick={handleOAuthConnect}
-                  disabled={oauthStatus === 'connecting'}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    width: '100%', padding: '12px 16px',
-                    background: oauthStatus === 'connecting' ? 'var(--bg-active)' : '#4285f4',
-                    color: '#fff', border: 'none', borderRadius: 6,
-                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                    fontFamily: 'var(--font)',
-                  }}
-                >
-                  {oauthStatus === 'connecting'
-                    ? 'Waiting for authorization...'
-                    : `Connect with Google`}
-                </button>
               )}
             </div>
           )}

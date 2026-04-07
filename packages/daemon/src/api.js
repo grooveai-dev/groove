@@ -382,9 +382,9 @@ export function createApi(app, daemon) {
     res.json(daemon.skills.getInstalled());
   });
 
-  app.post('/api/skills/:id/install', (req, res) => {
+  app.post('/api/skills/:id/install', async (req, res) => {
     try {
-      const result = daemon.skills.install(req.params.id);
+      const result = await daemon.skills.install(req.params.id);
       res.json(result);
     } catch (err) {
       res.status(400).json({ error: err.message });

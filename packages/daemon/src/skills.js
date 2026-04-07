@@ -7,18 +7,32 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+const REMOTE_REGISTRY = 'https://docs.groovedev.ai/skills/registry.json';
+
 export class SkillStore {
   constructor(daemon) {
     this.daemon = daemon;
     this.skillsDir = resolve(daemon.grooveDir, 'skills');
     mkdirSync(this.skillsDir, { recursive: true });
 
-    // Load bundled registry
+    // Load bundled registry as fallback
     this.registry = [];
     try {
       const regPath = resolve(__dirname, '../skills-registry.json');
       this.registry = JSON.parse(readFileSync(regPath, 'utf8'));
     } catch { /* no registry file */ }
+
+    // Fetch remote registry in background (auto-update)
+    this._refreshRegistry();
+  }
+
+  async _refreshRegistry() {
+    try {
+      const res = await fetch(REMOTE_REGISTRY, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        this.registry = await res.json();
+      }
+    } catch { /* offline — use bundled */ }
   }
 
   /**
@@ -83,17 +97,30 @@ export class SkillStore {
 
   /**
    * Install a skill from the registry.
-   * Copies the SKILL.md content from the Claude plugins directory.
+   * Downloads SKILL.md from remote URL, falls back to local Claude plugins.
    */
-  install(skillId) {
+  async install(skillId) {
     const entry = this.registry.find((s) => s.id === skillId);
     if (!entry) throw new Error(`Skill not found: ${skillId}`);
     if (this._isInstalled(skillId)) throw new Error(`Skill already installed: ${skillId}`);
 
-    // Find the skill content from Claude's plugin directory
-    const content = this._findSkillContent(skillId);
+    let content = null;
+
+    // Try remote download first
+    if (entry.contentUrl) {
+      try {
+        const res = await fetch(entry.contentUrl, { signal: AbortSignal.timeout(10000) });
+        if (res.ok) content = await res.text();
+      } catch { /* fall through to local */ }
+    }
+
+    // Fall back to local Claude plugins
     if (!content) {
-      throw new Error(`Skill content not found. Make sure Claude Code plugins are installed.`);
+      content = this._findSkillContent(skillId);
+    }
+
+    if (!content) {
+      throw new Error(`Could not download skill. Check your internet connection.`);
     }
 
     // Save to .groove/skills/<id>/SKILL.md

@@ -41,10 +41,13 @@ export default function SpawnPanel() {
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [keySaving, setKeySaving] = useState(false);
   const [showDirPicker, setShowDirPicker] = useState(false);
+  const [installedSkills, setInstalledSkills] = useState([]);
+  const [selectedSkills, setSelectedSkills] = useState([]);
 
   useEffect(() => {
     fetchProviders();
     fetchWorkspaces();
+    fetchInstalledSkills();
   }, []);
 
   async function fetchProviders() {
@@ -60,6 +63,19 @@ export default function SpawnPanel() {
       const data = await res.json();
       setWorkspaces(data.workspaces || []);
     } catch { /* ignore */ }
+  }
+
+  async function fetchInstalledSkills() {
+    try {
+      const res = await fetch('/api/skills/installed');
+      setInstalledSkills(await res.json());
+    } catch { /* ignore */ }
+  }
+
+  function toggleSkill(skillId) {
+    setSelectedSkills((prev) =>
+      prev.includes(skillId) ? prev.filter((s) => s !== skillId) : [...prev, skillId]
+    );
   }
 
   const selectedPreset = ROLE_PRESETS.find((p) => p.id === role);
@@ -127,6 +143,7 @@ export default function SpawnPanel() {
         provider,
         permission,
         ...(workingDir.trim() ? { workingDir: workingDir.trim() } : {}),
+        ...(selectedSkills.length > 0 ? { skills: selectedSkills } : {}),
       });
       closeDetail();
     } catch (err) {
@@ -280,6 +297,57 @@ export default function SpawnPanel() {
             </button>
           ))}
         </div>
+
+        {/* Skills picker */}
+        {installedSkills.length > 0 && (
+          <>
+            <div style={styles.label}>SKILLS</div>
+            <div style={styles.skillsGrid}>
+              {installedSkills.map((skill) => {
+                const active = selectedSkills.includes(skill.id);
+                return (
+                  <button
+                    key={skill.id}
+                    type="button"
+                    onClick={() => toggleSkill(skill.id)}
+                    style={{
+                      ...styles.skillBtn,
+                      borderColor: active ? 'var(--accent)' : 'var(--border)',
+                      background: active ? 'rgba(51, 175, 188, 0.08)' : 'var(--bg-surface)',
+                    }}
+                  >
+                    <span style={{
+                      ...styles.skillIcon,
+                      background: active ? 'var(--accent)' : 'var(--bg-active)',
+                      color: active ? 'var(--bg-base)' : 'var(--text-dim)',
+                    }}>
+                      {skill.icon || skill.name.charAt(0)}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 11, fontWeight: 600,
+                        color: active ? 'var(--text-bright)' : 'var(--text-primary)',
+                      }}>
+                        {skill.name}
+                      </div>
+                      <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>
+                        {skill.author || 'local'}
+                      </div>
+                    </div>
+                    {active && (
+                      <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>{'\u2713'}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedSkills.length > 0 && (
+              <div style={styles.hint}>
+                {selectedSkills.length} skill{selectedSkills.length !== 1 ? 's' : ''} will be injected into this agent's context
+              </div>
+            )}
+          </>
+        )}
 
         {/* Advanced toggle */}
         <button
@@ -504,6 +572,22 @@ const styles = {
   },
   permDesc: {
     fontSize: 10, color: 'var(--text-dim)',
+  },
+  skillsGrid: {
+    display: 'flex', flexDirection: 'column', gap: 3,
+  },
+  skillBtn: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '6px 8px', width: '100%',
+    border: '1px solid var(--border)',
+    borderRadius: 2, cursor: 'pointer', textAlign: 'left',
+    fontFamily: 'var(--font)',
+    transition: 'border-color 0.1s, background 0.1s',
+  },
+  skillIcon: {
+    width: 22, height: 22, borderRadius: 4,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 10, fontWeight: 700, flexShrink: 0,
   },
   advancedToggle: {
     background: 'none', border: 'none', color: 'var(--text-dim)',

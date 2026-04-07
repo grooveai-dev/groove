@@ -22,6 +22,7 @@ export class Registry extends EventEmitter {
       prompt: config.prompt || '',
       permission: config.permission || 'full',
       workingDir: config.workingDir || process.cwd(),
+      skills: config.skills || [],
       status: 'starting',
       pid: null,
       spawnedAt: new Date().toISOString(),
@@ -48,7 +49,7 @@ export class Registry extends EventEmitter {
     if (!agent) return null;
 
     // Only allow known fields to prevent prototype pollution
-    const SAFE_FIELDS = ['status', 'pid', 'tokensUsed', 'contextUsage', 'lastActivity', 'model', 'name', 'routingMode', 'routingReason', 'sessionId'];
+    const SAFE_FIELDS = ['status', 'pid', 'tokensUsed', 'contextUsage', 'lastActivity', 'model', 'name', 'routingMode', 'routingReason', 'sessionId', 'skills'];
     for (const key of Object.keys(updates)) {
       if (SAFE_FIELDS.includes(key)) {
         agent[key] = updates[key];

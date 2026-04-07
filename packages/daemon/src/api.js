@@ -406,6 +406,33 @@ export function createApi(app, daemon) {
     res.json({ id: req.params.id, content });
   });
 
+  // --- Agent Skills (attach/detach) ---
+
+  app.post('/api/agents/:agentId/skills/:skillId', (req, res) => {
+    const agent = daemon.registry.get(req.params.agentId);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    const skillId = req.params.skillId;
+    if (!daemon.skills.getContent(skillId)) {
+      return res.status(400).json({ error: 'Skill not installed. Install it first.' });
+    }
+    const skills = agent.skills || [];
+    if (skills.includes(skillId)) {
+      return res.json({ id: agent.id, skills });
+    }
+    daemon.registry.update(agent.id, { skills: [...skills, skillId] });
+    daemon.audit.log('skill.attach', { agentId: agent.id, skillId });
+    res.json({ id: agent.id, skills: [...skills, skillId] });
+  });
+
+  app.delete('/api/agents/:agentId/skills/:skillId', (req, res) => {
+    const agent = daemon.registry.get(req.params.agentId);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    const skills = (agent.skills || []).filter((s) => s !== req.params.skillId);
+    daemon.registry.update(agent.id, { skills });
+    daemon.audit.log('skill.detach', { agentId: agent.id, skillId: req.params.skillId });
+    res.json({ id: agent.id, skills });
+  });
+
   // --- Directory Browser ---
 
   app.get('/api/browse', (req, res) => {

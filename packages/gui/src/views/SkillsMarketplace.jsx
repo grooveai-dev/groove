@@ -653,7 +653,7 @@ const styles = {
 
   // Scroll area
   scrollArea: {
-    flex: 1, overflowY: 'auto', padding: '0 20px 20px',
+    flex: 1, overflowY: 'auto', padding: '4px 20px 20px',
   },
 
   // Featured

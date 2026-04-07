@@ -57,6 +57,15 @@ export function validateAgentConfig(config) {
   const validPermissions = ['auto', 'full'];
   const permission = validPermissions.includes(config.permission) ? config.permission : 'full';
 
+  // Validate skills (array of skill IDs)
+  let skills = [];
+  if (config.skills !== undefined && config.skills !== null) {
+    if (!Array.isArray(config.skills)) {
+      throw new Error('Skills must be an array');
+    }
+    skills = config.skills.filter((s) => typeof s === 'string' && s.length > 0 && s.length <= 100);
+  }
+
   // Return sanitized config (only known fields)
   return {
     role: config.role,
@@ -67,6 +76,7 @@ export function validateAgentConfig(config) {
     model: typeof config.model === 'string' ? config.model : null,
     workingDir: typeof config.workingDir === 'string' ? config.workingDir : undefined,
     permission,
+    skills,
   };
 }
 

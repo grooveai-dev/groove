@@ -18,11 +18,14 @@ export default function AgentActions({ agent }) {
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [selectedModel, setSelectedModel] = useState(agent.model || '');
   const [providerList, setProviderList] = useState([]);
+  const [installedSkills, setInstalledSkills] = useState([]);
+  const [showSkillPicker, setShowSkillPicker] = useState(false);
 
   const isAlive = agent.status === 'running' || agent.status === 'starting';
 
   useEffect(() => {
     fetch('/api/providers').then(r => r.json()).then(setProviderList).catch(() => {});
+    fetch('/api/skills/installed').then(r => r.json()).then(setInstalledSkills).catch(() => {});
   }, []);
 
   const currentProvider = providerList.find((p) => p.id === agent.provider);
@@ -67,6 +70,24 @@ export default function AgentActions({ agent }) {
     setConfirmDelete(false);
   }
 
+  async function handleAttachSkill(skillId) {
+    try {
+      await fetch(`/api/agents/${agent.id}/skills/${skillId}`, { method: 'POST' });
+      showStatus(`skill attached to ${agent.name}`);
+    } catch (err) {
+      showStatus(`attach failed: ${err.message}`);
+    }
+  }
+
+  async function handleDetachSkill(skillId) {
+    try {
+      await fetch(`/api/agents/${agent.id}/skills/${skillId}`, { method: 'DELETE' });
+      showStatus(`skill detached from ${agent.name}`);
+    } catch (err) {
+      showStatus(`detach failed: ${err.message}`);
+    }
+  }
+
   async function handleClone() {
     try {
       const newAgent = await spawnAgent({
@@ -75,6 +96,7 @@ export default function AgentActions({ agent }) {
         prompt: agent.prompt,
         provider: agent.provider,
         model: agent.model,
+        skills: agent.skills,
       });
       showStatus(`cloned as ${newAgent.name}`);
     } catch (err) {
@@ -119,6 +141,7 @@ export default function AgentActions({ agent }) {
         prompt: agent.prompt,
         provider: agent.provider,
         model: agent.model,
+        skills: agent.skills,
       });
       showStatus(`restarted as ${newAgent.name}`);
     } catch (err) {
@@ -229,6 +252,75 @@ export default function AgentActions({ agent }) {
               Cancel
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Skills */}
+      <div style={{ ...styles.sectionLabel, marginTop: 20 }}>
+        SKILLS ({(agent.skills || []).length})
+      </div>
+      {(agent.skills || []).length > 0 ? (
+        <div style={styles.skillsList}>
+          {(agent.skills || []).map((skillId) => {
+            const skill = installedSkills.find((s) => s.id === skillId);
+            return (
+              <div key={skillId} style={styles.skillRow}>
+                <span style={styles.skillRowIcon}>
+                  {skill?.icon || skillId.charAt(0).toUpperCase()}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-primary)', fontWeight: 500 }}>
+                    {skill?.name || skillId}
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>
+                    {skill?.author || 'unknown'}
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleDetachSkill(skillId)}
+                  style={styles.detachBtn}
+                  title="Detach skill"
+                >
+                  {'\u2715'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={styles.noPrompt}>No skills attached</div>
+      )}
+      {!showSkillPicker && installedSkills.length > 0 && (
+        <button
+          onClick={() => setShowSkillPicker(true)}
+          style={{ ...styles.editBtn, marginTop: 6 }}
+        >
+          + Attach Skill
+        </button>
+      )}
+      {showSkillPicker && (
+        <div style={styles.skillPicker}>
+          {installedSkills
+            .filter((s) => !(agent.skills || []).includes(s.id))
+            .map((skill) => (
+              <button
+                key={skill.id}
+                onClick={() => { handleAttachSkill(skill.id); setShowSkillPicker(false); }}
+                style={styles.skillPickerItem}
+              >
+                <span style={styles.skillRowIcon}>
+                  {skill.icon || skill.name.charAt(0)}
+                </span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-primary)' }}>{skill.name}</div>
+                  <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>{skill.author}</div>
+                </div>
+              </button>
+            ))}
+          {installedSkills.filter((s) => !(agent.skills || []).includes(s.id)).length === 0 && (
+            <div style={{ fontSize: 10, color: 'var(--text-dim)', padding: 8 }}>All installed skills are already attached</div>
+          )}
+          <button onClick={() => setShowSkillPicker(false)} style={styles.cancelBtn}>cancel</button>
         </div>
       )}
 
@@ -345,5 +437,42 @@ const styles = {
   configRow: {
     display: 'flex', gap: 8, padding: '3px 0',
     borderBottom: '1px solid var(--bg-surface)',
+  },
+  skillsList: {
+    display: 'flex', flexDirection: 'column', gap: 3,
+  },
+  skillRow: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '5px 8px',
+    background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    borderRadius: 2,
+  },
+  skillRowIcon: {
+    width: 20, height: 20, borderRadius: 4,
+    background: 'var(--accent)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 9, fontWeight: 700, color: 'var(--bg-base)',
+    flexShrink: 0,
+  },
+  detachBtn: {
+    background: 'none', border: 'none',
+    color: 'var(--text-muted)', fontSize: 11,
+    cursor: 'pointer', fontFamily: 'var(--font)',
+    padding: '2px 4px', flexShrink: 0,
+  },
+  skillPicker: {
+    marginTop: 6, padding: 6,
+    background: 'var(--bg-base)', border: '1px solid var(--border)',
+    borderRadius: 2,
+    display: 'flex', flexDirection: 'column', gap: 2,
+    maxHeight: 180, overflowY: 'auto',
+  },
+  skillPickerItem: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '5px 8px', width: '100%',
+    background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    borderRadius: 2, cursor: 'pointer', textAlign: 'left',
+    fontFamily: 'var(--font)',
+    transition: 'border-color 0.1s',
   },
 };

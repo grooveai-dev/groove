@@ -162,6 +162,32 @@ export class Introducer {
       lines.push(archContent);
     }
 
+    // Skills injection — load attached skill content and inject into context
+    if (newAgent.skills && newAgent.skills.length > 0 && this.daemon.skills) {
+      const skillSections = [];
+      for (const skillId of newAgent.skills) {
+        const content = this.daemon.skills.getContent(skillId);
+        if (content) {
+          // Strip YAML frontmatter, keep the instruction body
+          const body = content.replace(/^---[\s\S]*?---\n*/, '').trim();
+          if (body) {
+            // Find the skill name from registry or frontmatter
+            const regEntry = this.daemon.skills.registry.find((s) => s.id === skillId);
+            const name = regEntry?.name || skillId;
+            skillSections.push(`### ${name}\n\n${body}`);
+          }
+        }
+      }
+      if (skillSections.length > 0) {
+        lines.push('');
+        lines.push(`## Skills (${skillSections.length} attached)`);
+        lines.push('');
+        lines.push(`The following skills have been attached to this agent. Follow their instructions:`);
+        lines.push('');
+        lines.push(skillSections.join('\n\n---\n\n'));
+      }
+    }
+
     return lines.join('\n');
   }
 

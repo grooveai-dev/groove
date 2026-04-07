@@ -458,9 +458,9 @@ export class IntegrationStore {
   }
 
   /**
-   * Pre-authenticate an auto-auth integration by running its MCP server briefly.
-   * The server will open a browser for OAuth. Once auth completes, the server
-   * stores tokens locally so future agent spawns work without prompting.
+   * Pre-authenticate an auto-auth integration by running its MCP server
+   * and sending the MCP handshake (initialize + tools/list). This triggers
+   * the server's built-in OAuth flow which opens a browser for sign-in.
    * Returns a handle to track the auth process.
    */
   authenticate(integrationId) {
@@ -477,12 +477,44 @@ export class IntegrationStore {
       if (val) env[ek.key] = val;
     }
 
-    // Spawn the MCP server — it will trigger OAuth on startup
+    // Spawn the MCP server with stdin/stdout for JSON-RPC,
+    // stderr inherited so it can open browsers and show auth prompts
     const proc = cpSpawn(command, args, {
       env: { ...process.env, ...env },
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'inherit'],
       detached: false,
     });
+
+    // Send MCP handshake to initialize the server — this triggers auth
+    const initMsg = JSON.stringify({
+      jsonrpc: '2.0', id: 1, method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'groove', version: '1.0.0' },
+      },
+    });
+    const listToolsMsg = JSON.stringify({
+      jsonrpc: '2.0', id: 2, method: 'tools/list', params: {},
+    });
+    const initializedNotif = JSON.stringify({
+      jsonrpc: '2.0', method: 'notifications/initialized',
+    });
+
+    // Wait a moment for npx to download + start, then send handshake
+    proc.stdout.on('data', (chunk) => {
+      const text = chunk.toString();
+      // After initialize response, send initialized notification + tools/list
+      if (text.includes('"id":1') || text.includes('"id": 1')) {
+        proc.stdin.write(initializedNotif + '\n');
+        setTimeout(() => proc.stdin.write(listToolsMsg + '\n'), 500);
+      }
+    });
+
+    // Send initialize after a brief delay for npx startup
+    setTimeout(() => {
+      try { proc.stdin.write(initMsg + '\n'); } catch { /* process may have exited */ }
+    }, 3000);
 
     // Auto-kill after 2 minutes (auth should complete well before that)
     const timeout = setTimeout(() => {

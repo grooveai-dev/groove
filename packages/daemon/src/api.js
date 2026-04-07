@@ -446,6 +446,9 @@ export function createApi(app, daemon) {
 
   // --- Integrations ---
 
+  // Google OAuth routes MUST come before parameterized :id routes
+  // (Express matches in order — :id would swallow 'google-oauth')
+
   app.get('/api/integrations/registry', async (req, res) => {
     const integrations = await daemon.integrations.getRegistry({
       search: req.query.search || '',
@@ -460,6 +463,48 @@ export function createApi(app, daemon) {
   app.get('/api/integrations/installed', (req, res) => {
     res.json(daemon.integrations.getInstalled());
   });
+
+  app.get('/api/integrations/google-oauth/status', (req, res) => {
+    res.json({ configured: daemon.integrations.isGoogleOAuthConfigured() });
+  });
+
+  app.post('/api/integrations/google-oauth/setup', (req, res) => {
+    try {
+      const { clientId, clientSecret } = req.body || {};
+      if (!clientId || !clientSecret) return res.status(400).json({ error: 'clientId and clientSecret are required' });
+      daemon.integrations.setCredential('google-oauth', 'GOOGLE_CLIENT_ID', clientId);
+      daemon.integrations.setCredential('google-oauth', 'GOOGLE_CLIENT_SECRET', clientSecret);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/integrations/oauth/callback', async (req, res) => {
+    try {
+      const { code, state } = req.query;
+      if (!code || !state) return res.status(400).send('Missing code or state parameter');
+      await daemon.integrations.handleOAuthCallback(code, state);
+      res.send(`<!DOCTYPE html><html><body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#1e2127;color:#e6e6e6">
+        <div style="text-align:center">
+          <div style="font-size:48px;margin-bottom:16px">&#10003;</div>
+          <h2>Connected!</h2>
+          <p style="color:#7a8394">You can close this tab and return to Groove.</p>
+          <script>setTimeout(()=>window.close(),2000)</script>
+        </div>
+      </body></html>`);
+    } catch (err) {
+      res.status(400).send(`<!DOCTYPE html><html><body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#1e2127;color:#e06c75">
+        <div style="text-align:center">
+          <h2>Connection Failed</h2>
+          <p>${err.message}</p>
+          <p style="color:#7a8394">Close this tab and try again in Groove.</p>
+        </div>
+      </body></html>`);
+    }
+  });
+
+  // Parameterized :id routes (after specific routes above)
 
   app.post('/api/integrations/:id/install', async (req, res) => {
     try {
@@ -505,55 +550,12 @@ export function createApi(app, daemon) {
     }
   });
 
-  // --- Google OAuth flow ---
-
-  app.get('/api/integrations/google-oauth/status', (req, res) => {
-    res.json({ configured: daemon.integrations.isGoogleOAuthConfigured() });
-  });
-
-  app.post('/api/integrations/google-oauth/setup', (req, res) => {
-    try {
-      const { clientId, clientSecret } = req.body || {};
-      if (!clientId || !clientSecret) return res.status(400).json({ error: 'clientId and clientSecret are required' });
-      daemon.integrations.setCredential('google-oauth', 'GOOGLE_CLIENT_ID', clientId);
-      daemon.integrations.setCredential('google-oauth', 'GOOGLE_CLIENT_SECRET', clientSecret);
-      res.json({ ok: true });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
   app.post('/api/integrations/:id/oauth/start', (req, res) => {
     try {
       const url = daemon.integrations.getOAuthUrl(req.params.id);
       res.json({ url });
     } catch (err) {
       res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.get('/api/integrations/oauth/callback', async (req, res) => {
-    try {
-      const { code, state } = req.query;
-      if (!code || !state) return res.status(400).send('Missing code or state parameter');
-      await daemon.integrations.handleOAuthCallback(code, state);
-      // Return a nice HTML page that auto-closes
-      res.send(`<!DOCTYPE html><html><body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#1e2127;color:#e6e6e6">
-        <div style="text-align:center">
-          <div style="font-size:48px;margin-bottom:16px">&#10003;</div>
-          <h2>Connected!</h2>
-          <p style="color:#7a8394">You can close this tab and return to Groove.</p>
-          <script>setTimeout(()=>window.close(),2000)</script>
-        </div>
-      </body></html>`);
-    } catch (err) {
-      res.status(400).send(`<!DOCTYPE html><html><body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#1e2127;color:#e06c75">
-        <div style="text-align:center">
-          <h2>Connection Failed</h2>
-          <p>${err.message}</p>
-          <p style="color:#7a8394">Close this tab and try again in Groove.</p>
-        </div>
-      </body></html>`);
     }
   });
 

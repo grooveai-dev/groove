@@ -11,6 +11,8 @@ export const useGrooveStore = create((set, get) => ({
   agents: [],
   connected: false,
   ws: null,
+  daemonHost: null,   // bound host IP (null = localhost)
+  tunneled: false,    // true when accessed via SSH tunnel (port mismatch)
 
   // UI state — unified panel model
   activeTab: 'agents',       // 'agents' | 'stats' | 'teams' | 'approvals'
@@ -28,7 +30,22 @@ export const useGrooveStore = create((set, get) => ({
 
     const ws = new WebSocket(WS_URL);
 
-    ws.onopen = () => set({ connected: true, ws });
+    ws.onopen = () => {
+      set({ connected: true, ws });
+      // Fetch daemon info for instance badge + tunnel detection
+      fetch(`${API_BASE}/api/status`).then((r) => r.json()).then((s) => {
+        const updates = {};
+        if (s.host && s.host !== '127.0.0.1') {
+          updates.daemonHost = s.host;
+        }
+        // Detect tunnel: browser port differs from daemon's actual port
+        const browserPort = window.location.port || '80';
+        if (String(s.port) !== browserPort) {
+          updates.tunneled = true;
+        }
+        if (Object.keys(updates).length > 0) set(updates);
+      }).catch(() => {});
+    };
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
@@ -113,7 +130,7 @@ export const useGrooveStore = create((set, get) => ({
     };
 
     ws.onclose = () => {
-      set({ connected: false, ws: null });
+      set({ connected: false, ws: null, daemonHost: null, tunneled: false });
       setTimeout(() => get().connect(), 2000);
     };
 

@@ -11,7 +11,7 @@ import { validateAgentConfig } from './validate.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export function createApi(app, daemon) {
-  // CORS — restrict to localhost origins only
+  // CORS — restrict to localhost + bound interface origins
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     const allowed = [
@@ -19,6 +19,10 @@ export function createApi(app, daemon) {
       `http://127.0.0.1:${daemon.port}`,
       'http://localhost:3142', // Vite dev server
     ];
+    // Allow the bound interface (for Tailscale/LAN access)
+    if (daemon.host && daemon.host !== '127.0.0.1') {
+      allowed.push(`http://${daemon.host}:${daemon.port}`);
+    }
     if (!origin || allowed.includes(origin)) {
       res.header('Access-Control-Allow-Origin', origin || '*');
     }
@@ -52,6 +56,7 @@ export function createApi(app, daemon) {
     try {
       const config = validateAgentConfig(req.body);
       const agent = await daemon.processes.spawn(config);
+      daemon.audit.log('agent.spawn', { id: agent.id, role: agent.role, provider: agent.provider });
       res.status(201).json(agent);
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -81,6 +86,7 @@ export function createApi(app, daemon) {
         daemon.registry.remove(req.params.id);
       }
 
+      daemon.audit.log('agent.kill', { id: agent.id, role: agent.role, purged: req.query.purge === 'true' || !isAlive });
       res.json({ ok: true, purged: req.query.purge === 'true' || !isAlive });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -89,7 +95,9 @@ export function createApi(app, daemon) {
 
   // Kill all agents
   app.delete('/api/agents', async (req, res) => {
+    const count = daemon.processes.getRunningCount();
     await daemon.processes.killAll();
+    daemon.audit.log('agent.kill_all', { count });
     res.json({ ok: true });
   });
 
@@ -122,11 +130,13 @@ export function createApi(app, daemon) {
   app.post('/api/credentials/:provider', (req, res) => {
     if (!req.body.key) return res.status(400).json({ error: 'key is required' });
     daemon.credentials.setKey(req.params.provider, req.body.key);
+    daemon.audit.log('credential.set', { provider: req.params.provider });
     res.json({ ok: true, masked: daemon.credentials.mask(req.body.key) });
   });
 
   app.delete('/api/credentials/:provider', (req, res) => {
     daemon.credentials.deleteKey(req.params.provider);
+    daemon.audit.log('credential.delete', { provider: req.params.provider });
     res.json({ ok: true });
   });
 
@@ -157,6 +167,7 @@ export function createApi(app, daemon) {
       uptime: process.uptime(),
       agents: daemon.registry.getAll().length,
       running: daemon.processes.getRunningCount(),
+      host: daemon.host,
       port: daemon.port,
       projectDir: daemon.projectDir,
     });
@@ -174,6 +185,7 @@ export function createApi(app, daemon) {
   app.post('/api/teams', (req, res) => {
     try {
       const team = daemon.teams.save(req.body.name);
+      daemon.audit.log('team.save', { name: req.body.name });
       res.status(201).json(team);
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -183,6 +195,7 @@ export function createApi(app, daemon) {
   app.post('/api/teams/:name/load', async (req, res) => {
     try {
       const result = await daemon.teams.load(req.params.name);
+      daemon.audit.log('team.load', { name: req.params.name });
       res.json(result);
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -192,6 +205,7 @@ export function createApi(app, daemon) {
   app.delete('/api/teams/:name', (req, res) => {
     try {
       daemon.teams.delete(req.params.name);
+      daemon.audit.log('team.delete', { name: req.params.name });
       res.json({ ok: true });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -210,6 +224,7 @@ export function createApi(app, daemon) {
   app.post('/api/teams/import', (req, res) => {
     try {
       const team = daemon.teams.import(JSON.stringify(req.body));
+      daemon.audit.log('team.import', { name: team.name });
       res.status(201).json(team);
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -229,12 +244,14 @@ export function createApi(app, daemon) {
   app.post('/api/approvals/:id/approve', (req, res) => {
     const result = daemon.supervisor.approve(req.params.id);
     if (!result) return res.status(404).json({ error: 'Approval not found' });
+    daemon.audit.log('approval.approve', { id: req.params.id });
     res.json(result);
   });
 
   app.post('/api/approvals/:id/reject', (req, res) => {
     const result = daemon.supervisor.reject(req.params.id, req.body.reason);
     if (!result) return res.status(404).json({ error: 'Approval not found' });
+    daemon.audit.log('approval.reject', { id: req.params.id, reason: req.body.reason });
     res.json(result);
   });
 
@@ -247,7 +264,9 @@ export function createApi(app, daemon) {
   // Rotate an agent
   app.post('/api/agents/:id/rotate', async (req, res) => {
     try {
+      const oldAgent = daemon.registry.get(req.params.id);
       const newAgent = await daemon.rotator.rotate(req.params.id);
+      daemon.audit.log('agent.rotate', { oldId: req.params.id, newId: newAgent.id, role: oldAgent?.role });
       res.json(newAgent);
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -268,10 +287,12 @@ export function createApi(app, daemon) {
 
       // Try session resume first (zero cold-start)
       // Falls back to rotation if no session ID or provider doesn't support resume
-      const newAgent = agent.sessionId
+      const resumed = !!agent.sessionId;
+      const newAgent = resumed
         ? await daemon.processes.resume(req.params.id, message.trim())
         : await daemon.rotator.rotate(req.params.id, { additionalPrompt: message.trim() });
 
+      daemon.audit.log('agent.instruct', { id: req.params.id, newId: newAgent.id, resumed });
       res.json(newAgent);
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -428,6 +449,7 @@ export function createApi(app, daemon) {
         spawned.push({ id: agent.id, name: agent.name, role: agent.role });
       }
 
+      daemon.audit.log('team.launch', { count: spawned.length, agents: spawned.map((a) => a.role) });
       res.json({ launched: spawned.length, agents: spawned });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -524,6 +546,87 @@ export function createApi(app, daemon) {
     });
   });
 
+  // --- Federation ---
+
+  // Federation status
+  app.get('/api/federation', (req, res) => {
+    res.json(daemon.federation.getStatus());
+  });
+
+  // List peers
+  app.get('/api/federation/peers', (req, res) => {
+    res.json(daemon.federation.getPeers());
+  });
+
+  // Initiate pairing (local CLI calls this with the remote URL)
+  app.post('/api/federation/initiate', async (req, res) => {
+    try {
+      const { remoteUrl } = req.body;
+      if (!remoteUrl || typeof remoteUrl !== 'string') {
+        return res.status(400).json({ error: 'remoteUrl is required' });
+      }
+      const result = await daemon.federation.initiatePairing(remoteUrl);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Accept pairing (remote daemon calls this during key exchange)
+  app.post('/api/federation/pair', (req, res) => {
+    try {
+      const result = daemon.federation.acceptPairing(req.body);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Unpair a peer
+  app.delete('/api/federation/peers/:id', (req, res) => {
+    try {
+      daemon.federation.unpair(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Receive a signed contract from a peer
+  app.post('/api/federation/contract', (req, res) => {
+    try {
+      const { senderId, payload, signature } = req.body;
+      if (!senderId || !payload || !signature) {
+        return res.status(400).json({ error: 'senderId, payload, and signature are required' });
+      }
+      const result = daemon.federation.receiveContract(senderId, payload, signature);
+      res.json(result);
+    } catch (err) {
+      res.status(403).json({ error: err.message });
+    }
+  });
+
+  // Send a contract to a peer (local agents call this)
+  app.post('/api/federation/contract/send', async (req, res) => {
+    try {
+      const { peerId, contract } = req.body;
+      if (!peerId || !contract) {
+        return res.status(400).json({ error: 'peerId and contract are required' });
+      }
+      const result = await daemon.federation.sendContract(peerId, contract);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // --- Audit Log ---
+
+  app.get('/api/audit', (req, res) => {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 500);
+    res.json(daemon.audit.recent(limit));
+  });
+
   // --- Config ---
 
   app.get('/api/config', (req, res) => {
@@ -543,6 +646,7 @@ export function createApi(app, daemon) {
     }
     const { saveConfig } = await import('./firstrun.js');
     saveConfig(daemon.grooveDir, daemon.config);
+    daemon.audit.log('config.set', { keys: Object.keys(req.body) });
     res.json(daemon.config);
   });
 

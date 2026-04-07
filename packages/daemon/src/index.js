@@ -3,6 +3,7 @@
 
 import { createServer as createHttpServer } from 'http';
 import { createServer as createNetServer } from 'net';
+import { execFileSync } from 'child_process';
 import { resolve } from 'path';
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
 import express from 'express';
@@ -24,15 +25,55 @@ import { TaskClassifier } from './classifier.js';
 import { ModelRouter } from './router.js';
 import { ProjectManager } from './pm.js';
 import { CodebaseIndexer } from './indexer.js';
+import { AuditLogger } from './audit.js';
+import { Federation } from './federation.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 
 const DEFAULT_PORT = 31415;
+const DEFAULT_HOST = '127.0.0.1';
 
 export { loadConfig, saveConfig } from './firstrun.js';
+
+/**
+ * Resolve the --host value to a bind address.
+ * - 'tailscale' → auto-detect via `tailscale ip -4`
+ * - '0.0.0.0' / '::' → rejected (security policy)
+ * - anything else → used as-is
+ */
+function resolveHost(host) {
+  if (!host || host === 'localhost') return DEFAULT_HOST;
+
+  // Block direct internet exposure
+  if (host === '0.0.0.0' || host === '::') {
+    console.error('\n  Direct internet exposure not supported.');
+    console.error('  Use `groove connect` (SSH tunnel) or `--host tailscale` instead.\n');
+    process.exit(1);
+  }
+
+  // Auto-detect Tailscale IP
+  if (host === 'tailscale') {
+    try {
+      const ip = execFileSync('tailscale', ['ip', '-4'], {
+        encoding: 'utf8',
+        timeout: 5000,
+      }).trim().split('\n')[0];
+      if (!ip) throw new Error('empty response');
+      return ip;
+    } catch (err) {
+      console.error('\n  Could not detect Tailscale IP.');
+      console.error('  Make sure Tailscale is installed and running: `tailscale status`');
+      console.error(`  Error: ${err.message}\n`);
+      process.exit(1);
+    }
+  }
+
+  return host;
+}
 
 export class Daemon {
   constructor(options = {}) {
     this.port = options.port !== undefined ? options.port : (parseInt(process.env.GROOVE_PORT, 10) || DEFAULT_PORT);
+    this.host = resolveHost(options.host);
     this.projectDir = options.projectDir || process.cwd();
     this.grooveDir = options.grooveDir || resolve(this.projectDir, '.groove');
     this.pidFile = resolve(this.grooveDir, 'daemon.pid');
@@ -71,6 +112,8 @@ export class Daemon {
     this.router = new ModelRouter(this);
     this.pm = new ProjectManager(this);
     this.indexer = new CodebaseIndexer(this);
+    this.audit = new AuditLogger(this.grooveDir);
+    this.federation = new Federation(this);
 
     // HTTP + WebSocket server
     this.app = express();
@@ -80,13 +123,17 @@ export class Daemon {
       maxPayload: 1024 * 1024, // 1MB max message
       verifyClient: ({ req }) => {
         const origin = req.headers.origin;
-        // Allow: no origin (CLI/native clients), localhost origins
+        // Allow: no origin (CLI/native clients), localhost origins, bound host
         if (!origin) return true;
         const allowed = [
           `http://localhost:${this.port}`,
           `http://127.0.0.1:${this.port}`,
           'http://localhost:3142',
         ];
+        // Allow the bound interface (for Tailscale/LAN access)
+        if (this.host !== DEFAULT_HOST) {
+          allowed.push(`http://${this.host}:${this.port}`);
+        }
         return allowed.includes(origin);
       },
     });
@@ -143,11 +190,12 @@ export class Daemon {
     }
 
     // Auto-find an open port if the default is taken
+    const bindHost = this.host;
     const checkPort = (port) => new Promise((res) => {
       const tester = createNetServer();
       tester.once('error', () => res(false));
       tester.once('listening', () => { tester.close(); res(true); });
-      tester.listen(port, '127.0.0.1');
+      tester.listen(port, bindHost);
     }).catch(() => false);
 
     if (!(await checkPort(this.port))) {
@@ -172,12 +220,13 @@ export class Daemon {
     this.registry.restore(this.state.get('agents') || []);
 
     return new Promise((resolvePromise) => {
-      this.server.listen(this.port, '127.0.0.1', () => {
+      this.server.listen(this.port, this.host, () => {
         writeFileSync(this.pidFile, String(process.pid));
-        // Write actual port so CLI can find us (supports auto-port rotation)
+        // Write actual port and host so CLI can find us
         writeFileSync(resolve(this.grooveDir, 'daemon.port'), String(this.port));
+        writeFileSync(resolve(this.grooveDir, 'daemon.host'), this.host);
 
-        printWelcome(this.port);
+        printWelcome(this.port, this.host);
 
         // Start background services
         this.journalist.start();
@@ -203,9 +252,13 @@ export class Daemon {
     // Kill all agent processes
     await this.processes.killAll();
 
-    // Clean up PID file
+    // Clean up PID and host files
     if (existsSync(this.pidFile)) {
       unlinkSync(this.pidFile);
+    }
+    const hostFile = resolve(this.grooveDir, 'daemon.host');
+    if (existsSync(hostFile)) {
+      unlinkSync(hostFile);
     }
 
     // Clean up generated files

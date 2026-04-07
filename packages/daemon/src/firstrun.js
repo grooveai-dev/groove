@@ -21,7 +21,7 @@ export function isFirstRun(grooveDir) {
 }
 
 // Show welcome banner on every startup
-export function printWelcome(port) {
+export function printWelcome(port, host = '127.0.0.1') {
   const providers = listProviders();
   const installed = providers.filter((p) => p.installed);
   const notInstalled = providers.filter((p) => !p.installed);
@@ -52,7 +52,32 @@ export function printWelcome(port) {
   }
 
   console.log('');
-  console.log(`  GUI:   http://localhost:${port}`);
+  const isRemote = host !== '127.0.0.1';
+  const isSSH = !!(process.env.SSH_CONNECTION || process.env.SSH_CLIENT);
+
+  if (isRemote) {
+    // Bound to network interface (Tailscale/LAN)
+    console.log(`  GUI:   http://${host}:${port}`);
+    console.log(`  Host:  ${host} (network-accessible)`);
+  } else if (isSSH) {
+    // Running on a VPS via SSH — print remote access instructions
+    const sshUser = process.env.USER || 'user';
+    const sshConn = process.env.SSH_CONNECTION || '';
+    const serverIp = sshConn.split(' ')[2] || '<this-server-ip>';
+
+    console.log(`  GUI:   http://localhost:${port} (this server only)`);
+    console.log('');
+    console.log('  ► Connect from your laptop:');
+    console.log(`    groove connect ${sshUser}@${serverIp}`);
+    console.log('');
+    console.log('  Or manually:');
+    console.log(`    ssh -L ${port + 1}:localhost:${port} ${sshUser}@${serverIp}`);
+    console.log(`    Then open http://localhost:${port + 1}`);
+  } else {
+    // Local machine
+    console.log(`  GUI:   http://localhost:${port}`);
+  }
+
   console.log('  Docs:  https://docs.groovedev.ai');
   console.log('  GitHub: https://github.com/grooveai-dev/groove');
   console.log('');

@@ -8,7 +8,10 @@ export async function start(options) {
   console.log(chalk.bold('GROOVE') + ' starting daemon...');
 
   try {
-    const daemon = new Daemon({ port: parseInt(options.port, 10) });
+    const daemon = new Daemon({
+      port: parseInt(options.port, 10),
+      host: options.host,
+    });
 
     const shutdown = async () => {
       console.log('\nShutting down...');
@@ -23,7 +26,9 @@ export async function start(options) {
     process.on('SIGTERM', shutdown);
 
     await daemon.start();
-    console.log(chalk.green('Ready.') + ` Open http://localhost:${options.port} for the GUI.`);
+    const isRemote = daemon.host !== '127.0.0.1';
+    const guiUrl = `http://${isRemote ? daemon.host : 'localhost'}:${daemon.port}`;
+    console.log(chalk.green('Ready.') + ` Open ${guiUrl} for the GUI.`);
   } catch (err) {
     console.error(chalk.red('Failed to start:'), err.message);
     process.exit(1);

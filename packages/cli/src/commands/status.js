@@ -10,13 +10,16 @@ export async function status() {
     console.log('');
     console.log(chalk.bold('  GROOVE Daemon'));
     console.log('');
+    const isRemote = s.host && s.host !== '127.0.0.1';
+    const guiHost = isRemote ? s.host : 'localhost';
     console.log(`  Status:   ${chalk.green('running')}`);
     console.log(`  PID:      ${s.pid}`);
+    console.log(`  Host:     ${s.host || '127.0.0.1'}${isRemote ? chalk.yellow(' (network)') : ''}`);
     console.log(`  Port:     ${s.port}`);
     console.log(`  Uptime:   ${formatUptime(s.uptime)}`);
     console.log(`  Agents:   ${s.agents} total, ${s.running} running`);
     console.log(`  Project:  ${s.projectDir}`);
-    console.log(`  GUI:      ${chalk.cyan(`http://localhost:${s.port}`)}`);
+    console.log(`  GUI:      ${chalk.cyan(`http://${guiHost}:${s.port}`)}`);
     console.log('');
   } catch {
     console.log('');

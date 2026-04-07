@@ -25,6 +25,8 @@ export default function App() {
   const activeTab = useGrooveStore((s) => s.activeTab);
   const detailPanel = useGrooveStore((s) => s.detailPanel);
   const statusMessage = useGrooveStore((s) => s.statusMessage);
+  const daemonHost = useGrooveStore((s) => s.daemonHost);
+  const tunneled = useGrooveStore((s) => s.tunneled);
   const connect = useGrooveStore((s) => s.connect);
   const setActiveTab = useGrooveStore((s) => s.setActiveTab);
   const openDetail = useGrooveStore((s) => s.openDetail);
@@ -41,6 +43,9 @@ export default function App() {
       <header style={styles.header}>
         <div style={styles.headerLeft}>
           <img src="/groove-logo-short.png" alt="GROOVE" style={{ height: 18, marginTop: 3, opacity: 0.85 }} />
+          {daemonHost && (
+            <span style={styles.hostBadge}>{daemonHost}</span>
+          )}
         </div>
 
 
@@ -112,8 +117,19 @@ export default function App() {
           fontFamily: 'var(--font)',
           animation: 'pulse 3s infinite',
         }}>
-          {connected ? 'connected' : 'offline'}
+          {connected ? (tunneled ? 'tunneled' : daemonHost ? 'remote' : 'connected') : 'offline'}
         </span>
+        {connected && tunneled && (
+          <span
+            title="Connected via SSH tunnel. Run 'groove disconnect' in your terminal to close."
+            style={{
+              fontSize: 9, color: 'var(--text-dim)', fontFamily: 'var(--font)',
+              cursor: 'help', marginLeft: 2,
+            }}
+          >
+            (via ssh)
+          </span>
+        )}
       </div>
 
       {/* Main row */}
@@ -161,6 +177,13 @@ const styles = {
   },
   headerLeft: {
     display: 'flex', alignItems: 'center', gap: 8,
+  },
+  hostBadge: {
+    fontSize: 9, fontWeight: 600, letterSpacing: 0.5,
+    color: 'var(--text-dim)', background: 'var(--bg-active)',
+    padding: '2px 6px', borderRadius: 3,
+    border: '1px solid var(--border)',
+    fontFamily: 'var(--font)',
   },
   logo: {
     fontSize: 13, fontWeight: 600, letterSpacing: 1.5,

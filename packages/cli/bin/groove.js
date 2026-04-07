@@ -16,6 +16,10 @@ import { teamSave, teamLoad, teamList, teamDelete, teamExport, teamImport } from
 import { approvals, approve, reject } from '../src/commands/approve.js';
 import { providers, setKey } from '../src/commands/providers.js';
 import { configShow, configSet } from '../src/commands/config.js';
+import { connect } from '../src/commands/connect.js';
+import { disconnect } from '../src/commands/disconnect.js';
+import { audit } from '../src/commands/audit.js';
+import { federationPair, federationUnpair, federationList, federationStatus } from '../src/commands/federation.js';
 
 program
   .name('groove')
@@ -26,6 +30,7 @@ program
   .command('start')
   .description('Start the GROOVE daemon')
   .option('-p, --port <port>', 'Port to run on', '31415')
+  .option('-H, --host <host>', 'Host/IP to bind to (use "tailscale" for auto-detect)', '127.0.0.1')
   .action(start);
 
 program
@@ -89,6 +94,33 @@ program
 // Providers
 program.command('providers').description('List available AI providers').action(providers);
 program.command('set-key <provider> <key>').description('Set API key for a provider').action(setKey);
+
+// Remote
+program
+  .command('connect <target>')
+  .description('Connect to a remote GROOVE daemon via SSH tunnel')
+  .option('-i, --identity <keyfile>', 'SSH private key file')
+  .option('--no-browser', 'Don\'t open browser automatically')
+  .action(connect);
+
+program
+  .command('disconnect')
+  .description('Disconnect from remote GROOVE daemon')
+  .action(disconnect);
+
+// Audit
+program
+  .command('audit')
+  .description('View audit log of state-changing operations')
+  .option('-n, --limit <count>', 'Number of entries to show', '25')
+  .action(audit);
+
+// Federation
+const federation = program.command('federation').description('Manage daemon-to-daemon federation');
+federation.command('pair <target>').description('Pair with a remote GROOVE daemon (ip or ip:port)').action(federationPair);
+federation.command('unpair <id>').description('Remove a paired peer').action(federationUnpair);
+federation.command('list').description('List paired peers').action(federationList);
+federation.command('status').description('Show federation status').action(federationStatus);
 
 // Config
 const config = program.command('config').description('View and modify configuration');

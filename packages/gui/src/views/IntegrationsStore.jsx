@@ -75,16 +75,31 @@ function sortIntegrations(items, sortBy) {
   }
 }
 
-// -- Credential Setup Modal --
-function CredentialModal({ integration, onSave, onClose }) {
+// -- Credential Setup Modal (Guided Wizard) --
+function CredentialModal({ integration, onClose }) {
   const [values, setValues] = useState({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState({});
+  const [oauthStatus, setOauthStatus] = useState(null); // null, 'checking', 'not-configured', 'ready', 'connecting'
+  const [googleClientId, setGoogleClientId] = useState('');
+  const [googleClientSecret, setGoogleClientSecret] = useState('');
+  const [showGoogleSetup, setShowGoogleSetup] = useState(false);
+
+  useEffect(() => {
+    if (integration?.authType === 'oauth-google') {
+      setOauthStatus('checking');
+      fetch('/api/integrations/google-oauth/status')
+        .then((r) => r.json())
+        .then((data) => setOauthStatus(data.configured ? 'ready' : 'not-configured'))
+        .catch(() => setOauthStatus('not-configured'));
+    }
+  }, [integration]);
 
   if (!integration) return null;
 
-  const envKeys = integration.envKeys || [];
-  if (envKeys.length === 0) return null;
+  const isOAuth = integration.authType === 'oauth-google';
+  const envKeys = (integration.envKeys || []).filter((ek) => !ek.hidden);
+  const setupSteps = integration.setupSteps || [];
 
   async function handleSave(key) {
     if (!values[key]) return;
@@ -103,54 +118,256 @@ function CredentialModal({ integration, onSave, onClose }) {
     setSaving(false);
   }
 
+  async function handleGoogleSetup() {
+    if (!googleClientId || !googleClientSecret) return;
+    setSaving(true);
+    try {
+      await fetch('/api/integrations/google-oauth/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: googleClientId, clientSecret: googleClientSecret }),
+      });
+      setOauthStatus('ready');
+      setShowGoogleSetup(false);
+    } catch { /* ignore */ }
+    setSaving(false);
+  }
+
+  async function handleOAuthConnect() {
+    setOauthStatus('connecting');
+    try {
+      const res = await fetch(`/api/integrations/${integration.id}/oauth/start`, { method: 'POST' });
+      const data = await res.json();
+      if (data.url) {
+        window.open(data.url, '_blank', 'width=600,height=700');
+        // Poll for completion
+        const poll = setInterval(async () => {
+          try {
+            const statusRes = await fetch(`/api/integrations/${integration.id}/status`);
+            const status = await statusRes.json();
+            if (status.configured) {
+              clearInterval(poll);
+              setOauthStatus('ready');
+              onClose();
+            }
+          } catch { /* ignore */ }
+        }, 2000);
+        // Stop polling after 5 minutes
+        setTimeout(() => clearInterval(poll), 300000);
+      }
+    } catch {
+      setOauthStatus('ready');
+    }
+  }
+
   return (
     <div style={modal.overlay} onClick={onClose}>
       <div style={modal.container} onClick={(e) => e.stopPropagation()}>
         <div style={modal.topBar}>
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-bright)' }}>
-            Configure {integration.name}
+            Connect {integration.name}
           </span>
           <button onClick={onClose} style={modal.closeBtn}>&times;</button>
         </div>
 
         <div style={{ padding: '16px 0' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 16, lineHeight: 1.5 }}>
-            Enter the credentials required for this integration. Values are encrypted and stored locally.
-          </div>
-
-          {envKeys.map((ek) => (
-            <div key={ek.key} style={{ marginBottom: 14 }}>
-              <label style={modal.label}>
-                {ek.label || ek.key}
-                {ek.required && <span style={{ color: 'var(--red)', marginLeft: 4 }}>*</span>}
-                {saved[ek.key] && (
-                  <span style={{ color: 'var(--green)', marginLeft: 8, fontSize: 10, fontWeight: 500 }}>
-                    {'\u2713'} saved
+          {/* Setup guide steps */}
+          {setupSteps.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{
+                fontSize: 10, fontWeight: 700, color: 'var(--text-muted)',
+                textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10,
+              }}>
+                Setup Guide
+              </div>
+              {setupSteps.map((step, i) => (
+                <div key={i} style={{
+                  display: 'flex', gap: 10, marginBottom: 8,
+                  fontSize: 11, color: 'var(--text-primary)', lineHeight: 1.5,
+                }}>
+                  <span style={{
+                    width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                    background: 'var(--bg-active)', color: 'var(--accent)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 10, fontWeight: 700,
+                  }}>
+                    {i + 1}
                   </span>
-                )}
-              </label>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input
-                  type="password"
-                  value={values[ek.key] || ''}
-                  placeholder={ek.placeholder || ek.key}
-                  onChange={(e) => setValues((prev) => ({ ...prev, [ek.key]: e.target.value }))}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSave(ek.key)}
-                  style={modal.input}
-                />
+                  <span>{step}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Open setup page button for API key integrations */}
+          {integration.setupUrl && !isOAuth && (
+            <a
+              href={integration.setupUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                padding: '10px 16px', marginBottom: 16,
+                background: 'var(--bg-active)', color: 'var(--accent)',
+                border: '1px solid var(--accent)', borderRadius: 6,
+                fontSize: 12, fontWeight: 600, textDecoration: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              Open {integration.name} Settings {'\u2197'}
+            </a>
+          )}
+
+          {/* OAuth flow for Google integrations */}
+          {isOAuth && (
+            <div style={{ marginBottom: 16 }}>
+              {oauthStatus === 'checking' && (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', padding: 16 }}>
+                  Checking Google OAuth setup...
+                </div>
+              )}
+
+              {oauthStatus === 'not-configured' && !showGoogleSetup && (
+                <div style={{
+                  padding: 16, borderRadius: 8,
+                  background: 'rgba(229, 192, 123, 0.06)', border: '1px solid var(--amber)',
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--amber)', marginBottom: 8 }}>
+                    One-time Google setup needed
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.5, marginBottom: 12 }}>
+                    To connect Google services, you need a Google Cloud project with OAuth credentials.
+                    This is a one-time setup that works for Gmail, Calendar, and Drive.
+                  </div>
+                  <a
+                    href="https://console.cloud.google.com/apis/credentials"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      fontSize: 11, color: 'var(--accent)', textDecoration: 'none',
+                      marginBottom: 12,
+                    }}
+                  >
+                    Open Google Cloud Console {'\u2197'}
+                  </a>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
+                    1. Create a project (or select existing){'\n'}
+                    2. Configure OAuth consent screen (External, add your email as test user){'\n'}
+                    3. Create OAuth Client ID (Desktop app){'\n'}
+                    4. Copy the Client ID and Client Secret below
+                  </div>
+                  <button
+                    onClick={() => setShowGoogleSetup(true)}
+                    style={{ ...modal.saveBtn, width: '100%' }}
+                  >
+                    I have my Client ID and Secret
+                  </button>
+                </div>
+              )}
+
+              {oauthStatus === 'not-configured' && showGoogleSetup && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <label style={modal.label}>Google OAuth Client ID</label>
+                    <input
+                      value={googleClientId}
+                      onChange={(e) => setGoogleClientId(e.target.value)}
+                      placeholder="123456789.apps.googleusercontent.com"
+                      style={modal.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={modal.label}>Google OAuth Client Secret</label>
+                    <input
+                      type="password"
+                      value={googleClientSecret}
+                      onChange={(e) => setGoogleClientSecret(e.target.value)}
+                      placeholder="GOCSPX-..."
+                      style={modal.input}
+                    />
+                  </div>
+                  <button
+                    onClick={handleGoogleSetup}
+                    disabled={saving || !googleClientId || !googleClientSecret}
+                    style={{
+                      ...modal.saveBtn, width: '100%',
+                      opacity: saving || !googleClientId || !googleClientSecret ? 0.4 : 1,
+                    }}
+                  >
+                    {saving ? 'Saving...' : 'Save Google OAuth Credentials'}
+                  </button>
+                  <div style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center' }}>
+                    Stored encrypted, only on this machine. One-time setup for all Google integrations.
+                  </div>
+                </div>
+              )}
+
+              {(oauthStatus === 'ready' || oauthStatus === 'connecting') && (
                 <button
-                  onClick={() => handleSave(ek.key)}
-                  disabled={saving || !values[ek.key]}
+                  onClick={handleOAuthConnect}
+                  disabled={oauthStatus === 'connecting'}
                   style={{
-                    ...modal.saveBtn,
-                    opacity: saving || !values[ek.key] ? 0.4 : 1,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    width: '100%', padding: '12px 16px',
+                    background: oauthStatus === 'connecting' ? 'var(--bg-active)' : '#4285f4',
+                    color: '#fff', border: 'none', borderRadius: 6,
+                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    fontFamily: 'var(--font)',
                   }}
                 >
-                  Save
+                  {oauthStatus === 'connecting'
+                    ? 'Waiting for authorization...'
+                    : `Connect with Google`}
                 </button>
-              </div>
+              )}
             </div>
-          ))}
+          )}
+
+          {/* API key inputs (only show non-hidden keys) */}
+          {envKeys.length > 0 && (
+            <div>
+              <div style={{
+                fontSize: 11, color: 'var(--text-dim)', marginBottom: 12, lineHeight: 1.5,
+              }}>
+                Paste your credentials below. Values are encrypted and stored locally on this machine only.
+              </div>
+
+              {envKeys.map((ek) => (
+                <div key={ek.key} style={{ marginBottom: 14 }}>
+                  <label style={modal.label}>
+                    {ek.label || ek.key}
+                    {ek.required && <span style={{ color: 'var(--red)', marginLeft: 4 }}>*</span>}
+                    {saved[ek.key] && (
+                      <span style={{ color: 'var(--green)', marginLeft: 8, fontSize: 10, fontWeight: 500 }}>
+                        {'\u2713'} saved
+                      </span>
+                    )}
+                  </label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input
+                      type="password"
+                      value={values[ek.key] || ''}
+                      placeholder={ek.placeholder || ek.key}
+                      onChange={(e) => setValues((prev) => ({ ...prev, [ek.key]: e.target.value }))}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSave(ek.key)}
+                      style={modal.input}
+                    />
+                    <button
+                      onClick={() => handleSave(ek.key)}
+                      disabled={saving || !values[ek.key]}
+                      style={{
+                        ...modal.saveBtn,
+                        opacity: saving || !values[ek.key] ? 0.4 : 1,
+                      }}
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

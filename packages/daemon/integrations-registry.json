@@ -11,9 +11,19 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@modelcontextprotocol/server-slack"],
+    "authType": "api-key",
     "envKeys": [
       { "key": "SLACK_BOT_TOKEN", "label": "Bot Token", "placeholder": "xoxb-...", "required": true },
       { "key": "SLACK_TEAM_ID", "label": "Team ID", "placeholder": "T01234567", "required": true }
+    ],
+    "setupUrl": "https://api.slack.com/apps",
+    "setupSteps": [
+      "Go to api.slack.com/apps and click 'Create New App'",
+      "Choose 'From scratch', name it 'Groove', pick your workspace",
+      "Go to 'OAuth & Permissions', add scopes: channels:read, channels:history, chat:write, users:read",
+      "Click 'Install to Workspace' and authorize",
+      "Copy the 'Bot User OAuth Token' (starts with xoxb-)",
+      "Your Team ID is in the workspace URL: app.slack.com/client/TXXXXXXX"
     ],
     "featured": true,
     "downloads": 0,
@@ -33,8 +43,15 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@modelcontextprotocol/server-github"],
+    "authType": "api-key",
     "envKeys": [
       { "key": "GITHUB_PERSONAL_ACCESS_TOKEN", "label": "Personal Access Token", "placeholder": "ghp_...", "required": true }
+    ],
+    "setupUrl": "https://github.com/settings/tokens/new",
+    "setupSteps": [
+      "Click the link below to create a new token on GitHub",
+      "Select scopes: repo, read:org, read:user",
+      "Click 'Generate token' and copy it"
     ],
     "featured": true,
     "downloads": 0,
@@ -54,8 +71,15 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@stripe/agent-toolkit", "mcp"],
+    "authType": "api-key",
     "envKeys": [
       { "key": "STRIPE_SECRET_KEY", "label": "Secret Key", "placeholder": "sk_...", "required": true }
+    ],
+    "setupUrl": "https://dashboard.stripe.com/apikeys",
+    "setupSteps": [
+      "Click the link below to open your Stripe API keys",
+      "Copy the 'Secret key' (starts with sk_live_ or sk_test_)",
+      "Use a test key (sk_test_) for safe experimentation"
     ],
     "featured": true,
     "downloads": 0,
@@ -75,10 +99,17 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@anthropic-ai/mcp-server-google-calendar"],
+    "authType": "oauth-google",
+    "oauthScopes": ["https://www.googleapis.com/auth/calendar"],
     "envKeys": [
-      { "key": "GOOGLE_CLIENT_ID", "label": "OAuth Client ID", "required": true },
-      { "key": "GOOGLE_CLIENT_SECRET", "label": "OAuth Client Secret", "required": true },
-      { "key": "GOOGLE_REFRESH_TOKEN", "label": "Refresh Token", "required": true }
+      { "key": "GOOGLE_CLIENT_ID", "label": "OAuth Client ID", "required": true, "hidden": true },
+      { "key": "GOOGLE_CLIENT_SECRET", "label": "OAuth Client Secret", "required": true, "hidden": true },
+      { "key": "GOOGLE_REFRESH_TOKEN", "label": "Refresh Token", "required": true, "hidden": true }
+    ],
+    "setupSteps": [
+      "Click 'Connect with Google' below",
+      "Sign in and authorize Groove to access your calendar",
+      "That's it — your credentials are stored securely"
     ],
     "featured": false,
     "downloads": 0,
@@ -98,10 +129,17 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@anthropic-ai/mcp-server-gmail"],
+    "authType": "oauth-google",
+    "oauthScopes": ["https://www.googleapis.com/auth/gmail.modify"],
     "envKeys": [
-      { "key": "GOOGLE_CLIENT_ID", "label": "OAuth Client ID", "required": true },
-      { "key": "GOOGLE_CLIENT_SECRET", "label": "OAuth Client Secret", "required": true },
-      { "key": "GOOGLE_REFRESH_TOKEN", "label": "Refresh Token", "required": true }
+      { "key": "GOOGLE_CLIENT_ID", "label": "OAuth Client ID", "required": true, "hidden": true },
+      { "key": "GOOGLE_CLIENT_SECRET", "label": "OAuth Client Secret", "required": true, "hidden": true },
+      { "key": "GOOGLE_REFRESH_TOKEN", "label": "Refresh Token", "required": true, "hidden": true }
+    ],
+    "setupSteps": [
+      "Click 'Connect with Google' below",
+      "Sign in and authorize Groove to access your email",
+      "That's it — your credentials are stored securely"
     ],
     "featured": false,
     "downloads": 0,
@@ -121,8 +159,13 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@modelcontextprotocol/server-postgres"],
+    "authType": "api-key",
     "envKeys": [
       { "key": "POSTGRES_CONNECTION_STRING", "label": "Connection String", "placeholder": "postgresql://user:pass@host:5432/db", "required": true }
+    ],
+    "setupSteps": [
+      "Enter your PostgreSQL connection string",
+      "Format: postgresql://username:password@host:port/database"
     ],
     "featured": false,
     "downloads": 0,
@@ -142,8 +185,15 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+    "authType": "api-key",
     "envKeys": [
       { "key": "BRAVE_API_KEY", "label": "API Key", "placeholder": "BSA...", "required": true }
+    ],
+    "setupUrl": "https://brave.com/search/api/",
+    "setupSteps": [
+      "Click the link below to get a Brave Search API key",
+      "Sign up for a free plan (2,000 queries/month)",
+      "Copy your API key"
     ],
     "featured": false,
     "downloads": 0,
@@ -163,10 +213,17 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@modelcontextprotocol/server-gdrive"],
+    "authType": "oauth-google",
+    "oauthScopes": ["https://www.googleapis.com/auth/drive.readonly"],
     "envKeys": [
-      { "key": "GOOGLE_CLIENT_ID", "label": "OAuth Client ID", "required": true },
-      { "key": "GOOGLE_CLIENT_SECRET", "label": "OAuth Client Secret", "required": true },
-      { "key": "GOOGLE_REFRESH_TOKEN", "label": "Refresh Token", "required": true }
+      { "key": "GOOGLE_CLIENT_ID", "label": "OAuth Client ID", "required": true, "hidden": true },
+      { "key": "GOOGLE_CLIENT_SECRET", "label": "OAuth Client Secret", "required": true, "hidden": true },
+      { "key": "GOOGLE_REFRESH_TOKEN", "label": "Refresh Token", "required": true, "hidden": true }
+    ],
+    "setupSteps": [
+      "Click 'Connect with Google' below",
+      "Sign in and authorize Groove to access your Drive",
+      "That's it — your credentials are stored securely"
     ],
     "featured": false,
     "downloads": 0,
@@ -186,8 +243,15 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@ibraheem4/linear-mcp-server"],
+    "authType": "api-key",
     "envKeys": [
       { "key": "LINEAR_API_KEY", "label": "API Key", "required": true }
+    ],
+    "setupUrl": "https://linear.app/settings/api",
+    "setupSteps": [
+      "Click the link below to open Linear API settings",
+      "Click 'Create key', give it a label like 'Groove'",
+      "Copy the API key"
     ],
     "featured": false,
     "downloads": 0,
@@ -207,8 +271,16 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@notionhq/notion-mcp-server"],
+    "authType": "api-key",
     "envKeys": [
       { "key": "NOTION_API_KEY", "label": "Integration Token", "placeholder": "ntn_...", "required": true }
+    ],
+    "setupUrl": "https://www.notion.so/my-integrations",
+    "setupSteps": [
+      "Click the link below to open Notion integrations",
+      "Click 'New integration', name it 'Groove'",
+      "Copy the 'Internal Integration Secret'",
+      "Share the pages/databases you want accessible with the integration"
     ],
     "featured": false,
     "downloads": 0,
@@ -228,8 +300,17 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "mcp-discord"],
+    "authType": "api-key",
     "envKeys": [
       { "key": "DISCORD_BOT_TOKEN", "label": "Bot Token", "required": true }
+    ],
+    "setupUrl": "https://discord.com/developers/applications",
+    "setupSteps": [
+      "Click the link below to open Discord Developer Portal",
+      "Click 'New Application', name it 'Groove'",
+      "Go to 'Bot' tab, click 'Reset Token', copy it",
+      "Enable 'Message Content Intent' under Privileged Gateway Intents",
+      "Go to OAuth2 > URL Generator, select 'bot' scope, invite to your server"
     ],
     "featured": false,
     "downloads": 0,
@@ -249,9 +330,15 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "mcp-home-assistant"],
+    "authType": "api-key",
     "envKeys": [
       { "key": "HOME_ASSISTANT_URL", "label": "HA URL", "placeholder": "http://homeassistant.local:8123", "required": true },
       { "key": "HOME_ASSISTANT_TOKEN", "label": "Long-Lived Access Token", "required": true }
+    ],
+    "setupSteps": [
+      "Enter your Home Assistant URL (usually http://homeassistant.local:8123)",
+      "In HA: Profile (bottom left) > Security > Long-Lived Access Tokens",
+      "Click 'Create Token', name it 'Groove', copy the token"
     ],
     "featured": false,
     "downloads": 0,
@@ -271,6 +358,7 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+    "authType": "none",
     "envKeys": [],
     "featured": false,
     "downloads": 0,
@@ -290,8 +378,15 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@modelcontextprotocol/server-google-maps"],
+    "authType": "api-key",
     "envKeys": [
       { "key": "GOOGLE_MAPS_API_KEY", "label": "API Key", "required": true }
+    ],
+    "setupUrl": "https://console.cloud.google.com/apis/credentials",
+    "setupSteps": [
+      "Click the link below to open Google Cloud Console",
+      "Create or select a project, then 'Create Credentials' > 'API Key'",
+      "Enable the Maps JavaScript API, Geocoding API, and Places API"
     ],
     "featured": false,
     "downloads": 0,
@@ -311,6 +406,7 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@modelcontextprotocol/server-sqlite"],
+    "authType": "none",
     "envKeys": [],
     "featured": false,
     "downloads": 0,

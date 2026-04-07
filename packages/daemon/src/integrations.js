@@ -359,6 +359,92 @@ export class IntegrationStore {
     }
   }
 
+  /**
+   * Start an OAuth flow for a Google integration.
+   * Returns the authorization URL to open in a browser.
+   */
+  getOAuthUrl(integrationId) {
+    const entry = this.registry.find((s) => s.id === integrationId);
+    if (!entry) throw new Error(`Integration not found: ${integrationId}`);
+    if (entry.authType !== 'oauth-google') throw new Error('Integration does not use OAuth');
+
+    // Check if user has provided their own Google OAuth client (stored globally)
+    const clientId = this.getCredential('google-oauth', 'GOOGLE_CLIENT_ID');
+    const clientSecret = this.getCredential('google-oauth', 'GOOGLE_CLIENT_SECRET');
+    if (!clientId || !clientSecret) {
+      throw new Error('Google OAuth not configured. Set up your Google Cloud project first.');
+    }
+
+    const port = this.daemon.port || 31415;
+    const redirectUri = `http://localhost:${port}/api/integrations/oauth/callback`;
+    const scopes = entry.oauthScopes || [];
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: scopes.join(' '),
+      access_type: 'offline',
+      prompt: 'consent',
+      state: integrationId,
+    });
+
+    return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
+  }
+
+  /**
+   * Handle OAuth callback — exchange code for tokens.
+   */
+  async handleOAuthCallback(code, integrationId) {
+    const clientId = this.getCredential('google-oauth', 'GOOGLE_CLIENT_ID');
+    const clientSecret = this.getCredential('google-oauth', 'GOOGLE_CLIENT_SECRET');
+    if (!clientId || !clientSecret) {
+      throw new Error('Google OAuth credentials not found');
+    }
+
+    const port = this.daemon.port || 31415;
+    const redirectUri = `http://localhost:${port}/api/integrations/oauth/callback`;
+
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`OAuth token exchange failed: ${err.error_description || err.error || 'unknown'}`);
+    }
+
+    const tokens = await res.json();
+
+    // Store the tokens for this integration
+    this.setCredential(integrationId, 'GOOGLE_CLIENT_ID', clientId);
+    this.setCredential(integrationId, 'GOOGLE_CLIENT_SECRET', clientSecret);
+    if (tokens.refresh_token) {
+      this.setCredential(integrationId, 'GOOGLE_REFRESH_TOKEN', tokens.refresh_token);
+    }
+
+    this.daemon.audit.log('integration.oauth.complete', { id: integrationId });
+
+    return { ok: true, integrationId };
+  }
+
+  /**
+   * Check if Google OAuth is configured (user has set up their Cloud project).
+   */
+  isGoogleOAuthConfigured() {
+    const clientId = this.getCredential('google-oauth', 'GOOGLE_CLIENT_ID');
+    const clientSecret = this.getCredential('google-oauth', 'GOOGLE_CLIENT_SECRET');
+    return !!(clientId && clientSecret);
+  }
+
   // --- Internal ---
 
   _isInstalled(integrationId) {

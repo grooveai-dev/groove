@@ -59,7 +59,7 @@ export function printWelcome(port, host = '127.0.0.1') {
   // Works even through sudo (which strips SSH_* env vars)
   const hasDisplay = !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
   const isSSH = !!(process.env.SSH_CONNECTION || process.env.SSH_CLIENT || process.env.SSH_TTY);
-  const isHeadless = !hasDisplay && !process.env.TERM_PROGRAM; // No GUI, no desktop terminal app
+  const isHeadless = !hasDisplay && !process.env.TERM_PROGRAM;
   const isServer = isSSH || isHeadless;
 
   if (isRemote) {
@@ -67,17 +67,16 @@ export function printWelcome(port, host = '127.0.0.1') {
     console.log(`  GUI:   http://${host}:${port}`);
     console.log(`  Host:  ${host} (network-accessible)`);
   } else if (isServer) {
-    // VPS / headless server — print remote access instructions
+    // VPS / headless server — dead simple instructions
     const sshUser = process.env.SUDO_USER || process.env.USER || 'user';
 
-    // Get server IP: try SSH_CONNECTION first, fall back to first public network interface
+    // Get server IP: try SSH_CONNECTION first, fall back to network interfaces
     let serverIp = '';
     const sshConn = process.env.SSH_CONNECTION || '';
     if (sshConn) {
       serverIp = sshConn.split(' ')[2] || '';
     }
     if (!serverIp) {
-      // Find first non-internal IPv4 address
       const nets = networkInterfaces();
       for (const addrs of Object.values(nets)) {
         for (const addr of addrs) {
@@ -89,22 +88,23 @@ export function printWelcome(port, host = '127.0.0.1') {
         if (serverIp) break;
       }
     }
-    serverIp = serverIp || '<this-server-ip>';
+    serverIp = serverIp || '<your-server-ip>';
 
-    console.log(`  GUI:   http://localhost:${port} (this server only)`);
+    console.log(`  Daemon running on port ${port}`);
     console.log('');
-    console.log('  ► Connect from your laptop:');
+    console.log('  To open the GUI, run this on your local machine:');
+    console.log('');
     console.log(`    groove connect ${sshUser}@${serverIp}`);
     console.log('');
-    console.log('  Or manually:');
-    console.log(`    ssh -L ${port + 1}:localhost:${port} ${sshUser}@${serverIp}`);
-    console.log(`    Then open http://localhost:${port + 1}`);
+    console.log(`  Don't have groove locally? Install it first:`);
+    console.log(`    npm i -g groove-dev`);
   } else {
     // Local machine with display
     console.log(`  GUI:   http://localhost:${port}`);
   }
 
-  console.log('  Docs:  https://docs.groovedev.ai');
+  console.log('');
+  console.log('  Docs:   https://docs.groovedev.ai');
   console.log('  GitHub: https://github.com/grooveai-dev/groove');
   console.log('');
 }

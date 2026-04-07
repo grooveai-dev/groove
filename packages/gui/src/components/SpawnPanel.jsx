@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useGrooveStore } from '../stores/groove';
+import DirPicker from './DirPicker';
 
 const ROLE_PRESETS = [
   { id: 'backend',   label: 'Backend',   desc: 'APIs, server logic, database', scope: ['src/api/**', 'src/server/**', 'src/lib/**', 'src/db/**'] },
@@ -39,6 +40,7 @@ export default function SpawnPanel() {
   const [connectingProvider, setConnectingProvider] = useState(null);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [keySaving, setKeySaving] = useState(false);
+  const [showDirPicker, setShowDirPicker] = useState(false);
 
   useEffect(() => {
     fetchProviders();
@@ -210,40 +212,51 @@ export default function SpawnPanel() {
           rows={3}
         />
 
-        {/* Workspace picker — visible by default when workspaces detected */}
-        {workspaces.length > 0 && (
-          <>
-            <div style={styles.label}>DIRECTORY</div>
-            <div style={styles.wsRow}>
-              <button
-                type="button"
-                onClick={() => setWorkingDir('')}
-                style={{
-                  ...styles.wsBtn,
-                  ...(!workingDir ? { borderColor: 'var(--accent)', color: 'var(--text-bright)' } : {}),
-                }}
-              >
-                project root
-              </button>
-              {workspaces.map((ws) => (
-                <button
-                  key={ws.path}
-                  type="button"
-                  onClick={() => setWorkingDir(ws.path)}
-                  style={{
-                    ...styles.wsBtn,
-                    ...(workingDir === ws.path ? { borderColor: 'var(--accent)', color: 'var(--text-bright)' } : {}),
-                  }}
-                  title={`${ws.name} (${ws.files} files)`}
-                >
-                  {ws.path}
-                </button>
-              ))}
-            </div>
-            <div style={styles.hint}>
-              Agent spawns inside this directory and only sees this subtree
-            </div>
-          </>
+        {/* Directory picker */}
+        <div style={styles.label}>DIRECTORY</div>
+        <div style={styles.wsRow}>
+          <button
+            type="button"
+            onClick={() => setWorkingDir('')}
+            style={{
+              ...styles.wsBtn,
+              ...(!workingDir ? { borderColor: 'var(--accent)', color: 'var(--text-bright)' } : {}),
+            }}
+          >
+            project root
+          </button>
+          {workspaces.map((ws) => (
+            <button
+              key={ws.path}
+              type="button"
+              onClick={() => setWorkingDir(ws.path)}
+              style={{
+                ...styles.wsBtn,
+                ...(workingDir === ws.path ? { borderColor: 'var(--accent)', color: 'var(--text-bright)' } : {}),
+              }}
+              title={`${ws.name} (${ws.files} files)`}
+            >
+              {ws.path}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setShowDirPicker(true)}
+            style={styles.browseBtn}
+          >
+            Browse...
+          </button>
+        </div>
+        {workingDir && (
+          <div style={styles.hint}>{workingDir}</div>
+        )}
+
+        {showDirPicker && (
+          <DirPicker
+            initial={workingDir}
+            onSelect={(path) => setWorkingDir(path)}
+            onClose={() => setShowDirPicker(false)}
+          />
         )}
 
         {/* Permissions */}
@@ -279,18 +292,6 @@ export default function SpawnPanel() {
 
         {showAdvanced && (
           <>
-            {/* Working directory — manual input for custom paths */}
-            <div style={styles.label}>WORKING DIRECTORY</div>
-            <input
-              style={styles.input}
-              placeholder="e.g. packages/frontend (default: project root)"
-              value={workingDir}
-              onChange={(e) => setWorkingDir(e.target.value)}
-            />
-            <div style={styles.hint}>
-              Relative path — or use the directory buttons above
-            </div>
-
             {/* Provider selector with connection flow */}
             <div style={styles.label}>PROVIDER</div>
             {providerList.map((p) => {
@@ -570,6 +571,12 @@ const styles = {
     color: 'var(--text-dim)', fontSize: 10, cursor: 'pointer',
     fontFamily: 'var(--font)',
     transition: 'color 0.1s, border-color 0.1s',
+  },
+  browseBtn: {
+    background: 'none', border: '1px dashed var(--border)',
+    borderRadius: 2, padding: '3px 8px',
+    color: 'var(--text-dim)', fontSize: 10, cursor: 'pointer',
+    fontFamily: 'var(--font)',
   },
   error: {
     color: 'var(--red)', fontSize: 11, marginTop: 8,

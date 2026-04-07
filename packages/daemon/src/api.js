@@ -4,7 +4,7 @@
 import express from 'express';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { listProviders } from './providers/index.js';
 import { validateAgentConfig } from './validate.js';
 
@@ -363,6 +363,52 @@ export function createApi(app, daemon) {
   // Adaptive thresholds
   app.get('/api/adaptive', (req, res) => {
     res.json(daemon.adaptive.getAllProfiles());
+  });
+
+  // --- Directory Browser ---
+
+  app.get('/api/browse', (req, res) => {
+    const relPath = req.query.path || '';
+
+    // Security: no absolute paths, no traversal
+    if (relPath.startsWith('/') || relPath.includes('..') || relPath.includes('\0')) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+
+    const fullPath = relPath ? resolve(daemon.projectDir, relPath) : daemon.projectDir;
+
+    // Must stay within project directory
+    if (!fullPath.startsWith(daemon.projectDir)) {
+      return res.status(400).json({ error: 'Path outside project' });
+    }
+
+    if (!existsSync(fullPath)) {
+      return res.status(404).json({ error: 'Directory not found' });
+    }
+
+    try {
+      const entries = readdirSync(fullPath, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((e) => {
+          const childPath = relPath ? `${relPath}/${e.name}` : e.name;
+          // Check if this dir has subdirectories (for expand arrow)
+          let hasChildren = false;
+          try {
+            hasChildren = readdirSync(resolve(fullPath, e.name), { withFileTypes: true })
+              .some((c) => c.isDirectory() && !c.name.startsWith('.') && c.name !== 'node_modules');
+          } catch { /* unreadable */ }
+          return { name: e.name, path: childPath, hasChildren };
+        });
+
+      res.json({
+        current: relPath || '.',
+        parent: relPath ? relPath.split('/').slice(0, -1).join('/') : null,
+        dirs: entries,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // --- Codebase Indexer ---

@@ -1,6 +1,6 @@
 {
   "name": "groove-dev",
-  "version": "0.12.6",
+  "version": "0.12.7",
   "description": "Open-source agent orchestration layer for AI coding tools. GUI dashboard, multi-agent coordination, zero cold-start (Journalist), infinite sessions (adaptive context rotation), AI Project Manager, Quick Launch. Works with Claude Code, Codex, Gemini CLI, Ollama.",
   "license": "FSL-1.1-Apache-2.0",
   "author": "Groove Dev <hello@groovedev.ai> (https://groovedev.ai)",

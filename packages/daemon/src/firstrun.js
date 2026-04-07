@@ -25,9 +25,33 @@ export function isFirstRun(grooveDir) {
 export function printWelcome(port, host = '127.0.0.1', firstRun = false) {
   const providers = listProviders();
   const installed = providers.filter((p) => p.installed);
+  const notInstalled = providers.filter((p) => !p.installed);
 
   console.log('');
-  console.log('  GROOVE');
+  console.log('  ┌─────────────────────────────────────┐');
+  console.log('  │        Welcome to GROOVE            │');
+  console.log('  │  Agent orchestration for AI coding  │');
+  console.log('  └─────────────────────────────────────┘');
+  console.log('');
+
+  if (installed.length > 0) {
+    console.log(`  Providers (${installed.length} ready):`);
+    for (const p of installed) {
+      console.log(`    ✓ ${p.name}`);
+    }
+  } else {
+    console.log('  No AI providers detected.');
+    console.log('  Install at least one:  npm i -g @anthropic-ai/claude-code');
+  }
+
+  if (notInstalled.length > 0) {
+    console.log('');
+    console.log('  Available to install:');
+    for (const p of notInstalled) {
+      console.log(`    · ${p.name.padEnd(18)} ${p.installCommand}`);
+    }
+  }
+
   console.log('');
 
   const isRemote = host !== '127.0.0.1';
@@ -72,18 +96,6 @@ export function printWelcome(port, host = '127.0.0.1', firstRun = false) {
 
   console.log(`  Stop:  groove stop (or Ctrl+C)`);
   console.log(`  Docs:  https://docs.groovedev.ai`);
-
-  // Show providers only on first run or if none installed
-  if (firstRun || installed.length === 0) {
-    console.log('');
-    if (installed.length > 0) {
-      console.log(`  Providers: ${installed.map((p) => p.name).join(', ')}`);
-    } else {
-      console.log('  No AI providers detected.');
-      console.log('  Install one:  npm i -g @anthropic-ai/claude-code');
-    }
-  }
-
   console.log('');
 }
 

@@ -210,6 +210,42 @@ export default function SpawnPanel() {
           rows={3}
         />
 
+        {/* Workspace picker — visible by default when workspaces detected */}
+        {workspaces.length > 0 && (
+          <>
+            <div style={styles.label}>DIRECTORY</div>
+            <div style={styles.wsRow}>
+              <button
+                type="button"
+                onClick={() => setWorkingDir('')}
+                style={{
+                  ...styles.wsBtn,
+                  ...(!workingDir ? { borderColor: 'var(--accent)', color: 'var(--text-bright)' } : {}),
+                }}
+              >
+                project root
+              </button>
+              {workspaces.map((ws) => (
+                <button
+                  key={ws.path}
+                  type="button"
+                  onClick={() => setWorkingDir(ws.path)}
+                  style={{
+                    ...styles.wsBtn,
+                    ...(workingDir === ws.path ? { borderColor: 'var(--accent)', color: 'var(--text-bright)' } : {}),
+                  }}
+                  title={`${ws.name} (${ws.files} files)`}
+                >
+                  {ws.path}
+                </button>
+              ))}
+            </div>
+            <div style={styles.hint}>
+              Agent spawns inside this directory and only sees this subtree
+            </div>
+          </>
+        )}
+
         {/* Permissions */}
         <div style={styles.label}>PERMISSIONS</div>
         <div style={styles.permGrid}>
@@ -243,7 +279,7 @@ export default function SpawnPanel() {
 
         {showAdvanced && (
           <>
-            {/* Working directory */}
+            {/* Working directory — manual input for custom paths */}
             <div style={styles.label}>WORKING DIRECTORY</div>
             <input
               style={styles.input}
@@ -252,26 +288,8 @@ export default function SpawnPanel() {
               onChange={(e) => setWorkingDir(e.target.value)}
             />
             <div style={styles.hint}>
-              Relative path — agent spawns here and only sees this subtree
+              Relative path — or use the directory buttons above
             </div>
-            {workspaces.length > 0 && (
-              <div style={styles.wsRow}>
-                {workspaces.map((ws) => (
-                  <button
-                    key={ws.path}
-                    type="button"
-                    onClick={() => setWorkingDir(ws.path)}
-                    style={{
-                      ...styles.wsBtn,
-                      ...(workingDir === ws.path ? { borderColor: 'var(--accent)', color: 'var(--text-bright)' } : {}),
-                    }}
-                    title={`${ws.name} (${ws.files} files)`}
-                  >
-                    {ws.path}
-                  </button>
-                ))}
-              </div>
-            )}
 
             {/* Provider selector with connection flow */}
             <div style={styles.label}>PROVIDER</div>

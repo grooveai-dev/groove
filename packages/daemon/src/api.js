@@ -367,8 +367,8 @@ export function createApi(app, daemon) {
 
   // --- Skills Marketplace ---
 
-  app.get('/api/skills/registry', (req, res) => {
-    const skills = daemon.skills.getRegistry({
+  app.get('/api/skills/registry', async (req, res) => {
+    const skills = await daemon.skills.getRegistry({
       search: req.query.search || '',
       category: req.query.category || 'all',
     });

@@ -7,7 +7,19 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const REMOTE_REGISTRY = 'https://docs.groovedev.ai/skills/registry.json';
+const SKILLS_API = 'https://docs.groovedev.ai/api/v1';
+
+// Normalize snake_case API fields to camelCase used by GUI
+function normalize(skill) {
+  return {
+    ...skill,
+    ratingCount: skill.ratingCount ?? skill.rating_count ?? 0,
+    contentUrl: skill.contentUrl ?? skill.content_url ?? null,
+    authorId: skill.authorId ?? skill.author_id ?? null,
+    createdAt: skill.createdAt ?? skill.created_at ?? null,
+    updatedAt: skill.updatedAt ?? skill.updated_at ?? null,
+  };
+}
 
 export class SkillStore {
   constructor(daemon) {
@@ -22,39 +34,58 @@ export class SkillStore {
       this.registry = JSON.parse(readFileSync(regPath, 'utf8'));
     } catch { /* no registry file */ }
 
-    // Fetch remote registry in background (auto-update)
+    // Fetch full registry from live API in background
     this._refreshRegistry();
   }
 
   async _refreshRegistry() {
     try {
-      const res = await fetch(REMOTE_REGISTRY, { signal: AbortSignal.timeout(5000) });
+      const res = await fetch(`${SKILLS_API}/skills?limit=200`, { signal: AbortSignal.timeout(5000) });
       if (res.ok) {
-        this.registry = await res.json();
+        const data = await res.json();
+        this.registry = (data.skills || data).map(normalize);
       }
     } catch { /* offline — use bundled */ }
   }
 
   /**
-   * Get all skills from the registry with installed status.
+   * Get skills from the live API, with local fallback.
+   * Server handles search + category filtering when online.
    */
-  getRegistry(query) {
+  async getRegistry(query) {
+    // Try live API first — server handles search/filter/sort
+    try {
+      const params = new URLSearchParams();
+      if (query?.search) params.set('search', query.search);
+      if (query?.category && query.category !== 'all') params.set('category', query.category);
+      params.set('limit', '200');
+
+      const res = await fetch(`${SKILLS_API}/skills?${params}`, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const data = await res.json();
+        const skills = (data.skills || data).map((s) => ({
+          ...normalize(s),
+          installed: this._isInstalled(s.id),
+        }));
+        return skills;
+      }
+    } catch { /* fall through to local */ }
+
+    // Offline fallback — filter locally from cached registry
     let skills = this.registry.map((s) => ({
       ...s,
       installed: this._isInstalled(s.id),
     }));
 
-    // Search filter
     if (query?.search) {
       const q = query.search.toLowerCase();
       skills = skills.filter((s) =>
         s.name.toLowerCase().includes(q)
         || s.description.toLowerCase().includes(q)
-        || s.tags.some((t) => t.includes(q))
+        || (s.tags || []).some((t) => t.includes(q))
       );
     }
 
-    // Category filter
     if (query?.category && query.category !== 'all') {
       skills = skills.filter((s) => s.category === query.category);
     }
@@ -97,8 +128,8 @@ export class SkillStore {
   }
 
   /**
-   * Install a skill from the registry.
-   * Downloads SKILL.md from remote URL, falls back to local Claude plugins.
+   * Install a skill.
+   * Downloads content from live API, falls back to contentUrl, then local plugins.
    */
   async install(skillId) {
     const entry = this.registry.find((s) => s.id === skillId);
@@ -107,12 +138,21 @@ export class SkillStore {
 
     let content = null;
 
-    // Try remote download first
-    if (entry.contentUrl) {
+    // Try live API content endpoint first
+    try {
+      const res = await fetch(`${SKILLS_API}/skills/${skillId}/content`, { signal: AbortSignal.timeout(10000) });
+      if (res.ok) {
+        const data = await res.json();
+        content = data.content;
+      }
+    } catch { /* fall through */ }
+
+    // Fall back to contentUrl from registry entry
+    if (!content && entry.contentUrl) {
       try {
         const res = await fetch(entry.contentUrl, { signal: AbortSignal.timeout(10000) });
         if (res.ok) content = await res.text();
-      } catch { /* fall through to local */ }
+      } catch { /* fall through */ }
     }
 
     // Fall back to local Claude plugins
@@ -128,6 +168,12 @@ export class SkillStore {
     const skillDir = resolve(this.skillsDir, skillId);
     mkdirSync(skillDir, { recursive: true });
     writeFileSync(resolve(skillDir, 'SKILL.md'), content);
+
+    // Track install on server (fire-and-forget, no auth needed)
+    fetch(`${SKILLS_API}/skills/${skillId}/install`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(5000),
+    }).catch(() => {});
 
     this.daemon.audit.log('skill.install', { id: skillId, name: entry.name });
 

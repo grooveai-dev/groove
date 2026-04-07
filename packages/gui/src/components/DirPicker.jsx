@@ -1,18 +1,25 @@
 // GROOVE GUI — Directory Picker
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 export default function DirPicker({ onSelect, onClose, initial }) {
   const [currentPath, setCurrentPath] = useState(initial || '');
   const [dirs, setDirs] = useState([]);
   const [parent, setParent] = useState(null);
+  const [fileCount, setFileCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [hovered, setHovered] = useState(null);
+  const listRef = useRef(null);
 
   useEffect(() => {
     browse(currentPath);
   }, [currentPath]);
+
+  useEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = 0;
+  }, [dirs]);
 
   async function browse(path) {
     setLoading(true);
@@ -28,6 +35,7 @@ export default function DirPicker({ onSelect, onClose, initial }) {
       const data = await res.json();
       setDirs(data.dirs);
       setParent(data.parent);
+      setFileCount(data.fileCount || 0);
     } catch {
       setError('Failed to connect');
     } finally {
@@ -36,86 +44,132 @@ export default function DirPicker({ onSelect, onClose, initial }) {
   }
 
   const breadcrumbs = currentPath
-    ? ['root', ...currentPath.split('/')]
-    : ['root'];
-
-  function handleBreadcrumbClick(index) {
-    if (index === 0) {
-      setCurrentPath('');
-    } else {
-      const parts = currentPath.split('/');
-      setCurrentPath(parts.slice(0, index).join('/'));
-    }
-  }
+    ? [{ label: 'root', path: '' }, ...currentPath.split('/').map((part, i, arr) => ({
+        label: part,
+        path: arr.slice(0, i + 1).join('/'),
+      }))]
+    : [{ label: 'root', path: '' }];
 
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+
+        {/* Header */}
         <div style={styles.header}>
-          <span style={styles.title}>SELECT DIRECTORY</span>
+          <div>
+            <div style={styles.title}>SELECT DIRECTORY</div>
+            <div style={styles.subtitle}>Choose where this agent will work</div>
+          </div>
           <button onClick={onClose} style={styles.closeBtn}>x</button>
         </div>
 
         {/* Breadcrumb */}
         <div style={styles.breadcrumb}>
-          {breadcrumbs.map((part, i) => (
+          {breadcrumbs.map((crumb, i) => (
             <span key={i}>
               {i > 0 && <span style={styles.breadSep}>/</span>}
               <button
-                onClick={() => handleBreadcrumbClick(i)}
+                onClick={() => setCurrentPath(crumb.path)}
                 style={{
                   ...styles.breadPart,
-                  color: i === breadcrumbs.length - 1 ? 'var(--text-bright)' : 'var(--text-dim)',
+                  color: i === breadcrumbs.length - 1 ? 'var(--text-bright)' : 'var(--accent)',
                 }}
               >
-                {part}
+                {crumb.label}
               </button>
             </span>
           ))}
+          {!loading && (
+            <span style={styles.breadMeta}>
+              {dirs.length} folder{dirs.length !== 1 ? 's' : ''}, {fileCount} file{fileCount !== 1 ? 's' : ''}
+            </span>
+          )}
         </div>
 
         {/* Directory list */}
-        <div style={styles.list}>
+        <div style={styles.list} ref={listRef}>
           {parent !== null && (
-            <button
+            <div
               onClick={() => setCurrentPath(parent)}
-              style={styles.dirRow}
+              onMouseEnter={() => setHovered('__parent')}
+              onMouseLeave={() => setHovered(null)}
+              style={{
+                ...styles.dirRow,
+                background: hovered === '__parent' ? 'var(--bg-hover)' : 'transparent',
+              }}
             >
-              <span style={styles.dirIcon}>..</span>
-              <span style={styles.dirName}>parent directory</span>
-            </button>
+              <div style={styles.dirIconWrap}>
+                <span style={styles.dirArrow}>{'<'}</span>
+              </div>
+              <div style={styles.dirInfo}>
+                <div style={styles.dirNameText}>..</div>
+              </div>
+            </div>
           )}
 
-          {loading && <div style={styles.empty}>loading...</div>}
-          {error && <div style={styles.errorText}>{error}</div>}
+          {loading && (
+            <div style={styles.emptyState}>
+              <div style={styles.emptyText}>Loading...</div>
+            </div>
+          )}
+
+          {error && (
+            <div style={styles.emptyState}>
+              <div style={{ ...styles.emptyText, color: 'var(--red)' }}>{error}</div>
+            </div>
+          )}
 
           {!loading && !error && dirs.length === 0 && (
-            <div style={styles.empty}>no subdirectories</div>
+            <div style={styles.emptyState}>
+              <div style={styles.emptyText}>No subdirectories</div>
+              <div style={styles.emptyHint}>This directory has {fileCount} file{fileCount !== 1 ? 's' : ''}</div>
+            </div>
           )}
 
           {dirs.map((dir) => (
-            <button
+            <div
               key={dir.path}
               onClick={() => setCurrentPath(dir.path)}
-              style={styles.dirRow}
+              onMouseEnter={() => setHovered(dir.path)}
+              onMouseLeave={() => setHovered(null)}
+              style={{
+                ...styles.dirRow,
+                background: hovered === dir.path ? 'var(--bg-hover)' : 'transparent',
+              }}
             >
-              <span style={styles.dirIcon}>{dir.hasChildren ? '+' : ' '}</span>
-              <span style={styles.dirName}>{dir.name}</span>
-            </button>
+              <div style={styles.dirIconWrap}>
+                <span style={styles.dirArrow}>{dir.hasChildren ? '>' : ''}</span>
+              </div>
+              <div style={styles.dirInfo}>
+                <div style={styles.dirNameText}>{dir.name}</div>
+                <div style={styles.dirMeta}>
+                  {dir.childCount > 0 && `${dir.childCount} folder${dir.childCount !== 1 ? 's' : ''}`}
+                  {dir.childCount > 0 && dir.fileCount > 0 && ', '}
+                  {dir.fileCount > 0 && `${dir.fileCount} file${dir.fileCount !== 1 ? 's' : ''}`}
+                  {dir.childCount === 0 && dir.fileCount === 0 && 'empty'}
+                </div>
+              </div>
+            </div>
           ))}
         </div>
 
-        {/* Footer — select current */}
+        {/* Footer */}
         <div style={styles.footer}>
-          <div style={styles.selectedPath}>
-            {currentPath || '(project root)'}
+          <div style={styles.footerLeft}>
+            <div style={styles.selectedLabel}>Selected</div>
+            <div style={styles.selectedPath}>
+              /{currentPath || '(project root)'}
+            </div>
           </div>
-          <button
-            onClick={() => { onSelect(currentPath); onClose(); }}
-            style={styles.selectBtn}
-          >
-            Select
-          </button>
+          <div style={styles.footerActions}>
+            <button onClick={onClose} style={styles.cancelBtn}>Cancel</button>
+            <button
+              onClick={() => { onSelect(currentPath); onClose(); }}
+              style={styles.selectBtn}
+            >
+              Select
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -125,85 +179,120 @@ export default function DirPicker({ onSelect, onClose, initial }) {
 const styles = {
   overlay: {
     position: 'fixed', inset: 0, zIndex: 200,
-    background: 'rgba(0, 0, 0, 0.6)',
+    background: 'rgba(0, 0, 0, 0.65)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
+    backdropFilter: 'blur(2px)',
   },
   modal: {
-    width: 360, maxHeight: '70vh',
+    width: 480, maxHeight: '80vh',
     background: 'var(--bg-chrome)',
     border: '1px solid var(--border)',
-    borderRadius: 4,
+    borderRadius: 6,
     display: 'flex', flexDirection: 'column',
     fontFamily: 'var(--font)',
+    boxShadow: '0 16px 48px rgba(0, 0, 0, 0.4)',
   },
   header: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '10px 12px',
+    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+    padding: '14px 16px 12px',
     borderBottom: '1px solid var(--border)',
   },
   title: {
-    fontSize: 11, fontWeight: 600, color: 'var(--text-dim)',
-    textTransform: 'uppercase', letterSpacing: 1.5,
+    fontSize: 12, fontWeight: 700, color: 'var(--text-bright)',
+    letterSpacing: 0.5,
+  },
+  subtitle: {
+    fontSize: 10, color: 'var(--text-dim)', marginTop: 2,
   },
   closeBtn: {
     background: 'none', border: 'none', color: 'var(--text-dim)',
     fontSize: 14, cursor: 'pointer', fontFamily: 'var(--font)',
-    padding: '0 4px',
+    padding: '0 4px', lineHeight: 1,
   },
   breadcrumb: {
-    padding: '8px 12px',
+    padding: '8px 16px',
     borderBottom: '1px solid var(--border)',
     fontSize: 11,
+    display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0,
+    background: 'var(--bg-base)',
   },
   breadSep: {
-    color: 'var(--text-muted)', margin: '0 2px',
+    color: 'var(--text-muted)', margin: '0 3px',
   },
   breadPart: {
     background: 'none', border: 'none', cursor: 'pointer',
     fontFamily: 'var(--font)', fontSize: 11,
     padding: 0,
   },
+  breadMeta: {
+    marginLeft: 'auto', fontSize: 10, color: 'var(--text-muted)',
+  },
   list: {
     flex: 1, overflowY: 'auto',
-    padding: '4px 0',
-    minHeight: 120, maxHeight: 300,
+    minHeight: 200, maxHeight: 400,
   },
   dirRow: {
-    display: 'flex', alignItems: 'center', gap: 6,
-    width: '100%', padding: '6px 12px',
-    background: 'none', border: 'none',
-    color: 'var(--text-primary)', fontSize: 12,
-    fontFamily: 'var(--font)', cursor: 'pointer',
-    textAlign: 'left',
+    display: 'flex', alignItems: 'center', gap: 0,
+    padding: '8px 16px',
+    cursor: 'pointer',
+    transition: 'background 0.08s',
+    borderBottom: '1px solid rgba(75, 82, 99, 0.2)',
   },
-  dirIcon: {
-    color: 'var(--accent)', fontSize: 11, width: 12, textAlign: 'center',
-    flexShrink: 0,
+  dirIconWrap: {
+    width: 28, flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
-  dirName: {
-    flex: 1,
+  dirArrow: {
+    fontSize: 10, color: 'var(--text-muted)', fontWeight: 600,
   },
-  empty: {
-    padding: '16px 12px', color: 'var(--text-dim)', fontSize: 11,
-    textAlign: 'center',
+  dirInfo: {
+    flex: 1, minWidth: 0,
   },
-  errorText: {
-    padding: '16px 12px', color: 'var(--red)', fontSize: 11,
-    textAlign: 'center',
+  dirNameText: {
+    fontSize: 12, color: 'var(--text-bright)', fontWeight: 500,
+  },
+  dirMeta: {
+    fontSize: 10, color: 'var(--text-muted)', marginTop: 1,
+  },
+  emptyState: {
+    padding: '32px 16px', textAlign: 'center',
+  },
+  emptyText: {
+    fontSize: 12, color: 'var(--text-dim)',
+  },
+  emptyHint: {
+    fontSize: 10, color: 'var(--text-muted)', marginTop: 4,
   },
   footer: {
-    display: 'flex', alignItems: 'center', gap: 8,
-    padding: '10px 12px',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '12px 16px',
     borderTop: '1px solid var(--border)',
+    background: 'var(--bg-base)',
+  },
+  footerLeft: {
+    flex: 1, minWidth: 0, marginRight: 12,
+  },
+  selectedLabel: {
+    fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase',
+    letterSpacing: 1, fontWeight: 600,
   },
   selectedPath: {
-    flex: 1, fontSize: 11, color: 'var(--text-dim)',
+    fontSize: 11, color: 'var(--accent)', marginTop: 2,
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
+  footerActions: {
+    display: 'flex', gap: 6, flexShrink: 0,
+  },
+  cancelBtn: {
+    padding: '6px 14px',
+    background: 'transparent', border: '1px solid var(--border)',
+    borderRadius: 3, color: 'var(--text-dim)', fontSize: 11, fontWeight: 500,
+    fontFamily: 'var(--font)', cursor: 'pointer',
+  },
   selectBtn: {
-    padding: '5px 14px',
-    background: 'transparent', border: '1px solid var(--accent)',
-    borderRadius: 2, color: 'var(--accent)', fontSize: 11, fontWeight: 600,
-    fontFamily: 'var(--font)', cursor: 'pointer', flexShrink: 0,
+    padding: '6px 18px',
+    background: 'var(--accent)', border: '1px solid var(--accent)',
+    borderRadius: 3, color: 'var(--bg-base)', fontSize: 11, fontWeight: 700,
+    fontFamily: 'var(--font)', cursor: 'pointer',
   },
 };

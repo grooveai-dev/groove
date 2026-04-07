@@ -392,19 +392,33 @@ export function createApi(app, daemon) {
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((e) => {
           const childPath = relPath ? `${relPath}/${e.name}` : e.name;
-          // Check if this dir has subdirectories (for expand arrow)
+          const childFull = resolve(fullPath, e.name);
           let hasChildren = false;
+          let childCount = 0;
+          let fileCount = 0;
           try {
-            hasChildren = readdirSync(resolve(fullPath, e.name), { withFileTypes: true })
-              .some((c) => c.isDirectory() && !c.name.startsWith('.') && c.name !== 'node_modules');
+            const children = readdirSync(childFull, { withFileTypes: true });
+            for (const c of children) {
+              if (c.name.startsWith('.') || c.name === 'node_modules') continue;
+              if (c.isDirectory()) { childCount++; hasChildren = true; }
+              else fileCount++;
+            }
           } catch { /* unreadable */ }
-          return { name: e.name, path: childPath, hasChildren };
+          return { name: e.name, path: childPath, hasChildren, childCount, fileCount };
         });
+
+      // Count files in current dir
+      let currentFiles = 0;
+      try {
+        currentFiles = readdirSync(fullPath, { withFileTypes: true })
+          .filter((e) => e.isFile() && !e.name.startsWith('.')).length;
+      } catch { /* ignore */ }
 
       res.json({
         current: relPath || '.',
         parent: relPath ? relPath.split('/').slice(0, -1).join('/') : null,
         dirs: entries,
+        fileCount: currentFiles,
       });
     } catch (err) {
       res.status(500).json({ error: err.message });

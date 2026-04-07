@@ -573,9 +573,9 @@ const styles = {
     transition: 'color 0.1s, border-color 0.1s',
   },
   browseBtn: {
-    background: 'none', border: '1px dashed var(--border)',
-    borderRadius: 2, padding: '3px 8px',
-    color: 'var(--text-dim)', fontSize: 10, cursor: 'pointer',
+    background: 'var(--bg-surface)', border: '1px solid var(--accent)',
+    borderRadius: 2, padding: '3px 10px',
+    color: 'var(--accent)', fontSize: 10, fontWeight: 600, cursor: 'pointer',
     fontFamily: 'var(--font)',
   },
   error: {

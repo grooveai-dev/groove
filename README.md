@@ -12,7 +12,7 @@ npm i -g groove-dev
 groove start
 ```
 
-Open `http://localhost:31415` — your command center is ready.
+The GUI opens at `http://localhost:31415`. On a VPS? GROOVE detects it and tells you exactly what to do.
 
 ---
 
@@ -61,6 +61,125 @@ GROOVE auto-detects monorepo workspaces (npm, pnpm, lerna) and lets you spawn ea
 - **Task negotiation** — duplicate roles get assigned non-overlapping work
 - **Knock protocol** — agents signal before shared/destructive actions
 
+## Remote Access
+
+Run GROOVE on a VPS and manage your agents from anywhere. No ports exposed to the internet. No tokens. No custom auth code. Zero attack surface.
+
+### How It Works
+
+GROOVE never opens ports to the public internet. Instead, it uses battle-tested transport layers — SSH tunnels and WireGuard (Tailscale) — to keep your daemon private.
+
+```
+Your laptop                          Your VPS
+┌──────────┐    SSH tunnel     ┌──────────────────┐
+│ Browser   │◄────────────────►│ GROOVE daemon     │
+│ localhost │   encrypted      │ 127.0.0.1:31415   │
+└──────────┘                   └──────────────────┘
+                               Zero open ports
+```
+
+The daemon always binds to `127.0.0.1`. Nothing reaches it from the public internet. Your SSH keys handle auth. Your browser connects to `localhost` on your machine, and the tunnel forwards traffic securely to the VPS.
+
+### Setup
+
+**On your VPS:**
+
+```bash
+npm i -g groove-dev      # install
+groove start             # start the daemon
+```
+
+**On your laptop:**
+
+```bash
+npm i -g groove-dev                    # install (one-time)
+groove connect user@your-server-ip     # open the GUI
+groove disconnect                      # close when done
+```
+
+That's it. The GUI opens in your browser automatically.
+
+GROOVE auto-detects your environment — VS Code Remote, plain SSH, or local — and tells you exactly what to do. SSH config aliases work too: `groove connect my-vps`.
+
+### Tailscale / LAN Access
+
+For multi-device access (phone, tablet, other machines on your network):
+
+```bash
+groove start --host tailscale    # auto-detects your Tailscale IP
+groove start --host 192.168.1.5  # explicit IP
+```
+
+Open `http://<ip>:31415` from any device on the same network. Tailscale handles auth via WireGuard.
+
+### What's Blocked
+
+GROOVE will reject any attempt to expose the daemon directly to the internet:
+
+```bash
+groove start --host 0.0.0.0     # REJECTED — not allowed
+```
+
+This is by design. Direct exposure requires custom auth, rate limiting, TLS management — attack surface we refuse to create. SSH and WireGuard solve this better than we ever could.
+
+### Federation (Multi-Server)
+
+Connect GROOVE daemons across machines. Agents coordinate through typed contracts — structured specs, not shared filesystems.
+
+```bash
+groove federation pair 100.64.1.5      # pair two daemons
+groove federation list                  # see paired peers
+groove federation status                # show keypair + peers
+```
+
+Every cross-server message is signed with Ed25519 keys generated during a pairing ceremony. The receiving daemon verifies the signature before accepting any contract. Replay attacks are rejected (5-minute timestamp window). Tampered payloads are rejected. Unknown senders are rejected.
+
+```
+Server A                              Server B
+┌──────────────┐  signed contract  ┌──────────────┐
+│ GROOVE daemon │◄────────────────►│ GROOVE daemon │
+│ Ed25519 key   │  verify + audit  │ Ed25519 key   │
+└──────────────┘                   └──────────────┘
+```
+
+Contracts are typed data (method, path, input/output schema) — not freeform text. No surface for prompt injection. Full audit trail on both sides.
+
+### Audit Log
+
+Every state-changing operation is logged to `.groove/audit.log`:
+
+```bash
+groove audit           # view recent entries
+groove audit -n 50     # last 50 entries
+```
+
+```
+2:14:32 PM  agent.spawn          id=a1 role=backend provider=claude-code
+2:14:35 PM  agent.spawn          id=a2 role=frontend provider=claude-code
+2:33:12 PM  agent.rotate         oldId=a1 newId=a3 role=backend
+2:45:00 PM  federation.pair      peerId=f63dc52b14b9 peerHost=100.64.1.5
+```
+
+Append-only, `0600` permissions, auto-rotates at 5MB. When team auth is added, every entry will include who performed the action.
+
+### Security Model
+
+| Threat | Defense |
+|--------|---------|
+| Remote attackers | Zero open ports. Daemon binds to private interface only. |
+| Network eavesdroppers | SSH (tunnel) or WireGuard (Tailscale) encryption. |
+| Spoofed federation contracts | Ed25519 signature verification on every message. |
+| Replay attacks | 5-minute timestamp window. Reject old/future contracts. |
+| Malformed peer data | Public key validation at pairing time. Peer IDs restricted to hex. |
+| Path traversal | Peer IDs sanitized. No filesystem access across servers. |
+| Privilege escalation | No auth code to exploit. Transport layer handles all access control. |
+
+**What we explicitly don't defend against:** Compromised SSH keys, root access to VPS, malicious AI provider responses (out of scope — we're a process manager).
+
+**The principle:** "There's nothing to attack" is better than "we have a security system and here's why it's good." GROOVE has zero auth code. The transport layer does all the work.
+
+---
+
 ## Works With Everything
 
 | Provider | Auth | Models |
@@ -76,7 +195,7 @@ Works in any terminal, any IDE, any OS. Technical and non-technical users alike.
 
 ## The GUI
 
-Open `http://localhost:31415` after starting the daemon:
+Open the dashboard after starting the daemon (local or remote):
 
 - **Agent Tree** — visual node graph with Bezier spline connections, role badges, live status
 - **Chat** — instruct agents, query without disrupting, continue completed agents, streaming text

@@ -81,6 +81,7 @@ export class SkillStore {
       const regEntry = this.registry.find((r) => r.id === dir.name);
 
       installed.push({
+        ...(regEntry || {}),
         id: dir.name,
         name: meta.name || regEntry?.name || dir.name,
         description: meta.description || regEntry?.description || '',

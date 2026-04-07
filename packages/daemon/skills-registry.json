@@ -4,411 +4,482 @@
     "name": "Frontend Design",
     "description": "Create distinctive, production-grade frontend interfaces with high design quality. Avoids generic AI aesthetics.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "design",
-    "tags": [
-      "frontend",
-      "ui",
-      "css",
-      "react",
-      "design-system"
-    ],
-    "roles": [
-      "frontend",
-      "fullstack"
-    ],
+    "tags": ["frontend", "ui", "css", "react", "design-system"],
+    "roles": ["frontend", "fullstack"],
     "source": "claude-official",
     "icon": "P",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/frontend-design.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/frontend-design.md",
+    "downloads": 1840,
+    "rating": 4.8,
+    "ratingCount": 124,
+    "price": 0,
+    "featured": true
   },
   {
     "id": "code-review",
     "name": "Code Review",
     "description": "Comprehensive PR code review using parallel specialized agents. Checks CLAUDE.md compliance, bugs, git history, and previous PR comments.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "quality",
-    "tags": [
-      "review",
-      "pr",
-      "github",
-      "quality"
-    ],
-    "roles": [
-      "testing",
-      "fullstack"
-    ],
+    "tags": ["review", "pr", "github", "quality"],
+    "roles": ["testing", "fullstack"],
     "source": "claude-official",
     "icon": "R",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/code-review.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/code-review.md",
+    "downloads": 2350,
+    "rating": 4.9,
+    "ratingCount": 201,
+    "price": 0,
+    "featured": true
   },
   {
     "id": "security-guidance",
     "name": "Security Guidance",
     "description": "Security-focused development guidance. OWASP top 10, input validation, auth patterns, secrets management.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "security",
-    "tags": [
-      "security",
-      "owasp",
-      "auth",
-      "validation"
-    ],
-    "roles": [
-      "backend",
-      "fullstack",
-      "devops"
-    ],
+    "tags": ["security", "owasp", "auth", "validation"],
+    "roles": ["backend", "fullstack", "devops"],
     "source": "claude-official",
     "icon": "S",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/security-guidance.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/security-guidance.md",
+    "downloads": 1620,
+    "rating": 4.7,
+    "ratingCount": 98,
+    "price": 0,
+    "featured": true
   },
   {
     "id": "claude-automation-recommender",
     "name": "Automation Recommender",
     "description": "Analyze a codebase and recommend Claude Code automations — hooks, subagents, skills, plugins, MCP servers.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "devtools",
-    "tags": [
-      "automation",
-      "hooks",
-      "plugins",
-      "mcp",
-      "setup"
-    ],
-    "roles": [
-      "planner",
-      "devops",
-      "fullstack"
-    ],
+    "tags": ["automation", "hooks", "plugins", "mcp", "setup"],
+    "roles": ["planner", "devops", "fullstack"],
     "source": "claude-official",
     "icon": "A",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/claude-automation-recommender.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/claude-automation-recommender.md",
+    "downloads": 980,
+    "rating": 4.5,
+    "ratingCount": 67,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "claude-md-improver",
     "name": "CLAUDE.md Improver",
     "description": "Audit and improve CLAUDE.md files. Scans quality, evaluates against templates, makes targeted updates.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "devtools",
-    "tags": [
-      "claude-md",
-      "project-config",
-      "audit"
-    ],
-    "roles": [
-      "planner",
-      "fullstack"
-    ],
+    "tags": ["claude-md", "project-config", "audit"],
+    "roles": ["planner", "fullstack"],
     "source": "claude-official",
     "icon": "C",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/claude-md-improver.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/claude-md-improver.md",
+    "downloads": 1150,
+    "rating": 4.6,
+    "ratingCount": 83,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "build-mcp-server",
     "name": "Build MCP Server",
     "description": "End-to-end MCP server development. Interrogates use case, picks deployment model, designs tools, hands off to specialized skills.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "devtools",
-    "tags": [
-      "mcp",
-      "api",
-      "integration",
-      "tools"
-    ],
-    "roles": [
-      "backend",
-      "fullstack"
-    ],
+    "tags": ["mcp", "api", "integration", "tools"],
+    "roles": ["backend", "fullstack"],
     "source": "claude-official",
     "icon": "M",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/build-mcp-server.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/build-mcp-server.md",
+    "downloads": 1430,
+    "rating": 4.7,
+    "ratingCount": 112,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "build-mcp-app",
     "name": "Build MCP App",
     "description": "Add interactive UI widgets to MCP servers — forms, pickers, dashboards, confirmation dialogs inline in chat.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "devtools",
-    "tags": [
-      "mcp",
-      "ui",
-      "widgets",
-      "apps-sdk"
-    ],
-    "roles": [
-      "frontend",
-      "fullstack"
-    ],
+    "tags": ["mcp", "ui", "widgets", "apps-sdk"],
+    "roles": ["frontend", "fullstack"],
     "source": "claude-official",
     "icon": "U",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/build-mcp-app.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/build-mcp-app.md",
+    "downloads": 870,
+    "rating": 4.4,
+    "ratingCount": 56,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "feature-dev",
     "name": "Feature Development",
     "description": "Guided feature development with codebase understanding and architecture focus. Structured workflow from research to implementation.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "workflow",
-    "tags": [
-      "feature",
-      "architecture",
-      "guided",
-      "development"
-    ],
-    "roles": [
-      "backend",
-      "frontend",
-      "fullstack"
-    ],
+    "tags": ["feature", "architecture", "guided", "development"],
+    "roles": ["backend", "frontend", "fullstack"],
     "source": "claude-official",
     "icon": "F",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/feature-dev.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/feature-dev.md",
+    "downloads": 2100,
+    "rating": 4.8,
+    "ratingCount": 178,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "skill-creator",
     "name": "Skill Creator",
     "description": "Create new skills, modify existing ones, run evals, benchmark performance. The meta-skill for building skills.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "devtools",
-    "tags": [
-      "skills",
-      "plugins",
-      "meta",
-      "evals"
-    ],
-    "roles": [
-      "planner",
-      "fullstack"
-    ],
+    "tags": ["skills", "plugins", "meta", "evals"],
+    "roles": ["planner", "fullstack"],
     "source": "claude-official",
     "icon": "K",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/skill-creator.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/skill-creator.md",
+    "downloads": 760,
+    "rating": 4.5,
+    "ratingCount": 45,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "plugin-structure",
     "name": "Plugin Structure",
     "description": "Scaffold and organize Claude Code plugins. Directory layout, manifest, components, auto-discovery patterns.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "devtools",
-    "tags": [
-      "plugins",
-      "scaffold",
-      "architecture"
-    ],
-    "roles": [
-      "fullstack",
-      "devops"
-    ],
+    "tags": ["plugins", "scaffold", "architecture"],
+    "roles": ["fullstack", "devops"],
     "source": "claude-official",
     "icon": "L",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/plugin-structure.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/plugin-structure.md",
+    "downloads": 540,
+    "rating": 4.3,
+    "ratingCount": 32,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "hook-development",
     "name": "Hook Development",
     "description": "Create PreToolUse, PostToolUse, Stop hooks. Event-driven automation, tool validation, prompt-based hooks API.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "devtools",
-    "tags": [
-      "hooks",
-      "automation",
-      "events",
-      "validation"
-    ],
-    "roles": [
-      "devops",
-      "fullstack"
-    ],
+    "tags": ["hooks", "automation", "events", "validation"],
+    "roles": ["devops", "fullstack"],
     "source": "claude-official",
     "icon": "H",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/hook-development.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/hook-development.md",
+    "downloads": 680,
+    "rating": 4.4,
+    "ratingCount": 41,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "agent-development",
     "name": "Agent Development",
     "description": "Create subagents with system prompts, triggering conditions, tool access, and autonomous behavior patterns.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "devtools",
-    "tags": [
-      "agents",
-      "subagents",
-      "autonomous"
-    ],
-    "roles": [
-      "planner",
-      "fullstack"
-    ],
+    "tags": ["agents", "subagents", "autonomous"],
+    "roles": ["planner", "fullstack"],
     "source": "claude-official",
     "icon": "G",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/agent-development.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/agent-development.md",
+    "downloads": 920,
+    "rating": 4.6,
+    "ratingCount": 72,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "playground",
     "name": "Playground Builder",
     "description": "Create interactive HTML playgrounds — single-file explorers with live preview, visual controls, and copy-out prompts.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "design",
-    "tags": [
-      "playground",
-      "interactive",
-      "html",
-      "demo"
-    ],
-    "roles": [
-      "frontend",
-      "docs"
-    ],
+    "tags": ["playground", "interactive", "html", "demo"],
+    "roles": ["frontend", "docs"],
     "source": "claude-official",
     "icon": "Y",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/playground.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/playground.md",
+    "downloads": 610,
+    "rating": 4.5,
+    "ratingCount": 38,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "math-olympiad",
     "name": "Math Olympiad",
     "description": "Advanced mathematical problem solving. Competition-level math, proofs, and formal reasoning.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "specialized",
-    "tags": [
-      "math",
-      "proofs",
-      "reasoning",
-      "competition"
-    ],
+    "tags": ["math", "proofs", "reasoning", "competition"],
     "roles": [],
     "source": "claude-official",
     "icon": "X",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/math-olympiad.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/math-olympiad.md",
+    "downloads": 340,
+    "rating": 4.2,
+    "ratingCount": 21,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "hookify",
     "name": "Hookify",
     "description": "Create hooks to prevent unwanted behaviors from conversation analysis or explicit instructions. Rule-based automation.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "devtools",
-    "tags": [
-      "hooks",
-      "rules",
-      "automation",
-      "guardrails"
-    ],
-    "roles": [
-      "devops",
-      "fullstack"
-    ],
+    "tags": ["hooks", "rules", "automation", "guardrails"],
+    "roles": ["devops", "fullstack"],
     "source": "claude-official",
     "icon": "I",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/writing-rules.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/writing-rules.md",
+    "downloads": 490,
+    "rating": 4.3,
+    "ratingCount": 29,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "code-simplifier",
     "name": "Code Simplifier",
     "description": "Review changed code for reuse, quality, and efficiency. Identifies over-engineering and suggests simplifications.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "quality",
-    "tags": [
-      "refactor",
-      "simplify",
-      "quality",
-      "efficiency"
-    ],
-    "roles": [
-      "backend",
-      "frontend",
-      "fullstack"
-    ],
+    "tags": ["refactor", "simplify", "quality", "efficiency"],
+    "roles": ["backend", "frontend", "fullstack"],
     "source": "claude-official",
     "icon": "Z",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/code-simplifier.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/code-simplifier.md",
+    "downloads": 1280,
+    "rating": 4.6,
+    "ratingCount": 89,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "commit-commands",
     "name": "Commit Commands",
     "description": "Git workflow commands — commit, push, open PR, clean gone branches. Structured commit messages.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "workflow",
-    "tags": [
-      "git",
-      "commit",
-      "pr",
-      "workflow"
-    ],
-    "roles": [
-      "fullstack",
-      "backend",
-      "frontend"
-    ],
+    "tags": ["git", "commit", "pr", "workflow"],
+    "roles": ["fullstack", "backend", "frontend"],
     "source": "claude-official",
     "icon": "V",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/commit.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/commit.md",
+    "downloads": 1950,
+    "rating": 4.7,
+    "ratingCount": 156,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "pr-review-toolkit",
     "name": "PR Review Toolkit",
     "description": "Comprehensive PR review using specialized parallel agents. Multi-angle analysis with confidence scoring.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "quality",
-    "tags": [
-      "pr",
-      "review",
-      "github",
-      "parallel-agents"
-    ],
-    "roles": [
-      "testing",
-      "fullstack"
-    ],
+    "tags": ["pr", "review", "github", "parallel-agents"],
+    "roles": ["testing", "fullstack"],
     "source": "claude-official",
     "icon": "T",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/review-pr.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/review-pr.md",
+    "downloads": 1670,
+    "rating": 4.8,
+    "ratingCount": 134,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "new-sdk-app",
     "name": "Agent SDK Starter",
     "description": "Create and setup a new Claude Agent SDK application. Scaffolds project structure and configuration.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "devtools",
-    "tags": [
-      "agent-sdk",
-      "scaffold",
-      "setup"
-    ],
-    "roles": [
-      "backend",
-      "fullstack"
-    ],
+    "tags": ["agent-sdk", "scaffold", "setup"],
+    "roles": ["backend", "fullstack"],
     "source": "claude-official",
     "icon": "N",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/new-sdk-app.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/new-sdk-app.md",
+    "downloads": 820,
+    "rating": 4.5,
+    "ratingCount": 52,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "explanatory-output",
     "name": "Explanatory Output",
     "description": "Output style that explains reasoning and decisions. Teaches while building — great for learning and code review.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "workflow",
-    "tags": [
-      "output-style",
-      "learning",
-      "explanatory"
-    ],
+    "tags": ["output-style", "learning", "explanatory"],
     "roles": [],
     "source": "claude-official",
     "icon": "E",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/explanatory-output.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/explanatory-output.md",
+    "downloads": 430,
+    "rating": 4.4,
+    "ratingCount": 27,
+    "price": 0,
+    "featured": false
   },
   {
     "id": "learning-output",
     "name": "Learning Output",
     "description": "Output style optimized for learning. Step-by-step explanations, concept breakdowns, guided understanding.",
     "author": "Anthropic",
+    "authorProfile": {
+      "avatar": null,
+      "website": "https://anthropic.com",
+      "github": "anthropics",
+      "twitter": "AnthropicAI"
+    },
     "category": "workflow",
-    "tags": [
-      "output-style",
-      "learning",
-      "educational"
-    ],
+    "tags": ["output-style", "learning", "educational"],
     "roles": [],
     "source": "claude-official",
     "icon": "W",
-    "contentUrl": "https://docs.groovedev.ai/skills/content/learning-output.md"
+    "contentUrl": "https://docs.groovedev.ai/skills/content/learning-output.md",
+    "downloads": 380,
+    "rating": 4.3,
+    "ratingCount": 24,
+    "price": 0,
+    "featured": false
   }
 ]

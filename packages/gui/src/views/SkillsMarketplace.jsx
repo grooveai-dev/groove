@@ -89,9 +89,54 @@ function sortSkills(skills, sortBy) {
   }
 }
 
+// ── Interactive Star Rating ──────────────────────────────────────────
+function StarRating({ current, onRate, disabled }) {
+  const [hover, setHover] = useState(0);
+
+  return (
+    <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+      {[1, 2, 3, 4, 5].map((star) => {
+        const filled = hover > 0 ? star <= hover : star <= (current || 0);
+        return (
+          <span
+            key={star}
+            onClick={() => !disabled && onRate(star)}
+            onMouseEnter={() => !disabled && setHover(star)}
+            onMouseLeave={() => setHover(0)}
+            style={{
+              fontSize: 18,
+              cursor: disabled ? 'default' : 'pointer',
+              color: filled ? 'var(--amber)' : 'var(--bg-active)',
+              transition: 'color 0.1s, transform 0.1s',
+              transform: hover === star ? 'scale(1.2)' : 'none',
+              userSelect: 'none',
+            }}
+          >
+            {'\u2605'}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Skill Detail Modal ──────────────────────────────────────────────
-function SkillDetailModal({ skill, content, installing, onInstall, onUninstall, onClose }) {
+function SkillDetailModal({ skill, content, installing, onInstall, onUninstall, onRate, onClose }) {
+  const [userRating, setUserRating] = useState(0);
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  const [submittingRating, setSubmittingRating] = useState(false);
+
   if (!skill) return null;
+
+  async function handleRate(stars) {
+    setSubmittingRating(true);
+    try {
+      await onRate(skill.id, stars);
+      setUserRating(stars);
+      setRatingSubmitted(true);
+    } catch { /* ignore */ }
+    setSubmittingRating(false);
+  }
 
   return (
     <div style={modal.overlay} onClick={onClose}>
@@ -160,6 +205,31 @@ function SkillDetailModal({ skill, content, installing, onInstall, onUninstall, 
             </button>
           )}
           {skill.price === 0 && !skill.installed && <span style={modal.freeLabel}>Free</span>}
+        </div>
+
+        {/* Rating */}
+        <div style={modal.section}>
+          <div style={modal.sectionTitle}>Rating</div>
+          <div style={modal.ratingRow}>
+            <div style={modal.ratingLeft}>
+              <div style={modal.ratingBig}>{skill.rating || '-'}</div>
+              <div style={{ color: 'var(--amber)', fontSize: 13 }}>{renderStars(skill.rating)}</div>
+              <div style={modal.ratingCount}>{skill.ratingCount || 0} ratings</div>
+            </div>
+            <div style={modal.ratingRight}>
+              <div style={modal.rateLabel}>
+                {ratingSubmitted ? 'Thanks for rating!' : 'Rate this skill'}
+              </div>
+              <StarRating
+                current={userRating}
+                onRate={handleRate}
+                disabled={submittingRating || ratingSubmitted}
+              />
+              {submittingRating && (
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>Submitting...</div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Description */}
@@ -413,6 +483,23 @@ export default function SkillsMarketplace() {
     setInstalling(null);
   }
 
+  async function handleRate(id, rating) {
+    const res = await fetch(`/api/skills/${id}/rate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rating }),
+    });
+    if (!res.ok) throw new Error('Rating failed');
+    const data = await res.json();
+    // Update the skill in local state with new rating
+    setSkills((prev) => prev.map((s) =>
+      s.id === id ? { ...s, rating: data.rating, ratingCount: data.rating_count ?? data.ratingCount } : s
+    ));
+    if (selectedSkill?.id === id) {
+      setSelectedSkill((prev) => prev ? { ...prev, rating: data.rating, ratingCount: data.rating_count ?? data.ratingCount } : null);
+    }
+  }
+
   async function handleSelect(skill) {
     setSelectedSkill(skill);
     setSkillContent(null);
@@ -561,6 +648,7 @@ export default function SkillsMarketplace() {
         installing={installing}
         onInstall={handleInstall}
         onUninstall={handleUninstall}
+        onRate={handleRate}
         onClose={() => { setSelectedSkill(null); setSkillContent(null); }}
       />
     </div>
@@ -875,6 +963,29 @@ const modal = {
   },
   section: {
     marginBottom: 16,
+  },
+  ratingRow: {
+    display: 'flex', gap: 20, alignItems: 'center',
+    padding: '12px 14px',
+    background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    borderRadius: 6,
+  },
+  ratingLeft: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+    minWidth: 70,
+  },
+  ratingBig: {
+    fontSize: 24, fontWeight: 700, color: 'var(--text-bright)',
+    lineHeight: 1,
+  },
+  ratingCount: {
+    fontSize: 9, color: 'var(--text-muted)', marginTop: 2,
+  },
+  ratingRight: {
+    flex: 1,
+  },
+  rateLabel: {
+    fontSize: 11, color: 'var(--text-dim)', marginBottom: 6,
   },
   sectionTitle: {
     fontSize: 10, fontWeight: 600, color: 'var(--text-muted)',

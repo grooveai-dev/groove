@@ -194,6 +194,26 @@ export class SkillStore {
   }
 
   /**
+   * Rate a skill. Proxies to the skills server.
+   */
+  async rate(skillId, rating) {
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      throw new Error('Rating must be an integer from 1 to 5');
+    }
+    const res = await fetch(`${SKILLS_API}/skills/${skillId}/rate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rating }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Rating failed');
+    }
+    return res.json();
+  }
+
+  /**
    * Get the full content of an installed skill.
    */
   getContent(skillId) {

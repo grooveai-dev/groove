@@ -400,6 +400,16 @@ export function createApi(app, daemon) {
     }
   });
 
+  app.post('/api/skills/:id/rate', async (req, res) => {
+    try {
+      const rating = parseInt(req.body?.rating, 10);
+      const result = await daemon.skills.rate(req.params.id, rating);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   app.get('/api/skills/:id/content', (req, res) => {
     const content = daemon.skills.getContent(req.params.id);
     if (!content) return res.status(404).json({ error: 'Skill not installed' });

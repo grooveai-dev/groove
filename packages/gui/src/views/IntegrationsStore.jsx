@@ -369,6 +369,10 @@ function CredentialModal({ integration, onClose }) {
 function IntegrationDetailModal({ integration, installing, onInstall, onUninstall, onConfigure, onClose }) {
   if (!integration) return null;
 
+  const isAutoAuth = integration.authType === 'none' && (integration.envKeys || []).length === 0;
+  const hasCredentials = (integration.envKeys || []).filter((ek) => !ek.hidden).length > 0
+    || integration.authType === 'oauth-google';
+
   return (
     <div style={modal.overlay} onClick={onClose}>
       <div style={modal.container} onClick={(e) => e.stopPropagation()}>
@@ -402,13 +406,14 @@ function IntegrationDetailModal({ integration, installing, onInstall, onUninstal
         <div style={modal.actionBar}>
           {integration.installed ? (
             <div style={{ display: 'flex', gap: 8, flex: 1 }}>
-              <button
-                onClick={() => onConfigure(integration)}
-                style={modal.configureBtn}
-                disabled={(integration.envKeys || []).length === 0}
-              >
-                {integration.configured ? 'Reconfigure' : 'Configure'}
-              </button>
+              {hasCredentials && (
+                <button
+                  onClick={() => onConfigure(integration)}
+                  style={modal.configureBtn}
+                >
+                  {integration.configured ? 'Reconfigure' : 'Configure'}
+                </button>
+              )}
               <button
                 onClick={() => onUninstall(integration.id)}
                 disabled={installing === integration.id}
@@ -435,15 +440,22 @@ function IntegrationDetailModal({ integration, installing, onInstall, onUninstal
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8,
               padding: '8px 12px', borderRadius: 6,
-              background: integration.configured ? 'rgba(74, 225, 104, 0.06)' : 'rgba(229, 192, 123, 0.06)',
-              border: `1px solid ${integration.configured ? 'var(--green)' : 'var(--amber)'}`,
+              background: isAutoAuth
+                ? 'rgba(97, 175, 239, 0.06)'
+                : integration.configured ? 'rgba(74, 225, 104, 0.06)' : 'rgba(229, 192, 123, 0.06)',
+              border: `1px solid ${isAutoAuth ? 'var(--blue)' : integration.configured ? 'var(--green)' : 'var(--amber)'}`,
             }}>
               <span style={{
                 width: 8, height: 8, borderRadius: '50%',
-                background: integration.configured ? 'var(--green)' : 'var(--amber)',
+                background: isAutoAuth ? 'var(--blue)' : integration.configured ? 'var(--green)' : 'var(--amber)',
               }} />
-              <span style={{ fontSize: 11, color: integration.configured ? 'var(--green)' : 'var(--amber)' }}>
-                {integration.configured ? 'Connected and ready' : 'Credentials needed'}
+              <span style={{
+                fontSize: 11,
+                color: isAutoAuth ? 'var(--blue)' : integration.configured ? 'var(--green)' : 'var(--amber)',
+              }}>
+                {isAutoAuth
+                  ? 'Installed — will sign in automatically on first use'
+                  : integration.configured ? 'Connected and ready' : 'Credentials needed'}
               </span>
             </div>
           </div>
@@ -544,10 +556,13 @@ function FeaturedBanner({ integrations, onSelect }) {
               </div>
               <div style={styles.featuredDesc}>{item.description}</div>
             </div>
-            {item.installed && item.configured && (
+            {item.installed && item.authType !== 'none' && item.configured && (
               <div style={styles.connectedBadge}>connected</div>
             )}
-            {item.installed && !item.configured && (
+            {item.installed && item.authType === 'none' && (
+              <div style={styles.installedBadge}>installed</div>
+            )}
+            {item.installed && !item.configured && item.authType !== 'none' && (
               <div style={styles.setupBadge}>needs setup</div>
             )}
           </div>
@@ -566,8 +581,9 @@ function IntegrationCard({ item, onSelect, hovered, onHover }) {
       onMouseLeave={() => onHover(null)}
       style={{
         ...styles.card,
-        borderColor: item.installed && item.configured
-          ? 'var(--green)'
+        borderColor: item.installed && item.authType === 'none'
+          ? 'var(--blue)'
+          : item.installed && item.configured ? 'var(--green)'
           : item.installed ? 'var(--amber)'
             : hovered ? 'var(--accent)' : 'var(--border)',
         background: hovered ? 'var(--bg-hover)' : 'var(--bg-surface)',
@@ -578,8 +594,9 @@ function IntegrationCard({ item, onSelect, hovered, onHover }) {
       <div style={styles.cardTop}>
         <div style={{
           ...styles.cardIcon,
-          background: item.installed && item.configured
-            ? 'var(--green)'
+          background: item.installed && item.authType === 'none'
+            ? 'var(--blue)'
+            : item.installed && item.configured ? 'var(--green)'
             : item.installed ? 'var(--amber)' : 'var(--accent)',
         }}>
           {ICON_MAP[item.icon] || item.name.charAt(0)}
@@ -590,10 +607,13 @@ function IntegrationCard({ item, onSelect, hovered, onHover }) {
             <VerifiedBadge item={item} />
           </div>
         </div>
-        {item.installed && item.configured && (
+        {item.installed && item.configured && item.authType !== 'none' && (
           <div style={styles.connectedBadgeSm}>connected</div>
         )}
-        {item.installed && !item.configured && (
+        {item.installed && item.authType === 'none' && (
+          <div style={styles.installedBadgeSm}>installed</div>
+        )}
+        {item.installed && !item.configured && item.authType !== 'none' && (
           <div style={styles.setupBadgeSm}>setup</div>
         )}
         {!item.installed && (
@@ -962,6 +982,12 @@ const styles = {
     border: '1px solid var(--green)', borderRadius: 3,
     padding: '1px 5px', textTransform: 'uppercase', letterSpacing: 0.5,
   },
+  installedBadge: {
+    position: 'absolute', top: 8, right: 8,
+    fontSize: 8, fontWeight: 600, color: 'var(--blue)',
+    border: '1px solid var(--blue)', borderRadius: 3,
+    padding: '1px 5px', textTransform: 'uppercase', letterSpacing: 0.5,
+  },
   setupBadge: {
     position: 'absolute', top: 8, right: 8,
     fontSize: 8, fontWeight: 600, color: 'var(--amber)',
@@ -1008,6 +1034,12 @@ const styles = {
   connectedBadgeSm: {
     fontSize: 8, fontWeight: 600, color: 'var(--green)',
     border: '1px solid var(--green)', borderRadius: 3,
+    padding: '1px 6px', textTransform: 'uppercase', letterSpacing: 0.5,
+    flexShrink: 0,
+  },
+  installedBadgeSm: {
+    fontSize: 8, fontWeight: 600, color: 'var(--blue)',
+    border: '1px solid var(--blue)', borderRadius: 3,
     padding: '1px 6px', textTransform: 'uppercase', letterSpacing: 0.5,
     flexShrink: 0,
   },

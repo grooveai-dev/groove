@@ -3,6 +3,7 @@
 
 import { existsSync, writeFileSync, readFileSync } from 'fs';
 import { resolve } from 'path';
+import { networkInterfaces } from 'os';
 import { listProviders } from './providers/index.js';
 
 const DEFAULT_CONFIG = {
@@ -53,17 +54,42 @@ export function printWelcome(port, host = '127.0.0.1') {
 
   console.log('');
   const isRemote = host !== '127.0.0.1';
-  const isSSH = !!(process.env.SSH_CONNECTION || process.env.SSH_CLIENT);
+
+  // Detect headless/server environment: no graphical display available
+  // Works even through sudo (which strips SSH_* env vars)
+  const hasDisplay = !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+  const isSSH = !!(process.env.SSH_CONNECTION || process.env.SSH_CLIENT || process.env.SSH_TTY);
+  const isHeadless = !hasDisplay && !process.env.TERM_PROGRAM; // No GUI, no desktop terminal app
+  const isServer = isSSH || isHeadless;
 
   if (isRemote) {
     // Bound to network interface (Tailscale/LAN)
     console.log(`  GUI:   http://${host}:${port}`);
     console.log(`  Host:  ${host} (network-accessible)`);
-  } else if (isSSH) {
-    // Running on a VPS via SSH — print remote access instructions
-    const sshUser = process.env.USER || 'user';
+  } else if (isServer) {
+    // VPS / headless server — print remote access instructions
+    const sshUser = process.env.SUDO_USER || process.env.USER || 'user';
+
+    // Get server IP: try SSH_CONNECTION first, fall back to first public network interface
+    let serverIp = '';
     const sshConn = process.env.SSH_CONNECTION || '';
-    const serverIp = sshConn.split(' ')[2] || '<this-server-ip>';
+    if (sshConn) {
+      serverIp = sshConn.split(' ')[2] || '';
+    }
+    if (!serverIp) {
+      // Find first non-internal IPv4 address
+      const nets = networkInterfaces();
+      for (const addrs of Object.values(nets)) {
+        for (const addr of addrs) {
+          if (addr.family === 'IPv4' && !addr.internal) {
+            serverIp = addr.address;
+            break;
+          }
+        }
+        if (serverIp) break;
+      }
+    }
+    serverIp = serverIp || '<this-server-ip>';
 
     console.log(`  GUI:   http://localhost:${port} (this server only)`);
     console.log('');
@@ -74,7 +100,7 @@ export function printWelcome(port, host = '127.0.0.1') {
     console.log(`    ssh -L ${port + 1}:localhost:${port} ${sshUser}@${serverIp}`);
     console.log(`    Then open http://localhost:${port + 1}`);
   } else {
-    // Local machine
+    // Local machine with display
     console.log(`  GUI:   http://localhost:${port}`);
   }
 

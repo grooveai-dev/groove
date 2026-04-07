@@ -235,6 +235,8 @@ export class IntegrationStore {
   /**
    * Build MCP config object for a set of integration IDs.
    * Returns the mcpServers object to merge into .mcp.json.
+   * SECURITY: credentials are NOT included in the config file.
+   * They are injected at spawn time via process environment only.
    */
   buildMcpConfig(integrationIds) {
     const mcpServers = {};
@@ -244,21 +246,31 @@ export class IntegrationStore {
       if (!entry) continue;
       if (!this._isInstalled(id)) continue;
 
-      // Build environment with credentials
-      const env = {};
-      for (const ek of (entry.envKeys || [])) {
-        const val = this.getCredential(id, ek.key);
-        if (val) env[ek.key] = val;
-      }
-
+      // No env block — credentials stay out of .mcp.json
       mcpServers[`groove-${id}`] = {
         command: entry.command || 'npx',
         args: entry.args || ['-y', entry.npmPackage],
-        env,
       };
     }
 
     return mcpServers;
+  }
+
+  /**
+   * Get environment variables with decrypted credentials for a set of integration IDs.
+   * These are passed to the agent process at spawn time (in-memory only, never written to disk).
+   */
+  getSpawnEnv(integrationIds) {
+    const env = {};
+    for (const id of integrationIds) {
+      const entry = this.registry.find((s) => s.id === id);
+      if (!entry) continue;
+      for (const ek of (entry.envKeys || [])) {
+        const val = this.getCredential(id, ek.key);
+        if (val) env[ek.key] = val;
+      }
+    }
+    return env;
   }
 
   /**

@@ -201,9 +201,12 @@ For normal file edits within your scope, proceed without review.
       }
     }
 
-    // Write MCP config for agent integrations
+    // Write MCP config for agent integrations (command/args only, no secrets)
+    // Credentials are injected via process environment below
+    let integrationEnv = {};
     if (config.integrations?.length > 0 && this.daemon.integrations) {
       this.daemon.integrations.writeMcpJson(config.integrations);
+      integrationEnv = this.daemon.integrations.getSpawnEnv(config.integrations);
     }
 
     const { command, args, env } = provider.buildSpawnCommand(spawnConfig);
@@ -232,7 +235,7 @@ For normal file edits within your scope, proceed without review.
     // Spawn the process
     const proc = cpSpawn(command, args, {
       cwd: agent.workingDir || this.daemon.projectDir,
-      env: { ...process.env, ...env, GROOVE_AGENT_ID: agent.id, GROOVE_AGENT_NAME: agent.name },
+      env: { ...process.env, ...env, ...integrationEnv, GROOVE_AGENT_ID: agent.id, GROOVE_AGENT_NAME: agent.name },
       stdio: ['ignore', 'pipe', 'pipe'],
       // Don't let agent process prevent daemon from exiting
       detached: false,

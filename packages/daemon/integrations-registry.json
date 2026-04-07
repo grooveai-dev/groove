@@ -99,12 +99,13 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@gongrzhe/server-calendar-autoauth-mcp"],
-    "authType": "none",
+    "authType": "google-autoauth",
+    "oauthKeysDir": ".calendar-mcp",
     "envKeys": [],
     "setupSteps": [
-      "Click Install, then click 'Sign in with Google'",
-      "A browser window will open — authorize Groove",
-      "Done — no API keys or tokens needed"
+      "One-time: link your Google Cloud OAuth app (shared across all Google integrations)",
+      "Click 'Sign in with Google' — a browser opens for authorization",
+      "Done — the MCP server handles token refresh automatically"
     ],
     "featured": false,
     "downloads": 0,
@@ -124,12 +125,13 @@
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@gongrzhe/server-gmail-autoauth-mcp"],
-    "authType": "none",
+    "authType": "google-autoauth",
+    "oauthKeysDir": ".gmail-mcp",
     "envKeys": [],
     "setupSteps": [
-      "Click Install, then click 'Sign in with Google'",
-      "A browser window will open — authorize Groove",
-      "Done — no API keys or tokens needed"
+      "One-time: link your Google Cloud OAuth app (shared across all Google integrations)",
+      "Click 'Sign in with Google' — a browser opens for authorization",
+      "Done — the MCP server handles token refresh automatically"
     ],
     "featured": false,
     "downloads": 0,

@@ -86,8 +86,9 @@ function CredentialModal({ integration, onClose }) {
   const [showGoogleSetup, setShowGoogleSetup] = useState(false);
 
   useEffect(() => {
-    if (integration?.authType === 'oauth-google') {
+    if (integration?.authType === 'oauth-google' || integration?.authType === 'google-autoauth' || integration?._googleSetupNeeded) {
       setOauthStatus('checking');
+      setShowGoogleSetup(integration?._googleSetupNeeded || false);
       fetch('/api/integrations/google-oauth/status')
         .then((r) => r.json())
         .then((data) => setOauthStatus(data.configured ? 'ready' : 'not-configured'))
@@ -98,6 +99,7 @@ function CredentialModal({ integration, onClose }) {
   if (!integration) return null;
 
   const isOAuth = integration.authType === 'oauth-google';
+  const isGoogleAutoAuth = integration.authType === 'google-autoauth' || integration._googleSetupNeeded;
   const envKeys = (integration.envKeys || []).filter((ek) => !ek.hidden);
   const setupSteps = integration.setupSteps || [];
 
@@ -131,6 +133,22 @@ function CredentialModal({ integration, onClose }) {
       setShowGoogleSetup(false);
     } catch { /* ignore */ }
     setSaving(false);
+  }
+
+  async function handleAutoAuthConnect() {
+    setOauthStatus('connecting');
+    try {
+      const res = await fetch(`/api/integrations/${integration.id}/authenticate`, { method: 'POST' });
+      const data = await res.json();
+      if (!data.ok) {
+        setOauthStatus('ready');
+      }
+      // The MCP server will open a browser — poll isn't needed since
+      // the server handles auth internally. Just close after a moment.
+      setTimeout(() => onClose(), 2000);
+    } catch {
+      setOauthStatus('ready');
+    }
   }
 
   async function handleOAuthConnect() {
@@ -218,12 +236,14 @@ function CredentialModal({ integration, onClose }) {
             </a>
           )}
 
-          {/* OAuth flow for Google integrations */}
-          {isOAuth && (
+          {/* OAuth flow for Google integrations (both oauth-google and google-autoauth) */}
+          {(isOAuth || isGoogleAutoAuth) && (
             <div style={{ marginBottom: 16 }}>
               {/* Always show the primary Connect button */}
               <button
-                onClick={oauthStatus === 'ready' ? handleOAuthConnect : () => setShowGoogleSetup(true)}
+                onClick={oauthStatus === 'ready'
+                  ? (isGoogleAutoAuth ? handleAutoAuthConnect : handleOAuthConnect)
+                  : () => setShowGoogleSetup(true)}
                 disabled={oauthStatus === 'checking' || oauthStatus === 'connecting'}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -292,9 +312,12 @@ function CredentialModal({ integration, onClose }) {
                     <button
                       onClick={async () => {
                         await handleGoogleSetup();
-                        // After saving, immediately trigger the OAuth connect flow
+                        // After saving, immediately trigger the appropriate connect flow
                         if (googleClientId && googleClientSecret) {
-                          setTimeout(() => handleOAuthConnect(), 500);
+                          setTimeout(() => {
+                            if (isGoogleAutoAuth) handleAutoAuthConnect();
+                            else handleOAuthConnect();
+                          }, 500);
                         }
                       }}
                       disabled={saving || !googleClientId || !googleClientSecret}
@@ -369,7 +392,8 @@ function CredentialModal({ integration, onClose }) {
 function IntegrationDetailModal({ integration, installing, onInstall, onUninstall, onConfigure, onAuthenticate, onClose }) {
   if (!integration) return null;
 
-  const isAutoAuth = integration.authType === 'none' && (integration.envKeys || []).length === 0;
+  const isAutoAuth = (integration.authType === 'none' || integration.authType === 'google-autoauth')
+    && (integration.envKeys || []).length === 0;
   const hasCredentials = (integration.envKeys || []).filter((ek) => !ek.hidden).length > 0
     || integration.authType === 'oauth-google';
 
@@ -716,6 +740,20 @@ export default function IntegrationsStore() {
   }
 
   async function handleAuthenticate(item) {
+    // For google-autoauth, check if Google OAuth is configured first
+    if (item.authType === 'google-autoauth') {
+      try {
+        const statusRes = await fetch('/api/integrations/google-oauth/status');
+        const statusData = await statusRes.json();
+        if (!statusData.configured) {
+          // Need Google OAuth setup first — open the credential modal
+          setSelectedItem(null);
+          setConfiguring({ ...item, _googleSetupNeeded: true });
+          return;
+        }
+      } catch { /* proceed anyway */ }
+    }
+
     setSelectedItem(null);
     try {
       const res = await fetch(`/api/integrations/${item.id}/authenticate`, { method: 'POST' });

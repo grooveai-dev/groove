@@ -467,6 +467,12 @@ export class IntegrationStore {
     const entry = this.registry.find((s) => s.id === integrationId);
     if (!entry) throw new Error(`Integration not found: ${integrationId}`);
 
+    // For google-autoauth integrations, write the gcp-oauth.keys.json file
+    // that the MCP server expects before it can start the OAuth browser flow
+    if (entry.authType === 'google-autoauth') {
+      this._writeGoogleOAuthKeys(entry);
+    }
+
     const command = entry.command || 'npx';
     const args = entry.args || ['-y', entry.npmPackage];
 
@@ -529,6 +535,39 @@ export class IntegrationStore {
       pid: proc.pid,
       kill: () => { clearTimeout(timeout); try { proc.kill('SIGTERM'); } catch { /* ignore */ } },
     };
+  }
+
+  /**
+   * Write gcp-oauth.keys.json for Google auto-auth MCP servers.
+   * These servers need a Google Cloud OAuth client file at a specific path
+   * before they can open the browser for user consent.
+   */
+  _writeGoogleOAuthKeys(entry) {
+    const clientId = this.getCredential('google-oauth', 'GOOGLE_CLIENT_ID');
+    const clientSecret = this.getCredential('google-oauth', 'GOOGLE_CLIENT_SECRET');
+    if (!clientId || !clientSecret) {
+      throw new Error('Google OAuth not configured. Click "Sign in with Google" to set up your Google Cloud credentials first.');
+    }
+
+    const keysContent = JSON.stringify({
+      installed: {
+        client_id: clientId,
+        client_secret: clientSecret,
+        auth_uri: 'https://accounts.google.com/o/oauth2/auth',
+        token_uri: 'https://oauth2.googleapis.com/token',
+        redirect_uris: ['http://localhost'],
+      },
+    }, null, 2);
+
+    // Write to the directory the MCP server expects (e.g., ~/.gmail-mcp/)
+    const keysDir = entry.oauthKeysDir;
+    if (keysDir) {
+      const homedir = process.env.HOME || process.env.USERPROFILE || '~';
+      const dirPath = resolve(homedir, keysDir);
+      mkdirSync(dirPath, { recursive: true });
+      const keysPath = resolve(dirPath, 'gcp-oauth.keys.json');
+      writeFileSync(keysPath, keysContent, { mode: 0o600 });
+    }
   }
 
   // --- Internal ---

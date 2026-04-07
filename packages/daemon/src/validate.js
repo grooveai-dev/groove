@@ -66,6 +66,15 @@ export function validateAgentConfig(config) {
     skills = config.skills.filter((s) => typeof s === 'string' && s.length > 0 && s.length <= 100);
   }
 
+  // Validate integrations (array of integration IDs)
+  let integrations = [];
+  if (config.integrations !== undefined && config.integrations !== null) {
+    if (!Array.isArray(config.integrations)) {
+      throw new Error('Integrations must be an array');
+    }
+    integrations = config.integrations.filter((s) => typeof s === 'string' && s.length > 0 && s.length <= 100);
+  }
+
   // Return sanitized config (only known fields)
   return {
     role: config.role,
@@ -77,6 +86,7 @@ export function validateAgentConfig(config) {
     workingDir: typeof config.workingDir === 'string' ? config.workingDir : undefined,
     permission,
     skills,
+    integrations,
   };
 }
 

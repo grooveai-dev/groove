@@ -188,6 +188,29 @@ export class Introducer {
       }
     }
 
+    // Integration context — list MCP tools available to this agent
+    if (newAgent.integrations && newAgent.integrations.length > 0 && this.daemon.integrations) {
+      const integrationSections = [];
+      for (const integrationId of newAgent.integrations) {
+        const entry = this.daemon.integrations.registry.find((s) => s.id === integrationId);
+        if (entry) {
+          const configured = this.daemon.integrations._isConfigured(entry);
+          const status = configured ? 'connected' : 'NOT CONFIGURED — credentials missing';
+          integrationSections.push(`- **${entry.name}** (${status}): ${entry.description}`);
+        }
+      }
+      if (integrationSections.length > 0) {
+        lines.push('');
+        lines.push(`## Integrations (${integrationSections.length} connected)`);
+        lines.push('');
+        lines.push('You have MCP tools available from these integrations. Use them to interact with external services:');
+        lines.push('');
+        lines.push(integrationSections.join('\n'));
+        lines.push('');
+        lines.push('Call these tools directly — they are available in your MCP tool list. Do not attempt to use curl or API calls for services that have an MCP integration attached.');
+      }
+    }
+
     return lines.join('\n');
   }
 

@@ -6,13 +6,21 @@ import { useGrooveStore } from '../stores/groove';
 import DirPicker from './DirPicker';
 
 const ROLE_PRESETS = [
-  { id: 'backend',   label: 'Backend',   desc: 'APIs, server logic, database', scope: ['src/api/**', 'src/server/**', 'src/lib/**', 'src/db/**'] },
-  { id: 'frontend',  label: 'Frontend',  desc: 'UI components, views, styles', scope: ['src/components/**', 'src/views/**', 'src/pages/**', 'src/styles/**'] },
-  { id: 'fullstack', label: 'Fullstack', desc: 'Full codebase access', scope: [] },
-  { id: 'planner',   label: 'Planner',   desc: 'Architecture, research, planning', scope: [] },
-  { id: 'testing',   label: 'Testing',   desc: 'Tests, specs, coverage', scope: ['tests/**', 'test/**', '**/*.test.*', '**/*.spec.*'] },
-  { id: 'devops',    label: 'DevOps',    desc: 'Docker, CI/CD, infra', scope: ['Dockerfile*', 'docker-compose*', '.github/**', 'infra/**'] },
-  { id: 'docs',      label: 'Docs',      desc: 'Documentation, READMEs', scope: ['docs/**', '*.md'] },
+  // Coding roles
+  { id: 'backend',   label: 'Backend',   desc: 'APIs, server logic, database', scope: ['src/api/**', 'src/server/**', 'src/lib/**', 'src/db/**'], category: 'coding' },
+  { id: 'frontend',  label: 'Frontend',  desc: 'UI components, views, styles', scope: ['src/components/**', 'src/views/**', 'src/pages/**', 'src/styles/**'], category: 'coding' },
+  { id: 'fullstack', label: 'Fullstack', desc: 'Full codebase access', scope: [], category: 'coding' },
+  { id: 'planner',   label: 'Planner',   desc: 'Architecture, research, planning', scope: [], category: 'coding' },
+  { id: 'testing',   label: 'Testing',   desc: 'Tests, specs, coverage', scope: ['tests/**', 'test/**', '**/*.test.*', '**/*.spec.*'], category: 'coding' },
+  { id: 'devops',    label: 'DevOps',    desc: 'Docker, CI/CD, infra', scope: ['Dockerfile*', 'docker-compose*', '.github/**', 'infra/**'], category: 'coding' },
+  { id: 'docs',      label: 'Docs',      desc: 'Documentation, READMEs', scope: ['docs/**', '*.md'], category: 'coding' },
+  // Business roles
+  { id: 'cmo',       label: 'CMO',       desc: 'Marketing, social media, content', scope: [], category: 'business', integrations: ['slack', 'brave-search'] },
+  { id: 'cfo',       label: 'CFO',       desc: 'Finance, billing, revenue', scope: [], category: 'business', integrations: ['stripe', 'google-drive'] },
+  { id: 'ea',        label: 'EA',        desc: 'Scheduling, email, comms', scope: [], category: 'business', integrations: ['gmail', 'google-calendar', 'slack'] },
+  { id: 'support',   label: 'Support',   desc: 'Customer support, triage', scope: [], category: 'business', integrations: ['slack', 'discord'] },
+  { id: 'analyst',   label: 'Analyst',   desc: 'Data analysis, reporting', scope: [], category: 'business', integrations: ['postgres', 'google-drive'] },
+  { id: 'home',      label: 'Home',      desc: 'Smart home automation', scope: [], category: 'business', integrations: ['home-assistant'] },
 ];
 
 const PERMISSION_LEVELS = [
@@ -43,11 +51,14 @@ export default function SpawnPanel() {
   const [showDirPicker, setShowDirPicker] = useState(false);
   const [installedSkills, setInstalledSkills] = useState([]);
   const [selectedSkills, setSelectedSkills] = useState([]);
+  const [installedIntegrations, setInstalledIntegrations] = useState([]);
+  const [selectedIntegrations, setSelectedIntegrations] = useState([]);
 
   useEffect(() => {
     fetchProviders();
     fetchWorkspaces();
     fetchInstalledSkills();
+    fetchInstalledIntegrations();
   }, []);
 
   async function fetchProviders() {
@@ -72,11 +83,35 @@ export default function SpawnPanel() {
     } catch { /* ignore */ }
   }
 
+  async function fetchInstalledIntegrations() {
+    try {
+      const res = await fetch('/api/integrations/installed');
+      setInstalledIntegrations(await res.json());
+    } catch { /* ignore */ }
+  }
+
   function toggleSkill(skillId) {
     setSelectedSkills((prev) =>
       prev.includes(skillId) ? prev.filter((s) => s !== skillId) : [...prev, skillId]
     );
   }
+
+  function toggleIntegration(integrationId) {
+    setSelectedIntegrations((prev) =>
+      prev.includes(integrationId) ? prev.filter((s) => s !== integrationId) : [...prev, integrationId]
+    );
+  }
+
+  // Auto-select integrations when a business role is chosen
+  useEffect(() => {
+    const preset = ROLE_PRESETS.find((p) => p.id === role);
+    if (preset?.integrations && installedIntegrations.length > 0) {
+      const autoSelect = preset.integrations.filter((id) =>
+        installedIntegrations.some((i) => i.id === id && i.configured)
+      );
+      setSelectedIntegrations(autoSelect);
+    }
+  }, [role, installedIntegrations]);
 
   const selectedPreset = ROLE_PRESETS.find((p) => p.id === role);
   const effectiveScope = role === 'custom'
@@ -144,6 +179,7 @@ export default function SpawnPanel() {
         permission,
         ...(workingDir.trim() ? { workingDir: workingDir.trim() } : {}),
         ...(selectedSkills.length > 0 ? { skills: selectedSkills } : {}),
+        ...(selectedIntegrations.length > 0 ? { integrations: selectedIntegrations } : {}),
       });
       closeDetail();
     } catch (err) {
@@ -297,6 +333,61 @@ export default function SpawnPanel() {
             </button>
           ))}
         </div>
+
+        {/* Integrations picker */}
+        {installedIntegrations.length > 0 && (
+          <>
+            <div style={styles.label}>INTEGRATIONS</div>
+            <div style={styles.skillsGrid}>
+              {installedIntegrations.map((item) => {
+                const active = selectedIntegrations.includes(item.id);
+                const ready = item.configured;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => ready && toggleIntegration(item.id)}
+                    title={ready ? item.description : 'Configure credentials first'}
+                    style={{
+                      ...styles.skillBtn,
+                      borderColor: active ? 'var(--accent)' : !ready ? 'var(--amber)' : 'var(--border)',
+                      background: active ? 'rgba(51, 175, 188, 0.08)' : 'var(--bg-surface)',
+                      opacity: ready ? 1 : 0.5,
+                      cursor: ready ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    <span style={{
+                      ...styles.skillIcon,
+                      background: active ? 'var(--accent)' : !ready ? 'var(--amber)' : 'var(--bg-active)',
+                      color: active ? 'var(--bg-base)' : 'var(--text-dim)',
+                    }}>
+                      {(item.name || '?').charAt(0)}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 11, fontWeight: 600,
+                        color: active ? 'var(--text-bright)' : 'var(--text-primary)',
+                      }}>
+                        {item.name}
+                      </div>
+                      <div style={{ fontSize: 9, color: ready ? 'var(--green)' : 'var(--amber)' }}>
+                        {ready ? 'connected' : 'needs setup'}
+                      </div>
+                    </div>
+                    {active && (
+                      <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>{'\u2713'}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedIntegrations.length > 0 && (
+              <div style={styles.hint}>
+                {selectedIntegrations.length} integration{selectedIntegrations.length !== 1 ? 's' : ''} will provide MCP tools to this agent
+              </div>
+            )}
+          </>
+        )}
 
         {/* Skills picker */}
         {installedSkills.length > 0 && (

@@ -444,6 +444,158 @@ export function createApi(app, daemon) {
     res.json({ id: agent.id, skills });
   });
 
+  // --- Integrations ---
+
+  app.get('/api/integrations/registry', async (req, res) => {
+    const integrations = await daemon.integrations.getRegistry({
+      search: req.query.search || '',
+      category: req.query.category || 'all',
+    });
+    res.json({
+      integrations,
+      categories: daemon.integrations.getCategories(),
+    });
+  });
+
+  app.get('/api/integrations/installed', (req, res) => {
+    res.json(daemon.integrations.getInstalled());
+  });
+
+  app.post('/api/integrations/:id/install', async (req, res) => {
+    try {
+      const result = await daemon.integrations.install(req.params.id);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/integrations/:id', async (req, res) => {
+    try {
+      const result = await daemon.integrations.uninstall(req.params.id);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/integrations/:id/status', (req, res) => {
+    const status = daemon.integrations.getStatus(req.params.id);
+    if (!status) return res.status(404).json({ error: 'Integration not found' });
+    res.json(status);
+  });
+
+  app.post('/api/integrations/:id/credentials', (req, res) => {
+    try {
+      const { key, value } = req.body || {};
+      if (!key || !value) return res.status(400).json({ error: 'key and value are required' });
+      daemon.integrations.setCredential(req.params.id, key, value);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/integrations/:id/credentials/:key', (req, res) => {
+    try {
+      daemon.integrations.deleteCredential(req.params.id, req.params.key);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // --- Agent Integrations (attach/detach) ---
+
+  app.post('/api/agents/:agentId/integrations/:integrationId', (req, res) => {
+    const agent = daemon.registry.get(req.params.agentId);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    const integrationId = req.params.integrationId;
+    if (!daemon.integrations._isInstalled(integrationId)) {
+      return res.status(400).json({ error: 'Integration not installed. Install it first.' });
+    }
+    const integrations = agent.integrations || [];
+    if (integrations.includes(integrationId)) {
+      return res.json({ id: agent.id, integrations });
+    }
+    daemon.registry.update(agent.id, { integrations: [...integrations, integrationId] });
+    daemon.audit.log('integration.attach', { agentId: agent.id, integrationId });
+    res.json({ id: agent.id, integrations: [...integrations, integrationId] });
+  });
+
+  app.delete('/api/agents/:agentId/integrations/:integrationId', (req, res) => {
+    const agent = daemon.registry.get(req.params.agentId);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    const integrations = (agent.integrations || []).filter((s) => s !== req.params.integrationId);
+    daemon.registry.update(agent.id, { integrations });
+    daemon.audit.log('integration.detach', { agentId: agent.id, integrationId: req.params.integrationId });
+    res.json({ id: agent.id, integrations });
+  });
+
+  // --- Schedules ---
+
+  app.get('/api/schedules', (req, res) => {
+    res.json(daemon.scheduler.list());
+  });
+
+  app.post('/api/schedules', (req, res) => {
+    try {
+      const schedule = daemon.scheduler.create(req.body);
+      res.status(201).json(schedule);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/schedules/:id', (req, res) => {
+    const schedule = daemon.scheduler.get(req.params.id);
+    if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
+    res.json(schedule);
+  });
+
+  app.patch('/api/schedules/:id', (req, res) => {
+    try {
+      const schedule = daemon.scheduler.update(req.params.id, req.body);
+      res.json(schedule);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/schedules/:id', (req, res) => {
+    try {
+      daemon.scheduler.delete(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/schedules/:id/enable', (req, res) => {
+    try {
+      res.json(daemon.scheduler.enable(req.params.id));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/schedules/:id/disable', (req, res) => {
+    try {
+      res.json(daemon.scheduler.disable(req.params.id));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/schedules/:id/run', async (req, res) => {
+    try {
+      const agent = await daemon.scheduler.run(req.params.id);
+      res.json({ ok: true, agentId: agent.id });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // --- Directory Browser ---
 
   app.get('/api/browse', (req, res) => {

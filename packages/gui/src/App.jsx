@@ -12,13 +12,17 @@ import TeamSelector from './components/TeamSelector';
 import CommandCenter from './views/CommandCenter';
 import ApprovalQueue from './components/ApprovalQueue';
 import SkillsMarketplace from './views/SkillsMarketplace';
+import IntegrationsStore from './views/IntegrationsStore';
+import ScheduleManager from './views/ScheduleManager';
 import FileEditor from './views/FileEditor';
 
 const TABS = [
   { id: 'agents', label: 'Agents' },
   { id: 'editor', label: 'Editor' },
+  { id: 'integrations', label: 'Integrations' },
   { id: 'skills', label: 'Skills' },
   { id: 'stats', label: 'Stats' },
+  { id: 'schedules', label: 'Schedules' },
   { id: 'teams', label: 'Teams' },
   { id: 'approvals', label: 'Approvals' },
 ];
@@ -143,8 +147,10 @@ export default function App() {
             !hasAgents ? <EmptyState /> : <AgentTree />
           )}
           {activeTab === 'editor' && <FileEditor />}
+          {activeTab === 'integrations' && <IntegrationsStore />}
           {activeTab === 'skills' && <SkillsMarketplace />}
           {activeTab === 'stats' && <CommandCenter />}
+          {activeTab === 'schedules' && <ScheduleManager />}
           {activeTab === 'teams' && <TeamSelector />}
           {activeTab === 'approvals' && <ApprovalQueue />}
         </main>

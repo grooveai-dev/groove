@@ -28,6 +28,8 @@ import { CodebaseIndexer } from './indexer.js';
 import { AuditLogger } from './audit.js';
 import { Federation } from './federation.js';
 import { SkillStore } from './skills.js';
+import { IntegrationStore } from './integrations.js';
+import { Scheduler } from './scheduler.js';
 import { FileWatcher } from './filewatcher.js';
 import { TerminalManager } from './terminal-pty.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
@@ -119,6 +121,8 @@ export class Daemon {
     this.audit = new AuditLogger(this.grooveDir);
     this.federation = new Federation(this);
     this.skills = new SkillStore(this);
+    this.integrations = new IntegrationStore(this);
+    this.scheduler = new Scheduler(this);
     this.fileWatcher = new FileWatcher(this);
     this.terminalManager = new TerminalManager(this);
 
@@ -276,6 +280,7 @@ export class Daemon {
         // Start background services
         this.journalist.start();
         this.rotator.start();
+        this.scheduler.start();
 
         // Scan codebase for workspace/structure awareness
         this.indexer.scan();
@@ -293,6 +298,7 @@ export class Daemon {
     // Stop background services
     this.journalist.stop();
     this.rotator.stop();
+    this.scheduler.stop();
 
     // Clean up file watchers and terminal sessions
     this.fileWatcher.unwatchAll();
@@ -309,6 +315,9 @@ export class Daemon {
     if (existsSync(hostFile)) {
       unlinkSync(hostFile);
     }
+
+    // Clean up MCP config (remove groove-* entries from .mcp.json)
+    this.integrations.cleanupMcpJson();
 
     // Clean up generated files
     const registryPath = resolve(this.projectDir, 'AGENTS_REGISTRY.md');

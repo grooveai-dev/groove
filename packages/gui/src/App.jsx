@@ -27,7 +27,24 @@ const TABS = [
   { id: 'approvals', label: 'Approvals' },
 ];
 
-export default function App() {
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return React.createElement('div', {
+        style: { padding: 40, color: '#e06c75', fontFamily: 'monospace', fontSize: 13, background: '#1e2127', height: '100vh' }
+      },
+        React.createElement('h2', { style: { color: '#e6e6e6' } }, 'GROOVE — Render Error'),
+        React.createElement('pre', { style: { whiteSpace: 'pre-wrap', marginTop: 16, color: '#e06c75' } }, this.state.error.message),
+        React.createElement('pre', { style: { whiteSpace: 'pre-wrap', marginTop: 8, color: '#7a8394', fontSize: 11 } }, this.state.error.stack),
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function AppInner() {
   const agents = useGrooveStore((s) => s.agents);
   const connected = useGrooveStore((s) => s.connected);
   const activeTab = useGrooveStore((s) => s.activeTab);
@@ -155,21 +172,27 @@ export default function App() {
           {activeTab === 'approvals' && <ApprovalQueue />}
         </main>
 
-        {/* Detail panel — in document flow */}
-        {detailPanel && (
+        {/* Detail panel — sidebar for agent/journalist */}
+        {detailPanel && detailPanel.type !== 'spawn' && (
           <aside style={{
             ...styles.detailPanel,
             width: detailPanel.type === 'agent' ? '45%' : 320,
           }}>
             <button onClick={closeDetail} style={styles.closeBtn}>x</button>
             {detailPanel.type === 'agent' && <AgentPanel />}
-            {detailPanel.type === 'spawn' && <SpawnPanel />}
             {detailPanel.type === 'journalist' && <JournalistFeed />}
           </aside>
         )}
+
+        {/* Spawn panel — full-screen overlay */}
+        {detailPanel?.type === 'spawn' && <SpawnPanel />}
       </div>
     </div>
   );
+}
+
+export default function App() {
+  return React.createElement(ErrorBoundary, null, React.createElement(AppInner));
 }
 
 const styles = {

@@ -380,10 +380,8 @@ export class IntegrationStore {
     if (!entry) throw new Error(`Integration not found: ${integrationId}`);
     if (entry.authType !== 'oauth-google') throw new Error('Integration does not use OAuth');
 
-    // Check if user has provided their own Google OAuth client (stored globally)
-    const clientId = this.getCredential('google-oauth', 'GOOGLE_CLIENT_ID');
-    const clientSecret = this.getCredential('google-oauth', 'GOOGLE_CLIENT_SECRET');
-    if (!clientId || !clientSecret) {
+    const creds = this._getGoogleOAuthCredentials();
+    if (!creds) {
       throw new Error('Google OAuth not configured. Set up your Google Cloud project first.');
     }
 
@@ -392,7 +390,7 @@ export class IntegrationStore {
     const scopes = entry.oauthScopes || [];
 
     const params = new URLSearchParams({
-      client_id: clientId,
+      client_id: creds.clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
       scope: scopes.join(' '),
@@ -408,11 +406,11 @@ export class IntegrationStore {
    * Handle OAuth callback — exchange code for tokens.
    */
   async handleOAuthCallback(code, integrationId) {
-    const clientId = this.getCredential('google-oauth', 'GOOGLE_CLIENT_ID');
-    const clientSecret = this.getCredential('google-oauth', 'GOOGLE_CLIENT_SECRET');
-    if (!clientId || !clientSecret) {
+    const creds = this._getGoogleOAuthCredentials();
+    if (!creds) {
       throw new Error('Google OAuth credentials not found');
     }
+    const { clientId, clientSecret } = creds;
 
     const port = this.daemon.port || 31415;
     const redirectUri = `http://localhost:${port}/api/integrations/oauth/callback`;
@@ -451,10 +449,32 @@ export class IntegrationStore {
   /**
    * Check if Google OAuth is configured (user has set up their Cloud project).
    */
+  /**
+   * Get Google OAuth credentials from user config OR bundled defaults.
+   * User-configured credentials take priority over bundled defaults.
+   */
+  _getGoogleOAuthCredentials() {
+    // 1. Check user-configured credentials (encrypted store)
+    let clientId = this.getCredential('google-oauth', 'GOOGLE_CLIENT_ID');
+    let clientSecret = this.getCredential('google-oauth', 'GOOGLE_CLIENT_SECRET');
+    if (clientId && clientSecret) return { clientId, clientSecret, source: 'user' };
+
+    // 2. Check bundled defaults (shipped with Groove)
+    try {
+      const defaultsPath = resolve(__dirname, '../google-oauth.json');
+      if (existsSync(defaultsPath)) {
+        const defaults = JSON.parse(readFileSync(defaultsPath, 'utf8'));
+        if (defaults.client_id && defaults.client_secret) {
+          return { clientId: defaults.client_id, clientSecret: defaults.client_secret, source: 'bundled' };
+        }
+      }
+    } catch { /* no bundled defaults */ }
+
+    return null;
+  }
+
   isGoogleOAuthConfigured() {
-    const clientId = this.getCredential('google-oauth', 'GOOGLE_CLIENT_ID');
-    const clientSecret = this.getCredential('google-oauth', 'GOOGLE_CLIENT_SECRET');
-    return !!(clientId && clientSecret);
+    return !!this._getGoogleOAuthCredentials();
   }
 
   /**
@@ -467,14 +487,18 @@ export class IntegrationStore {
     const entry = this.registry.find((s) => s.id === integrationId);
     if (!entry) throw new Error(`Integration not found: ${integrationId}`);
 
+    console.log(`[Groove:Integrations] authenticate(${integrationId}) — authType: ${entry.authType}`);
+
     // For google-autoauth integrations, write the gcp-oauth.keys.json file
     // that the MCP server expects before it can start the OAuth browser flow
     if (entry.authType === 'google-autoauth') {
+      console.log(`[Groove:Integrations] Writing gcp-oauth.keys.json for ${integrationId}`);
       this._writeGoogleOAuthKeys(entry);
     }
 
     const command = entry.command || 'npx';
     const args = entry.args || ['-y', entry.npmPackage];
+    console.log(`[Groove:Integrations] Spawning: ${command} ${args.join(' ')}`);
 
     // Build env with any configured credentials
     const env = {};
@@ -490,6 +514,8 @@ export class IntegrationStore {
       stdio: ['pipe', 'pipe', 'inherit'],
       detached: false,
     });
+
+    console.log(`[Groove:Integrations] Process spawned, PID: ${proc.pid}`);
 
     // Send MCP handshake to initialize the server — this triggers auth
     const initMsg = JSON.stringify({
@@ -507,27 +533,37 @@ export class IntegrationStore {
       jsonrpc: '2.0', method: 'notifications/initialized',
     });
 
-    // Wait a moment for npx to download + start, then send handshake
     proc.stdout.on('data', (chunk) => {
       const text = chunk.toString();
+      console.log(`[Groove:Integrations] MCP stdout: ${text.slice(0, 200)}`);
       // After initialize response, send initialized notification + tools/list
       if (text.includes('"id":1') || text.includes('"id": 1')) {
+        console.log('[Groove:Integrations] Got initialize response, sending initialized + tools/list');
         proc.stdin.write(initializedNotif + '\n');
         setTimeout(() => proc.stdin.write(listToolsMsg + '\n'), 500);
       }
     });
 
+    proc.on('error', (err) => {
+      console.log(`[Groove:Integrations] Process error: ${err.message}`);
+    });
+
+    proc.on('exit', (code, signal) => {
+      console.log(`[Groove:Integrations] Process exited: code=${code} signal=${signal}`);
+      clearTimeout(timeout);
+    });
+
     // Send initialize after a brief delay for npx startup
     setTimeout(() => {
-      try { proc.stdin.write(initMsg + '\n'); } catch { /* process may have exited */ }
+      console.log('[Groove:Integrations] Sending MCP initialize message');
+      try { proc.stdin.write(initMsg + '\n'); } catch (e) { console.log('[Groove:Integrations] stdin write failed:', e.message); }
     }, 3000);
 
-    // Auto-kill after 2 minutes (auth should complete well before that)
+    // Auto-kill after 2 minutes
     const timeout = setTimeout(() => {
+      console.log('[Groove:Integrations] Auth timeout — killing process');
       try { proc.kill('SIGTERM'); } catch { /* ignore */ }
     }, 120_000);
-
-    proc.on('exit', () => clearTimeout(timeout));
 
     this.daemon.audit.log('integration.authenticate', { id: integrationId });
 
@@ -543,11 +579,11 @@ export class IntegrationStore {
    * before they can open the browser for user consent.
    */
   _writeGoogleOAuthKeys(entry) {
-    const clientId = this.getCredential('google-oauth', 'GOOGLE_CLIENT_ID');
-    const clientSecret = this.getCredential('google-oauth', 'GOOGLE_CLIENT_SECRET');
-    if (!clientId || !clientSecret) {
-      throw new Error('Google OAuth not configured. Click "Sign in with Google" to set up your Google Cloud credentials first.');
+    const creds = this._getGoogleOAuthCredentials();
+    if (!creds) {
+      throw new Error('Google OAuth not configured. Set up your Google Cloud credentials first.');
     }
+    const { clientId, clientSecret } = creds;
 
     const keysContent = JSON.stringify({
       installed: {
@@ -567,6 +603,9 @@ export class IntegrationStore {
       mkdirSync(dirPath, { recursive: true });
       const keysPath = resolve(dirPath, 'gcp-oauth.keys.json');
       writeFileSync(keysPath, keysContent, { mode: 0o600 });
+      console.log(`[Groove:Integrations] Wrote OAuth keys to: ${keysPath}`);
+    } else {
+      console.log(`[Groove:Integrations] WARNING: No oauthKeysDir for ${entry.id}`);
     }
   }
 

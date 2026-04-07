@@ -84,6 +84,7 @@ function CredentialModal({ integration, onClose }) {
   const [googleClientId, setGoogleClientId] = useState('');
   const [googleClientSecret, setGoogleClientSecret] = useState('');
   const [showGoogleSetup, setShowGoogleSetup] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     if (integration?.authType === 'oauth-google' || integration?.authType === 'google-autoauth' || integration?._googleSetupNeeded) {
@@ -106,6 +107,7 @@ function CredentialModal({ integration, onClose }) {
   async function handleSave(key) {
     if (!values[key]) return;
     setSaving(true);
+    setErrorMsg('');
     try {
       const res = await fetch(`/api/integrations/${integration.id}/credentials`, {
         method: 'POST',
@@ -115,44 +117,61 @@ function CredentialModal({ integration, onClose }) {
       if (res.ok) {
         setSaved((prev) => ({ ...prev, [key]: true }));
         setValues((prev) => ({ ...prev, [key]: '' }));
+      } else {
+        const data = await res.json();
+        setErrorMsg(data.error || `Failed to save ${key}`);
       }
-    } catch { /* ignore */ }
+    } catch {
+      setErrorMsg('Could not reach the server');
+    }
     setSaving(false);
   }
 
   async function handleGoogleSetup() {
     if (!googleClientId || !googleClientSecret) return;
     setSaving(true);
+    setErrorMsg('');
     try {
-      await fetch('/api/integrations/google-oauth/setup', {
+      const res = await fetch('/api/integrations/google-oauth/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId: googleClientId, clientSecret: googleClientSecret }),
       });
-      setOauthStatus('ready');
-      setShowGoogleSetup(false);
-    } catch { /* ignore */ }
+      if (res.ok) {
+        setOauthStatus('ready');
+        setShowGoogleSetup(false);
+      } else {
+        const data = await res.json();
+        setErrorMsg(data.error || 'Failed to save credentials');
+      }
+    } catch {
+      setErrorMsg('Could not reach the server');
+    }
     setSaving(false);
   }
 
   async function handleAutoAuthConnect() {
     setOauthStatus('connecting');
+    setErrorMsg('');
     try {
       const res = await fetch(`/api/integrations/${integration.id}/authenticate`, { method: 'POST' });
       const data = await res.json();
-      if (!data.ok) {
+      if (data.ok) {
+        // MCP server spawned — it will open a browser for OAuth consent
+        setTimeout(() => onClose(), 3000);
+      } else {
+        setErrorMsg(data.error || 'Authentication failed');
         setOauthStatus('ready');
       }
-      // The MCP server will open a browser — poll isn't needed since
-      // the server handles auth internally. Just close after a moment.
-      setTimeout(() => onClose(), 2000);
     } catch {
+      setErrorMsg('Could not reach the server');
       setOauthStatus('ready');
     }
   }
 
   async function handleOAuthConnect() {
     setOauthStatus('connecting');
+    setErrorMsg('');
     try {
       const res = await fetch(`/api/integrations/${integration.id}/oauth/start`, { method: 'POST' });
       const data = await res.json();
@@ -172,8 +191,12 @@ function CredentialModal({ integration, onClose }) {
         }, 2000);
         // Stop polling after 5 minutes
         setTimeout(() => clearInterval(poll), 300000);
+      } else {
+        setErrorMsg(data.error || 'Failed to start OAuth flow');
+        setOauthStatus('ready');
       }
     } catch {
+      setErrorMsg('Could not reach the server');
       setOauthStatus('ready');
     }
   }
@@ -236,32 +259,59 @@ function CredentialModal({ integration, onClose }) {
             </a>
           )}
 
+          {/* Error message */}
+          {errorMsg && (
+            <div style={{
+              padding: '10px 14px', marginBottom: 14, borderRadius: 6,
+              background: 'rgba(224, 108, 117, 0.08)', border: '1px solid var(--red)',
+              fontSize: 11, color: 'var(--red)', lineHeight: 1.5,
+            }}>
+              {errorMsg}
+            </div>
+          )}
+
           {/* OAuth flow for Google integrations (both oauth-google and google-autoauth) */}
           {(isOAuth || isGoogleAutoAuth) && (
             <div style={{ marginBottom: 16 }}>
-              {/* Always show the primary Connect button */}
-              <button
-                onClick={oauthStatus === 'ready'
-                  ? (isGoogleAutoAuth ? handleAutoAuthConnect : handleOAuthConnect)
-                  : () => setShowGoogleSetup(true)}
-                disabled={oauthStatus === 'checking' || oauthStatus === 'connecting'}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  width: '100%', padding: '12px 16px', marginBottom: 12,
-                  background: oauthStatus === 'connecting' ? 'var(--bg-active)' : '#4285f4',
-                  color: '#fff', border: 'none', borderRadius: 6,
-                  fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                  fontFamily: 'var(--font)',
-                  opacity: oauthStatus === 'checking' ? 0.5 : 1,
-                }}
-              >
-                {oauthStatus === 'checking' ? 'Checking...'
-                  : oauthStatus === 'connecting' ? 'Waiting for authorization...'
-                  : `Connect with Google`}
-              </button>
+              {/* Show Connect button only when OAuth is configured */}
+              {oauthStatus === 'ready' && (
+                <button
+                  onClick={isGoogleAutoAuth ? handleAutoAuthConnect : handleOAuthConnect}
+                  disabled={oauthStatus === 'connecting'}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    width: '100%', padding: '12px 16px', marginBottom: 12,
+                    background: '#4285f4',
+                    color: '#fff', border: 'none', borderRadius: 6,
+                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    fontFamily: 'var(--font)',
+                  }}
+                >
+                  Connect with Google
+                </button>
+              )}
+              {oauthStatus === 'checking' && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  padding: '12px 16px', marginBottom: 12,
+                  color: 'var(--text-muted)', fontSize: 12,
+                }}>
+                  Checking Google credentials...
+                </div>
+              )}
+              {oauthStatus === 'connecting' && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  padding: '12px 16px', marginBottom: 12,
+                  background: 'var(--bg-active)', borderRadius: 6,
+                  color: 'var(--text-primary)', fontSize: 12, fontWeight: 600,
+                }}>
+                  Waiting for authorization — check your browser...
+                </div>
+              )}
 
-              {/* First-time setup: show inline when Connect is clicked and OAuth not configured */}
-              {showGoogleSetup && oauthStatus === 'not-configured' && (
+              {/* First-time setup: shown when OAuth not configured */}
+              {oauthStatus === 'not-configured' && (
                 <div style={{
                   padding: 14, borderRadius: 8,
                   background: 'var(--bg-surface)', border: '1px solid var(--border)',
@@ -707,26 +757,42 @@ export default function IntegrationsStore() {
   async function handleInstall(id) {
     setInstalling(id);
     try {
-      await fetch(`/api/integrations/${id}/install`, { method: 'POST' });
+      const res = await fetch(`/api/integrations/${id}/install`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        flash(data.error || 'Install failed', 'error');
+        setInstalling(null);
+        return;
+      }
       await fetchIntegrations();
       // After install, refresh selected item
       if (selectedItem?.id === id) {
         const updated = integrations.find((s) => s.id === id);
         if (updated) setSelectedItem({ ...updated, installed: true });
       }
-    } catch { /* ignore */ }
+    } catch (err) {
+      flash('Install failed — check daemon logs', 'error');
+    }
     setInstalling(null);
   }
 
   async function handleUninstall(id) {
     setInstalling(id);
     try {
-      await fetch(`/api/integrations/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/integrations/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        flash(data.error || 'Uninstall failed', 'error');
+        setInstalling(null);
+        return;
+      }
       await fetchIntegrations();
       if (selectedItem?.id === id) {
         setSelectedItem((prev) => prev ? { ...prev, installed: false, configured: false } : null);
       }
-    } catch { /* ignore */ }
+    } catch {
+      flash('Uninstall failed', 'error');
+    }
     setInstalling(null);
   }
 
@@ -746,31 +812,38 @@ export default function IntegrationsStore() {
         const statusRes = await fetch('/api/integrations/google-oauth/status');
         const statusData = await statusRes.json();
         if (!statusData.configured) {
-          // Need Google OAuth setup first — open the credential modal
+          // Need Google OAuth setup first — open the credential modal with setup form
           setSelectedItem(null);
           setConfiguring({ ...item, _googleSetupNeeded: true });
           return;
         }
-      } catch { /* proceed anyway */ }
+      } catch {
+        // Can't check status — open setup form as fallback
+        setSelectedItem(null);
+        setConfiguring({ ...item, _googleSetupNeeded: true });
+        return;
+      }
     }
 
+    // OAuth is configured — trigger the authentication flow
     setSelectedItem(null);
+    setConfiguring({ ...item }); // Show credential modal in connecting state
     try {
       const res = await fetch(`/api/integrations/${item.id}/authenticate`, { method: 'POST' });
       const data = await res.json();
       if (data.ok) {
         flash('Sign-in window opened — check your browser');
       } else {
-        flash(data.error || 'Authentication failed');
+        flash(data.error || 'Authentication failed', 'error');
       }
     } catch {
-      flash('Authentication failed');
+      flash('Authentication failed — check daemon logs', 'error');
     }
   }
 
-  function flash(msg) {
-    setStatusMsg(msg);
-    setTimeout(() => setStatusMsg(''), 4000);
+  function flash(msg, type = 'info') {
+    setStatusMsg({ text: msg, type });
+    setTimeout(() => setStatusMsg(''), 6000);
   }
 
   function handleConfigureClose() {
@@ -821,8 +894,12 @@ export default function IntegrationsStore() {
 
       {/* Status message */}
       {statusMsg && (
-        <div style={{ padding: '4px 20px', fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>
-          {statusMsg}
+        <div style={{
+          padding: '8px 20px', fontSize: 12, fontWeight: 500, flexShrink: 0,
+          color: statusMsg.type === 'error' ? 'var(--red)' : 'var(--accent)',
+          background: statusMsg.type === 'error' ? 'rgba(224, 108, 117, 0.06)' : 'transparent',
+        }}>
+          {statusMsg.text || statusMsg}
         </div>
       )}
 

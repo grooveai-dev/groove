@@ -351,6 +351,18 @@ export function createApi(app, daemon) {
     });
   });
 
+  // Quick AI query (used by plan chat in spawn panel)
+  app.post('/api/journalist/query', async (req, res) => {
+    try {
+      const { prompt } = req.body || {};
+      if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+      const response = await daemon.journalist._callAI(prompt);
+      res.json({ response });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Trigger journalist cycle manually
   app.post('/api/journalist/cycle', async (req, res) => {
     try {
@@ -507,11 +519,13 @@ export function createApi(app, daemon) {
   // Parameterized :id routes (after specific routes above)
 
   app.post('/api/integrations/:id/authenticate', (req, res) => {
+    console.log(`[Groove:API] POST /api/integrations/${req.params.id}/authenticate`);
     try {
       const handle = daemon.integrations.authenticate(req.params.id);
+      console.log(`[Groove:API] Authenticate started, PID: ${handle.pid}`);
       res.json({ ok: true, pid: handle.pid });
-      // Auto-cleanup tracked by the handle timeout
     } catch (err) {
+      console.log(`[Groove:API] Authenticate error: ${err.message}`);
       res.status(400).json({ error: err.message });
     }
   });

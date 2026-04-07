@@ -1,12 +1,11 @@
-// GROOVE GUI — Spawn Panel (detail sidebar)
+// GROOVE GUI — Spawn Panel (full-screen agent configurator)
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGrooveStore } from '../stores/groove';
 import DirPicker from './DirPicker';
 
 const ROLE_PRESETS = [
-  // Coding roles
   { id: 'backend',   label: 'Backend',   desc: 'APIs, server logic, database', scope: ['src/api/**', 'src/server/**', 'src/lib/**', 'src/db/**'], category: 'coding' },
   { id: 'frontend',  label: 'Frontend',  desc: 'UI components, views, styles', scope: ['src/components/**', 'src/views/**', 'src/pages/**', 'src/styles/**'], category: 'coding' },
   { id: 'fullstack', label: 'Fullstack', desc: 'Full codebase access', scope: [], category: 'coding' },
@@ -14,7 +13,6 @@ const ROLE_PRESETS = [
   { id: 'testing',   label: 'Testing',   desc: 'Tests, specs, coverage', scope: ['tests/**', 'test/**', '**/*.test.*', '**/*.spec.*'], category: 'coding' },
   { id: 'devops',    label: 'DevOps',    desc: 'Docker, CI/CD, infra', scope: ['Dockerfile*', 'docker-compose*', '.github/**', 'infra/**'], category: 'coding' },
   { id: 'docs',      label: 'Docs',      desc: 'Documentation, READMEs', scope: ['docs/**', '*.md'], category: 'coding' },
-  // Business roles
   { id: 'cmo',       label: 'CMO',       desc: 'Marketing, social media, content', scope: [], category: 'business', integrations: ['slack', 'brave-search'] },
   { id: 'cfo',       label: 'CFO',       desc: 'Finance, billing, revenue', scope: [], category: 'business', integrations: ['stripe', 'google-drive'] },
   { id: 'ea',        label: 'EA',        desc: 'Scheduling, email, comms', scope: [], category: 'business', integrations: ['gmail', 'google-calendar', 'slack'] },
@@ -24,14 +22,25 @@ const ROLE_PRESETS = [
 ];
 
 const PERMISSION_LEVELS = [
-  { id: 'auto', label: 'Auto', desc: 'AI PM reviews risky operations before they happen', icon: '~' },
-  { id: 'full', label: 'Full Send', desc: 'No reviews, maximum speed', icon: '>' },
+  { id: 'auto', label: 'Auto', desc: 'AI PM reviews risky operations', icon: '~' },
+  { id: 'full', label: 'Full Send', desc: 'No reviews, max speed', icon: '>' },
+];
+
+const CRON_PRESETS = [
+  { value: '*/30 * * * *', label: 'Every 30 min' },
+  { value: '0 * * * *', label: 'Every hour' },
+  { value: '0 */6 * * *', label: 'Every 6 hours' },
+  { value: '0 9 * * *', label: 'Daily 9 AM' },
+  { value: '0 9 * * 1-5', label: 'Weekdays 9 AM' },
+  { value: '0 0 * * 1', label: 'Weekly Mon' },
+  { value: '0 0 1 * *', label: 'Monthly' },
 ];
 
 export default function SpawnPanel() {
   const spawnAgent = useGrooveStore((s) => s.spawnAgent);
   const closeDetail = useGrooveStore((s) => s.closeDetail);
 
+  // Config state
   const [role, setRole] = useState('');
   const [customRole, setCustomRole] = useState('');
   const [scope, setScope] = useState('');
@@ -54,6 +63,18 @@ export default function SpawnPanel() {
   const [installedIntegrations, setInstalledIntegrations] = useState([]);
   const [selectedIntegrations, setSelectedIntegrations] = useState([]);
 
+  // Schedule state
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduleCron, setScheduleCron] = useState('0 9 * * *');
+  const [scheduleName, setScheduleName] = useState('');
+
+  // Plan chat state
+  const [planMode, setPlanMode] = useState(false);
+  const [planMessages, setPlanMessages] = useState([]);
+  const [planInput, setPlanInput] = useState('');
+  const [planLoading, setPlanLoading] = useState(false);
+  const chatEndRef = useRef(null);
+
   useEffect(() => {
     fetchProviders();
     fetchWorkspaces();
@@ -61,48 +82,26 @@ export default function SpawnPanel() {
     fetchInstalledIntegrations();
   }, []);
 
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [planMessages, planLoading]);
+
   async function fetchProviders() {
-    try {
-      const res = await fetch('/api/providers');
-      setProviderList(await res.json());
-    } catch { /* ignore */ }
+    try { const res = await fetch('/api/providers'); setProviderList(await res.json()); } catch { /* */ }
   }
-
   async function fetchWorkspaces() {
-    try {
-      const res = await fetch('/api/indexer/workspaces');
-      const data = await res.json();
-      setWorkspaces(data.workspaces || []);
-    } catch { /* ignore */ }
+    try { const res = await fetch('/api/indexer/workspaces'); const d = await res.json(); setWorkspaces(d.workspaces || []); } catch { /* */ }
   }
-
   async function fetchInstalledSkills() {
-    try {
-      const res = await fetch('/api/skills/installed');
-      setInstalledSkills(await res.json());
-    } catch { /* ignore */ }
+    try { const res = await fetch('/api/skills/installed'); setInstalledSkills(await res.json()); } catch { /* */ }
   }
-
   async function fetchInstalledIntegrations() {
-    try {
-      const res = await fetch('/api/integrations/installed');
-      setInstalledIntegrations(await res.json());
-    } catch { /* ignore */ }
+    try { const res = await fetch('/api/integrations/installed'); setInstalledIntegrations(await res.json()); } catch { /* */ }
   }
 
-  function toggleSkill(skillId) {
-    setSelectedSkills((prev) =>
-      prev.includes(skillId) ? prev.filter((s) => s !== skillId) : [...prev, skillId]
-    );
-  }
+  function toggleSkill(id) { setSelectedSkills((p) => p.includes(id) ? p.filter((s) => s !== id) : [...p, id]); }
+  function toggleIntegration(id) { setSelectedIntegrations((p) => p.includes(id) ? p.filter((s) => s !== id) : [...p, id]); }
 
-  function toggleIntegration(integrationId) {
-    setSelectedIntegrations((prev) =>
-      prev.includes(integrationId) ? prev.filter((s) => s !== integrationId) : [...prev, integrationId]
-    );
-  }
-
-  // Auto-select integrations when a business role is chosen
   useEffect(() => {
     const preset = ROLE_PRESETS.find((p) => p.id === role);
     if (preset?.integrations && installedIntegrations.length > 0) {
@@ -114,23 +113,14 @@ export default function SpawnPanel() {
   }, [role, installedIntegrations]);
 
   const selectedPreset = ROLE_PRESETS.find((p) => p.id === role);
-  const effectiveScope = role === 'custom'
-    ? scope
-    : selectedPreset?.scope.join(', ') || '';
-
+  const effectiveScope = role === 'custom' ? scope : selectedPreset?.scope.join(', ') || '';
   const isPlanner = role === 'planner';
 
   function handleProviderClick(p) {
     if (p.installed && (p.authType === 'subscription' || p.authType === 'local' || p.hasKey)) {
-      // Ready to use
-      setProvider(p.id);
-      setModel('auto');
-      setConnectingProvider(null);
-      return;
+      setProvider(p.id); setModel('auto'); setConnectingProvider(null); return;
     }
-    // Needs setup — expand connection flow
-    setConnectingProvider(p.id);
-    setApiKeyInput('');
+    setConnectingProvider(p.id); setApiKeyInput('');
   }
 
   async function handleSaveKey() {
@@ -138,55 +128,13 @@ export default function SpawnPanel() {
     setKeySaving(true);
     try {
       await fetch(`/api/credentials/${connectingProvider}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: apiKeyInput.trim() }),
       });
-      setApiKeyInput('');
-      setConnectingProvider(null);
-      setProvider(connectingProvider);
-      setModel('auto');
-      await fetchProviders(); // Refresh to show updated hasKey status
-    } catch {
-      // ignore
-    }
+      setApiKeyInput(''); setConnectingProvider(null); setProvider(connectingProvider); setModel('auto');
+      await fetchProviders();
+    } catch { /* */ }
     setKeySaving(false);
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    const finalRole = role === 'custom' ? customRole : role;
-    if (!finalRole) { setError('Select a role'); return; }
-
-    setSubmitting(true);
-    setError('');
-
-    try {
-      const scopeArr = effectiveScope
-        ? effectiveScope.split(',').map((s) => s.trim()).filter(Boolean)
-        : [];
-
-      const finalPrompt = prompt || null;
-      // Role-specific prompt prefixes (e.g., planner constraints) are now
-      // applied daemon-side in process.js for consistency across all spawn paths
-
-      await spawnAgent({
-        role: finalRole,
-        scope: scopeArr,
-        prompt: finalPrompt,
-        model: model || 'auto',
-        provider,
-        permission,
-        ...(workingDir.trim() ? { workingDir: workingDir.trim() } : {}),
-        ...(selectedSkills.length > 0 ? { skills: selectedSkills } : {}),
-        ...(selectedIntegrations.length > 0 ? { integrations: selectedIntegrations } : {}),
-      });
-      closeDetail();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
   }
 
   function getProviderStatus(p) {
@@ -196,572 +144,683 @@ export default function SpawnPanel() {
     if (p.authType === 'local') return 'local';
     return 'ready';
   }
-
   function isProviderReady(p) {
     if (!p.installed) return false;
     if (p.authType === 'api-key' && !p.hasKey) return false;
     return true;
   }
 
+  // --- Plan chat ---
+  async function handlePlanSend() {
+    if (!planInput.trim() || planLoading) return;
+    const userMsg = planInput.trim();
+    setPlanInput('');
+    setPlanMessages((prev) => [...prev, { from: 'user', text: userMsg }]);
+    setPlanLoading(true);
+
+    try {
+      const finalRole = role === 'custom' ? customRole : role;
+      const context = [
+        finalRole ? `Agent role: ${finalRole}` : null,
+        prompt ? `Current task prompt: ${prompt}` : null,
+        'Help the user plan and refine the task for this AI agent. Be concise, practical, and suggest a clear task description they can use as the prompt.',
+      ].filter(Boolean).join('\n');
+
+      const history = planMessages.map((m) => `${m.from === 'user' ? 'User' : 'AI'}: ${m.text}`).join('\n');
+      const res = await fetch('/api/journalist/query', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: `${context}\n\n${history}\nUser: ${userMsg}\n\nRespond helpfully:` }),
+      });
+      const data = await res.json();
+      setPlanMessages((prev) => [...prev, { from: 'ai', text: data.response || data.error || 'No response' }]);
+    } catch {
+      setPlanMessages((prev) => [...prev, { from: 'ai', text: 'Failed to reach AI. Write your prompt directly.' }]);
+    }
+    setPlanLoading(false);
+  }
+
+  function applyPlanToPrompt() {
+    const parts = planMessages.map((m) => `${m.from === 'user' ? '## Goal' : '## AI Guidance'}\n${m.text}`);
+    setPrompt(parts.join('\n\n'));
+    setPlanMode(false);
+  }
+
+  // --- Submit ---
+  async function handleSubmit(e) {
+    e.preventDefault();
+    const finalRole = role === 'custom' ? customRole : role;
+    if (!finalRole) { setError('Select a role'); return; }
+    setSubmitting(true); setError('');
+
+    try {
+      const scopeArr = effectiveScope ? effectiveScope.split(',').map((s) => s.trim()).filter(Boolean) : [];
+      const agentConfig = {
+        role: finalRole, scope: scopeArr, prompt: prompt || null,
+        model: model || 'auto', provider, permission,
+        ...(workingDir.trim() ? { workingDir: workingDir.trim() } : {}),
+        ...(selectedSkills.length > 0 ? { skills: selectedSkills } : {}),
+        ...(selectedIntegrations.length > 0 ? { integrations: selectedIntegrations } : {}),
+      };
+
+      if (scheduleEnabled) {
+        await fetch('/api/schedules', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: scheduleName.trim() || `${finalRole}-schedule`,
+            cron: scheduleCron,
+            agentConfig: { role: finalRole, prompt: prompt || null },
+          }),
+        });
+      }
+      await spawnAgent(agentConfig);
+      closeDetail();
+    } catch (err) { setError(err.message); }
+    finally { setSubmitting(false); }
+  }
+
+  // ========== RENDER ==========
+
   return (
-    <div style={{ paddingTop: 4 }}>
-      <div style={styles.title}>SPAWN AGENT</div>
-
-      <form onSubmit={handleSubmit}>
-        {/* Role picker */}
-        <div style={styles.label}>ROLE</div>
-        <div style={styles.roleGrid}>
-          {ROLE_PRESETS.map((preset) => (
+    <div style={S.overlay}>
+      <div style={S.container}>
+        {/* Header bar */}
+        <div style={S.header}>
+          <div style={S.headerTitle}>Spawn Agent</div>
+          <div style={S.headerRight}>
+            {error && <span style={S.headerError}>{error}</span>}
             <button
-              key={preset.id}
-              type="button"
-              onClick={() => setRole(preset.id)}
-              style={{
-                ...styles.roleBtn,
-                ...(role === preset.id ? styles.roleBtnActive : {}),
-              }}
-              title={preset.desc}
+              onClick={handleSubmit}
+              disabled={submitting || !role}
+              style={{ ...S.spawnBtn, opacity: submitting || !role ? 0.4 : 1 }}
             >
-              {preset.label}
+              {submitting ? 'Spawning...'
+                : scheduleEnabled ? 'Spawn + Schedule'
+                : isPlanner ? 'Start Planning' : 'Spawn Agent'}
             </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => setRole('custom')}
-            style={{
-              ...styles.roleBtn,
-              ...(role === 'custom' ? styles.roleBtnActive : {}),
-            }}
-          >
-            Custom
-          </button>
+            <button onClick={closeDetail} style={S.closeBtn}>&times;</button>
+          </div>
         </div>
 
-        {selectedPreset && (
-          <div style={styles.roleDesc}>{selectedPreset.desc}</div>
-        )}
-
-        {role === 'custom' && (
-          <input
-            style={{ ...styles.input, marginTop: 6 }}
-            placeholder="Custom role name..."
-            value={customRole}
-            onChange={(e) => setCustomRole(e.target.value)}
-            autoFocus
-          />
-        )}
-
-        {/* Prompt */}
-        <div style={styles.label}>
-          {isPlanner ? 'WHAT TO PLAN' : 'TASK PROMPT'}
-        </div>
-        <textarea
-          style={styles.textarea}
-          placeholder={isPlanner
-            ? 'What should this agent research or plan?'
-            : 'What should this agent work on?'}
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          rows={3}
-        />
-
-        {/* Directory picker */}
-        <div style={styles.label}>DIRECTORY</div>
-        <div style={styles.wsRow}>
-          <button
-            type="button"
-            onClick={() => setWorkingDir('')}
-            style={{
-              ...styles.wsBtn,
-              ...(!workingDir ? { borderColor: 'var(--accent)', color: 'var(--text-bright)' } : {}),
-            }}
-          >
-            project root
-          </button>
-          {workspaces.map((ws) => (
-            <button
-              key={ws.path}
-              type="button"
-              onClick={() => setWorkingDir(ws.path)}
-              style={{
-                ...styles.wsBtn,
-                ...(workingDir === ws.path ? { borderColor: 'var(--accent)', color: 'var(--text-bright)' } : {}),
-              }}
-              title={`${ws.name} (${ws.files} files)`}
-            >
-              {ws.path}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => setShowDirPicker(true)}
-            style={styles.browseBtn}
-          >
-            Browse...
-          </button>
-        </div>
-        {workingDir && (
-          <div style={styles.hint}>{workingDir}</div>
-        )}
-
-        {showDirPicker && (
-          <DirPicker
-            initial={workingDir}
-            onSelect={(path) => setWorkingDir(path)}
-            onClose={() => setShowDirPicker(false)}
-          />
-        )}
-
-        {/* Permissions */}
-        <div style={styles.label}>PERMISSIONS</div>
-        <div style={styles.permGrid}>
-          {PERMISSION_LEVELS.map((perm) => (
-            <button
-              key={perm.id}
-              type="button"
-              onClick={() => setPermission(perm.id)}
-              style={{
-                ...styles.permBtn,
-                ...(permission === perm.id ? styles.permBtnActive : {}),
-              }}
-            >
-              <span style={styles.permIcon}>{perm.icon}</span>
-              <div>
-                <div style={styles.permLabel}>{perm.label}</div>
-                <div style={styles.permDesc}>{perm.desc}</div>
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {/* Integrations picker */}
-        {installedIntegrations.length > 0 && (
-          <>
-            <div style={styles.label}>INTEGRATIONS</div>
-            <div style={styles.skillsGrid}>
-              {installedIntegrations.map((item) => {
-                const active = selectedIntegrations.includes(item.id);
-                const ready = item.configured;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => ready && toggleIntegration(item.id)}
-                    title={ready ? item.description : 'Configure credentials first'}
-                    style={{
-                      ...styles.skillBtn,
-                      borderColor: active ? 'var(--accent)' : !ready ? 'var(--amber)' : 'var(--border)',
-                      background: active ? 'rgba(51, 175, 188, 0.08)' : 'var(--bg-surface)',
-                      opacity: ready ? 1 : 0.5,
-                      cursor: ready ? 'pointer' : 'not-allowed',
-                    }}
-                  >
-                    <span style={{
-                      ...styles.skillIcon,
-                      background: active ? 'var(--accent)' : !ready ? 'var(--amber)' : 'var(--bg-active)',
-                      color: active ? 'var(--bg-base)' : 'var(--text-dim)',
-                    }}>
-                      {(item.name || '?').charAt(0)}
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        fontSize: 11, fontWeight: 600,
-                        color: active ? 'var(--text-bright)' : 'var(--text-primary)',
-                      }}>
-                        {item.name}
-                      </div>
-                      <div style={{ fontSize: 9, color: ready ? 'var(--green)' : 'var(--amber)' }}>
-                        {ready ? 'connected' : 'needs setup'}
-                      </div>
-                    </div>
-                    {active && (
-                      <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>{'\u2713'}</span>
-                    )}
+        {/* Two-panel body */}
+        <div style={S.body}>
+          {/* LEFT — Config */}
+          <div style={S.left}>
+            <div style={S.leftScroll}>
+              {/* Roles */}
+              <Section label="Role">
+                <div style={S.roleGrid}>
+                  {ROLE_PRESETS.filter((p) => p.category === 'coding').map((p) => (
+                    <RoleBtn key={p.id} preset={p} active={role === p.id} onClick={() => setRole(p.id)} />
+                  ))}
+                </div>
+                <div style={{ ...S.sectionSub, marginTop: 8 }}>Business</div>
+                <div style={S.roleGrid}>
+                  {ROLE_PRESETS.filter((p) => p.category === 'business').map((p) => (
+                    <RoleBtn key={p.id} preset={p} active={role === p.id} onClick={() => setRole(p.id)} />
+                  ))}
+                  <button type="button" onClick={() => setRole('custom')}
+                    style={{ ...S.roleBtn, ...(role === 'custom' ? S.roleBtnActive : {}) }}>
+                    Custom
                   </button>
-                );
-              })}
+                </div>
+                {role === 'custom' && (
+                  <input style={{ ...S.input, marginTop: 6 }} placeholder="Custom role name..."
+                    value={customRole} onChange={(e) => setCustomRole(e.target.value)} autoFocus />
+                )}
+                {selectedPreset && <div style={S.hint}>{selectedPreset.desc}</div>}
+              </Section>
+
+              {/* Directory */}
+              <Section label="Directory">
+                <div style={S.chipRow}>
+                  <Chip label="project root" active={!workingDir} onClick={() => setWorkingDir('')} />
+                  {workspaces.map((ws) => (
+                    <Chip key={ws.path} label={ws.path} active={workingDir === ws.path}
+                      onClick={() => setWorkingDir(ws.path)} />
+                  ))}
+                  <button type="button" onClick={() => setShowDirPicker(true)} style={S.browseBtn}>Browse...</button>
+                </div>
+                {showDirPicker && (
+                  <DirPicker initial={workingDir} onSelect={(p) => setWorkingDir(p)} onClose={() => setShowDirPicker(false)} />
+                )}
+              </Section>
+
+              {/* Permissions */}
+              <Section label="Permissions">
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {PERMISSION_LEVELS.map((perm) => (
+                    <button key={perm.id} type="button" onClick={() => setPermission(perm.id)}
+                      style={{ ...S.permBtn, ...(permission === perm.id ? S.permBtnActive : {}) }}>
+                      <span style={S.permIcon}>{perm.icon}</span>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: permission === perm.id ? 'var(--text-bright)' : 'var(--text-primary)' }}>{perm.label}</div>
+                        <div style={{ fontSize: 9, color: 'var(--text-dim)' }}>{perm.desc}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </Section>
+
+              {/* Integrations */}
+              {installedIntegrations.length > 0 && (
+                <Section label={`Integrations (${selectedIntegrations.length})`}>
+                  <div style={S.itemList}>
+                    {installedIntegrations.map((item) => {
+                      const active = selectedIntegrations.includes(item.id);
+                      const ready = item.configured;
+                      return (
+                        <ItemBtn key={item.id} name={item.name} active={active}
+                          sub={ready ? 'connected' : 'needs setup'} subColor={ready ? 'var(--green)' : 'var(--amber)'}
+                          disabled={!ready} onClick={() => ready && toggleIntegration(item.id)} />
+                      );
+                    })}
+                  </div>
+                </Section>
+              )}
+
+              {/* Skills */}
+              {installedSkills.length > 0 && (
+                <Section label={`Skills (${selectedSkills.length})`}>
+                  <div style={S.itemList}>
+                    {installedSkills.map((skill) => {
+                      const active = selectedSkills.includes(skill.id);
+                      return (
+                        <ItemBtn key={skill.id} name={skill.name} active={active}
+                          sub={skill.author || 'local'} onClick={() => toggleSkill(skill.id)} />
+                      );
+                    })}
+                  </div>
+                </Section>
+              )}
+
+              {/* Schedule */}
+              <Section label="Schedule">
+                <button type="button" onClick={() => setScheduleEnabled(!scheduleEnabled)}
+                  style={{ ...S.toggleBtn, borderColor: scheduleEnabled ? 'var(--accent)' : 'var(--border)' }}>
+                  <span style={{ ...S.checkbox, background: scheduleEnabled ? 'var(--accent)' : 'transparent',
+                    borderColor: scheduleEnabled ? 'var(--accent)' : 'var(--border)' }}>
+                    {scheduleEnabled ? '\u2713' : ''}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text-primary)' }}>Recurring schedule</span>
+                </button>
+                {scheduleEnabled && (
+                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <input style={S.input} placeholder={`${role || 'agent'}-daily`}
+                      value={scheduleName} onChange={(e) => setScheduleName(e.target.value)} />
+                    <div style={S.chipRow}>
+                      {CRON_PRESETS.map((c) => (
+                        <Chip key={c.value} label={c.label} active={scheduleCron === c.value}
+                          onClick={() => setScheduleCron(c.value)} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </Section>
+
+              {/* Advanced */}
+              <button type="button" onClick={() => setShowAdvanced(!showAdvanced)} style={S.advToggle}>
+                {showAdvanced ? '- hide advanced' : '+ advanced'}
+              </button>
+              {showAdvanced && (
+                <>
+                  <Section label="Provider">
+                    {providerList.map((p) => {
+                      const ready = isProviderReady(p);
+                      const status = getProviderStatus(p);
+                      const isSelected = provider === p.id;
+                      const isConnecting = connectingProvider === p.id;
+                      return (
+                        <div key={p.id} style={{ marginBottom: 3 }}>
+                          <button type="button" onClick={() => handleProviderClick(p)}
+                            style={{ ...S.providerBtn, borderColor: isSelected ? 'var(--accent)' : 'var(--border)', opacity: ready || isConnecting ? 1 : 0.5 }}>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: isSelected ? 'var(--text-bright)' : 'var(--text-primary)' }}>{p.name}</span>
+                            <span style={{ fontSize: 10, color: ready ? 'var(--green)' : 'var(--text-dim)', marginLeft: 'auto' }}>{ready ? (isSelected ? 'active' : 'ready') : status}</span>
+                          </button>
+                          {isConnecting && (
+                            <div style={S.connectBox}>
+                              {!p.installed && <div><code style={S.code}>{p.installCommand}</code></div>}
+                              {p.installed && p.authType === 'api-key' && !p.hasKey && (
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                  <input type="password" style={{ ...S.input, flex: 1 }} placeholder={`${p.envKey || 'API key'}...`}
+                                    value={apiKeyInput} onChange={(e) => setApiKeyInput(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleSaveKey()} />
+                                  <button type="button" onClick={handleSaveKey} style={S.saveKeyBtn}>{keySaving ? '...' : 'Save'}</button>
+                                </div>
+                              )}
+                              <button type="button" onClick={() => setConnectingProvider(null)} style={S.cancelBtn}>cancel</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </Section>
+                  <Section label="Model">
+                    {(() => {
+                      const models = providerList.find((p) => p.id === provider)?.models || [];
+                      if (!models.length) return <div style={S.hint}>Select a provider first</div>;
+                      return (
+                        <select style={S.input} value={model} onChange={(e) => setModel(e.target.value)}>
+                          <option value="auto">Auto (recommended)</option>
+                          {models.map((m) => <option key={m.id} value={m.id}>{m.name} ({m.tier})</option>)}
+                        </select>
+                      );
+                    })()}
+                  </Section>
+                  <Section label="File Scope">
+                    <input style={S.input} placeholder="e.g. src/api/**, src/lib/**"
+                      value={role === 'custom' ? scope : effectiveScope}
+                      onChange={(e) => { if (role === 'custom') setScope(e.target.value); }}
+                      readOnly={role !== 'custom'} />
+                    <div style={S.hint}>{role === 'custom' ? 'Comma-separated glob patterns' : 'Auto-set by role'}</div>
+                  </Section>
+                </>
+              )}
             </div>
-            {selectedIntegrations.length > 0 && (
-              <div style={styles.hint}>
-                {selectedIntegrations.length} integration{selectedIntegrations.length !== 1 ? 's' : ''} will provide MCP tools to this agent
-              </div>
-            )}
-          </>
-        )}
+          </div>
 
-        {/* Skills picker */}
-        {installedSkills.length > 0 && (
-          <>
-            <div style={styles.label}>SKILLS</div>
-            <div style={styles.skillsGrid}>
-              {installedSkills.map((skill) => {
-                const active = selectedSkills.includes(skill.id);
-                return (
-                  <button
-                    key={skill.id}
-                    type="button"
-                    onClick={() => toggleSkill(skill.id)}
-                    style={{
-                      ...styles.skillBtn,
-                      borderColor: active ? 'var(--accent)' : 'var(--border)',
-                      background: active ? 'rgba(51, 175, 188, 0.08)' : 'var(--bg-surface)',
-                    }}
-                  >
-                    <span style={{
-                      ...styles.skillIcon,
-                      background: active ? 'var(--accent)' : 'var(--bg-active)',
-                      color: active ? 'var(--bg-base)' : 'var(--text-dim)',
-                    }}>
-                      {skill.icon || skill.name.charAt(0)}
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        fontSize: 11, fontWeight: 600,
-                        color: active ? 'var(--text-bright)' : 'var(--text-primary)',
-                      }}>
-                        {skill.name}
-                      </div>
-                      <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>
-                        {skill.author || 'local'}
-                      </div>
-                    </div>
-                    {active && (
-                      <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>{'\u2713'}</span>
-                    )}
+          {/* RIGHT — Prompt + Plan chat */}
+          <div style={S.right}>
+            {!planMode ? (
+              /* Prompt-only mode */
+              <div style={S.promptPanel}>
+                <div style={S.promptHeader}>
+                  <span style={S.promptLabel}>{isPlanner ? 'WHAT TO PLAN' : 'TASK PROMPT'}</span>
+                  <button type="button" onClick={() => setPlanMode(true)} style={S.planBtn}>
+                    Plan with AI
                   </button>
-                );
-              })}
-            </div>
-            {selectedSkills.length > 0 && (
-              <div style={styles.hint}>
-                {selectedSkills.length} skill{selectedSkills.length !== 1 ? 's' : ''} will be injected into this agent's context
+                </div>
+                <textarea
+                  style={S.promptArea}
+                  placeholder={isPlanner
+                    ? 'What should this agent research or plan?\n\nBe specific about scope, constraints, and expected output...'
+                    : 'Describe the task in detail.\n\nThe more context you provide here, the fewer iterations the agent will need. Include:\n- What to build or change\n- Key requirements and constraints\n- Expected behavior or output\n- Any files or areas to focus on'}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                />
               </div>
-            )}
-          </>
-        )}
-
-        {/* Advanced toggle */}
-        <button
-          type="button"
-          onClick={() => setShowAdvanced(!showAdvanced)}
-          style={styles.advancedToggle}
-        >
-          {showAdvanced ? '- hide advanced' : '+ advanced options'}
-        </button>
-
-        {showAdvanced && (
-          <>
-            {/* Provider selector with connection flow */}
-            <div style={styles.label}>PROVIDER</div>
-            {providerList.map((p) => {
-              const ready = isProviderReady(p);
-              const status = getProviderStatus(p);
-              const isSelected = provider === p.id;
-              const isConnecting = connectingProvider === p.id;
-
-              return (
-                <div key={p.id} style={{ marginBottom: 2 }}>
-                  <button
-                    type="button"
-                    onClick={() => handleProviderClick(p)}
-                    style={{
-                      ...styles.providerBtn,
-                      borderColor: isSelected ? 'var(--accent)' : 'var(--border)',
-                      opacity: ready || isConnecting ? 1 : 0.6,
-                    }}
-                  >
-                    <div style={{ flex: 1 }}>
-                      <span style={{
-                        fontSize: 12, fontWeight: 600,
-                        color: isSelected ? 'var(--text-bright)' : 'var(--text-primary)',
-                      }}>
-                        {p.name}
-                      </span>
-                      <span style={styles.providerModels}>
-                        {p.models.map((m) => m.name).join(', ')}
-                      </span>
-                    </div>
-                    <span style={{
-                      fontSize: 10,
-                      color: ready ? 'var(--green)' : status === 'not installed' ? 'var(--text-muted)' : 'var(--amber)',
-                    }}>
-                      {ready ? (isSelected ? 'active' : 'ready') : status}
-                    </span>
-                  </button>
-
-                  {/* Connection flow — inline expand */}
-                  {isConnecting && (
-                    <div style={styles.connectBox}>
-                      {!p.installed && (
-                        <div>
-                          <div style={styles.connectLabel}>Install first:</div>
-                          <code style={styles.connectCode}>{p.installCommand}</code>
-                          <div style={styles.connectHint}>Run this in your terminal, then click the provider again</div>
-                        </div>
-                      )}
-                      {p.installed && p.authType === 'api-key' && !p.hasKey && (
-                        <div>
-                          <div style={styles.connectLabel}>
-                            API Key {p.envKey ? `(${p.envKey})` : ''}
-                          </div>
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            <input
-                              type="password"
-                              style={styles.input}
-                              placeholder="sk-..."
-                              value={apiKeyInput}
-                              onChange={(e) => setApiKeyInput(e.target.value)}
-                              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleSaveKey())}
-                            />
-                            <button
-                              type="button"
-                              onClick={handleSaveKey}
-                              disabled={keySaving || !apiKeyInput.trim()}
-                              style={styles.connectSaveBtn}
-                            >
-                              {keySaving ? '...' : 'Save'}
-                            </button>
-                          </div>
-                          <div style={styles.connectHint}>
-                            Encrypted locally. Never sent to GROOVE servers.
-                          </div>
-                        </div>
-                      )}
-                      {p.installed && p.authType === 'subscription' && (
-                        <div>
-                          <div style={styles.connectLabel}>Subscription auth</div>
-                          <div style={styles.connectHint}>
-                            {p.name} uses your existing subscription. Make sure you're logged in via the CLI.
-                          </div>
-                        </div>
-                      )}
-                      {p.installed && p.authType === 'local' && (
-                        <div>
-                          <div style={styles.connectLabel}>Local model</div>
-                          <div style={styles.connectHint}>
-                            Make sure {p.name} is running locally. No API key needed.
-                          </div>
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setConnectingProvider(null)}
-                        style={styles.connectCancel}
-                      >
-                        cancel
+            ) : (
+              /* Plan chat mode */
+              <div style={S.chatPanel}>
+                <div style={S.chatHeader}>
+                  <span style={S.chatTitle}>Plan with AI</span>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {planMessages.length > 0 && (
+                      <button type="button" onClick={applyPlanToPrompt} style={S.usePlanBtn}>
+                        Use as Prompt
                       </button>
+                    )}
+                    <button type="button" onClick={() => setPlanMode(false)} style={S.closePlanBtn}>
+                      Back to Prompt
+                    </button>
+                  </div>
+                </div>
+                <div style={S.chatMessages}>
+                  {planMessages.length === 0 && (
+                    <div style={S.chatEmpty}>
+                      <div style={{ fontSize: 14, marginBottom: 8 }}>Discuss your idea before spawning</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.6 }}>
+                        Describe what you want this agent to accomplish. AI will help you
+                        refine the plan, identify edge cases, and craft a solid prompt.
+                        {role && <><br />Role: <strong>{role === 'custom' ? customRole : role}</strong></>}
+                      </div>
                     </div>
                   )}
+                  {planMessages.map((msg, i) => (
+                    <div key={i} style={{
+                      ...S.chatBubble,
+                      ...(msg.from === 'user' ? S.chatUser : S.chatAI),
+                    }}>
+                      <div style={S.chatFrom}>{msg.from === 'user' ? 'You' : 'AI'}</div>
+                      <div style={S.chatText}>{msg.text}</div>
+                    </div>
+                  ))}
+                  {planLoading && (
+                    <div style={{ ...S.chatBubble, ...S.chatAI }}>
+                      <div style={S.chatFrom}>AI</div>
+                      <div style={{ ...S.chatText, fontStyle: 'italic', color: 'var(--text-dim)' }}>Thinking...</div>
+                    </div>
+                  )}
+                  <div ref={chatEndRef} />
                 </div>
-              );
-            })}
-
-            {/* Model selector */}
-            {(() => {
-              const currentProvider = providerList.find((p) => p.id === provider);
-              const models = currentProvider?.models || [];
-              if (models.length === 0) return null;
-              return (
-                <>
-                  <div style={styles.label}>MODEL</div>
-                  <select
-                    style={styles.input}
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                  >
-                    <option value="auto">Auto (recommended)</option>
-                    {models.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} ({m.tier})
-                      </option>
-                    ))}
-                  </select>
-                </>
-              );
-            })()}
-
-            {/* Scope */}
-            <div style={styles.label}>FILE SCOPE</div>
-            <input
-              style={styles.input}
-              placeholder="e.g. src/api/**, src/lib/**"
-              value={role === 'custom' ? scope : effectiveScope}
-              onChange={(e) => { if (role === 'custom') setScope(e.target.value); }}
-              readOnly={role !== 'custom'}
-            />
-            <div style={styles.hint}>
-              {role === 'custom'
-                ? 'Comma-separated glob patterns'
-                : 'Auto-set by role preset'}
-            </div>
-          </>
-        )}
-
-        {error && <div style={styles.error}>{error}</div>}
-
-        <button
-          type="submit"
-          disabled={submitting}
-          style={{
-            ...styles.submitBtn,
-            opacity: submitting ? 0.5 : 1,
-          }}
-        >
-          {submitting ? 'spawning...' : isPlanner ? 'Start Planning' : 'Spawn Agent'}
-        </button>
-      </form>
+                <div style={S.chatInputBar}>
+                  <input
+                    style={S.chatInput}
+                    placeholder="Describe your idea, ask questions, refine the plan..."
+                    value={planInput}
+                    onChange={(e) => setPlanInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePlanSend(); } }}
+                    autoFocus
+                  />
+                  <button type="button" onClick={handlePlanSend}
+                    disabled={planLoading || !planInput.trim()}
+                    style={{ ...S.sendBtn, opacity: planLoading || !planInput.trim() ? 0.3 : 1 }}>
+                    Send
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-const styles = {
-  title: {
-    fontSize: 11, fontWeight: 600, color: 'var(--text-dim)',
-    textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 14,
+// --- Small reusable components ---
+
+function Section({ label, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={S.sectionLabel}>{label}</div>
+      {children}
+    </div>
+  );
+}
+
+function RoleBtn({ preset, active, onClick }) {
+  return (
+    <button type="button" onClick={onClick} title={preset.desc}
+      style={{ ...S.roleBtn, ...(active ? S.roleBtnActive : {}) }}>
+      {preset.label}
+    </button>
+  );
+}
+
+function Chip({ label, active, onClick }) {
+  return (
+    <button type="button" onClick={onClick}
+      style={{ ...S.chip, ...(active ? { borderColor: 'var(--accent)', color: 'var(--text-bright)' } : {}) }}>
+      {label}
+    </button>
+  );
+}
+
+function ItemBtn({ name, active, sub, subColor, disabled, onClick }) {
+  return (
+    <button type="button" onClick={onClick}
+      style={{
+        ...S.itemBtn, borderColor: active ? 'var(--accent)' : 'var(--border)',
+        background: active ? 'rgba(51, 175, 188, 0.08)' : 'var(--bg-surface)',
+        opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'pointer',
+      }}>
+      <span style={{ ...S.itemIcon, background: active ? 'var(--accent)' : 'var(--bg-active)', color: active ? 'var(--bg-base)' : 'var(--text-dim)' }}>
+        {name.charAt(0)}
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: active ? 'var(--text-bright)' : 'var(--text-primary)' }}>{name}</div>
+        {sub && <div style={{ fontSize: 9, color: subColor || 'var(--text-dim)' }}>{sub}</div>}
+      </div>
+      {active && <span style={{ fontSize: 10, color: 'var(--accent)' }}>{'\u2713'}</span>}
+    </button>
+  );
+}
+
+// --- Styles ---
+
+const S = {
+  // Overlay
+  overlay: {
+    position: 'fixed', inset: 0, zIndex: 900,
+    background: 'rgba(0, 0, 0, 0.7)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    backdropFilter: 'blur(4px)',
   },
-  label: {
-    fontSize: 11, color: 'var(--text-dim)',
-    marginBottom: 4, marginTop: 12,
-    textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 600,
+  container: {
+    width: '92vw', height: '88vh', maxWidth: 1200,
+    background: 'var(--bg-base)', border: '1px solid var(--border)',
+    borderRadius: 10, display: 'flex', flexDirection: 'column',
+    overflow: 'hidden',
+  },
+
+  // Header
+  header: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '12px 20px', borderBottom: '1px solid var(--border)',
+    background: 'var(--bg-chrome)', flexShrink: 0,
+  },
+  headerTitle: {
+    fontSize: 15, fontWeight: 700, color: 'var(--text-bright)', letterSpacing: 0.3,
+  },
+  headerRight: {
+    display: 'flex', alignItems: 'center', gap: 12,
+  },
+  headerError: {
+    fontSize: 11, color: 'var(--red)', maxWidth: 300, overflow: 'hidden',
+    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  spawnBtn: {
+    padding: '8px 24px', background: 'var(--accent)', color: 'var(--bg-base)',
+    border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 700,
+    cursor: 'pointer', fontFamily: 'var(--font)', letterSpacing: 0.3,
+  },
+  closeBtn: {
+    background: 'none', border: 'none', color: 'var(--text-muted)',
+    fontSize: 22, cursor: 'pointer', padding: '0 4px', fontFamily: 'var(--font)',
+  },
+
+  // Body
+  body: {
+    flex: 1, display: 'flex', overflow: 'hidden',
+  },
+
+  // Left panel
+  left: {
+    width: 340, flexShrink: 0, borderRight: '1px solid var(--border)',
+    background: 'var(--bg-chrome)', display: 'flex', flexDirection: 'column',
+  },
+  leftScroll: {
+    flex: 1, overflowY: 'auto', padding: '16px 18px',
+  },
+
+  // Right panel
+  right: {
+    flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  },
+
+  // Prompt mode
+  promptPanel: {
+    flex: 1, display: 'flex', flexDirection: 'column', padding: 20,
+  },
+  promptHeader: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  promptLabel: {
+    fontSize: 11, fontWeight: 700, color: 'var(--text-dim)',
+    textTransform: 'uppercase', letterSpacing: 1.5,
+  },
+  planBtn: {
+    padding: '6px 16px', background: 'transparent',
+    border: '1px solid var(--accent)', borderRadius: 4,
+    color: 'var(--accent)', fontSize: 12, fontWeight: 600,
+    cursor: 'pointer', fontFamily: 'var(--font)',
+  },
+  promptArea: {
+    flex: 1, width: '100%', background: 'var(--bg-surface)',
+    border: '1px solid var(--border)', borderRadius: 6,
+    padding: '14px 16px', color: 'var(--text-primary)',
+    fontSize: 13, lineHeight: 1.7, outline: 'none',
+    fontFamily: 'var(--font)', resize: 'none',
+  },
+
+  // Chat mode
+  chatPanel: {
+    flex: 1, display: 'flex', flexDirection: 'column',
+  },
+  chatHeader: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '10px 20px', borderBottom: '1px solid var(--border)',
+    background: 'var(--bg-chrome)', flexShrink: 0,
+  },
+  chatTitle: {
+    fontSize: 12, fontWeight: 700, color: 'var(--accent)',
+    textTransform: 'uppercase', letterSpacing: 1,
+  },
+  usePlanBtn: {
+    padding: '4px 12px', background: 'var(--accent)', color: 'var(--bg-base)',
+    border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 600,
+    cursor: 'pointer', fontFamily: 'var(--font)',
+  },
+  closePlanBtn: {
+    padding: '4px 12px', background: 'transparent', color: 'var(--text-muted)',
+    border: '1px solid var(--border)', borderRadius: 4,
+    fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font)',
+  },
+  chatMessages: {
+    flex: 1, overflowY: 'auto', padding: '20px 24px',
+    display: 'flex', flexDirection: 'column', gap: 16,
+  },
+  chatEmpty: {
+    textAlign: 'center', padding: '60px 40px',
+    color: 'var(--text-muted)', fontFamily: 'var(--font)',
+  },
+  chatBubble: {
+    maxWidth: '80%', padding: '10px 16px', borderRadius: 10,
+    fontSize: 13, lineHeight: 1.6,
+  },
+  chatUser: {
+    alignSelf: 'flex-end', background: 'var(--accent)', color: 'var(--bg-base)',
+    borderBottomRightRadius: 2,
+  },
+  chatAI: {
+    alignSelf: 'flex-start', background: 'var(--bg-surface)',
+    border: '1px solid var(--border)', color: 'var(--text-primary)',
+    borderBottomLeftRadius: 2,
+  },
+  chatFrom: {
+    fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+    letterSpacing: 0.8, marginBottom: 4, opacity: 0.6,
+  },
+  chatText: {
+    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+  },
+  chatInputBar: {
+    display: 'flex', gap: 8, padding: '12px 20px',
+    borderTop: '1px solid var(--border)', background: 'var(--bg-chrome)',
+    flexShrink: 0,
+  },
+  chatInput: {
+    flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    borderRadius: 6, padding: '10px 14px', color: 'var(--text-primary)',
+    fontSize: 13, outline: 'none', fontFamily: 'var(--font)',
+  },
+  sendBtn: {
+    padding: '10px 20px', background: 'var(--accent)', color: 'var(--bg-base)',
+    border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600,
+    cursor: 'pointer', fontFamily: 'var(--font)',
+  },
+
+  // Shared form styles
+  sectionLabel: {
+    fontSize: 10, fontWeight: 700, color: 'var(--text-dim)',
+    textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 6,
+  },
+  sectionSub: {
+    fontSize: 9, fontWeight: 600, color: 'var(--text-muted)',
+    textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4,
   },
   roleGrid: {
-    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4,
+    display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4,
   },
   roleBtn: {
     background: 'var(--bg-surface)', border: '1px solid var(--border)',
-    borderRadius: 2, padding: '6px 4px',
+    borderRadius: 4, padding: '6px 4px',
     color: 'var(--text-primary)', fontSize: 11, cursor: 'pointer',
-    fontFamily: 'var(--font)',
-    transition: 'color 0.1s, border-color 0.1s',
+    fontFamily: 'var(--font)', transition: 'all 0.1s',
   },
   roleBtnActive: {
-    borderColor: 'var(--accent)',
-    color: 'var(--text-bright)',
+    borderColor: 'var(--accent)', color: 'var(--text-bright)',
+    background: 'rgba(51, 175, 188, 0.08)',
   },
-  roleDesc: {
-    fontSize: 10, color: 'var(--text-dim)', marginTop: 4, fontStyle: 'italic',
+  chipRow: {
+    display: 'flex', flexWrap: 'wrap', gap: 4,
   },
-  permGrid: {
-    display: 'flex', flexDirection: 'column', gap: 4,
-  },
-  permBtn: {
-    display: 'flex', alignItems: 'center', gap: 10,
-    padding: '8px 10px', width: '100%',
+  chip: {
     background: 'var(--bg-surface)', border: '1px solid var(--border)',
-    borderRadius: 2, cursor: 'pointer', textAlign: 'left',
+    borderRadius: 3, padding: '3px 8px',
+    color: 'var(--text-dim)', fontSize: 10, cursor: 'pointer',
     fontFamily: 'var(--font)',
   },
-  permBtnActive: {
-    borderColor: 'var(--accent)',
+  browseBtn: {
+    background: 'var(--bg-surface)', border: '1px solid var(--accent)',
+    borderRadius: 3, padding: '3px 10px',
+    color: 'var(--accent)', fontSize: 10, fontWeight: 600,
+    cursor: 'pointer', fontFamily: 'var(--font)',
   },
+  permBtn: {
+    flex: 1, display: 'flex', alignItems: 'center', gap: 8,
+    padding: '8px 10px', background: 'var(--bg-surface)',
+    border: '1px solid var(--border)', borderRadius: 4,
+    cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font)',
+  },
+  permBtnActive: { borderColor: 'var(--accent)' },
   permIcon: {
     fontSize: 14, fontWeight: 700, color: 'var(--accent)',
     width: 18, textAlign: 'center', flexShrink: 0,
   },
-  permLabel: {
-    fontSize: 11, color: 'var(--text-bright)', fontWeight: 600,
-  },
-  permDesc: {
-    fontSize: 10, color: 'var(--text-dim)',
-  },
-  skillsGrid: {
-    display: 'flex', flexDirection: 'column', gap: 3,
-  },
-  skillBtn: {
+  itemList: { display: 'flex', flexDirection: 'column', gap: 3 },
+  itemBtn: {
     display: 'flex', alignItems: 'center', gap: 8,
-    padding: '6px 8px', width: '100%',
-    border: '1px solid var(--border)',
-    borderRadius: 2, cursor: 'pointer', textAlign: 'left',
-    fontFamily: 'var(--font)',
-    transition: 'border-color 0.1s, background 0.1s',
+    padding: '5px 8px', width: '100%',
+    border: '1px solid var(--border)', borderRadius: 3,
+    cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font)',
+    transition: 'border-color 0.1s',
   },
-  skillIcon: {
-    width: 22, height: 22, borderRadius: 4,
+  itemIcon: {
+    width: 20, height: 20, borderRadius: 4,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: 10, fontWeight: 700, flexShrink: 0,
+    fontSize: 9, fontWeight: 700, flexShrink: 0,
   },
-  advancedToggle: {
+  toggleBtn: {
+    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+    padding: '6px 8px', background: 'var(--bg-surface)',
+    border: '1px solid var(--border)', borderRadius: 3,
+    cursor: 'pointer', fontFamily: 'var(--font)',
+  },
+  checkbox: {
+    width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+    border: '2px solid var(--border)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    color: 'var(--bg-base)', fontSize: 9, fontWeight: 700,
+  },
+  advToggle: {
     background: 'none', border: 'none', color: 'var(--text-dim)',
     fontSize: 10, cursor: 'pointer', fontFamily: 'var(--font)',
-    padding: '8px 0', marginTop: 8,
+    padding: '6px 0', marginBottom: 4,
   },
   providerBtn: {
     width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-    padding: '8px 10px',
-    background: 'var(--bg-surface)', border: '1px solid var(--border)',
-    borderRadius: 2, cursor: 'pointer', textAlign: 'left',
-    fontFamily: 'var(--font)',
-  },
-  providerModels: {
-    fontSize: 10, color: 'var(--text-dim)', marginLeft: 6,
+    padding: '6px 10px', background: 'var(--bg-surface)',
+    border: '1px solid var(--border)', borderRadius: 3,
+    cursor: 'pointer', fontFamily: 'var(--font)',
   },
   connectBox: {
-    padding: '8px 10px', margin: '2px 0 4px',
-    background: 'var(--bg-base)', border: '1px solid var(--border)',
-    borderRadius: 2,
+    padding: '6px 10px', margin: '2px 0 4px',
+    background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 3,
   },
-  connectLabel: {
-    fontSize: 11, color: 'var(--text-primary)', fontWeight: 600, marginBottom: 4,
-  },
-  connectCode: {
-    display: 'block', padding: '6px 8px',
+  code: {
+    display: 'block', padding: '4px 8px',
     background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 2,
     fontSize: 11, color: 'var(--accent)', wordBreak: 'break-all',
   },
-  connectHint: {
-    fontSize: 10, color: 'var(--text-dim)', marginTop: 4,
+  saveKeyBtn: {
+    padding: '6px 12px', background: 'transparent',
+    border: '1px solid var(--accent)', borderRadius: 3,
+    color: 'var(--accent)', fontSize: 11, fontWeight: 600,
+    cursor: 'pointer', fontFamily: 'var(--font)',
   },
-  connectSaveBtn: {
-    padding: '6px 12px', flexShrink: 0,
-    background: 'transparent', border: '1px solid var(--accent)',
-    borderRadius: 2, color: 'var(--accent)', fontSize: 11, fontWeight: 600,
-    fontFamily: 'var(--font)', cursor: 'pointer',
-  },
-  connectCancel: {
+  cancelBtn: {
     background: 'none', border: 'none', color: 'var(--text-dim)',
     fontSize: 10, cursor: 'pointer', fontFamily: 'var(--font)',
     padding: '4px 0', marginTop: 4,
   },
   input: {
     width: '100%', background: 'var(--bg-surface)', border: '1px solid var(--border)',
-    borderRadius: 2, padding: '6px 8px',
+    borderRadius: 3, padding: '6px 8px',
     color: 'var(--text-primary)', fontSize: 12, outline: 'none',
     fontFamily: 'var(--font)',
-  },
-  textarea: {
-    width: '100%', background: 'var(--bg-surface)', border: '1px solid var(--border)',
-    borderRadius: 2, padding: '6px 8px',
-    color: 'var(--text-primary)', fontSize: 12, outline: 'none',
-    fontFamily: 'var(--font)', resize: 'vertical',
   },
   hint: {
     fontSize: 10, color: 'var(--text-dim)', marginTop: 3,
-  },
-  wsRow: {
-    display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6,
-  },
-  wsBtn: {
-    background: 'var(--bg-surface)', border: '1px solid var(--border)',
-    borderRadius: 2, padding: '3px 8px',
-    color: 'var(--text-dim)', fontSize: 10, cursor: 'pointer',
-    fontFamily: 'var(--font)',
-    transition: 'color 0.1s, border-color 0.1s',
-  },
-  browseBtn: {
-    background: 'var(--bg-surface)', border: '1px solid var(--accent)',
-    borderRadius: 2, padding: '3px 10px',
-    color: 'var(--accent)', fontSize: 10, fontWeight: 600, cursor: 'pointer',
-    fontFamily: 'var(--font)',
-  },
-  error: {
-    color: 'var(--red)', fontSize: 11, marginTop: 8,
-  },
-  submitBtn: {
-    width: '100%', marginTop: 14, padding: '8px',
-    background: 'transparent', border: '1px solid var(--accent)',
-    borderRadius: 2,
-    color: 'var(--accent)', fontSize: 12, fontWeight: 600,
-    fontFamily: 'var(--font)',
-    cursor: 'pointer',
   },
 };

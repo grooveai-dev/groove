@@ -1,0 +1,5 @@
+{
+  "client_id": "",
+  "client_secret": "",
+  "_comment": "Fill in with your Google Cloud OAuth Desktop App credentials. One-time setup — all Google integrations (Gmail, Calendar, Drive) use these."
+}

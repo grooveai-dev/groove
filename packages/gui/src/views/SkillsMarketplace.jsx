@@ -29,6 +29,36 @@ const SORT_OPTIONS = [
   { id: 'name', label: 'A\u2013Z' },
 ];
 
+// Trust tiers for verification badges
+function getVerification(skill) {
+  if (skill.source === 'claude-official') return { label: 'Anthropic', color: '#d4a574', bg: 'rgba(212, 165, 116, 0.12)' };
+  if (skill.source === 'groove-official') return { label: 'Groove', color: 'var(--accent)', bg: 'rgba(51, 175, 188, 0.12)' };
+  if (skill.verified) return { label: 'Verified', color: 'var(--green)', bg: 'rgba(74, 225, 104, 0.10)' };
+  return null;
+}
+
+function VerifiedBadge({ skill, size = 'small' }) {
+  const v = getVerification(skill);
+  if (!v) return null;
+  const isSmall = size === 'small';
+  return (
+    <span
+      title={`${v.label} — Verified publisher`}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 3,
+        fontSize: isSmall ? 9 : 10, fontWeight: 600,
+        color: v.color, background: v.bg,
+        padding: isSmall ? '1px 6px' : '2px 8px',
+        borderRadius: 3, letterSpacing: 0.3,
+        flexShrink: 0, cursor: 'default',
+      }}
+    >
+      <span style={{ fontSize: isSmall ? 8 : 10, lineHeight: 1 }}>{'\u2713'}</span>
+      {v.label}
+    </span>
+  );
+}
+
 function formatDownloads(n) {
   if (!n) return '0';
   if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
@@ -66,8 +96,11 @@ function SkillDetailModal({ skill, content, installing, onInstall, onUninstall, 
   return (
     <div style={modal.overlay} onClick={onClose}>
       <div style={modal.container} onClick={(e) => e.stopPropagation()}>
-        {/* Close */}
-        <button onClick={onClose} style={modal.closeBtn}>&times;</button>
+        {/* Top bar with close */}
+        <div style={modal.topBar}>
+          <VerifiedBadge skill={skill} size="large" />
+          <button onClick={onClose} style={modal.closeBtn}>&times;</button>
+        </div>
 
         {/* Header */}
         <div style={modal.header}>
@@ -83,9 +116,6 @@ function SkillDetailModal({ skill, content, installing, onInstall, onUninstall, 
             <div style={modal.name}>{skill.name}</div>
             <div style={modal.author}>
               by {skill.author}
-              {skill.source === 'claude-official' && (
-                <span style={modal.verifiedBadge} title="Official">&#10003;</span>
-              )}
             </div>
             <div style={modal.meta}>
               {skill.rating > 0 && (
@@ -104,30 +134,32 @@ function SkillDetailModal({ skill, content, installing, onInstall, onUninstall, 
               </span>
             </div>
           </div>
-          <div style={modal.headerAction}>
-            {skill.installed ? (
-              <button
-                onClick={() => onUninstall(skill.id)}
-                disabled={installing === skill.id}
-                style={modal.uninstallBtn}
-              >
-                {installing === skill.id ? 'Removing...' : 'Uninstall'}
-              </button>
-            ) : (
-              <button
-                onClick={() => onInstall(skill.id)}
-                disabled={installing === skill.id}
-                style={skill.price > 0 ? modal.buyBtn : modal.installBtn}
-              >
-                {installing === skill.id
-                  ? 'Installing...'
-                  : skill.price > 0
-                    ? `$${skill.price.toFixed(2)}`
-                    : 'Install'}
-              </button>
-            )}
-            {skill.price === 0 && <div style={modal.freeLabel}>Free</div>}
-          </div>
+        </div>
+
+        {/* Action bar — install/uninstall below header, full width */}
+        <div style={modal.actionBar}>
+          {skill.installed ? (
+            <button
+              onClick={() => onUninstall(skill.id)}
+              disabled={installing === skill.id}
+              style={modal.uninstallBtn}
+            >
+              {installing === skill.id ? 'Removing...' : 'Uninstall'}
+            </button>
+          ) : (
+            <button
+              onClick={() => onInstall(skill.id)}
+              disabled={installing === skill.id}
+              style={skill.price > 0 ? modal.buyBtn : modal.installBtn}
+            >
+              {installing === skill.id
+                ? 'Installing...'
+                : skill.price > 0
+                  ? `$${skill.price.toFixed(2)}`
+                  : 'Install'}
+            </button>
+          )}
+          {skill.price === 0 && !skill.installed && <span style={modal.freeLabel}>Free</span>}
         </div>
 
         {/* Description */}
@@ -226,7 +258,10 @@ function FeaturedBanner({ skills, onSelect }) {
             </div>
             <div style={styles.featuredInfo}>
               <div style={styles.featuredName}>{skill.name}</div>
-              <div style={styles.featuredAuthor}>{skill.author}</div>
+              <div style={styles.featuredAuthorRow}>
+                <span style={styles.featuredAuthor}>{skill.author}</span>
+                <VerifiedBadge skill={skill} />
+              </div>
               <div style={styles.featuredDesc}>{skill.description}</div>
               <div style={styles.featuredMeta}>
                 {skill.rating > 0 && (
@@ -276,13 +311,11 @@ function SkillCard({ skill, onSelect, hovered, onHover }) {
           {skill.icon || skill.name.charAt(0)}
         </div>
         <div style={styles.cardInfo}>
-          <div style={styles.cardName}>
-            {skill.name}
-            {skill.source === 'claude-official' && (
-              <span style={styles.verifiedDot} title="Official">{'\u2713'}</span>
-            )}
+          <div style={styles.cardName}>{skill.name}</div>
+          <div style={styles.cardAuthorRow}>
+            <span style={styles.cardAuthor}>{skill.author}</span>
+            <VerifiedBadge skill={skill} />
           </div>
-          <div style={styles.cardAuthor}>{skill.author}</div>
         </div>
         {skill.installed && (
           <div style={styles.installedBadge}>installed</div>
@@ -655,8 +688,11 @@ const styles = {
   featuredName: {
     fontSize: 13, fontWeight: 700, color: 'var(--text-bright)',
   },
+  featuredAuthorRow: {
+    display: 'flex', alignItems: 'center', gap: 6, marginTop: 2,
+  },
   featuredAuthor: {
-    fontSize: 10, color: 'var(--text-muted)', marginTop: 1,
+    fontSize: 10, color: 'var(--text-muted)',
   },
   featuredDesc: {
     fontSize: 10, color: 'var(--text-dim)', marginTop: 6,
@@ -705,13 +741,12 @@ const styles = {
   },
   cardName: {
     fontSize: 12, fontWeight: 600, color: 'var(--text-bright)',
-    display: 'flex', alignItems: 'center', gap: 4,
   },
-  verifiedDot: {
-    fontSize: 9, color: 'var(--accent)', fontWeight: 700,
+  cardAuthorRow: {
+    display: 'flex', alignItems: 'center', gap: 6, marginTop: 2,
   },
   cardAuthor: {
-    fontSize: 10, color: 'var(--text-muted)', marginTop: 1,
+    fontSize: 10, color: 'var(--text-muted)',
   },
   installedBadge: {
     fontSize: 8, fontWeight: 600, color: 'var(--green)',
@@ -768,18 +803,30 @@ const modal = {
     width: '90%', maxWidth: 560, maxHeight: '85vh',
     background: 'var(--bg-chrome)', border: '1px solid var(--border)',
     borderRadius: 10, overflowY: 'auto',
-    padding: '24px', position: 'relative',
+    padding: '0 24px 24px', position: 'relative',
+  },
+  topBar: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '14px 0 10px',
+    position: 'sticky', top: 0, zIndex: 1,
+    background: 'var(--bg-chrome)',
   },
   closeBtn: {
-    position: 'absolute', top: 12, right: 14,
-    background: 'none', border: 'none',
-    color: 'var(--text-dim)', fontSize: 20,
+    background: 'none', border: '1px solid var(--border)',
+    borderRadius: 4,
+    color: 'var(--text-dim)', fontSize: 16,
     cursor: 'pointer', fontFamily: 'var(--font)',
-    lineHeight: 1, padding: '2px 6px',
+    lineHeight: 1, padding: '2px 8px',
+    transition: 'border-color 0.1s',
   },
   header: {
     display: 'flex', gap: 14, alignItems: 'flex-start',
-    marginBottom: 20,
+    marginBottom: 14,
+  },
+  actionBar: {
+    display: 'flex', alignItems: 'center', gap: 10,
+    marginBottom: 18, paddingBottom: 16,
+    borderBottom: '1px solid var(--border)',
   },
   icon: {
     width: 52, height: 52, borderRadius: 12,
@@ -795,13 +842,6 @@ const modal = {
   },
   author: {
     fontSize: 11, color: 'var(--text-dim)', marginTop: 2,
-    display: 'flex', alignItems: 'center', gap: 4,
-  },
-  verifiedBadge: {
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    width: 14, height: 14, borderRadius: '50%',
-    background: 'var(--accent)', color: 'var(--bg-base)',
-    fontSize: 8, fontWeight: 700, flexShrink: 0,
   },
   meta: {
     display: 'flex', gap: 12, marginTop: 6,
@@ -809,10 +849,6 @@ const modal = {
   },
   metaItem: {
     display: 'flex', alignItems: 'center', gap: 3,
-  },
-  headerAction: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-    flexShrink: 0,
   },
   installBtn: {
     padding: '8px 28px',

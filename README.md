@@ -122,9 +122,9 @@ groove start --host 0.0.0.0     # REJECTED — not allowed
 
 This is by design. Direct exposure requires custom auth, rate limiting, TLS management — attack surface we refuse to create. SSH and WireGuard solve this better than we ever could.
 
-### Federation (Multi-Server)
+### Federation (Preview)
 
-Connect GROOVE daemons across machines. Agents coordinate through typed contracts — structured specs, not shared filesystems.
+Pair GROOVE daemons across machines with Ed25519 key exchange. The security layer is built — cross-server agent coordination (typed contracts, federated registry) is coming soon.
 
 ```bash
 groove federation pair 100.64.1.5      # pair two daemons

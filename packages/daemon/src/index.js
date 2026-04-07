@@ -89,7 +89,8 @@ export class Daemon {
     }
 
     // First-run detection
-    if (isFirstRun(this.grooveDir)) {
+    this._firstRun = isFirstRun(this.grooveDir);
+    if (this._firstRun) {
       this.config = runFirstTimeSetup(this.grooveDir);
     } else {
       this.config = loadConfig(this.grooveDir);
@@ -224,7 +225,7 @@ export class Daemon {
         writeFileSync(resolve(this.grooveDir, 'daemon.port'), String(this.port));
         writeFileSync(resolve(this.grooveDir, 'daemon.host'), this.host);
 
-        printWelcome(this.port, this.host);
+        printWelcome(this.port, this.host, this._firstRun);
 
         // Start background services
         this.journalist.start();

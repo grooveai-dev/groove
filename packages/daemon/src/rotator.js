@@ -20,7 +20,6 @@ export class Rotator extends EventEmitter {
     if (this.interval) return;
     this.enabled = true;
     this.interval = setInterval(() => this.check(), CHECK_INTERVAL);
-    console.log('  Rotator started (auto-rotation enabled)');
   }
 
   stop() {

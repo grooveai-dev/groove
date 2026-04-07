@@ -27,7 +27,6 @@ export class Journalist {
     // Run first cycle immediately, then on interval
     this.cycle();
     this.interval = setInterval(() => this.cycle(), intervalMs);
-    console.log(`  Journalist started (every ${intervalMs / 1000}s)`);
   }
 
   stop() {

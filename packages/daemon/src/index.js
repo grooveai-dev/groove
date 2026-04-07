@@ -27,6 +27,7 @@ import { ProjectManager } from './pm.js';
 import { CodebaseIndexer } from './indexer.js';
 import { AuditLogger } from './audit.js';
 import { Federation } from './federation.js';
+import { SkillStore } from './skills.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 
 const DEFAULT_PORT = 31415;
@@ -115,6 +116,7 @@ export class Daemon {
     this.indexer = new CodebaseIndexer(this);
     this.audit = new AuditLogger(this.grooveDir);
     this.federation = new Federation(this);
+    this.skills = new SkillStore(this);
 
     // HTTP + WebSocket server
     this.app = express();

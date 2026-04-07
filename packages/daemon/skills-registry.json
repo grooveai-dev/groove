@@ -1,0 +1,233 @@
+[
+  {
+    "id": "frontend-design",
+    "name": "Frontend Design",
+    "description": "Create distinctive, production-grade frontend interfaces with high design quality. Avoids generic AI aesthetics.",
+    "author": "Anthropic",
+    "category": "design",
+    "tags": ["frontend", "ui", "css", "react", "design-system"],
+    "roles": ["frontend", "fullstack"],
+    "source": "claude-official",
+    "icon": "P"
+  },
+  {
+    "id": "code-review",
+    "name": "Code Review",
+    "description": "Comprehensive PR code review using parallel specialized agents. Checks CLAUDE.md compliance, bugs, git history, and previous PR comments.",
+    "author": "Anthropic",
+    "category": "quality",
+    "tags": ["review", "pr", "github", "quality"],
+    "roles": ["testing", "fullstack"],
+    "source": "claude-official",
+    "icon": "R"
+  },
+  {
+    "id": "security-guidance",
+    "name": "Security Guidance",
+    "description": "Security-focused development guidance. OWASP top 10, input validation, auth patterns, secrets management.",
+    "author": "Anthropic",
+    "category": "security",
+    "tags": ["security", "owasp", "auth", "validation"],
+    "roles": ["backend", "fullstack", "devops"],
+    "source": "claude-official",
+    "icon": "S"
+  },
+  {
+    "id": "claude-automation-recommender",
+    "name": "Automation Recommender",
+    "description": "Analyze a codebase and recommend Claude Code automations — hooks, subagents, skills, plugins, MCP servers.",
+    "author": "Anthropic",
+    "category": "devtools",
+    "tags": ["automation", "hooks", "plugins", "mcp", "setup"],
+    "roles": ["planner", "devops", "fullstack"],
+    "source": "claude-official",
+    "icon": "A"
+  },
+  {
+    "id": "claude-md-improver",
+    "name": "CLAUDE.md Improver",
+    "description": "Audit and improve CLAUDE.md files. Scans quality, evaluates against templates, makes targeted updates.",
+    "author": "Anthropic",
+    "category": "devtools",
+    "tags": ["claude-md", "project-config", "audit"],
+    "roles": ["planner", "fullstack"],
+    "source": "claude-official",
+    "icon": "C"
+  },
+  {
+    "id": "build-mcp-server",
+    "name": "Build MCP Server",
+    "description": "End-to-end MCP server development. Interrogates use case, picks deployment model, designs tools, hands off to specialized skills.",
+    "author": "Anthropic",
+    "category": "devtools",
+    "tags": ["mcp", "api", "integration", "tools"],
+    "roles": ["backend", "fullstack"],
+    "source": "claude-official",
+    "icon": "M"
+  },
+  {
+    "id": "build-mcp-app",
+    "name": "Build MCP App",
+    "description": "Add interactive UI widgets to MCP servers — forms, pickers, dashboards, confirmation dialogs inline in chat.",
+    "author": "Anthropic",
+    "category": "devtools",
+    "tags": ["mcp", "ui", "widgets", "apps-sdk"],
+    "roles": ["frontend", "fullstack"],
+    "source": "claude-official",
+    "icon": "U"
+  },
+  {
+    "id": "feature-dev",
+    "name": "Feature Development",
+    "description": "Guided feature development with codebase understanding and architecture focus. Structured workflow from research to implementation.",
+    "author": "Anthropic",
+    "category": "workflow",
+    "tags": ["feature", "architecture", "guided", "development"],
+    "roles": ["backend", "frontend", "fullstack"],
+    "source": "claude-official",
+    "icon": "F"
+  },
+  {
+    "id": "skill-creator",
+    "name": "Skill Creator",
+    "description": "Create new skills, modify existing ones, run evals, benchmark performance. The meta-skill for building skills.",
+    "author": "Anthropic",
+    "category": "devtools",
+    "tags": ["skills", "plugins", "meta", "evals"],
+    "roles": ["planner", "fullstack"],
+    "source": "claude-official",
+    "icon": "K"
+  },
+  {
+    "id": "plugin-structure",
+    "name": "Plugin Structure",
+    "description": "Scaffold and organize Claude Code plugins. Directory layout, manifest, components, auto-discovery patterns.",
+    "author": "Anthropic",
+    "category": "devtools",
+    "tags": ["plugins", "scaffold", "architecture"],
+    "roles": ["fullstack", "devops"],
+    "source": "claude-official",
+    "icon": "L"
+  },
+  {
+    "id": "hook-development",
+    "name": "Hook Development",
+    "description": "Create PreToolUse, PostToolUse, Stop hooks. Event-driven automation, tool validation, prompt-based hooks API.",
+    "author": "Anthropic",
+    "category": "devtools",
+    "tags": ["hooks", "automation", "events", "validation"],
+    "roles": ["devops", "fullstack"],
+    "source": "claude-official",
+    "icon": "H"
+  },
+  {
+    "id": "agent-development",
+    "name": "Agent Development",
+    "description": "Create subagents with system prompts, triggering conditions, tool access, and autonomous behavior patterns.",
+    "author": "Anthropic",
+    "category": "devtools",
+    "tags": ["agents", "subagents", "autonomous"],
+    "roles": ["planner", "fullstack"],
+    "source": "claude-official",
+    "icon": "G"
+  },
+  {
+    "id": "playground",
+    "name": "Playground Builder",
+    "description": "Create interactive HTML playgrounds — single-file explorers with live preview, visual controls, and copy-out prompts.",
+    "author": "Anthropic",
+    "category": "design",
+    "tags": ["playground", "interactive", "html", "demo"],
+    "roles": ["frontend", "docs"],
+    "source": "claude-official",
+    "icon": "Y"
+  },
+  {
+    "id": "math-olympiad",
+    "name": "Math Olympiad",
+    "description": "Advanced mathematical problem solving. Competition-level math, proofs, and formal reasoning.",
+    "author": "Anthropic",
+    "category": "specialized",
+    "tags": ["math", "proofs", "reasoning", "competition"],
+    "roles": [],
+    "source": "claude-official",
+    "icon": "X"
+  },
+  {
+    "id": "hookify",
+    "name": "Hookify",
+    "description": "Create hooks to prevent unwanted behaviors from conversation analysis or explicit instructions. Rule-based automation.",
+    "author": "Anthropic",
+    "category": "devtools",
+    "tags": ["hooks", "rules", "automation", "guardrails"],
+    "roles": ["devops", "fullstack"],
+    "source": "claude-official",
+    "icon": "I"
+  },
+  {
+    "id": "code-simplifier",
+    "name": "Code Simplifier",
+    "description": "Review changed code for reuse, quality, and efficiency. Identifies over-engineering and suggests simplifications.",
+    "author": "Anthropic",
+    "category": "quality",
+    "tags": ["refactor", "simplify", "quality", "efficiency"],
+    "roles": ["backend", "frontend", "fullstack"],
+    "source": "claude-official",
+    "icon": "Z"
+  },
+  {
+    "id": "commit-commands",
+    "name": "Commit Commands",
+    "description": "Git workflow commands — commit, push, open PR, clean gone branches. Structured commit messages.",
+    "author": "Anthropic",
+    "category": "workflow",
+    "tags": ["git", "commit", "pr", "workflow"],
+    "roles": ["fullstack", "backend", "frontend"],
+    "source": "claude-official",
+    "icon": "V"
+  },
+  {
+    "id": "pr-review-toolkit",
+    "name": "PR Review Toolkit",
+    "description": "Comprehensive PR review using specialized parallel agents. Multi-angle analysis with confidence scoring.",
+    "author": "Anthropic",
+    "category": "quality",
+    "tags": ["pr", "review", "github", "parallel-agents"],
+    "roles": ["testing", "fullstack"],
+    "source": "claude-official",
+    "icon": "T"
+  },
+  {
+    "id": "new-sdk-app",
+    "name": "Agent SDK Starter",
+    "description": "Create and setup a new Claude Agent SDK application. Scaffolds project structure and configuration.",
+    "author": "Anthropic",
+    "category": "devtools",
+    "tags": ["agent-sdk", "scaffold", "setup"],
+    "roles": ["backend", "fullstack"],
+    "source": "claude-official",
+    "icon": "N"
+  },
+  {
+    "id": "explanatory-output",
+    "name": "Explanatory Output",
+    "description": "Output style that explains reasoning and decisions. Teaches while building — great for learning and code review.",
+    "author": "Anthropic",
+    "category": "workflow",
+    "tags": ["output-style", "learning", "explanatory"],
+    "roles": [],
+    "source": "claude-official",
+    "icon": "E"
+  },
+  {
+    "id": "learning-output",
+    "name": "Learning Output",
+    "description": "Output style optimized for learning. Step-by-step explanations, concept breakdowns, guided understanding.",
+    "author": "Anthropic",
+    "category": "workflow",
+    "tags": ["output-style", "learning", "educational"],
+    "roles": [],
+    "source": "claude-official",
+    "icon": "W"
+  }
+]

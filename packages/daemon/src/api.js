@@ -365,6 +365,47 @@ export function createApi(app, daemon) {
     res.json(daemon.adaptive.getAllProfiles());
   });
 
+  // --- Skills Marketplace ---
+
+  app.get('/api/skills/registry', (req, res) => {
+    const skills = daemon.skills.getRegistry({
+      search: req.query.search || '',
+      category: req.query.category || 'all',
+    });
+    res.json({
+      skills,
+      categories: daemon.skills.getCategories(),
+    });
+  });
+
+  app.get('/api/skills/installed', (req, res) => {
+    res.json(daemon.skills.getInstalled());
+  });
+
+  app.post('/api/skills/:id/install', (req, res) => {
+    try {
+      const result = daemon.skills.install(req.params.id);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/skills/:id', (req, res) => {
+    try {
+      const result = daemon.skills.uninstall(req.params.id);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/skills/:id/content', (req, res) => {
+    const content = daemon.skills.getContent(req.params.id);
+    if (!content) return res.status(404).json({ error: 'Skill not installed' });
+    res.json({ id: req.params.id, content });
+  });
+
   // --- Directory Browser ---
 
   app.get('/api/browse', (req, res) => {

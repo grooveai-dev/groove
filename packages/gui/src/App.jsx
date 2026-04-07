@@ -11,9 +11,11 @@ import JournalistFeed from './views/JournalistFeed';
 import TeamSelector from './components/TeamSelector';
 import CommandCenter from './views/CommandCenter';
 import ApprovalQueue from './components/ApprovalQueue';
+import SkillsMarketplace from './views/SkillsMarketplace';
 
 const TABS = [
   { id: 'agents', label: 'Agents' },
+  { id: 'skills', label: 'Skills' },
   { id: 'stats', label: 'Stats' },
   { id: 'teams', label: 'Teams' },
   { id: 'approvals', label: 'Approvals' },
@@ -138,6 +140,7 @@ export default function App() {
           {activeTab === 'agents' && (
             !hasAgents ? <EmptyState /> : <AgentTree />
           )}
+          {activeTab === 'skills' && <SkillsMarketplace />}
           {activeTab === 'stats' && <CommandCenter />}
           {activeTab === 'teams' && <TeamSelector />}
           {activeTab === 'approvals' && <ApprovalQueue />}

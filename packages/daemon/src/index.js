@@ -123,18 +123,16 @@ export class Daemon {
       maxPayload: 1024 * 1024, // 1MB max message
       verifyClient: ({ req }) => {
         const origin = req.headers.origin;
-        // Allow: no origin (CLI/native clients), localhost origins, bound host
+        // Allow: no origin (CLI/native clients)
         if (!origin) return true;
-        const allowed = [
-          `http://localhost:${this.port}`,
-          `http://127.0.0.1:${this.port}`,
-          'http://localhost:3142',
-        ];
-        // Allow the bound interface (for Tailscale/LAN access)
-        if (this.host !== DEFAULT_HOST) {
-          allowed.push(`http://${this.host}:${this.port}`);
-        }
-        return allowed.includes(origin);
+        try {
+          const url = new URL(origin);
+          // Allow any localhost origin (any port — tunnels change the port)
+          if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return true;
+          // Allow the bound interface (for Tailscale/LAN access)
+          if (this.host !== DEFAULT_HOST && url.hostname === this.host) return true;
+        } catch { /* invalid origin */ }
+        return false;
       },
     });
 

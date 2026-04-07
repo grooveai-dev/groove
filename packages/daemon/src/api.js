@@ -14,16 +14,19 @@ export function createApi(app, daemon) {
   // CORS — restrict to localhost + bound interface origins
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    const allowed = [
-      `http://localhost:${daemon.port}`,
-      `http://127.0.0.1:${daemon.port}`,
-      'http://localhost:3142', // Vite dev server
-    ];
-    // Allow the bound interface (for Tailscale/LAN access)
-    if (daemon.host && daemon.host !== '127.0.0.1') {
-      allowed.push(`http://${daemon.host}:${daemon.port}`);
+    let allowed = false;
+    if (!origin) {
+      allowed = true;
+    } else {
+      try {
+        const url = new URL(origin);
+        // Allow any localhost origin (any port — tunnels change the port)
+        if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') allowed = true;
+        // Allow the bound interface (for Tailscale/LAN access)
+        if (daemon.host && daemon.host !== '127.0.0.1' && url.hostname === daemon.host) allowed = true;
+      } catch { /* invalid origin */ }
     }
-    if (!origin || allowed.includes(origin)) {
+    if (allowed) {
       res.header('Access-Control-Allow-Origin', origin || '*');
     }
     res.header('Access-Control-Allow-Headers', 'Content-Type');

@@ -55,22 +55,25 @@ export function printWelcome(port, host = '127.0.0.1') {
   console.log('');
   const isRemote = host !== '127.0.0.1';
 
-  // Detect headless/server environment: no graphical display available
-  // Works even through sudo (which strips SSH_* env vars)
-  const hasDisplay = !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+  // Detect environment
+  const isVSCode = !!(process.env.VSCODE_GIT_IPC_HANDLE || process.env.VSCODE_IPC_HOOK_CLI || process.env.TERM_PROGRAM === 'vscode');
   const isSSH = !!(process.env.SSH_CONNECTION || process.env.SSH_CLIENT || process.env.SSH_TTY);
+  const hasDisplay = !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
   const isHeadless = !hasDisplay && !process.env.TERM_PROGRAM;
-  const isServer = isSSH || isHeadless;
+  const isServer = !isVSCode && (isSSH || isHeadless);
 
   if (isRemote) {
     // Bound to network interface (Tailscale/LAN)
     console.log(`  GUI:   http://${host}:${port}`);
     console.log(`  Host:  ${host} (network-accessible)`);
+  } else if (isVSCode) {
+    // VS Code Remote — port forwarding happens automatically
+    console.log(`  GUI:   http://localhost:${port}`);
+    console.log(`         VS Code forwards this port automatically.`);
   } else if (isServer) {
-    // VPS / headless server — dead simple instructions
+    // Plain SSH / headless — need groove connect
     const sshUser = process.env.SUDO_USER || process.env.USER || 'user';
 
-    // Get server IP: try SSH_CONNECTION first, fall back to network interfaces
     let serverIp = '';
     const sshConn = process.env.SSH_CONNECTION || '';
     if (sshConn) {
@@ -92,12 +95,9 @@ export function printWelcome(port, host = '127.0.0.1') {
 
     console.log(`  Daemon running on port ${port}`);
     console.log('');
-    console.log('  To open the GUI, run this on your local machine:');
+    console.log('  To open the GUI, open a terminal on your Mac/PC and run:');
     console.log('');
-    console.log(`    groove connect ${sshUser}@${serverIp}`);
-    console.log('');
-    console.log(`  Don't have groove locally? Install it first:`);
-    console.log(`    npm i -g groove-dev`);
+    console.log(`    npx groove-dev connect ${sshUser}@${serverIp}`);
   } else {
     // Local machine with display
     console.log(`  GUI:   http://localhost:${port}`);

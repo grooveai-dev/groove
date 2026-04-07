@@ -26,9 +26,7 @@ export async function start(options) {
     process.on('SIGTERM', shutdown);
 
     await daemon.start();
-    const isRemote = daemon.host !== '127.0.0.1';
-    const guiUrl = `http://${isRemote ? daemon.host : 'localhost'}:${daemon.port}`;
-    console.log(chalk.green('Ready.') + ` Open ${guiUrl} for the GUI.`);
+    console.log(chalk.green('Ready.'));
   } catch (err) {
     console.error(chalk.red('Failed to start:'), err.message);
     process.exit(1);

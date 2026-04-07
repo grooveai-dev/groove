@@ -366,7 +366,7 @@ function CredentialModal({ integration, onClose }) {
 }
 
 // -- Integration Detail Modal --
-function IntegrationDetailModal({ integration, installing, onInstall, onUninstall, onConfigure, onClose }) {
+function IntegrationDetailModal({ integration, installing, onInstall, onUninstall, onConfigure, onAuthenticate, onClose }) {
   if (!integration) return null;
 
   const isAutoAuth = integration.authType === 'none' && (integration.envKeys || []).length === 0;
@@ -406,6 +406,14 @@ function IntegrationDetailModal({ integration, installing, onInstall, onUninstal
         <div style={modal.actionBar}>
           {integration.installed ? (
             <div style={{ display: 'flex', gap: 8, flex: 1 }}>
+              {isAutoAuth && (
+                <button
+                  onClick={() => onAuthenticate(integration)}
+                  style={modal.installBtn}
+                >
+                  Sign in with {integration.name.includes('Google') || integration.id.includes('google') || integration.id === 'gmail' ? 'Google' : integration.name}
+                </button>
+              )}
               {hasCredentials && (
                 <button
                   onClick={() => onConfigure(integration)}
@@ -654,6 +662,7 @@ export default function IntegrationsStore() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [configuring, setConfiguring] = useState(null);
   const [hovered, setHovered] = useState(null);
+  const [statusMsg, setStatusMsg] = useState('');
 
   const fetchIntegrations = useCallback(async () => {
     setLoading(true);
@@ -706,6 +715,26 @@ export default function IntegrationsStore() {
     setConfiguring(item);
   }
 
+  async function handleAuthenticate(item) {
+    setSelectedItem(null);
+    try {
+      const res = await fetch(`/api/integrations/${item.id}/authenticate`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        flash('Sign-in window opened — check your browser');
+      } else {
+        flash(data.error || 'Authentication failed');
+      }
+    } catch {
+      flash('Authentication failed');
+    }
+  }
+
+  function flash(msg) {
+    setStatusMsg(msg);
+    setTimeout(() => setStatusMsg(''), 4000);
+  }
+
   function handleConfigureClose() {
     setConfiguring(null);
     fetchIntegrations();
@@ -751,6 +780,13 @@ export default function IntegrationsStore() {
           </span>
         </div>
       </div>
+
+      {/* Status message */}
+      {statusMsg && (
+        <div style={{ padding: '4px 20px', fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>
+          {statusMsg}
+        </div>
+      )}
 
       {/* Toolbar */}
       <div style={styles.toolbar}>
@@ -845,6 +881,7 @@ export default function IntegrationsStore() {
         onInstall={handleInstall}
         onUninstall={handleUninstall}
         onConfigure={handleConfigure}
+        onAuthenticate={handleAuthenticate}
         onClose={() => setSelectedItem(null)}
       />
 

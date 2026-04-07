@@ -506,6 +506,16 @@ export function createApi(app, daemon) {
 
   // Parameterized :id routes (after specific routes above)
 
+  app.post('/api/integrations/:id/authenticate', (req, res) => {
+    try {
+      const handle = daemon.integrations.authenticate(req.params.id);
+      res.json({ ok: true, pid: handle.pid });
+      // Auto-cleanup tracked by the handle timeout
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   app.post('/api/integrations/:id/install', async (req, res) => {
     try {
       const result = await daemon.integrations.install(req.params.id);

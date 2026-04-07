@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawn as cpSpawn } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -455,6 +455,48 @@ export class IntegrationStore {
     const clientId = this.getCredential('google-oauth', 'GOOGLE_CLIENT_ID');
     const clientSecret = this.getCredential('google-oauth', 'GOOGLE_CLIENT_SECRET');
     return !!(clientId && clientSecret);
+  }
+
+  /**
+   * Pre-authenticate an auto-auth integration by running its MCP server briefly.
+   * The server will open a browser for OAuth. Once auth completes, the server
+   * stores tokens locally so future agent spawns work without prompting.
+   * Returns a handle to track the auth process.
+   */
+  authenticate(integrationId) {
+    const entry = this.registry.find((s) => s.id === integrationId);
+    if (!entry) throw new Error(`Integration not found: ${integrationId}`);
+
+    const command = entry.command || 'npx';
+    const args = entry.args || ['-y', entry.npmPackage];
+
+    // Build env with any configured credentials
+    const env = {};
+    for (const ek of (entry.envKeys || [])) {
+      const val = this.getCredential(integrationId, ek.key);
+      if (val) env[ek.key] = val;
+    }
+
+    // Spawn the MCP server — it will trigger OAuth on startup
+    const proc = cpSpawn(command, args, {
+      env: { ...process.env, ...env },
+      stdio: ['pipe', 'pipe', 'pipe'],
+      detached: false,
+    });
+
+    // Auto-kill after 2 minutes (auth should complete well before that)
+    const timeout = setTimeout(() => {
+      try { proc.kill('SIGTERM'); } catch { /* ignore */ }
+    }, 120_000);
+
+    proc.on('exit', () => clearTimeout(timeout));
+
+    this.daemon.audit.log('integration.authenticate', { id: integrationId });
+
+    return {
+      pid: proc.pid,
+      kill: () => { clearTimeout(timeout); try { proc.kill('SIGTERM'); } catch { /* ignore */ } },
+    };
   }
 
   // --- Internal ---

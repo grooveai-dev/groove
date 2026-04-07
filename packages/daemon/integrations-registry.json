@@ -102,9 +102,9 @@
     "authType": "none",
     "envKeys": [],
     "setupSteps": [
-      "Just install — the server handles Google sign-in automatically",
-      "On first use, a browser window will open for you to authorize",
-      "That's it — no API keys or tokens needed"
+      "Click Install, then click 'Sign in with Google'",
+      "A browser window will open — authorize Groove",
+      "Done — no API keys or tokens needed"
     ],
     "featured": false,
     "downloads": 0,
@@ -127,9 +127,9 @@
     "authType": "none",
     "envKeys": [],
     "setupSteps": [
-      "Just install — the server handles Google sign-in automatically",
-      "On first use, a browser window will open for you to authorize",
-      "That's it — no API keys or tokens needed"
+      "Click Install, then click 'Sign in with Google'",
+      "A browser window will open — authorize Groove",
+      "Done — no API keys or tokens needed"
     ],
     "featured": false,
     "downloads": 0,

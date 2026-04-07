@@ -71,11 +71,11 @@ GROOVE never opens ports to the public internet. Instead, it uses battle-tested 
 
 ```
 Your laptop                          Your VPS
-┌──────────┐    SSH tunnel     ┌──────────────────┐
-│ Browser   │◄────────────────►│ GROOVE daemon     │
-│ localhost │   encrypted      │ 127.0.0.1:31415   │
-└──────────┘                   └──────────────────┘
-                               Zero open ports
+┌──────────┐    SSH tunnel      ┌──────────────────┐
+│ Browser  │ ◄────────────────► │ GROOVE daemon    │
+│ localhost│    encrypted       │ 127.0.0.1:31415  │
+└──────────┘                    └──────────────────┘
+                                Zero open ports
 ```
 
 The daemon always binds to `127.0.0.1`. Nothing reaches it from the public internet. Your SSH keys handle auth. Your browser connects to `localhost` on your machine, and the tunnel forwards traffic securely to the VPS.
@@ -137,8 +137,8 @@ Every cross-server message is signed with Ed25519 keys generated during a pairin
 ```
 Server A                              Server B
 ┌──────────────┐  signed contract  ┌──────────────┐
-│ GROOVE daemon │◄────────────────►│ GROOVE daemon │
-│ Ed25519 key   │  verify + audit  │ Ed25519 key   │
+│ GROOVE daemon│ ◄────────────────►│ GROOVE daemon│
+│ Ed25519 key  │   verify + audit  │ Ed25519 key  │
 └──────────────┘                   └──────────────┘
 ```
 
@@ -218,7 +218,7 @@ GROOVE routes tasks to the cheapest model that can handle them. Planners get Opu
 
 ```
     ┌──────────────────────────────────────────────┐
-    │             GROOVE DAEMON (:31415)            │
+    │             GROOVE DAEMON (:31415)           │
     │                                              │
     │  Registry · Introducer · Lock Manager        │
     │  Journalist · Rotator · Adaptive · Indexer   │

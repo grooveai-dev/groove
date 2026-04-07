@@ -28,6 +28,8 @@ import { CodebaseIndexer } from './indexer.js';
 import { AuditLogger } from './audit.js';
 import { Federation } from './federation.js';
 import { SkillStore } from './skills.js';
+import { FileWatcher } from './filewatcher.js';
+import { TerminalManager } from './terminal-pty.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 
 const DEFAULT_PORT = 31415;
@@ -117,6 +119,8 @@ export class Daemon {
     this.audit = new AuditLogger(this.grooveDir);
     this.federation = new Federation(this);
     this.skills = new SkillStore(this);
+    this.fileWatcher = new FileWatcher(this);
+    this.terminalManager = new TerminalManager(this);
 
     // HTTP + WebSocket server
     this.app = express();
@@ -147,12 +151,52 @@ export class Daemon {
       this.broadcast({ type: 'state', data: this.registry.getAll() });
     });
 
-    // Send full state to new WebSocket clients
+    // Send full state to new WebSocket clients + handle editor messages
     this.wss.on('connection', (ws) => {
       ws.send(JSON.stringify({
         type: 'state',
         data: this.registry.getAll(),
       }));
+
+      // Track which files this client is watching (for cleanup on disconnect)
+      const watchedFiles = new Set();
+
+      ws.on('message', (raw) => {
+        try {
+          const msg = JSON.parse(raw);
+          switch (msg.type) {
+            // File editor
+            case 'editor:watch':
+              if (msg.path) { this.fileWatcher.watch(msg.path); watchedFiles.add(msg.path); }
+              break;
+            case 'editor:unwatch':
+              if (msg.path) { this.fileWatcher.unwatch(msg.path); watchedFiles.delete(msg.path); }
+              break;
+            // Terminal
+            case 'terminal:spawn': {
+              const id = this.terminalManager.spawn(ws, { cwd: msg.cwd, cols: msg.cols, rows: msg.rows });
+              ws.send(JSON.stringify({ type: 'terminal:spawned', id }));
+              break;
+            }
+            case 'terminal:input':
+              if (msg.id && msg.data) this.terminalManager.write(msg.id, msg.data);
+              break;
+            case 'terminal:resize':
+              if (msg.id && msg.rows && msg.cols) this.terminalManager.resize(msg.id, msg.rows, msg.cols);
+              break;
+            case 'terminal:kill':
+              if (msg.id) this.terminalManager.kill(msg.id);
+              break;
+          }
+        } catch { /* ignore malformed messages */ }
+      });
+
+      ws.on('close', () => {
+        for (const path of watchedFiles) {
+          this.fileWatcher.unwatch(path);
+        }
+        this.terminalManager.cleanupClient(ws);
+      });
     });
 
     // Auto-update AGENTS_REGISTRY.md and CLAUDE.md GROOVE section on changes
@@ -249,6 +293,10 @@ export class Daemon {
     // Stop background services
     this.journalist.stop();
     this.rotator.stop();
+
+    // Clean up file watchers and terminal sessions
+    this.fileWatcher.unwatchAll();
+    this.terminalManager.killAll();
 
     // Kill all agent processes
     await this.processes.killAll();

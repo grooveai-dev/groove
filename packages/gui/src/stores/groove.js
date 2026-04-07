@@ -15,7 +15,7 @@ export const useGrooveStore = create((set, get) => ({
   tunneled: false,    // true when accessed via SSH tunnel (port mismatch)
 
   // UI state — unified panel model
-  activeTab: 'agents',       // 'agents' | 'stats' | 'teams' | 'approvals'
+  activeTab: 'agents',       // 'agents' | 'stats' | 'teams' | 'approvals' | 'editor'
   detailPanel: null,          // null | { type: 'agent', agentId } | { type: 'spawn' } | { type: 'journalist' }
   activityLog: {},
   statusMessage: null,        // inline status text (replaces toast notifications)
@@ -23,6 +23,14 @@ export const useGrooveStore = create((set, get) => ({
   chatHistory: {},              // { [agentId]: [{ from, text, timestamp, isQuery }] }
   tokenTimeline: {},            // { [agentId]: [{ t: timestamp, v: tokensUsed }] }
   dashTelemetry: {},            // { [agentId]: [{ t, v, name }] } — persists across tab switches
+
+  // Editor state
+  editorFiles: {},           // { [path]: { content, originalContent, language, loadedAt } }
+  editorActiveFile: null,    // currently visible file path
+  editorOpenTabs: [],        // ordered array of open file paths
+  editorTreeCache: {},       // { [dirPath]: entries[] }
+  editorChangedFiles: {},    // { [path]: timestamp } — externally modified files
+  editorRecentSaves: {},     // { [path]: timestamp } — suppress self-triggered change events
 
   // Connection
   connect() {
@@ -123,6 +131,15 @@ export const useGrooveStore = create((set, get) => ({
         case 'rotation:failed':
           get().showStatus(`rotation failed: ${msg.error}`);
           break;
+
+        case 'file:changed': {
+          const savedAt = get().editorRecentSaves[msg.path];
+          if (savedAt && Date.now() - savedAt < 2000) break; // ignore self-triggered
+          set((s) => ({
+            editorChangedFiles: { ...s.editorChangedFiles, [msg.path]: msg.timestamp },
+          }));
+          break;
+        }
 
         case 'journalist:cycle':
           break; // Journalist feed polls separately
@@ -254,6 +271,275 @@ export const useGrooveStore = create((set, get) => ({
     const data = await res.json();
     get().addChatMessage(id, 'agent', data.response);
     return data;
+  },
+
+  // Editor actions
+  async openFile(path) {
+    // Already loaded — just switch tab
+    if (get().editorFiles[path] || get().editorOpenTabs.includes(path)) {
+      set((s) => ({
+        editorActiveFile: path,
+        editorOpenTabs: s.editorOpenTabs.includes(path) ? s.editorOpenTabs : [...s.editorOpenTabs, path],
+      }));
+      return;
+    }
+
+    // Media files — open as tab directly (served via /api/files/raw)
+    const ext = path.split('.').pop()?.toLowerCase();
+    const MEDIA_EXTS = ['png','jpg','jpeg','gif','svg','webp','ico','bmp','avif','mp4','webm','mov','avi','mkv','ogv'];
+    if (MEDIA_EXTS.includes(ext)) {
+      set((s) => ({
+        editorActiveFile: path,
+        editorOpenTabs: [...s.editorOpenTabs, path],
+      }));
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/files/read?path=${encodeURIComponent(path)}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        get().showStatus(err.error || 'Failed to read file');
+        return;
+      }
+      const data = await res.json();
+      if (data.binary) {
+        get().showStatus('Binary file — cannot open');
+        return;
+      }
+      set((s) => ({
+        editorFiles: {
+          ...s.editorFiles,
+          [path]: { content: data.content, originalContent: data.content, language: data.language, loadedAt: Date.now() },
+        },
+        editorActiveFile: path,
+        editorOpenTabs: s.editorOpenTabs.includes(path) ? s.editorOpenTabs : [...s.editorOpenTabs, path],
+      }));
+      // Tell daemon to watch this file
+      const ws = get().ws;
+      if (ws?.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'editor:watch', path }));
+      }
+    } catch {
+      get().showStatus('Failed to open file');
+    }
+  },
+
+  closeFile(path) {
+    set((s) => {
+      const tabs = s.editorOpenTabs.filter((t) => t !== path);
+      const files = { ...s.editorFiles };
+      delete files[path];
+      const changed = { ...s.editorChangedFiles };
+      delete changed[path];
+      let active = s.editorActiveFile;
+      if (active === path) {
+        const idx = s.editorOpenTabs.indexOf(path);
+        active = tabs[Math.min(idx, tabs.length - 1)] || null;
+      }
+      return { editorOpenTabs: tabs, editorFiles: files, editorChangedFiles: changed, editorActiveFile: active };
+    });
+    // Stop watching
+    const ws = get().ws;
+    if (ws?.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'editor:unwatch', path }));
+    }
+  },
+
+  setActiveFile(path) {
+    set({ editorActiveFile: path });
+  },
+
+  updateFileContent(path, content) {
+    set((s) => ({
+      editorFiles: {
+        ...s.editorFiles,
+        [path]: { ...s.editorFiles[path], content },
+      },
+    }));
+  },
+
+  async saveFile(path) {
+    const file = get().editorFiles[path];
+    if (!file) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/files/write`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, content: file.content }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        get().showStatus(err.error || 'Save failed');
+        return;
+      }
+      set((s) => ({
+        editorFiles: {
+          ...s.editorFiles,
+          [path]: { ...s.editorFiles[path], originalContent: file.content },
+        },
+        editorChangedFiles: (() => {
+          const c = { ...s.editorChangedFiles };
+          delete c[path];
+          return c;
+        })(),
+        editorRecentSaves: { ...s.editorRecentSaves, [path]: Date.now() },
+      }));
+      get().showStatus('Saved');
+    } catch {
+      get().showStatus('Save failed');
+    }
+  },
+
+  async reloadFile(path) {
+    try {
+      const res = await fetch(`${API_BASE}/api/files/read?path=${encodeURIComponent(path)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.binary) return;
+      set((s) => ({
+        editorFiles: {
+          ...s.editorFiles,
+          [path]: { content: data.content, originalContent: data.content, language: data.language, loadedAt: Date.now() },
+        },
+        editorChangedFiles: (() => {
+          const c = { ...s.editorChangedFiles };
+          delete c[path];
+          return c;
+        })(),
+      }));
+    } catch { /* ignore */ }
+  },
+
+  dismissFileChange(path) {
+    set((s) => {
+      const c = { ...s.editorChangedFiles };
+      delete c[path];
+      return { editorChangedFiles: c };
+    });
+  },
+
+  async fetchTreeDir(dirPath) {
+    try {
+      const res = await fetch(`${API_BASE}/api/files/tree?path=${encodeURIComponent(dirPath)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      set((s) => ({
+        editorTreeCache: { ...s.editorTreeCache, [dirPath]: data.entries },
+      }));
+    } catch { /* ignore */ }
+  },
+
+  async createFile(relPath) {
+    try {
+      const res = await fetch(`${API_BASE}/api/files/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: relPath }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        get().showStatus(err.error || 'Create failed');
+        return false;
+      }
+      // Refresh parent directory in tree
+      const parentDir = relPath.includes('/') ? relPath.split('/').slice(0, -1).join('/') : '';
+      await get().fetchTreeDir(parentDir);
+      get().showStatus('File created');
+      return true;
+    } catch {
+      get().showStatus('Create failed');
+      return false;
+    }
+  },
+
+  async createDir(relPath) {
+    try {
+      const res = await fetch(`${API_BASE}/api/files/mkdir`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: relPath }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        get().showStatus(err.error || 'Create failed');
+        return false;
+      }
+      const parentDir = relPath.includes('/') ? relPath.split('/').slice(0, -1).join('/') : '';
+      await get().fetchTreeDir(parentDir);
+      get().showStatus('Folder created');
+      return true;
+    } catch {
+      get().showStatus('Create failed');
+      return false;
+    }
+  },
+
+  async deleteFile(relPath) {
+    try {
+      const res = await fetch(`${API_BASE}/api/files/delete?path=${encodeURIComponent(relPath)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        get().showStatus(err.error || 'Delete failed');
+        return false;
+      }
+      // Close tab if open
+      if (get().editorOpenTabs.includes(relPath)) {
+        get().closeFile(relPath);
+      }
+      // Refresh parent
+      const parentDir = relPath.includes('/') ? relPath.split('/').slice(0, -1).join('/') : '';
+      await get().fetchTreeDir(parentDir);
+      // Also clear cached children if it was a dir
+      set((s) => {
+        const cache = { ...s.editorTreeCache };
+        delete cache[relPath];
+        return { editorTreeCache: cache };
+      });
+      get().showStatus('Deleted');
+      return true;
+    } catch {
+      get().showStatus('Delete failed');
+      return false;
+    }
+  },
+
+  async renameFile(oldPath, newPath) {
+    try {
+      const res = await fetch(`${API_BASE}/api/files/rename`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldPath, newPath }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        get().showStatus(err.error || 'Rename failed');
+        return false;
+      }
+      // Update open tabs if renamed file was open
+      set((s) => {
+        const tabs = s.editorOpenTabs.map((t) => t === oldPath ? newPath : t);
+        const files = { ...s.editorFiles };
+        if (files[oldPath]) {
+          files[newPath] = files[oldPath];
+          delete files[oldPath];
+        }
+        const active = s.editorActiveFile === oldPath ? newPath : s.editorActiveFile;
+        return { editorOpenTabs: tabs, editorFiles: files, editorActiveFile: active };
+      });
+      // Refresh both parent dirs
+      const oldParent = oldPath.includes('/') ? oldPath.split('/').slice(0, -1).join('/') : '';
+      const newParent = newPath.includes('/') ? newPath.split('/').slice(0, -1).join('/') : '';
+      await get().fetchTreeDir(oldParent);
+      if (newParent !== oldParent) await get().fetchTreeDir(newParent);
+      get().showStatus('Renamed');
+      return true;
+    } catch {
+      get().showStatus('Rename failed');
+      return false;
+    }
   },
 
   addCommand(text) {

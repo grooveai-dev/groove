@@ -1,4 +1,4 @@
-# GROOVE
+# groove
 
 **Orchestrate your AI coding agents. Stop losing context.**
 
@@ -12,7 +12,7 @@ npm i -g groove-dev
 groove start
 ```
 
-The GUI opens at `http://localhost:31415`. On a VPS? GROOVE detects it and tells you exactly what to do.
+The GUI opens at `http://localhost:31415`. On a VPS? groove detects it and tells you exactly what to do.
 
 ---
 
@@ -27,7 +27,7 @@ AI coding agents waste your money and lose their way:
 
 ## The Solution
 
-GROOVE sits between you and your AI coding agents. It doesn't replace them — it makes them work together.
+groove sits between you and your AI coding agents. It doesn't replace them — it makes them work together.
 
 ### Zero Cold-Start (The Journalist)
 
@@ -35,7 +35,7 @@ A background AI continuously watches all agent activity and synthesizes it into 
 
 ### Infinite Sessions (Context Rotation)
 
-Instead of letting agents fill their context window until they degrade, GROOVE detects quality decline — error spikes, circular refactors, file churn — and automatically rotates: kill the session, spawn fresh, feed it the Journalist's context. The agent picks up exactly where it left off with a clean window. No compaction. No drift. Works at any codebase scale.
+Instead of letting agents fill their context window until they degrade, groove detects quality decline — error spikes, circular refactors, file churn — and automatically rotates: kill the session, spawn fresh, feed it the Journalist's context. The agent picks up exactly where it left off with a clean window. No compaction. No drift. Works at any codebase scale.
 
 ### AI Project Manager
 
@@ -47,7 +47,7 @@ Spawn a planner, describe your project. The planner writes a detailed plan and r
 
 ### Workspaces (Large Codebase Support)
 
-GROOVE auto-detects monorepo workspaces (npm, pnpm, lerna) and lets you spawn each agent in its own subdirectory. A frontend agent only sees `packages/frontend/`. A backend agent only sees `packages/backend/`. No wasted context on irrelevant code.
+groove auto-detects monorepo workspaces (npm, pnpm, lerna) and lets you spawn each agent in its own subdirectory. A frontend agent only sees `packages/frontend/`. A backend agent only sees `packages/backend/`. No wasted context on irrelevant code.
 
 - **Codebase indexer** — scans project structure on start, gives every agent instant orientation
 - **Architecture injection** — auto-detects `ARCHITECTURE.md` and injects it into every agent's context
@@ -63,16 +63,16 @@ GROOVE auto-detects monorepo workspaces (npm, pnpm, lerna) and lets you spawn ea
 
 ## Remote Access
 
-Run GROOVE on a VPS and manage your agents from anywhere. No ports exposed to the internet. No tokens. No custom auth code. Zero attack surface.
+Run groove on a VPS and manage your agents from anywhere. No ports exposed to the internet. No tokens. No custom auth code. Zero attack surface.
 
 ### How It Works
 
-GROOVE never opens ports to the public internet. Instead, it uses battle-tested transport layers — SSH tunnels and WireGuard (Tailscale) — to keep your daemon private.
+groove never opens ports to the public internet. Instead, it uses battle-tested transport layers — SSH tunnels and WireGuard (Tailscale) — to keep your daemon private.
 
 ```
 Your laptop                          Your VPS
 ┌──────────┐    SSH tunnel      ┌──────────────────┐
-│ Browser  │ ◄────────────────► │ GROOVE daemon    │
+│ Browser  │ ◄────────────────► │ groove daemon    │
 │ localhost│    encrypted       │ 127.0.0.1:31415  │
 └──────────┘                    └──────────────────┘
                                 Zero open ports
@@ -99,7 +99,7 @@ groove disconnect                      # close when done
 
 That's it. The GUI opens in your browser automatically.
 
-GROOVE auto-detects your environment — VS Code Remote, plain SSH, or local — and tells you exactly what to do. SSH config aliases work too: `groove connect my-vps`.
+groove auto-detects your environment — VS Code Remote, plain SSH, or local — and tells you exactly what to do. SSH config aliases work too: `groove connect my-vps`.
 
 ### Tailscale / LAN Access
 
@@ -114,7 +114,7 @@ Open `http://<ip>:31415` from any device on the same network. Tailscale handles 
 
 ### What's Blocked
 
-GROOVE will reject any attempt to expose the daemon directly to the internet:
+groove will reject any attempt to expose the daemon directly to the internet:
 
 ```bash
 groove start --host 0.0.0.0     # REJECTED — not allowed
@@ -124,7 +124,7 @@ This is by design. Direct exposure requires custom auth, rate limiting, TLS mana
 
 ### Federation (Preview)
 
-Pair GROOVE daemons across machines with Ed25519 key exchange. The security layer is built — cross-server agent coordination (typed contracts, federated registry) is coming soon.
+Pair groove daemons across machines with Ed25519 key exchange. The security layer is built — cross-server agent coordination (typed contracts, federated registry) is coming soon.
 
 ```bash
 groove federation pair 100.64.1.5      # pair two daemons
@@ -137,7 +137,7 @@ Every cross-server message is signed with Ed25519 keys generated during a pairin
 ```
 Server A                              Server B
 ┌──────────────┐  signed contract  ┌──────────────┐
-│ GROOVE daemon│ ◄────────────────►│ GROOVE daemon│
+│ groove daemon│ ◄────────────────►│ groove daemon│
 │ Ed25519 key  │   verify + audit  │ Ed25519 key  │
 └──────────────┘                   └──────────────┘
 ```
@@ -176,7 +176,7 @@ Append-only, `0600` permissions, auto-rotates at 5MB. When team auth is added, e
 
 **What we explicitly don't defend against:** Compromised SSH keys, root access to VPS, malicious AI provider responses (out of scope — we're a process manager).
 
-**The principle:** "There's nothing to attack" is better than "we have a security system and here's why it's good." GROOVE has zero auth code. The transport layer does all the work.
+**The principle:** "There's nothing to attack" is better than "we have a security system and here's why it's good." groove has zero auth code. The transport layer does all the work.
 
 ---
 
@@ -189,7 +189,7 @@ Append-only, `0600` permissions, auto-rotates at 5MB. When team auth is added, e
 | **Gemini CLI** | API Key | 3.1 Pro, 3 Flash, 3.1 Flash Lite, 2.5 Pro, 2.5 Flash |
 | **Ollama** | Local | Any |
 
-GROOVE is a process manager — it spawns actual AI tool binaries. It never proxies API calls, never touches OAuth tokens, never impersonates any client. Your AI tools talk directly to their servers.
+groove is a process manager — it spawns actual AI tool binaries. It never proxies API calls, never touches OAuth tokens, never impersonates any client. Your AI tools talk directly to their servers.
 
 Works in any terminal, any IDE, any OS. Technical and non-technical users alike.
 
@@ -198,15 +198,17 @@ Works in any terminal, any IDE, any OS. Technical and non-technical users alike.
 Open the dashboard after starting the daemon (local or remote):
 
 - **Agent Tree** — visual node graph with Bezier spline connections, role badges, live status
+- **File Editor** — CodeMirror 6 with syntax highlighting, file tree, tabs, media viewer, and embedded terminal
 - **Chat** — instruct agents, query without disrupting, continue completed agents, streaming text
 - **Command Center** — gauge charts, live telemetry, token savings, model routing, adaptive thresholds
 - **Quick Launch** — planner recommends team, one-click to spawn all
+- **Skills Store** — app-store marketplace for agent skills with ratings and verification
 - **PM Review Log** — full audit trail of AI Project Manager decisions
 - **Team Management** — save, load, export, import agent configurations
 
 ## Adaptive Model Routing
 
-GROOVE routes tasks to the cheapest model that can handle them. Planners get Opus (deep reasoning). Backends get Sonnet (balanced). Docs get Haiku (fast and cheap). The classifier learns from agent activity and adjusts over time.
+groove routes tasks to the cheapest model that can handle them. Planners get Opus (deep reasoning). Backends get Sonnet (balanced). Docs get Haiku (fast and cheap). The classifier learns from agent activity and adjusts over time.
 
 | Tier | Cost | Used For |
 |------|------|----------|
@@ -218,7 +220,7 @@ GROOVE routes tasks to the cheapest model that can handle them. Planners get Opu
 
 ```
     ┌──────────────────────────────────────────────┐
-    │             GROOVE DAEMON (:31415)           │
+    │             groove DAEMON (:31415)           │
     │                                              │
     │  Registry · Introducer · Lock Manager        │
     │  Journalist · Rotator · Adaptive · Indexer   │

@@ -4,7 +4,8 @@
 import express from 'express';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream } from 'fs';
+import { lookup as mimeLookup } from './mimetypes.js';
 import { listProviders } from './providers/index.js';
 import { validateAgentConfig } from './validate.js';
 
@@ -35,7 +36,7 @@ export function createApi(app, daemon) {
     next();
   });
 
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '6mb' }));
 
   // Health check
   app.get('/api/health', (req, res) => {
@@ -498,6 +499,271 @@ export function createApi(app, daemon) {
         dirs: entries,
         fileCount: currentFiles,
       });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- File Editor API ---
+
+  const LANG_MAP = {
+    js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
+    ts: 'typescript', tsx: 'typescript',
+    css: 'css', scss: 'css', html: 'html', json: 'json',
+    md: 'markdown', py: 'python', rs: 'rust', go: 'go',
+    sh: 'shell', bash: 'shell', zsh: 'shell',
+    yaml: 'yaml', yml: 'yaml', toml: 'toml',
+    sql: 'sql', xml: 'xml', java: 'java', c: 'cpp', cpp: 'cpp', h: 'cpp',
+    rb: 'ruby', php: 'php', swift: 'swift', kt: 'kotlin',
+    dockerfile: 'dockerfile', makefile: 'makefile',
+  };
+  function detectLanguage(filename) {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    return LANG_MAP[ext] || 'text';
+  }
+
+  const IGNORED_NAMES = new Set(['.git', 'node_modules', '.DS_Store', '.groove', '__pycache__', '.next', '.cache', 'dist', 'coverage']);
+
+  function validateFilePath(relPath, projectDir) {
+    if (!relPath || typeof relPath !== 'string') return { error: 'path is required' };
+    if (relPath.startsWith('/') || relPath.includes('..') || relPath.includes('\0')) {
+      return { error: 'Invalid path' };
+    }
+    const fullPath = resolve(projectDir, relPath);
+    if (!fullPath.startsWith(projectDir)) return { error: 'Path outside project' };
+    return { fullPath };
+  }
+
+  // File tree — returns dirs + files for a given path
+  app.get('/api/files/tree', (req, res) => {
+    const relPath = req.query.path || '';
+
+    // Security: reuse browse validation
+    if (relPath && (relPath.startsWith('/') || relPath.includes('..') || relPath.includes('\0'))) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+
+    const fullPath = relPath ? resolve(daemon.projectDir, relPath) : daemon.projectDir;
+    if (!fullPath.startsWith(daemon.projectDir)) {
+      return res.status(400).json({ error: 'Path outside project' });
+    }
+    if (!existsSync(fullPath)) {
+      return res.status(404).json({ error: 'Directory not found' });
+    }
+
+    try {
+      const raw = readdirSync(fullPath, { withFileTypes: true });
+      const entries = [];
+
+      // Dirs first (sorted), then files (sorted)
+      const dirs = raw.filter((e) => e.isDirectory() && !IGNORED_NAMES.has(e.name) && !e.name.startsWith('.'))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const files = raw.filter((e) => e.isFile() && !e.name.startsWith('.'))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      for (const d of dirs) {
+        const childPath = relPath ? `${relPath}/${d.name}` : d.name;
+        const childFull = resolve(fullPath, d.name);
+        let hasChildren = false;
+        try {
+          const children = readdirSync(childFull, { withFileTypes: true });
+          hasChildren = children.some((c) => !c.name.startsWith('.') && !IGNORED_NAMES.has(c.name));
+        } catch { /* unreadable */ }
+        entries.push({ name: d.name, type: 'dir', path: childPath, hasChildren });
+      }
+
+      for (const f of files) {
+        const childPath = relPath ? `${relPath}/${f.name}` : f.name;
+        let size = 0;
+        try { size = statSync(resolve(fullPath, f.name)).size; } catch { /* ignore */ }
+        entries.push({
+          name: f.name, type: 'file', path: childPath, size,
+          language: detectLanguage(f.name),
+        });
+      }
+
+      res.json({
+        current: relPath || '.',
+        parent: relPath ? relPath.split('/').slice(0, -1).join('/') : null,
+        entries,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Read file contents
+  app.get('/api/files/read', (req, res) => {
+    const result = validateFilePath(req.query.path, daemon.projectDir);
+    if (result.error) return res.status(400).json({ error: result.error });
+
+    if (!existsSync(result.fullPath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    try {
+      const stat = statSync(result.fullPath);
+      if (stat.size > 5 * 1024 * 1024) {
+        return res.status(400).json({ error: 'File too large (>5MB)' });
+      }
+
+      // Binary detection: check first 8KB for null bytes
+      const buf = readFileSync(result.fullPath);
+      const sample = buf.subarray(0, 8192);
+      if (sample.includes(0)) {
+        return res.json({ path: req.query.path, binary: true, size: stat.size });
+      }
+
+      const content = buf.toString('utf8');
+      const filename = req.query.path.split('/').pop();
+      res.json({
+        path: req.query.path,
+        content,
+        size: stat.size,
+        language: detectLanguage(filename),
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Write file contents
+  app.post('/api/files/write', (req, res) => {
+    const { path: relPath, content } = req.body;
+    const result = validateFilePath(relPath, daemon.projectDir);
+    if (result.error) return res.status(400).json({ error: result.error });
+
+    if (typeof content !== 'string') {
+      return res.status(400).json({ error: 'content must be a string' });
+    }
+    if (content.length > 5 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Content too large (>5MB)' });
+    }
+
+    try {
+      writeFileSync(result.fullPath, content, 'utf8');
+      daemon.audit.log('file.write', { path: relPath });
+      res.json({ ok: true, size: Buffer.byteLength(content, 'utf8') });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Create a new file
+  app.post('/api/files/create', (req, res) => {
+    const { path: relPath, content = '' } = req.body;
+    const result = validateFilePath(relPath, daemon.projectDir);
+    if (result.error) return res.status(400).json({ error: result.error });
+
+    if (existsSync(result.fullPath)) {
+      return res.status(409).json({ error: 'File already exists' });
+    }
+
+    try {
+      // Ensure parent directory exists
+      const parentDir = resolve(result.fullPath, '..');
+      if (!parentDir.startsWith(daemon.projectDir)) {
+        return res.status(400).json({ error: 'Path outside project' });
+      }
+      mkdirSync(parentDir, { recursive: true });
+      writeFileSync(result.fullPath, content, 'utf8');
+      daemon.audit.log('file.create', { path: relPath });
+      res.status(201).json({ ok: true, path: relPath });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Create a new directory
+  app.post('/api/files/mkdir', (req, res) => {
+    const { path: relPath } = req.body;
+    const result = validateFilePath(relPath, daemon.projectDir);
+    if (result.error) return res.status(400).json({ error: result.error });
+
+    if (existsSync(result.fullPath)) {
+      return res.status(409).json({ error: 'Directory already exists' });
+    }
+
+    try {
+      mkdirSync(result.fullPath, { recursive: true });
+      daemon.audit.log('file.mkdir', { path: relPath });
+      res.status(201).json({ ok: true, path: relPath });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Delete a file or directory
+  app.delete('/api/files/delete', (req, res) => {
+    const relPath = req.query.path || req.body?.path;
+    const result = validateFilePath(relPath, daemon.projectDir);
+    if (result.error) return res.status(400).json({ error: result.error });
+
+    if (!existsSync(result.fullPath)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    try {
+      const stat = statSync(result.fullPath);
+      if (stat.isDirectory()) {
+        rmSync(result.fullPath, { recursive: true });
+      } else {
+        unlinkSync(result.fullPath);
+      }
+      daemon.audit.log('file.delete', { path: relPath });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Rename / move a file or directory
+  app.post('/api/files/rename', (req, res) => {
+    const { oldPath, newPath } = req.body;
+    const oldResult = validateFilePath(oldPath, daemon.projectDir);
+    if (oldResult.error) return res.status(400).json({ error: oldResult.error });
+    const newResult = validateFilePath(newPath, daemon.projectDir);
+    if (newResult.error) return res.status(400).json({ error: newResult.error });
+
+    if (!existsSync(oldResult.fullPath)) {
+      return res.status(404).json({ error: 'Source not found' });
+    }
+    if (existsSync(newResult.fullPath)) {
+      return res.status(409).json({ error: 'Destination already exists' });
+    }
+
+    try {
+      // Ensure parent of new path exists
+      const parentDir = resolve(newResult.fullPath, '..');
+      mkdirSync(parentDir, { recursive: true });
+      renameSync(oldResult.fullPath, newResult.fullPath);
+      daemon.audit.log('file.rename', { oldPath, newPath });
+      res.json({ ok: true, oldPath, newPath });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Serve raw file (images, video, etc.)
+  app.get('/api/files/raw', (req, res) => {
+    const result = validateFilePath(req.query.path, daemon.projectDir);
+    if (result.error) return res.status(400).json({ error: result.error });
+
+    if (!existsSync(result.fullPath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    try {
+      const stat = statSync(result.fullPath);
+      if (stat.size > 50 * 1024 * 1024) {
+        return res.status(400).json({ error: 'File too large (>50MB)' });
+      }
+      const filename = req.query.path.split('/').pop();
+      const contentType = mimeLookup(filename);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', stat.size);
+      res.setHeader('Cache-Control', 'no-cache');
+      createReadStream(result.fullPath).pipe(res);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

@@ -559,7 +559,7 @@ const styles = {
     fontFamily: 'var(--font)', resize: 'vertical',
   },
   hint: {
-    fontSize: 10, color: 'var(--text-muted)', marginTop: 3,
+    fontSize: 10, color: 'var(--text-dim)', marginTop: 3,
   },
   wsRow: {
     display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6,

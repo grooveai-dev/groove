@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGrooveStore } from '../stores/groove';
 import DirPicker from './DirPicker';
+import { FormattedText } from './AgentChat';
 
 const ROLE_PRESETS = [
   { id: 'backend',   label: 'Backend',   desc: 'APIs, server logic, database', scope: ['src/api/**', 'src/server/**', 'src/lib/**', 'src/db/**'], category: 'coding' },
@@ -48,6 +49,7 @@ export default function SpawnPanel() {
   const [permission, setPermission] = useState('auto');
   const [provider, setProvider] = useState('claude-code');
   const [model, setModel] = useState('auto');
+  const [effort, setEffort] = useState('high');
   const [providerList, setProviderList] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -63,6 +65,12 @@ export default function SpawnPanel() {
   const [installedIntegrations, setInstalledIntegrations] = useState([]);
   const [selectedIntegrations, setSelectedIntegrations] = useState([]);
 
+  // API key state
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  const [apiKeyValue, setApiKeyValue] = useState('');
+  const [apiKeySaving, setApiKeySaving] = useState(false);
+
   // Schedule state
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduleCron, setScheduleCron] = useState('0 9 * * *');
@@ -73,6 +81,7 @@ export default function SpawnPanel() {
   const [planMessages, setPlanMessages] = useState([]);
   const [planInput, setPlanInput] = useState('');
   const [planLoading, setPlanLoading] = useState(false);
+  const [planResearching, setPlanResearching] = useState(false);
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -80,6 +89,7 @@ export default function SpawnPanel() {
     fetchWorkspaces();
     fetchInstalledSkills();
     fetchInstalledIntegrations();
+    fetch('/api/anthropic-key/status').then((r) => r.json()).then((d) => setHasApiKey(d.configured)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -150,20 +160,20 @@ export default function SpawnPanel() {
     return true;
   }
 
-  // --- Plan chat ---
+  // --- Plan chat (Haiku triages: fast for chat, deep for research) ---
   async function handlePlanSend() {
     if (!planInput.trim() || planLoading) return;
     const userMsg = planInput.trim();
     setPlanInput('');
     setPlanMessages((prev) => [...prev, { from: 'user', text: userMsg }]);
     setPlanLoading(true);
+    setPlanResearching(false);
 
     try {
       const finalRole = role === 'custom' ? customRole : role;
       const context = [
         finalRole ? `Agent role: ${finalRole}` : null,
         prompt ? `Current task prompt: ${prompt}` : null,
-        'Help the user plan and refine the task for this AI agent. Be concise, practical, and suggest a clear task description they can use as the prompt.',
       ].filter(Boolean).join('\n');
 
       const history = planMessages.map((m) => `${m.from === 'user' ? 'User' : 'AI'}: ${m.text}`).join('\n');
@@ -172,17 +182,52 @@ export default function SpawnPanel() {
         body: JSON.stringify({ prompt: `${context}\n\n${history}\nUser: ${userMsg}\n\nRespond helpfully:` }),
       });
       const data = await res.json();
-      setPlanMessages((prev) => [...prev, { from: 'ai', text: data.response || data.error || 'No response' }]);
+
+      if (data.mode === 'research') {
+        // Research mode took longer but we got the deep response
+        setPlanMessages((prev) => [...prev, { from: 'ai', text: data.response || 'No response', mode: 'research' }]);
+      } else {
+        setPlanMessages((prev) => [...prev, { from: 'ai', text: data.response || data.error || 'No response' }]);
+      }
     } catch {
       setPlanMessages((prev) => [...prev, { from: 'ai', text: 'Failed to reach AI. Write your prompt directly.' }]);
     }
     setPlanLoading(false);
+    setPlanResearching(false);
   }
 
-  function applyPlanToPrompt() {
-    const parts = planMessages.map((m) => `${m.from === 'user' ? '## Goal' : '## AI Guidance'}\n${m.text}`);
-    setPrompt(parts.join('\n\n'));
-    setPlanMode(false);
+  async function applyPlanToPrompt() {
+    // Ask AI to synthesize the conversation into a clean, actionable agent prompt
+    setPlanLoading(true);
+    try {
+      const conversation = planMessages.map((m) => `${m.from === 'user' ? 'User' : 'AI'}: ${m.text}`).join('\n\n');
+      const finalRole = role === 'custom' ? customRole : role;
+      const res = await fetch('/api/journalist/query', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: `Synthesize the following planning conversation into a clean, structured prompt for a ${finalRole || 'coding'} agent. Output ONLY the prompt — no preamble, no explanation, just the actual content the agent should receive.
+
+CRITICAL: The prompt MUST include the SPECIFIC TASK or feature to work on — extracted from the conversation. Don't just define the agent's role. Tell it exactly what to build/plan/do. Structure it as:
+1. Brief role context (2-3 sentences max)
+2. The specific task/feature (this is the main content)
+3. Requirements, constraints, acceptance criteria
+4. Any relevant details discussed
+
+Conversation:\n${conversation}`,
+        }),
+      });
+      const data = await res.json();
+      if (data.response) {
+        setPrompt(data.response);
+        setPlanMode(false);
+      }
+    } catch {
+      // Fallback: use last AI message
+      const lastAi = [...planMessages].reverse().find((m) => m.from === 'ai');
+      if (lastAi) setPrompt(lastAi.text);
+      setPlanMode(false);
+    }
+    setPlanLoading(false);
   }
 
   // --- Submit ---
@@ -196,7 +241,7 @@ export default function SpawnPanel() {
       const scopeArr = effectiveScope ? effectiveScope.split(',').map((s) => s.trim()).filter(Boolean) : [];
       const agentConfig = {
         role: finalRole, scope: scopeArr, prompt: prompt || null,
-        model: model || 'auto', provider, permission,
+        model: model || 'auto', provider, permission, effort,
         ...(workingDir.trim() ? { workingDir: workingDir.trim() } : {}),
         ...(selectedSkills.length > 0 ? { skills: selectedSkills } : {}),
         ...(selectedIntegrations.length > 0 ? { integrations: selectedIntegrations } : {}),
@@ -301,6 +346,27 @@ export default function SpawnPanel() {
                 </div>
               </Section>
 
+              {/* Effort */}
+              <Section label="Effort">
+                <div style={S.chipRow}>
+                  {[
+                    { id: 'low', label: 'Low', desc: 'Quick tasks' },
+                    { id: 'medium', label: 'Medium', desc: 'Standard' },
+                    { id: 'high', label: 'High', desc: 'Comprehensive' },
+                    { id: 'max', label: 'Max', desc: 'Deep reasoning' },
+                  ].map((e) => (
+                    <button key={e.id} type="button" onClick={() => setEffort(e.id)}
+                      title={e.desc}
+                      style={{
+                        ...S.chip, flex: 1, textAlign: 'center', padding: '5px 4px',
+                        ...(effort === e.id ? { borderColor: 'var(--accent)', color: 'var(--text-bright)', background: 'rgba(51, 175, 188, 0.08)' } : {}),
+                      }}>
+                      {e.label}
+                    </button>
+                  ))}
+                </div>
+              </Section>
+
               {/* Integrations */}
               {installedIntegrations.length > 0 && (
                 <Section label={`Integrations (${selectedIntegrations.length})`}>
@@ -354,6 +420,57 @@ export default function SpawnPanel() {
                       ))}
                     </div>
                   </div>
+                )}
+              </Section>
+
+              {/* API Key — enables fast plan chat */}
+              <Section label="Anthropic API Key">
+                {hasApiKey ? (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 11, color: 'var(--green)' }}>Connected — fast plan chat enabled</span>
+                    <button type="button" onClick={async () => {
+                      await fetch('/api/credentials/anthropic-api', { method: 'DELETE' });
+                      setHasApiKey(false);
+                    }} style={{ ...S.cancelBtn, fontSize: 9 }}>remove</button>
+                  </div>
+                ) : showApiKeyInput ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-dim)', lineHeight: 1.5 }}>
+                      Enables instant plan chat responses. Get a key from console.anthropic.com
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <input type="text" autoComplete="off" data-lpignore="true" data-1p-ignore style={{ ...S.input, flex: 1, WebkitTextSecurity: 'disc' }} placeholder="sk-ant-..."
+                        value={apiKeyValue} onChange={(e) => setApiKeyValue(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && apiKeyValue && (async () => {
+                          setApiKeySaving(true);
+                          await fetch('/api/credentials/anthropic-api', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ key: apiKeyValue }),
+                          });
+                          setHasApiKey(true); setShowApiKeyInput(false); setApiKeyValue('');
+                          setApiKeySaving(false);
+                        })()} />
+                      <button type="button" disabled={!apiKeyValue || apiKeySaving} onClick={async () => {
+                        setApiKeySaving(true);
+                        await fetch('/api/credentials/anthropic-api', {
+                          method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ key: apiKeyValue }),
+                        });
+                        setHasApiKey(true); setShowApiKeyInput(false); setApiKeyValue('');
+                        setApiKeySaving(false);
+                      }} style={{ ...S.saveKeyBtn, opacity: !apiKeyValue ? 0.4 : 1 }}>
+                        {apiKeySaving ? '...' : 'Save'}
+                      </button>
+                    </div>
+                    <button type="button" onClick={() => setShowApiKeyInput(false)} style={S.cancelBtn}>cancel</button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => setShowApiKeyInput(true)} style={{
+                    ...S.chip, width: '100%', textAlign: 'center', padding: '6px',
+                    color: 'var(--accent)', borderColor: 'var(--accent)',
+                  }}>
+                    Add API key for instant responses
+                  </button>
                 )}
               </Section>
 
@@ -444,9 +561,9 @@ export default function SpawnPanel() {
                 <div style={S.chatHeader}>
                   <span style={S.chatTitle}>Plan with AI</span>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    {planMessages.length > 0 && (
+                    {planMessages.length > 0 && !planLoading && (
                       <button type="button" onClick={applyPlanToPrompt} style={S.usePlanBtn}>
-                        Use as Prompt
+                        Generate Prompt
                       </button>
                     )}
                     <button type="button" onClick={() => setPlanMode(false)} style={S.closePlanBtn}>
@@ -471,14 +588,14 @@ export default function SpawnPanel() {
                       ...(msg.from === 'user' ? S.chatUser : S.chatAI),
                     }}>
                       <div style={S.chatFrom}>{msg.from === 'user' ? 'You' : 'AI'}</div>
-                      <div style={S.chatText}>{msg.text}</div>
+                      <div style={S.chatText}>
+                        {msg.from === 'ai' ? <FormattedText text={msg.text} /> : msg.text}
+                      </div>
                     </div>
                   ))}
-                  {planLoading && (
-                    <div style={{ ...S.chatBubble, ...S.chatAI }}>
-                      <div style={S.chatFrom}>AI</div>
-                      <div style={{ ...S.chatText, fontStyle: 'italic', color: 'var(--text-dim)' }}>Thinking...</div>
-                    </div>
+                  {planLoading && (hasApiKey
+                    ? <div style={{ alignSelf: 'flex-start', padding: '10px 16px', borderRadius: 10, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderBottomLeftRadius: 2, fontSize: 11, color: 'var(--text-dim)' }}>Responding...</div>
+                    : <PlanningIndicator />
                   )}
                   <div ref={chatEndRef} />
                 </div>
@@ -507,6 +624,82 @@ export default function SpawnPanel() {
 }
 
 // --- Small reusable components ---
+
+// Auto-escalating indicator: shows simple "Responding" for 3s, then switches to planning phases
+function AutoEscalateIndicator() {
+  const [escalated, setEscalated] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setEscalated(true), 3000);
+    return () => clearTimeout(timer);
+  }, []);
+  if (!escalated) {
+    return (
+      <div style={{
+        alignSelf: 'flex-start', padding: '10px 16px', borderRadius: 10,
+        background: 'var(--bg-surface)', border: '1px solid var(--border)',
+        borderBottomLeftRadius: 2, fontSize: 11, color: 'var(--text-dim)',
+      }}>
+        Responding...
+      </div>
+    );
+  }
+  return <PlanningIndicator />;
+}
+
+const PLAN_PHASES = [
+  'Analyzing request',
+  'Evaluating approach',
+  'Considering scope',
+  'Identifying constraints',
+  'Crafting plan',
+];
+
+function PlanningIndicator() {
+  const [phase, setPhase] = useState(0);
+  const [dots, setDots] = useState(1);
+
+  useEffect(() => {
+    const phaseTimer = setInterval(() => setPhase((p) => (p + 1) % PLAN_PHASES.length), 3000);
+    const dotTimer = setInterval(() => setDots((d) => (d % 3) + 1), 500);
+    return () => { clearInterval(phaseTimer); clearInterval(dotTimer); };
+  }, []);
+
+  return (
+    <div style={{
+      alignSelf: 'flex-start', padding: '14px 20px', borderRadius: 10,
+      background: 'var(--bg-surface)', border: '1px solid var(--border)',
+      borderBottomLeftRadius: 2, maxWidth: '80%',
+    }}>
+      <div style={{
+        fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+        letterSpacing: 1.2, color: 'var(--accent)', marginBottom: 10,
+      }}>
+        Planning
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {PLAN_PHASES.map((label, i) => {
+          const active = i === phase;
+          const done = i < phase;
+          return (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              fontSize: 11, color: active ? 'var(--text-bright)' : done ? 'var(--text-dim)' : 'var(--text-muted)',
+              transition: 'color 0.3s',
+            }}>
+              <span style={{
+                width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                background: active ? 'var(--accent)' : done ? 'var(--text-dim)' : 'var(--border)',
+                transition: 'background 0.3s',
+                ...(active ? { boxShadow: '0 0 6px var(--accent)' } : {}),
+              }} />
+              {label}{active ? '.'.repeat(dots) : ''}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function Section({ label, children }) {
   return (
@@ -600,7 +793,7 @@ const S = {
 
   // Body
   body: {
-    flex: 1, display: 'flex', overflow: 'hidden',
+    flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0,
   },
 
   // Left panel
@@ -614,7 +807,7 @@ const S = {
 
   // Right panel
   right: {
-    flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+    flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0,
   },
 
   // Prompt mode
@@ -646,6 +839,7 @@ const S = {
   // Chat mode
   chatPanel: {
     flex: 1, display: 'flex', flexDirection: 'column',
+    overflow: 'hidden', minHeight: 0,
   },
   chatHeader: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',

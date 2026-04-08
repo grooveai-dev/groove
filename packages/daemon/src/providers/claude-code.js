@@ -48,6 +48,10 @@ export class ClaudeCodeProvider extends Provider {
       args.push('--model', agent.model);
     }
 
+    if (agent.effort) {
+      args.push('--effort', agent.effort);
+    }
+
     // Pass the initial prompt as positional arg (includes GROOVE context)
     const fullPrompt = this.buildFullPrompt(agent);
     if (fullPrompt) {

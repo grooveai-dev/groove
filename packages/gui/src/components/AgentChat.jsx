@@ -233,7 +233,7 @@ function LaunchTeamButton({ showStatus }) {
 
 // ── FORMATTED TEXT — renders markdown-like agent output cleanly ──
 
-function FormattedText({ text }) {
+export function FormattedText({ text }) {
   if (!text) return null;
   const lines = text.split('\n');
 

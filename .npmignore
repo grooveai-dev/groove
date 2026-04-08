@@ -4,14 +4,23 @@
 # Tests
 packages/daemon/test/
 
-# Dev files
+# Runtime state (contains credentials, keys, logs, state)
 .claude/
+**/.claude/
 .groove/
+**/.groove/
+google-oauth.json
+**/google-oauth.json
+
+# Generated context files
 GROOVE_*.md
 GROOVE_AGENT_LOGS/
 GROVE_*.md
 AGENTS_REGISTRY.md
+
+# Dev files
 example/
 *.log
 .DS_Store
 .env*
+docs/

@@ -1,7 +1,7 @@
 // GROOVE GUI — File Editor View
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useGrooveStore } from '../stores/groove';
 import FileTree from '../components/FileTree';
 import EditorTabs from '../components/EditorTabs';
@@ -18,9 +18,39 @@ export default function FileEditor() {
   const saveFile = useGrooveStore((s) => s.saveFile);
   const reloadFile = useGrooveStore((s) => s.reloadFile);
   const dismissFileChange = useGrooveStore((s) => s.dismissFileChange);
+  const fetchTreeDir = useGrooveStore((s) => s.fetchTreeDir);
 
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalHeight, setTerminalHeight] = useState(220);
+  const [rootDir, setRootDir] = useState('');
+  const [rootInput, setRootInput] = useState('');
+  const [editingRoot, setEditingRoot] = useState(false);
+
+  // Fetch current editor root on mount
+  useEffect(() => {
+    fetch('/api/files/root').then((r) => r.json()).then((d) => {
+      setRootDir(d.root || '');
+      setRootInput(d.root || '');
+    }).catch(() => {});
+  }, []);
+
+  async function handleRootChange() {
+    if (!rootInput.trim()) return;
+    try {
+      const res = await fetch('/api/files/root', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ root: rootInput.trim() }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setRootDir(data.root);
+        setEditingRoot(false);
+        // Clear tree cache and reload
+        useGrooveStore.setState({ editorTreeCache: {}, editorOpenTabs: [], editorActiveFile: null, editorFiles: {} });
+        fetchTreeDir('');
+      }
+    } catch { /* ignore */ }
+  }
 
   const file = activeFile ? files[activeFile] : null;
   const isChanged = activeFile && changedFiles[activeFile];
@@ -54,6 +84,29 @@ export default function FileEditor() {
 
   return (
     <div style={styles.container}>
+      {/* Directory bar */}
+      <div style={styles.dirBar}>
+        <span style={styles.dirLabel}>DIR</span>
+        {editingRoot ? (
+          <div style={{ display: 'flex', flex: 1, gap: 4 }}>
+            <input
+              style={styles.dirInput}
+              value={rootInput}
+              onChange={(e) => setRootInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleRootChange(); if (e.key === 'Escape') { setEditingRoot(false); setRootInput(rootDir); } }}
+              placeholder="/absolute/path/to/project"
+              autoFocus
+            />
+            <button onClick={handleRootChange} style={styles.dirOkBtn}>Open</button>
+            <button onClick={() => { setEditingRoot(false); setRootInput(rootDir); }} style={styles.dirCancelBtn}>&times;</button>
+          </div>
+        ) : (
+          <button onClick={() => setEditingRoot(true)} style={styles.dirPath} title="Click to change directory">
+            {rootDir || '...'}
+          </button>
+        )}
+      </div>
+
       {/* Tab bar */}
       <EditorTabs />
 
@@ -129,6 +182,37 @@ const styles = {
   container: {
     display: 'flex', flexDirection: 'column',
     height: '100%', width: '100%',
+  },
+  dirBar: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '4px 12px', flexShrink: 0,
+    borderBottom: '1px solid var(--border)',
+    background: 'var(--bg-chrome)',
+  },
+  dirLabel: {
+    fontSize: 9, fontWeight: 700, color: 'var(--text-dim)',
+    letterSpacing: 1, flexShrink: 0,
+  },
+  dirPath: {
+    background: 'none', border: 'none', color: 'var(--text-primary)',
+    fontSize: 11, fontFamily: 'var(--font)', cursor: 'pointer',
+    padding: '2px 6px', borderRadius: 3, textAlign: 'left',
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    flex: 1,
+  },
+  dirInput: {
+    flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--accent)',
+    borderRadius: 3, padding: '2px 8px', color: 'var(--text-primary)',
+    fontSize: 11, outline: 'none', fontFamily: 'var(--font)',
+  },
+  dirOkBtn: {
+    background: 'var(--accent)', color: 'var(--bg-base)', border: 'none',
+    borderRadius: 3, padding: '2px 10px', fontSize: 10, fontWeight: 600,
+    cursor: 'pointer', fontFamily: 'var(--font)',
+  },
+  dirCancelBtn: {
+    background: 'none', border: 'none', color: 'var(--text-dim)',
+    fontSize: 14, cursor: 'pointer', padding: '0 4px',
   },
   contentRow: {
     flex: 1, display: 'flex', overflow: 'hidden',

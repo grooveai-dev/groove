@@ -5,8 +5,9 @@ import express from 'express';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream } from 'fs';
+import { spawn as cpSpawn } from 'child_process';
 import { lookup as mimeLookup } from './mimetypes.js';
-import { listProviders } from './providers/index.js';
+import { listProviders, getProvider } from './providers/index.js';
 import { validateAgentConfig } from './validate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -351,16 +352,65 @@ export function createApi(app, daemon) {
     });
   });
 
-  // Quick AI query (used by plan chat in spawn panel)
+  // Plan chat — direct API (fast, sub-second) when API key available, CLI fallback otherwise
+  const PLAN_SYSTEM = `You are the planning assistant built into Groove's spawn panel. The user is configuring an AI agent right now — they're looking at a form with role selection, file scope, skills, integrations, effort level, and a task prompt. Your conversation will be synthesized into the agent's task prompt when they click "Generate Prompt."
+
+Your job: help them think through what the agent should do, then craft a clear plan. Be direct and practical. Don't ask how they'll feed input to agents or what tools to use — they're already inside Groove doing it. Focus on the TASK itself.
+
+What you know about the system:
+- The user is in the spawn panel, configuring an agent before launching it
+- The left panel has: role picker, directory, permissions, effort, integrations, skills, schedule
+- When done planning, "Generate Prompt" synthesizes this chat into the agent's task prompt
+- Agents are Claude Code instances with full terminal/file access in the specified directory
+- Agents can read/write files, run commands, use MCP integrations (Slack, GitHub, etc.)
+- The journalist system prevents cold starts during context rotation — agents don't lose context
+
+Keep responses concise. Help them think, don't lecture them about the system they built.`;
+
   app.post('/api/journalist/query', async (req, res) => {
     try {
       const { prompt } = req.body || {};
       if (!prompt) return res.status(400).json({ error: 'prompt is required' });
-      const response = await daemon.journalist._callAI(prompt);
-      res.json({ response });
+
+      // Fast path: direct Anthropic API call (sub-second)
+      const apiKey = daemon.credentials.getKey('anthropic-api');
+      if (apiKey) {
+        const apiRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 1024,
+            system: PLAN_SYSTEM,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        });
+        const data = await apiRes.json();
+        if (data.content?.[0]?.text) {
+          return res.json({ response: data.content[0].text, mode: 'fast' });
+        }
+        if (data.error) {
+          return res.status(400).json({ error: data.error.message || 'API error' });
+        }
+      }
+
+      // Slow path: CLI fallback for subscription auth (~10s)
+      const fullPrompt = `${PLAN_SYSTEM}\n\n${prompt}`;
+      const response = await daemon.journalist.callHeadless(fullPrompt);
+      res.json({ response, mode: 'cli' });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // Check if Anthropic API key is configured
+  app.get('/api/anthropic-key/status', (req, res) => {
+    const hasKey = !!daemon.credentials.getKey('anthropic-api');
+    res.json({ configured: hasKey });
   });
 
   // Trigger journalist cycle manually
@@ -754,6 +804,11 @@ export function createApi(app, daemon) {
 
   const IGNORED_NAMES = new Set(['.git', 'node_modules', '.DS_Store', '.groove', '__pycache__', '.next', '.cache', 'dist', 'coverage']);
 
+  // Editor root directory — defaults to projectDir but can be changed at runtime
+  let editorRootDir = daemon.projectDir;
+
+  function getEditorRoot() { return editorRootDir; }
+
   function validateFilePath(relPath, projectDir) {
     if (!relPath || typeof relPath !== 'string') return { error: 'path is required' };
     if (relPath.startsWith('/') || relPath.includes('..') || relPath.includes('\0')) {
@@ -764,6 +819,27 @@ export function createApi(app, daemon) {
     return { fullPath };
   }
 
+  // Get/set the editor working directory
+  app.get('/api/files/root', (req, res) => {
+    res.json({ root: editorRootDir });
+  });
+
+  app.post('/api/files/root', (req, res) => {
+    const { root } = req.body || {};
+    if (!root || typeof root !== 'string') return res.status(400).json({ error: 'root path is required' });
+    // Must be absolute and exist
+    if (!root.startsWith('/')) return res.status(400).json({ error: 'root must be an absolute path' });
+    if (root.includes('\0') || root.includes('..')) return res.status(400).json({ error: 'Invalid path' });
+    if (!existsSync(root)) return res.status(404).json({ error: 'Directory not found' });
+    try {
+      const stat = statSync(root);
+      if (!stat.isDirectory()) return res.status(400).json({ error: 'Path is not a directory' });
+    } catch { return res.status(400).json({ error: 'Cannot access directory' }); }
+    editorRootDir = root;
+    daemon.audit.log('editor.root.set', { root });
+    res.json({ ok: true, root: editorRootDir });
+  });
+
   // File tree — returns dirs + files for a given path
   app.get('/api/files/tree', (req, res) => {
     const relPath = req.query.path || '';
@@ -773,8 +849,9 @@ export function createApi(app, daemon) {
       return res.status(400).json({ error: 'Invalid path' });
     }
 
-    const fullPath = relPath ? resolve(daemon.projectDir, relPath) : daemon.projectDir;
-    if (!fullPath.startsWith(daemon.projectDir)) {
+    const rootDir = getEditorRoot();
+    const fullPath = relPath ? resolve(rootDir, relPath) : rootDir;
+    if (!fullPath.startsWith(rootDir)) {
       return res.status(400).json({ error: 'Path outside project' });
     }
     if (!existsSync(fullPath)) {
@@ -824,7 +901,7 @@ export function createApi(app, daemon) {
 
   // Read file contents
   app.get('/api/files/read', (req, res) => {
-    const result = validateFilePath(req.query.path, daemon.projectDir);
+    const result = validateFilePath(req.query.path, getEditorRoot());
     if (result.error) return res.status(400).json({ error: result.error });
 
     if (!existsSync(result.fullPath)) {
@@ -860,7 +937,7 @@ export function createApi(app, daemon) {
   // Write file contents
   app.post('/api/files/write', (req, res) => {
     const { path: relPath, content } = req.body;
-    const result = validateFilePath(relPath, daemon.projectDir);
+    const result = validateFilePath(relPath, getEditorRoot());
     if (result.error) return res.status(400).json({ error: result.error });
 
     if (typeof content !== 'string') {
@@ -882,7 +959,7 @@ export function createApi(app, daemon) {
   // Create a new file
   app.post('/api/files/create', (req, res) => {
     const { path: relPath, content = '' } = req.body;
-    const result = validateFilePath(relPath, daemon.projectDir);
+    const result = validateFilePath(relPath, getEditorRoot());
     if (result.error) return res.status(400).json({ error: result.error });
 
     if (existsSync(result.fullPath)) {
@@ -907,7 +984,7 @@ export function createApi(app, daemon) {
   // Create a new directory
   app.post('/api/files/mkdir', (req, res) => {
     const { path: relPath } = req.body;
-    const result = validateFilePath(relPath, daemon.projectDir);
+    const result = validateFilePath(relPath, getEditorRoot());
     if (result.error) return res.status(400).json({ error: result.error });
 
     if (existsSync(result.fullPath)) {
@@ -926,7 +1003,7 @@ export function createApi(app, daemon) {
   // Delete a file or directory
   app.delete('/api/files/delete', (req, res) => {
     const relPath = req.query.path || req.body?.path;
-    const result = validateFilePath(relPath, daemon.projectDir);
+    const result = validateFilePath(relPath, getEditorRoot());
     if (result.error) return res.status(400).json({ error: result.error });
 
     if (!existsSync(result.fullPath)) {
@@ -950,9 +1027,9 @@ export function createApi(app, daemon) {
   // Rename / move a file or directory
   app.post('/api/files/rename', (req, res) => {
     const { oldPath, newPath } = req.body;
-    const oldResult = validateFilePath(oldPath, daemon.projectDir);
+    const oldResult = validateFilePath(oldPath, getEditorRoot());
     if (oldResult.error) return res.status(400).json({ error: oldResult.error });
-    const newResult = validateFilePath(newPath, daemon.projectDir);
+    const newResult = validateFilePath(newPath, getEditorRoot());
     if (newResult.error) return res.status(400).json({ error: newResult.error });
 
     if (!existsSync(oldResult.fullPath)) {
@@ -976,7 +1053,7 @@ export function createApi(app, daemon) {
 
   // Serve raw file (images, video, etc.)
   app.get('/api/files/raw', (req, res) => {
-    const result = validateFilePath(req.query.path, daemon.projectDir);
+    const result = validateFilePath(req.query.path, getEditorRoot());
     if (result.error) return res.status(400).json({ error: result.error });
 
     if (!existsSync(result.fullPath)) {

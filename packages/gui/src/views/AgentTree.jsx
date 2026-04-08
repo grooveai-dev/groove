@@ -22,39 +22,37 @@ function AgentTreeInner() {
 
   const selectedAgentId = detailPanel?.type === 'agent' ? detailPanel.agentId : null;
   const prevCountRef = useRef(0);
+  const positionMapRef = useRef({});
+  const nextSlotRef = useRef(0);
 
   const { nodes, edges } = useMemo(() => {
-    const running = agents.filter((a) => a.status === 'running' || a.status === 'starting');
-    const done = agents.filter((a) => a.status !== 'running' && a.status !== 'starting');
+    // Clean up agents that no longer exist
+    const agentIds = new Set(agents.map((a) => a.id));
+    for (const id of Object.keys(positionMapRef.current)) {
+      if (!agentIds.has(id)) {
+        delete positionMapRef.current[id];
+      }
+    }
 
-    const runningNodes = running.map((agent, i) => ({
-      id: agent.id,
-      type: 'agent',
-      position: {
-        x: (i % MAX_PER_ROW) * NODE_X_SPACING,
-        y: 80 + Math.floor(i / MAX_PER_ROW) * NODE_Y_SPACING,
-      },
-      data: { ...agent, selected: agent.id === selectedAgentId },
-      draggable: true,
-    }));
+    const allAgentNodes = agents.map((agent) => {
+      if (!positionMapRef.current[agent.id]) {
+        const slot = nextSlotRef.current;
+        positionMapRef.current[agent.id] = {
+          x: (slot % MAX_PER_ROW) * NODE_X_SPACING,
+          y: 160 + Math.floor(slot / MAX_PER_ROW) * NODE_Y_SPACING,
+        };
+        nextSlotRef.current += 1;
+      }
+      return {
+        id: agent.id,
+        type: 'agent',
+        position: positionMapRef.current[agent.id],
+        data: { ...agent, selected: agent.id === selectedAgentId },
+        draggable: true,
+      };
+    });
 
-    const runningRows = Math.ceil(running.length / MAX_PER_ROW) || 1;
-    const doneStartY = 80 + runningRows * NODE_Y_SPACING + 50;
-
-    const doneNodes = done.map((agent, i) => ({
-      id: agent.id,
-      type: 'agent',
-      position: {
-        x: (i % MAX_PER_ROW) * NODE_X_SPACING,
-        y: doneStartY + Math.floor(i / MAX_PER_ROW) * NODE_Y_SPACING,
-      },
-      data: { ...agent, selected: agent.id === selectedAgentId },
-      draggable: true,
-    }));
-
-    const allAgentNodes = [...runningNodes, ...doneNodes];
-
-    const maxPerRow = Math.min(Math.max(running.length, done.length, 1), MAX_PER_ROW);
+    const maxPerRow = Math.min(Math.max(agents.length, 1), MAX_PER_ROW);
     const totalWidth = maxPerRow * NODE_X_SPACING;
 
     // GROOVE root node — clean, rounded, matching
@@ -98,9 +96,18 @@ function AgentTreeInner() {
     return { nodes: [grooveNode, ...allAgentNodes], edges };
   }, [agents, selectedAgentId]);
 
+  const onNodesChange = useCallback((changes) => {
+    for (const change of changes) {
+      if (change.type === 'position' && change.position) {
+        positionMapRef.current[change.id] = change.position;
+      }
+    }
+  }, []);
+
   useEffect(() => {
     const currentCount = agents.length;
-    if (currentCount !== prevCountRef.current) {
+    const prevCount = prevCountRef.current;
+    if (prevCount === 0 && currentCount === 1) {
       setTimeout(() => fitView({ padding: 0.3, maxZoom: 1.4, duration: 200 }), 50);
     }
     prevCountRef.current = currentCount;
@@ -125,6 +132,7 @@ function AgentTreeInner() {
       edges={edges}
       nodeTypes={nodeTypes}
       onNodeClick={onNodeClick}
+      onNodesChange={onNodesChange}
       onPaneClick={onPaneClick}
       proOptions={{ hideAttribution: true }}
       nodesConnectable={false}

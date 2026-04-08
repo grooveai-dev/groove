@@ -1,9 +1,8 @@
 // GROOVE GUI — Agent Node Component
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { useGrooveStore } from '../stores/groove';
 
 const STATUS_COLORS = {
   running:   '#4ae168',
@@ -42,10 +41,12 @@ export default function AgentNode({ data }) {
       ? data.scope[0].replace(/\/\*\*$/, '').replace(/^src\//, '')
       : data.role;
 
+  const bg = sel ? '#2e333c' : alive ? '#2a2f38' : '#282c34';
+
   return (
     <div style={{
-      background: '#282c34',
-      border: sel ? '1px solid #33afbc' : '1px solid #3e4451',
+      background: bg,
+      border: '1px solid #3e4451',
       borderRadius: 10,
       width: 210,
       padding: 0,
@@ -101,9 +102,6 @@ export default function AgentNode({ data }) {
         </div>
       </div>
 
-      {/* Live heartbeat — real-time token line chart */}
-      {alive && <Heartbeat agentId={data.id} color={statusColor} />}
-
       <Handle type="source" position={Position.Bottom} style={{
         background: '#282c34', border: '2px solid #3e4451',
         width: 8, height: 8, borderRadius: '50%', bottom: -4,
@@ -112,71 +110,3 @@ export default function AgentNode({ data }) {
   );
 }
 
-// ── HEARTBEAT — Mini real-time token line chart ──
-
-function Heartbeat({ agentId, color }) {
-  const canvasRef = useRef();
-  const tokenTimeline = useGrooveStore((s) => s.tokenTimeline);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const w = 210;
-    const h = 24;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, w, h);
-
-    const pts = tokenTimeline[agentId] || [];
-    if (pts.length < 2) {
-      // Flat baseline
-      ctx.strokeStyle = '#2c313a';
-      ctx.lineWidth = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(0, h / 2);
-      ctx.lineTo(w, h / 2);
-      ctx.stroke();
-      return;
-    }
-
-    // Use last 40 data points
-    const data = pts.slice(-40);
-    const vals = data.map((p) => p.v);
-    const min = Math.min(...vals);
-    const max = Math.max(...vals);
-    const range = max - min || 1;
-
-    const padY = 4;
-    const usableH = h - padY * 2;
-    const step = w / (data.length - 1);
-
-    // Line
-    ctx.beginPath();
-    data.forEach((p, i) => {
-      const x = i * step;
-      const y = padY + usableH - ((p.v - min) / range) * usableH;
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    });
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // End dot
-    const lastX = (data.length - 1) * step;
-    const lastY = padY + usableH - ((data[data.length - 1].v - min) / range) * usableH;
-    ctx.beginPath();
-    ctx.arc(lastX, lastY, 2, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.fill();
-  }, [tokenTimeline, agentId, color]);
-
-  return (
-    <div style={{ borderTop: '1px solid #2c313a', background: '#1e222a' }}>
-      <canvas ref={canvasRef} style={{ display: 'block', width: 210, height: 24 }} />
-    </div>
-  );
-}

@@ -248,6 +248,15 @@ export class Daemon {
     }).catch(() => false);
 
     if (!(await checkPort(this.port))) {
+      // Wait for port release (e.g., after groove stop)
+      let retries = 5;
+      while (retries > 0 && !(await checkPort(this.port))) {
+        await new Promise((r) => setTimeout(r, 1000));
+        retries--;
+      }
+    }
+
+    if (!(await checkPort(this.port))) {
       const originalPort = this.port;
       // Try next 10 ports
       let found = false;

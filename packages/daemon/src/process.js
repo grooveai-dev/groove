@@ -5,6 +5,7 @@ import { spawn as cpSpawn } from 'child_process';
 import { createWriteStream, mkdirSync, chmodSync } from 'fs';
 import { resolve } from 'path';
 import { getProvider } from './providers/index.js';
+import { validateAgentConfig } from './validate.js';
 
 // Role-specific prompt prefixes — applied during spawn regardless of entry point
 // (SpawnPanel, chat continue, CLI, API) for consistency
@@ -70,15 +71,19 @@ After completing your plan, you MUST do two things:
 
 2. Save a machine-readable team config to .groove/recommended-team.json using this EXACT format:
 [
-  { "role": "fullstack", "scope": [], "prompt": "Set up project infrastructure: package.json, tsconfig, vite config, dependencies. Once all other agents finish, audit and QC their work, fix any issues, then launch the dev server. Output the localhost URL where the app can be accessed." },
-  { "role": "backend", "scope": ["src/api/**", "src/server/**", "src/db/**", "src/lib/**"], "workingDir": "packages/backend", "prompt": "Build the backend: [specific tasks from your plan]" },
-  { "role": "frontend", "scope": ["src/components/**", "src/views/**", "src/pages/**", "src/styles/**"], "workingDir": "packages/frontend", "prompt": "Build the frontend: [specific tasks from your plan]" }
+  { "role": "frontend", "phase": 1, "scope": ["src/components/**", "src/views/**"], "prompt": "Build the frontend: [specific tasks]" },
+  { "role": "backend", "phase": 1, "scope": ["src/api/**", "src/server/**"], "prompt": "Build the backend: [specific tasks]" },
+  { "role": "fullstack", "phase": 2, "scope": [], "prompt": "QC Senior Dev: Audit all changes from phase 1 agents. Verify correctness, fix issues, run tests, build the project, commit, and launch. Output the localhost URL." }
 ]
 
-Include only the agents needed. Set appropriate scopes for each role. Write detailed prompts based on your plan so each agent knows exactly what to build.
-If the project is a monorepo or has distinct subdirectories (e.g. packages/, apps/), set "workingDir" to the relative path for each agent so it spawns inside its subdirectory. Omit workingDir for agents that need full project access (like fullstack or planner).
-
-Always include a fullstack agent. Its job: set up infrastructure first, then after all other agents finish, audit their work, fix issues, build the project, launch the dev server, and output the localhost URL so the user can immediately see the result. Include testing/devops only if the project needs them.
+CRITICAL RULES for the team config:
+- Builder agents (frontend, backend, etc.) are ALWAYS phase: 1 — they run in parallel.
+- ALWAYS include exactly ONE fullstack agent with phase: 2 — this is the QC Senior Dev.
+- Phase 2 agents auto-spawn ONLY after ALL phase 1 agents complete. Do NOT tell them to "wait for" other agents.
+- The phase 2 fullstack agent audits, integrates, builds, tests, commits, and launches. It is the last agent to run.
+- Set appropriate scopes for each role. Write detailed prompts so each agent knows exactly what to build.
+- If the project is a monorepo, set "workingDir" for agents that need specific subdirectories.
+- Include testing/devops only if the project needs them.
 
 IMPORTANT: Do not use markdown formatting like ** or ### in your output. Write in plain text with clean formatting. Use line breaks, dashes, and indentation for structure.
 
@@ -325,6 +330,9 @@ For normal file edits within your scope, proceed without review.
       if (finalStatus === 'completed' && this.daemon.journalist) {
         this.daemon.journalist.cycle().catch(() => {});
       }
+
+      // Phase 2 auto-spawn: check if all phase 1 agents for a team are done
+      this._checkPhase2(agent.id);
     });
 
     proc.on('error', (err) => {
@@ -336,6 +344,49 @@ For normal file edits within your scope, proceed without review.
     });
 
     return agent;
+  }
+
+  /**
+   * Check if a completed/crashed agent was the last phase 1 agent in a team.
+   * If so, auto-spawn the phase 2 (QC/finisher) agents.
+   */
+  _checkPhase2(completedAgentId) {
+    const pending = this.daemon._pendingPhase2;
+    if (!pending || pending.length === 0) return;
+
+    const registry = this.daemon.registry;
+
+    for (let i = pending.length - 1; i >= 0; i--) {
+      const group = pending[i];
+      if (!group.waitFor.includes(completedAgentId)) continue;
+
+      // Check if ALL phase 1 agents in this group are done
+      const allDone = group.waitFor.every((id) => {
+        const a = registry.get(id);
+        return !a || a.status === 'completed' || a.status === 'crashed' || a.status === 'stopped' || a.status === 'killed';
+      });
+
+      if (allDone) {
+        // Remove from pending
+        pending.splice(i, 1);
+
+        // Auto-spawn phase 2 agents
+        for (const config of group.agents) {
+          try {
+            const validated = validateAgentConfig(config);
+            this.spawn(validated).then((agent) => {
+              this.daemon.broadcast({
+                type: 'phase2:spawned',
+                agentId: agent.id,
+                name: agent.name,
+                role: agent.role,
+              });
+              this.daemon.audit.log('phase2.autoSpawn', { id: agent.id, name: agent.name, role: agent.role });
+            }).catch(() => {});
+          } catch { /* skip invalid configs */ }
+        }
+      }
+    }
   }
 
   /**
@@ -390,7 +441,7 @@ For normal file edits within your scope, proceed without review.
       model: config.model,
       prompt: config.prompt,
       permission: config.permission,
-      workingDir: config.workingDir,
+      workingDir: config.workingDir || this.daemon.config?.defaultWorkingDir || undefined,
       name: config.name,
     });
 

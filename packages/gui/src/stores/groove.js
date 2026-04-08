@@ -20,7 +20,7 @@ export const useGrooveStore = create((set, get) => ({
   activityLog: {},
   statusMessage: null,        // inline status text (replaces toast notifications)
   commandHistory: [],          // last 50 commands for command bar
-  chatHistory: {},              // { [agentId]: [{ from, text, timestamp, isQuery }] }
+  chatHistory: (() => { try { return JSON.parse(localStorage.getItem('groove:chatHistory') || '{}'); } catch { return {}; } })(),
   tokenTimeline: {},            // { [agentId]: [{ t: timestamp, v: tokensUsed }] }
   dashTelemetry: {},            // { [agentId]: [{ t, v, name }] } — persists across tab switches
 
@@ -98,6 +98,22 @@ export const useGrooveStore = create((set, get) => ({
             : msg.status === 'killed' ? `${name} killed`
             : `${name} crashed (exit ${msg.code})`;
           get().showStatus(text);
+
+          // Check if all agents are done and no fullstack/QC exists — nudge user
+          setTimeout(() => {
+            const agents = get().agents;
+            const alive = agents.filter((a) => a.status === 'running' || a.status === 'starting');
+            const done = agents.filter((a) => a.status === 'completed' || a.status === 'crashed');
+            const hasQC = agents.some((a) => a.role === 'fullstack' && (a.status === 'running' || a.status === 'starting'));
+            if (alive.length === 0 && done.length >= 2 && !hasQC) {
+              get().showStatus('All agents finished — no QC agent. Consider spawning a fullstack to audit and integrate.');
+            }
+          }, 2000);
+          break;
+        }
+
+        case 'phase2:spawned': {
+          get().showStatus(`QC agent ${msg.name} auto-spawned — auditing phase 1 work`);
           break;
         }
 
@@ -212,6 +228,7 @@ export const useGrooveStore = create((set, get) => ({
       history[agentId] = [...history[agentId].slice(-100), {
         from, text, timestamp: Date.now(), isQuery,
       }];
+      try { localStorage.setItem('groove:chatHistory', JSON.stringify(history)); } catch { /* full */ }
       return { chatHistory: history };
     });
   },

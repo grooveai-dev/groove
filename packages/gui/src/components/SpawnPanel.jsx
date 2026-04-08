@@ -3,7 +3,49 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useGrooveStore } from '../stores/groove';
-import DirPicker from './DirPicker';
+// System directory browser — browses absolute paths anywhere on disk
+function SystemDirPicker({ initial, onSelect, onClose }) {
+  const [currentPath, setCurrentPath] = useState(initial || '');
+  const [dirs, setDirs] = useState([]);
+  const [parentPath, setParentPath] = useState(null);
+
+  useEffect(() => {
+    fetch(`/api/browse-system?path=${encodeURIComponent(currentPath || '')}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setDirs(data.dirs || []);
+        setParentPath(data.parent);
+        if (data.current) setCurrentPath(data.current);
+      })
+      .catch(() => {});
+  }, [currentPath]);
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg-base)', marginTop: 6, maxHeight: 200, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '4px 8px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <span style={{ fontSize: 10, color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{currentPath}</span>
+        <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font)' }}>&times;</button>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        {parentPath !== null && (
+          <button type="button" onClick={() => setCurrentPath(parentPath)} style={{ width: '100%', padding: '4px 8px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--font)', fontSize: 11, color: 'var(--text-muted)' }}>
+            ..
+          </button>
+        )}
+        {dirs.map((d) => (
+          <button type="button" key={d.path} onClick={() => setCurrentPath(d.path)} style={{ width: '100%', padding: '4px 8px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--font)', fontSize: 11, color: 'var(--text-primary)' }}>
+            {d.name}{d.hasChildren ? '/' : ''}
+          </button>
+        ))}
+      </div>
+      <div style={{ padding: '4px 8px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+        <button type="button" onClick={() => { onSelect(currentPath); onClose(); }} style={{ width: '100%', padding: '4px 8px', background: 'var(--accent)', color: 'var(--bg-base)', border: 'none', borderRadius: 3, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)' }}>
+          Select This Directory
+        </button>
+      </div>
+    </div>
+  );
+}
 import { FormattedText } from './AgentChat';
 
 const ROLE_PRESETS = [
@@ -44,6 +86,7 @@ export default function SpawnPanel() {
   // Config state
   const [role, setRole] = useState('');
   const [customRole, setCustomRole] = useState('');
+  const [agentName, setAgentName] = useState('');
   const [scope, setScope] = useState('');
   const [prompt, setPrompt] = useState('');
   const [permission, setPermission] = useState('auto');
@@ -76,9 +119,11 @@ export default function SpawnPanel() {
   const [scheduleCron, setScheduleCron] = useState('0 9 * * *');
   const [scheduleName, setScheduleName] = useState('');
 
-  // Plan chat state
+  // Plan chat state — persisted to localStorage
   const [planMode, setPlanMode] = useState(false);
-  const [planMessages, setPlanMessages] = useState([]);
+  const [planMessages, setPlanMessages] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('groove:planChat') || '[]'); } catch { return []; }
+  });
   const [planInput, setPlanInput] = useState('');
   const [planLoading, setPlanLoading] = useState(false);
   const [planResearching, setPlanResearching] = useState(false);
@@ -95,6 +140,13 @@ export default function SpawnPanel() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [planMessages, planLoading]);
+
+  // Persist plan chat
+  useEffect(() => {
+    if (planMessages.length > 0) {
+      localStorage.setItem('groove:planChat', JSON.stringify(planMessages));
+    }
+  }, [planMessages]);
 
   async function fetchProviders() {
     try { const res = await fetch('/api/providers'); setProviderList(await res.json()); } catch { /* */ }
@@ -241,6 +293,7 @@ Conversation:\n${conversation}`,
       const scopeArr = effectiveScope ? effectiveScope.split(',').map((s) => s.trim()).filter(Boolean) : [];
       const agentConfig = {
         role: finalRole, scope: scopeArr, prompt: prompt || null,
+        ...(agentName.trim() ? { name: agentName.trim() } : {}),
         model: model || 'auto', provider, permission, effort,
         ...(workingDir.trim() ? { workingDir: workingDir.trim() } : {}),
         ...(selectedSkills.length > 0 ? { skills: selectedSkills } : {}),
@@ -315,6 +368,12 @@ Conversation:\n${conversation}`,
                 {selectedPreset && <div style={S.hint}>{selectedPreset.desc}</div>}
               </Section>
 
+              {/* Agent Name */}
+              <Section label="Name (optional)">
+                <input style={S.input} placeholder="e.g. Skills Developer, Node Manager..."
+                  value={agentName} onChange={(e) => setAgentName(e.target.value)} />
+              </Section>
+
               {/* Directory */}
               <Section label="Directory">
                 <div style={S.chipRow}>
@@ -326,7 +385,7 @@ Conversation:\n${conversation}`,
                   <button type="button" onClick={() => setShowDirPicker(true)} style={S.browseBtn}>Browse...</button>
                 </div>
                 {showDirPicker && (
-                  <DirPicker initial={workingDir} onSelect={(p) => setWorkingDir(p)} onClose={() => setShowDirPicker(false)} />
+                  <SystemDirPicker initial={workingDir} onSelect={(p) => setWorkingDir(p)} onClose={() => setShowDirPicker(false)} />
                 )}
               </Section>
 
@@ -562,9 +621,14 @@ Conversation:\n${conversation}`,
                   <span style={S.chatTitle}>Plan with AI</span>
                   <div style={{ display: 'flex', gap: 8 }}>
                     {planMessages.length > 0 && !planLoading && (
-                      <button type="button" onClick={applyPlanToPrompt} style={S.usePlanBtn}>
-                        Generate Prompt
-                      </button>
+                      <>
+                        <button type="button" onClick={applyPlanToPrompt} style={S.usePlanBtn}>
+                          Generate Prompt
+                        </button>
+                        <button type="button" onClick={() => { setPlanMessages([]); localStorage.removeItem('groove:planChat'); }} style={S.closePlanBtn}>
+                          Clear
+                        </button>
+                      </>
                     )}
                     <button type="button" onClick={() => setPlanMode(false)} style={S.closePlanBtn}>
                       Back to Prompt

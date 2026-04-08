@@ -111,7 +111,7 @@ export default function AgentChat({ agent }) {
       </div>
 
       {/* Launch Team button — shown when planner completes */}
-      {agent.role === 'planner' && agent.status === 'completed' && (
+      {agent.role === 'planner' && (agent.status === 'completed' || agent.status === 'crashed' || agent.status === 'stopped') && (
         <LaunchTeamButton showStatus={showStatus} />
       )}
 

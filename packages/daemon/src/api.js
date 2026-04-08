@@ -784,6 +784,34 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
+  // Browse absolute paths (for directory picker in agent config)
+  // Dirs only, localhost-only, no file content exposed
+  app.get('/api/browse-system', (req, res) => {
+    const absPath = req.query.path || process.env.HOME || '/';
+    if (absPath.includes('\0')) return res.status(400).json({ error: 'Invalid path' });
+    if (!existsSync(absPath)) return res.status(404).json({ error: 'Not found' });
+
+    try {
+      const entries = readdirSync(absPath, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((e) => {
+          const full = resolve(absPath, e.name);
+          let hasChildren = false;
+          try {
+            hasChildren = readdirSync(full, { withFileTypes: true })
+              .some((c) => c.isDirectory() && !c.name.startsWith('.') && c.name !== 'node_modules');
+          } catch { /* unreadable */ }
+          return { name: e.name, path: full, hasChildren };
+        });
+
+      const parent = absPath === '/' ? null : resolve(absPath, '..');
+      res.json({ current: absPath, parent, dirs: entries });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // --- File Editor API ---
 
   const LANG_MAP = {
@@ -1124,9 +1152,25 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   // --- Recommended Team (from planner) ---
 
+  // Find recommended-team.json — check all agent working dirs, then daemon's grooveDir
+  function findRecommendedTeam() {
+    // Check agent working dirs first (planner may have written there)
+    const agents = daemon.registry.getAll();
+    for (const agent of agents) {
+      if (agent.workingDir) {
+        const p = resolve(agent.workingDir, '.groove', 'recommended-team.json');
+        if (existsSync(p)) return p;
+      }
+    }
+    // Fallback to daemon's .groove dir
+    const p = resolve(daemon.grooveDir, 'recommended-team.json');
+    if (existsSync(p)) return p;
+    return null;
+  }
+
   app.get('/api/recommended-team', (req, res) => {
-    const teamPath = resolve(daemon.grooveDir, 'recommended-team.json');
-    if (!existsSync(teamPath)) {
+    const teamPath = findRecommendedTeam();
+    if (!teamPath) {
       return res.json({ exists: false, agents: [] });
     }
     try {
@@ -1138,8 +1182,8 @@ Keep responses concise. Help them think, don't lecture them about the system the
   });
 
   app.post('/api/recommended-team/launch', async (req, res) => {
-    const teamPath = resolve(daemon.grooveDir, 'recommended-team.json');
-    if (!existsSync(teamPath)) {
+    const teamPath = findRecommendedTeam();
+    if (!teamPath) {
       return res.status(404).json({ error: 'No recommended team found. Run a planner first.' });
     }
     try {
@@ -1148,8 +1192,16 @@ Keep responses concise. Help them think, don't lecture them about the system the
         return res.status(400).json({ error: 'Recommended team is empty' });
       }
 
+      const defaultDir = daemon.config?.defaultWorkingDir || undefined;
+
+      // Separate phase 1 (builders) and phase 2 (QC/finisher)
+      const phase1 = agents.filter((a) => !a.phase || a.phase === 1);
+      const phase2 = agents.filter((a) => a.phase === 2);
+
+      // Spawn phase 1 agents immediately
       const spawned = [];
-      for (const config of agents) {
+      const phase1Ids = [];
+      for (const config of phase1) {
         const validated = validateAgentConfig({
           role: config.role,
           scope: config.scope || [],
@@ -1157,14 +1209,34 @@ Keep responses concise. Help them think, don't lecture them about the system the
           provider: config.provider || 'claude-code',
           model: config.model || 'auto',
           permission: config.permission || 'auto',
-          workingDir: config.workingDir || undefined,
+          workingDir: config.workingDir || defaultDir,
+          name: config.name || undefined,
         });
         const agent = await daemon.processes.spawn(validated);
         spawned.push({ id: agent.id, name: agent.name, role: agent.role });
+        phase1Ids.push(agent.id);
       }
 
-      daemon.audit.log('team.launch', { count: spawned.length, agents: spawned.map((a) => a.role) });
-      res.json({ launched: spawned.length, agents: spawned });
+      // If there are phase 2 agents, register them for auto-spawn on phase 1 completion
+      if (phase2.length > 0 && phase1Ids.length > 0) {
+        daemon._pendingPhase2 = daemon._pendingPhase2 || [];
+        daemon._pendingPhase2.push({
+          waitFor: phase1Ids,
+          agents: phase2.map((c) => ({
+            role: c.role, scope: c.scope || [], prompt: c.prompt || '',
+            provider: c.provider || 'claude-code', model: c.model || 'auto',
+            permission: c.permission || 'auto',
+            workingDir: c.workingDir || defaultDir,
+            name: c.name || undefined,
+          })),
+        });
+      }
+
+      daemon.audit.log('team.launch', {
+        phase1: spawned.length, phase2Pending: phase2.length,
+        agents: spawned.map((a) => a.role),
+      });
+      res.json({ launched: spawned.length, phase2Pending: phase2.length, agents: spawned });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1350,7 +1422,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
   app.patch('/api/config', async (req, res) => {
     const ALLOWED_KEYS = [
       'port', 'journalistInterval', 'rotationThreshold', 'autoRotation',
-      'qcThreshold', 'maxAgents', 'defaultProvider',
+      'qcThreshold', 'maxAgents', 'defaultProvider', 'defaultWorkingDir',
     ];
     for (const key of Object.keys(req.body)) {
       if (!ALLOWED_KEYS.includes(key)) {

@@ -3,6 +3,49 @@
 
 import React, { useState, useEffect } from 'react';
 import { useGrooveStore } from '../stores/groove';
+// System directory browser — browses absolute paths, not limited to project dir
+function SystemDirPicker({ initial, onSelect, onClose }) {
+  const [currentPath, setCurrentPath] = useState(initial || '');
+  const [dirs, setDirs] = useState([]);
+  const [parentPath, setParentPath] = useState(null);
+
+  useEffect(() => {
+    fetch(`/api/browse-system?path=${encodeURIComponent(currentPath || '')}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setDirs(data.dirs || []);
+        setParentPath(data.parent);
+        if (data.current) setCurrentPath(data.current);
+      })
+      .catch(() => {});
+  }, [currentPath]);
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg-base)', marginTop: 6, maxHeight: 200, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '4px 8px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <span style={{ fontSize: 10, color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{currentPath}</span>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font)' }}>&times;</button>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        {parentPath !== null && (
+          <button onClick={() => setCurrentPath(parentPath)} style={{ width: '100%', padding: '4px 8px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--font)', fontSize: 11, color: 'var(--text-muted)' }}>
+            ..
+          </button>
+        )}
+        {dirs.map((d) => (
+          <button key={d.path} onClick={() => setCurrentPath(d.path)} style={{ width: '100%', padding: '4px 8px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--font)', fontSize: 11, color: 'var(--text-primary)' }}>
+            {d.name}{d.hasChildren ? '/' : ''}
+          </button>
+        ))}
+      </div>
+      <div style={{ padding: '4px 8px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+        <button onClick={() => { onSelect(currentPath); onClose(); }} style={{ width: '100%', padding: '4px 8px', background: 'var(--accent)', color: 'var(--bg-base)', border: 'none', borderRadius: 3, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)' }}>
+          Select This Directory
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function AgentActions({ agent }) {
   const killAgent = useGrooveStore((s) => s.killAgent);
@@ -17,6 +60,9 @@ export default function AgentActions({ agent }) {
   const [editPrompt, setEditPrompt] = useState('');
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [selectedModel, setSelectedModel] = useState(agent.model || '');
+  const [editingDir, setEditingDir] = useState(false);
+  const [dirInput, setDirInput] = useState(agent.workingDir || '');
+  const [showDirPicker, setShowDirPicker] = useState(false);
   const [providerList, setProviderList] = useState([]);
   const [installedSkills, setInstalledSkills] = useState([]);
   const [showSkillPicker, setShowSkillPicker] = useState(false);
@@ -149,10 +195,40 @@ export default function AgentActions({ agent }) {
     }
   }
 
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(agent.name || '');
+
   return (
     <div style={styles.container}>
+      {/* Agent Name */}
+      <div style={styles.sectionLabel}>NAME</div>
+      {!editingName ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--text-bright)' }}>{agent.name}</span>
+          <button onClick={() => { setEditingName(true); setNameInput(agent.name || ''); }} style={styles.editBtn}>Rename</button>
+        </div>
+      ) : (
+        <div>
+          <input style={styles.textarea} value={nameInput} onChange={(e) => setNameInput(e.target.value)}
+            placeholder="Agent name..." autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && nameInput.trim()) {
+                fetch(`/api/agents/${agent.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: nameInput.trim() }) });
+                showStatus('renamed'); setEditingName(false);
+              }
+            }} />
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <button onClick={() => {
+              fetch(`/api/agents/${agent.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: nameInput.trim() }) });
+              showStatus('renamed'); setEditingName(false);
+            }} style={styles.saveBtn} disabled={!nameInput.trim()}>Save</button>
+            <button onClick={() => setEditingName(false)} style={styles.cancelBtn}>Cancel</button>
+          </div>
+        </div>
+      )}
+
       {/* Lifecycle controls */}
-      <div style={styles.sectionLabel}>LIFECYCLE</div>
+      <div style={{ ...styles.sectionLabel, marginTop: 20 }}>LIFECYCLE</div>
 
       <div style={styles.btnGrid}>
         {isAlive && (
@@ -215,6 +291,59 @@ export default function AgentActions({ agent }) {
         ))}
       </select>
       <div style={styles.fieldHint}>Changes take effect on next rotation</div>
+
+      {/* Working directory */}
+      <div style={{ ...styles.sectionLabel, marginTop: 20 }}>DIRECTORY</div>
+      {!editingDir ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ flex: 1, fontSize: 11, color: agent.workingDir ? 'var(--text-primary)' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {agent.workingDir || 'project root'}
+          </div>
+          <button onClick={() => { setEditingDir(true); setDirInput(agent.workingDir || ''); }} style={styles.editBtn}>
+            Change
+          </button>
+        </div>
+      ) : (
+        <div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input
+              style={{ ...styles.textarea, flex: 1 }}
+              value={dirInput}
+              onChange={(e) => setDirInput(e.target.value)}
+              placeholder="/absolute/path/to/project"
+              autoFocus
+            />
+            <button onClick={() => setShowDirPicker(true)} style={{ ...styles.editBtn, flexShrink: 0, marginTop: 0 }}>
+              Browse
+            </button>
+          </div>
+          {showDirPicker && (
+            <SystemDirPicker
+              initial={dirInput}
+              onSelect={(path) => { setDirInput(path); setShowDirPicker(false); }}
+              onClose={() => setShowDirPicker(false)}
+            />
+          )}
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <button onClick={async () => {
+              try {
+                await fetch(`/api/agents/${agent.id}`, {
+                  method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ workingDir: dirInput.trim() || null }),
+                });
+                showStatus(`directory set — takes effect on next rotation/restart`);
+                setEditingDir(false);
+              } catch (err) { showStatus(`failed: ${err.message}`); }
+            }} style={styles.saveBtn}>
+              Save
+            </button>
+            <button onClick={() => { setEditingDir(false); setShowDirPicker(false); }} style={styles.cancelBtn}>
+              Cancel
+            </button>
+          </div>
+          <div style={styles.fieldHint}>Takes effect on next rotation or restart</div>
+        </div>
+      )}
 
       {/* Prompt modification */}
       <div style={{ ...styles.sectionLabel, marginTop: 20 }}>PROMPT</div>

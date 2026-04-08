@@ -1,7 +1,7 @@
 {
   "name": "@groove-dev/cli",
   "version": "0.11.0",
-  "description": "GROOVE CLI — manage AI coding agents from your terminal",
+  "description": "GROOVE CLI \u2014 manage AI coding agents from your terminal",
   "license": "FSL-1.1-Apache-2.0",
   "type": "module",
   "bin": {
@@ -11,5 +11,6 @@
     "@groove-dev/daemon": "*",
     "commander": "^12.1.0",
     "chalk": "^5.3.0"
-  }
+  },
+  "private": true
 }

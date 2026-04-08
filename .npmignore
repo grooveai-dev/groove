@@ -21,6 +21,7 @@ AGENTS_REGISTRY.md
 # Dev files
 example/
 *.log
+*.sh
 .DS_Store
 .env*
 docs/

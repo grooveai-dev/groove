@@ -1,13 +1,27 @@
 // GROOVE GUI — Agent Tree View (React Flow)
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import React, { useMemo, useCallback, useEffect, useRef } from 'react';
-import { ReactFlow, Background, useReactFlow, ReactFlowProvider } from '@xyflow/react';
+import React, { useMemo, useCallback, useEffect, useRef, useState } from 'react';
+import { ReactFlow, Background, useReactFlow, ReactFlowProvider, applyNodeChanges } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useGrooveStore } from '../stores/groove';
 import AgentNode from '../components/AgentNode';
 
-const nodeTypes = { agent: AgentNode };
+import { Handle, Position } from '@xyflow/react';
+
+function GrooveRootNode({ data }) {
+  return (
+    <div style={data.style}>
+      {data.label}
+      <Handle id="s-top" type="source" position={Position.Top} style={{ opacity: 0, width: 1, height: 1 }} />
+      <Handle id="s-bottom" type="source" position={Position.Bottom} style={{ opacity: 0, width: 1, height: 1 }} />
+      <Handle id="s-left" type="source" position={Position.Left} style={{ opacity: 0, width: 1, height: 1 }} />
+      <Handle id="s-right" type="source" position={Position.Right} style={{ opacity: 0, width: 1, height: 1 }} />
+    </div>
+  );
+}
+
+const nodeTypes = { agent: AgentNode, grooveRoot: GrooveRootNode };
 
 const MAX_PER_ROW = 4;
 const NODE_X_SPACING = 250;
@@ -22,22 +36,22 @@ function AgentTreeInner() {
 
   const selectedAgentId = detailPanel?.type === 'agent' ? detailPanel.agentId : null;
   const prevCountRef = useRef(0);
-  const positionMapRef = useRef({});
-  const nextSlotRef = useRef(0);
+  // Position map keyed by agent NAME — persisted to localStorage
+  const positionMapRef = useRef(() => {
+    try { return JSON.parse(localStorage.getItem('groove:nodePositions') || '{}'); } catch { return {}; }
+  });
+  // Lazy init the ref
+  if (typeof positionMapRef.current === 'function') positionMapRef.current = positionMapRef.current();
+  const nextSlotRef = useRef(Object.keys(positionMapRef.current).length);
+  const [flowNodes, setFlowNodes] = useState([]);
 
-  const { nodes, edges } = useMemo(() => {
-    // Clean up agents that no longer exist
-    const agentIds = new Set(agents.map((a) => a.id));
-    for (const id of Object.keys(positionMapRef.current)) {
-      if (!agentIds.has(id)) {
-        delete positionMapRef.current[id];
-      }
-    }
-
+  // Compute target nodes + edges from agent state
+  const { targetNodes } = useMemo(() => {
     const allAgentNodes = agents.map((agent) => {
-      if (!positionMapRef.current[agent.id]) {
+      const posKey = agent.name || agent.id;
+      if (!positionMapRef.current[posKey]) {
         const slot = nextSlotRef.current;
-        positionMapRef.current[agent.id] = {
+        positionMapRef.current[posKey] = {
           x: (slot % MAX_PER_ROW) * NODE_X_SPACING,
           y: 160 + Math.floor(slot / MAX_PER_ROW) * NODE_Y_SPACING,
         };
@@ -46,7 +60,7 @@ function AgentTreeInner() {
       return {
         id: agent.id,
         type: 'agent',
-        position: positionMapRef.current[agent.id],
+        position: positionMapRef.current[posKey],
         data: { ...agent, selected: agent.id === selectedAgentId },
         draggable: true,
       };
@@ -55,66 +69,110 @@ function AgentTreeInner() {
     const maxPerRow = Math.min(Math.max(agents.length, 1), MAX_PER_ROW);
     const totalWidth = maxPerRow * NODE_X_SPACING;
 
-    // GROOVE root node — clean, rounded, matching
     const grooveNode = {
       id: 'groove-root',
-      type: 'default',
+      type: 'grooveRoot',
       position: { x: (totalWidth - NODE_X_SPACING) / 2 + 25, y: 0 },
-      data: { label: 'GROOVE' },
+      data: {
+        label: 'GROOVE',
+        style: {
+          background: '#282c34',
+          color: '#e6e6e6',
+          border: '1px solid #3e4451',
+          borderRadius: 24,
+          fontWeight: 600,
+          fontSize: 11,
+          letterSpacing: 6,
+          padding: '10px 36px 9px',
+          fontFamily: "'JetBrains Mono', 'SF Mono', Consolas, monospace",
+          position: 'relative',
+        },
+      },
       selectable: false,
       draggable: false,
-      style: {
-        background: '#282c34',
-        color: '#e6e6e6',
-        border: '1px solid #3e4451',
-        borderRadius: 24,
-        fontWeight: 600,
-        fontSize: 11,
-        letterSpacing: 6,
-        padding: '10px 36px 9px',
-        fontFamily: "'JetBrains Mono', 'SF Mono', Consolas, monospace",
-      },
     };
 
-    // Bezier spline edges — the brand
-    const edges = allAgentNodes.map((node) => {
-      const agent = agents.find((a) => a.id === node.id);
-      const isRunning = agent?.status === 'running';
+    return { targetNodes: [grooveNode, ...allAgentNodes] };
+  }, [agents, selectedAgentId]);
+
+  // Compute edges from current flowNodes so they update on drag
+  const edges = useMemo(() => {
+    const root = flowNodes.find((n) => n.id === 'groove-root');
+    if (!root) return [];
+    const rootW = 140, rootH = 36;
+    const rootCx = root.position.x + rootW / 2;
+    const rootCy = root.position.y + rootH / 2;
+
+    return flowNodes.filter((n) => n.id !== 'groove-root').map((node) => {
+      const nw = 210, nh = 120;
+      const ncx = node.position.x + nw / 2;
+      const ncy = node.position.y + nh / 2;
+      const dx = ncx - rootCx;
+      const dy = ncy - rootCy;
+
+      let sourceHandle, targetHandle;
+      if (Math.abs(dy) > Math.abs(dx)) {
+        if (dy > 0) { sourceHandle = 's-bottom'; targetHandle = 'top'; }
+        else { sourceHandle = 's-top'; targetHandle = 'bottom'; }
+      } else {
+        if (dx > 0) { sourceHandle = 's-right'; targetHandle = 'left'; }
+        else { sourceHandle = 's-left'; targetHandle = 'right'; }
+      }
+
+      const isRunning = node.data?.status === 'running';
       return {
         id: `groove-${node.id}`,
-        source: 'groove-root',
-        target: node.id,
-        type: 'default', // Bezier curve (spline)
-        style: {
-          stroke: isRunning ? '#5c6370' : '#2c313a',
-          strokeWidth: 1,
-        },
+        source: 'groove-root', target: node.id,
+        sourceHandle, targetHandle, type: 'default',
+        style: { stroke: isRunning ? '#5c6370' : '#2c313a', strokeWidth: 1 },
         animated: isRunning,
       };
     });
+  }, [flowNodes]);
 
-    return { nodes: [grooveNode, ...allAgentNodes], edges };
-  }, [agents, selectedAgentId]);
+  // Sync target nodes into flow state — preserve user-dragged positions
+  useEffect(() => {
+    setFlowNodes((prev) => {
+      const prevMap = new Map(prev.map((n) => [n.id, n]));
+      return targetNodes.map((target) => {
+        const existing = prevMap.get(target.id);
+        if (existing) {
+          // Keep dragged position, only update data
+          return { ...existing, data: target.data };
+        }
+        return target;
+      });
+    });
+  }, [targetNodes]);
 
+  // Handle ALL node changes including drag — this is what makes drag work
   const onNodesChange = useCallback((changes) => {
-    for (const change of changes) {
-      if (change.type === 'position' && change.position) {
-        positionMapRef.current[change.id] = change.position;
+    setFlowNodes((nds) => {
+      const updated = applyNodeChanges(changes, nds);
+      // Save final drag positions to the ref (keyed by name for stability)
+      for (const change of changes) {
+        if (change.type === 'position' && change.position && !change.dragging) {
+          const node = updated.find((n) => n.id === change.id);
+          const name = node?.data?.name || change.id;
+          positionMapRef.current[name] = change.position;
+          try { localStorage.setItem('groove:nodePositions', JSON.stringify(positionMapRef.current)); } catch {}
+        }
       }
-    }
+      return updated;
+    });
   }, []);
 
   useEffect(() => {
     const currentCount = agents.length;
     const prevCount = prevCountRef.current;
     if (prevCount === 0 && currentCount === 1) {
-      setTimeout(() => fitView({ padding: 0.3, maxZoom: 1.4, duration: 200 }), 50);
+      setTimeout(() => fitView({ padding: 0.3, maxZoom: 0.85, duration: 200 }), 50);
     }
     prevCountRef.current = currentCount;
   }, [agents.length, fitView]);
 
   useEffect(() => {
-    setTimeout(() => fitView({ padding: 0.3, maxZoom: 1.4, duration: 0 }), 100);
+    setTimeout(() => fitView({ padding: 0.3, maxZoom: 0.85, duration: 0 }), 100);
   }, []);
 
   const onNodeClick = useCallback((event, node) => {
@@ -128,7 +186,7 @@ function AgentTreeInner() {
 
   return (
     <ReactFlow
-      nodes={nodes}
+      nodes={flowNodes}
       edges={edges}
       nodeTypes={nodeTypes}
       onNodeClick={onNodeClick}
@@ -140,7 +198,7 @@ function AgentTreeInner() {
       minZoom={0.3}
       maxZoom={2}
       fitView
-      fitViewOptions={{ padding: 0.3, maxZoom: 1.4 }}
+      fitViewOptions={{ padding: 0.3, maxZoom: 0.85 }}
     >
       <Background color="#3e4451" gap={20} size={1} />
     </ReactFlow>

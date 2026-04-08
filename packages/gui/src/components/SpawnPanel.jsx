@@ -97,6 +97,7 @@ export default function SpawnPanel() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [globalDir, setGlobalDir] = useState('');
   const [workingDir, setWorkingDir] = useState('');
   const [workspaces, setWorkspaces] = useState([]);
   const [connectingProvider, setConnectingProvider] = useState(null);
@@ -119,11 +120,9 @@ export default function SpawnPanel() {
   const [scheduleCron, setScheduleCron] = useState('0 9 * * *');
   const [scheduleName, setScheduleName] = useState('');
 
-  // Plan chat state — persisted to localStorage
+  // Plan chat state — starts fresh each time the spawn panel opens
   const [planMode, setPlanMode] = useState(false);
-  const [planMessages, setPlanMessages] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('groove:planChat') || '[]'); } catch { return []; }
-  });
+  const [planMessages, setPlanMessages] = useState([]);
   const [planInput, setPlanInput] = useState('');
   const [planLoading, setPlanLoading] = useState(false);
   const [planResearching, setPlanResearching] = useState(false);
@@ -135,18 +134,15 @@ export default function SpawnPanel() {
     fetchInstalledSkills();
     fetchInstalledIntegrations();
     fetch('/api/anthropic-key/status').then((r) => r.json()).then((d) => setHasApiKey(d.configured)).catch(() => {});
+    fetch('/api/config').then((r) => r.json()).then((d) => {
+      if (d.defaultWorkingDir) { setGlobalDir(d.defaultWorkingDir); setWorkingDir(d.defaultWorkingDir); }
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [planMessages, planLoading]);
 
-  // Persist plan chat
-  useEffect(() => {
-    if (planMessages.length > 0) {
-      localStorage.setItem('groove:planChat', JSON.stringify(planMessages));
-    }
-  }, [planMessages]);
 
   async function fetchProviders() {
     try { const res = await fetch('/api/providers'); setProviderList(await res.json()); } catch { /* */ }
@@ -376,8 +372,18 @@ Conversation:\n${conversation}`,
 
               {/* Directory */}
               <Section label="Directory">
+                {globalDir && (
+                  <div style={{ fontSize: 10, color: 'var(--text-dim)', marginBottom: 6 }}>
+                    Global: <span style={{ color: 'var(--text-primary)' }}>{globalDir.split('/').pop()}</span>
+                    <button type="button" onClick={async () => {
+                      await fetch('/api/config', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ defaultWorkingDir: '' }) });
+                      setGlobalDir(''); setWorkingDir('');
+                    }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 9, cursor: 'pointer', fontFamily: 'var(--font)', marginLeft: 6 }}>clear</button>
+                  </div>
+                )}
                 <div style={S.chipRow}>
                   <Chip label="project root" active={!workingDir} onClick={() => setWorkingDir('')} />
+                  {globalDir && <Chip label={globalDir.split('/').pop()} active={workingDir === globalDir} onClick={() => setWorkingDir(globalDir)} />}
                   {workspaces.map((ws) => (
                     <Chip key={ws.path} label={ws.path} active={workingDir === ws.path}
                       onClick={() => setWorkingDir(ws.path)} />
@@ -385,7 +391,22 @@ Conversation:\n${conversation}`,
                   <button type="button" onClick={() => setShowDirPicker(true)} style={S.browseBtn}>Browse...</button>
                 </div>
                 {showDirPicker && (
-                  <SystemDirPicker initial={workingDir} onSelect={(p) => setWorkingDir(p)} onClose={() => setShowDirPicker(false)} />
+                  <SystemDirPicker initial={workingDir} onSelect={(p) => {
+                    setWorkingDir(p);
+                    // Offer to set as global
+                    if (!globalDir && p) {
+                      fetch('/api/config', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ defaultWorkingDir: p }) });
+                      setGlobalDir(p);
+                    }
+                  }} onClose={() => setShowDirPicker(false)} />
+                )}
+                {workingDir && workingDir !== globalDir && (
+                  <button type="button" onClick={async () => {
+                    await fetch('/api/config', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ defaultWorkingDir: workingDir }) });
+                    setGlobalDir(workingDir);
+                  }} style={{ ...S.chip, marginTop: 4, fontSize: 9, color: 'var(--accent)', borderColor: 'var(--accent)' }}>
+                    Set as default for all agents
+                  </button>
                 )}
               </Section>
 
@@ -625,7 +646,7 @@ Conversation:\n${conversation}`,
                         <button type="button" onClick={applyPlanToPrompt} style={S.usePlanBtn}>
                           Generate Prompt
                         </button>
-                        <button type="button" onClick={() => { setPlanMessages([]); localStorage.removeItem('groove:planChat'); }} style={S.closePlanBtn}>
+                        <button type="button" onClick={() => setPlanMessages([])} style={S.closePlanBtn}>
                           Clear
                         </button>
                       </>

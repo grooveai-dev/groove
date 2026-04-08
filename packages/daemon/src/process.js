@@ -2,7 +2,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { spawn as cpSpawn } from 'child_process';
-import { createWriteStream, mkdirSync, chmodSync } from 'fs';
+import { createWriteStream, mkdirSync, chmodSync, existsSync, readFileSync, unlinkSync } from 'fs';
 import { resolve } from 'path';
 import { getProvider } from './providers/index.js';
 import { validateAgentConfig } from './validate.js';
@@ -59,11 +59,15 @@ Do NOT write code unless explicitly asked. Use your MCP tools (database queries,
 Do NOT write code unless explicitly asked. Use your MCP tools to interact with Home Assistant.
 
 `,
-  planner: `You are a planning and architecture agent. Research, analyze, and create plans — do NOT implement code unless explicitly asked. Focus on:
+  planner: `You are a PLANNING ONLY agent. You create plans. You do NOT write code, edit files, or run commands.
+
+ABSOLUTE RULE: Never use the Edit, Write, or Bash tools to modify source code. You ONLY use Read, Glob, and Grep to understand the codebase, then output a written plan. If the user says "build this" or "redesign this", create a PLAN for how other agents should build it — do NOT build it yourself.
+
+Focus on:
 - Understanding requirements
-- Exploring the codebase
+- Exploring the codebase to understand current architecture
 - Identifying approaches and trade-offs
-- Writing structured plans
+- Writing structured plans with agent assignments
 
 After completing your plan, you MUST do two things:
 
@@ -76,14 +80,20 @@ After completing your plan, you MUST do two things:
   { "role": "fullstack", "phase": 2, "scope": [], "prompt": "QC Senior Dev: Audit all changes from phase 1 agents. Verify correctness, fix issues, run tests, build the project, commit, and launch. Output the localhost URL." }
 ]
 
-CRITICAL RULES for the team config:
-- Builder agents (frontend, backend, etc.) are ALWAYS phase: 1 — they run in parallel.
-- ALWAYS include exactly ONE fullstack agent with phase: 2 — this is the QC Senior Dev.
-- Phase 2 agents auto-spawn ONLY after ALL phase 1 agents complete. Do NOT tell them to "wait for" other agents.
-- The phase 2 fullstack agent audits, integrates, builds, tests, commits, and launches. It is the last agent to run.
-- Set appropriate scopes for each role. Write detailed prompts so each agent knows exactly what to build.
-- If the project is a monorepo, set "workingDir" for agents that need specific subdirectories.
-- Include testing/devops only if the project needs them.
+MANDATORY RULES — NEVER SKIP THESE:
+
+1. The LAST entry in the array MUST be: { "role": "fullstack", "phase": 2, ... }
+   This is the QC Senior Dev. It auto-spawns after all other agents finish.
+   Its prompt: audit changes, fix issues, run tests, build, commit, launch.
+   NEVER omit this agent. Every team needs a QC.
+
+2. ALL other agents are phase: 1 — they run in parallel.
+
+3. Do NOT tell any agent to "wait for" another agent. Phase 2 handles sequencing automatically.
+
+4. Set appropriate scopes. Write detailed prompts so each agent knows exactly what to build.
+
+5. If the project is a monorepo, set "workingDir" for agents that need specific subdirectories.
 
 IMPORTANT: Do not use markdown formatting like ** or ### in your output. Write in plain text with clean formatting. Use line breaks, dashes, and indentation for structure.
 
@@ -109,6 +119,17 @@ export class ProcessManager {
 
   async spawn(config) {
     const { registry, locks, introducer } = this.daemon;
+
+    // Clean stale recommended-team.json when spawning a new planner
+    if (config.role === 'planner') {
+      const dirs = [this.daemon.grooveDir];
+      if (config.workingDir) dirs.push(resolve(config.workingDir, '.groove'));
+      if (this.daemon.config?.defaultWorkingDir) dirs.push(resolve(this.daemon.config.defaultWorkingDir, '.groove'));
+      for (const dir of dirs) {
+        const p = resolve(dir, 'recommended-team.json');
+        if (existsSync(p)) try { unlinkSync(p); } catch { /* */ }
+      }
+    }
 
     // Validate provider exists and is installed
     const provider = getProvider(config.provider || 'claude-code');

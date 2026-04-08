@@ -1196,7 +1196,15 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
       // Separate phase 1 (builders) and phase 2 (QC/finisher)
       const phase1 = agents.filter((a) => !a.phase || a.phase === 1);
-      const phase2 = agents.filter((a) => a.phase === 2);
+      let phase2 = agents.filter((a) => a.phase === 2);
+
+      // Safety net: if planner forgot the QC agent, auto-add one
+      if (phase2.length === 0 && phase1.length >= 2) {
+        phase2 = [{
+          role: 'fullstack', phase: 2, scope: [],
+          prompt: 'QC Senior Dev: All builder agents have completed. Audit their changes for correctness, fix any issues, run tests, build the project, commit all changes, and launch. Output the localhost URL where the app can be accessed.',
+        }];
+      }
 
       // Spawn phase 1 agents immediately
       const spawned = [];
@@ -1240,6 +1248,26 @@ Keep responses concise. Help them think, don't lecture them about the system the
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // Clean up stale artifacts (old plans, recommended teams, etc.)
+  app.post('/api/cleanup', (req, res) => {
+    let cleaned = 0;
+    // Clean recommended-team.json from all known locations
+    const locations = [resolve(daemon.grooveDir, 'recommended-team.json')];
+    for (const agent of daemon.registry.getAll()) {
+      if (agent.workingDir) {
+        locations.push(resolve(agent.workingDir, '.groove', 'recommended-team.json'));
+      }
+    }
+    const defaultDir = daemon.config?.defaultWorkingDir;
+    if (defaultDir) locations.push(resolve(defaultDir, '.groove', 'recommended-team.json'));
+
+    for (const p of locations) {
+      if (existsSync(p)) { try { unlinkSync(p); cleaned++; } catch { /* */ } }
+    }
+    daemon.audit.log('cleanup', { cleaned });
+    res.json({ ok: true, cleaned });
   });
 
   // --- Command Center Dashboard ---

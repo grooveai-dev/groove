@@ -137,6 +137,25 @@ export default function AgentChat({ agent }) {
         >
           Send
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            const { chatHistory, activityLog } = useGrooveStore.getState();
+            const newChat = { ...chatHistory }; delete newChat[agent.id];
+            const newLog = { ...activityLog }; delete newLog[agent.id];
+            useGrooveStore.setState({ chatHistory: newChat, activityLog: newLog });
+            try { localStorage.setItem('groove:chatHistory', JSON.stringify(newChat)); } catch {}
+            try { localStorage.setItem('groove:activityLog', JSON.stringify(newLog)); } catch {}
+          }}
+          title="Clear chat history"
+          style={{
+            background: 'none', border: 'none', color: 'var(--text-muted)',
+            fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font)',
+            padding: '4px 6px', flexShrink: 0,
+          }}
+        >
+          Clear
+        </button>
       </div>
     </div>
   );
@@ -183,10 +202,14 @@ function LaunchTeamButton({ showStatus }) {
   const [launched, setLaunched] = useState(false);
 
   useEffect(() => {
-    fetch('/api/recommended-team')
+    const load = () => fetch('/api/recommended-team')
       .then((r) => r.json())
-      .then((d) => { if (d.exists && d.agents.length > 0) setTeam(d.agents); })
+      .then((d) => { setTeam(d.exists && d.agents.length > 0 ? d.agents : null); })
       .catch(() => {});
+    load();
+    // Re-check every 5s in case planner just finished writing a new team
+    const interval = setInterval(load, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   async function handleLaunch() {
@@ -208,13 +231,24 @@ function LaunchTeamButton({ showStatus }) {
 
   if (!team || launched) return null;
 
+  const phase1 = team.filter((a) => !a.phase || a.phase === 1);
+  const phase2 = team.filter((a) => a.phase === 2);
+
   return (
     <div style={styles.launchBox}>
-      <div style={styles.launchHeader}>Recommended Team ({team.length} agents)</div>
+      <div style={styles.launchHeader}>Recommended Team</div>
       <div style={styles.launchList}>
-        {team.map((a, i) => (
-          <div key={i} style={styles.launchAgent}>
+        {phase1.map((a, i) => (
+          <div key={`p1-${i}`} style={styles.launchAgent}>
+            <span style={styles.launchPhase}>1</span>
             <span style={styles.launchRole}>{a.role}</span>
+            <span style={styles.launchPrompt}>{(a.prompt || '').slice(0, 80)}{(a.prompt || '').length > 80 ? '...' : ''}</span>
+          </div>
+        ))}
+        {phase2.map((a, i) => (
+          <div key={`p2-${i}`} style={{ ...styles.launchAgent, opacity: 0.7 }}>
+            <span style={{ ...styles.launchPhase, background: 'var(--bg-active)', color: 'var(--text-dim)' }}>2</span>
+            <span style={styles.launchRole}>{a.role} <span style={{ fontWeight: 400, color: 'var(--text-dim)', fontSize: 9 }}>auto after phase 1</span></span>
             <span style={styles.launchPrompt}>{(a.prompt || '').slice(0, 80)}{(a.prompt || '').length > 80 ? '...' : ''}</span>
           </div>
         ))}
@@ -463,6 +497,12 @@ const styles = {
   launchAgent: {
     display: 'flex', alignItems: 'baseline', gap: 6,
     fontSize: 10, padding: '2px 0',
+  },
+  launchPhase: {
+    width: 16, height: 16, borderRadius: 3, flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 9, fontWeight: 700,
+    background: 'rgba(51, 175, 188, 0.15)', color: 'var(--accent)',
   },
   launchRole: {
     fontWeight: 600, color: 'var(--accent)', minWidth: 60,

@@ -41,7 +41,7 @@ export default function AgentNode({ data }) {
       ? data.scope[0].replace(/\/\*\*$/, '').replace(/^src\//, '')
       : data.role;
 
-  const bg = sel ? '#2e333c' : alive ? '#2a2f38' : '#282c34';
+  const bg = sel ? '#1a1e24' : '#282c34';
 
   return (
     <div style={{
@@ -55,10 +55,10 @@ export default function AgentNode({ data }) {
       fontSize: 10,
       overflow: 'hidden',
     }}>
-      <Handle type="target" position={Position.Top} style={{
-        background: '#282c34', border: '2px solid #3e4451',
-        width: 8, height: 8, borderRadius: '50%', top: -4,
-      }} />
+      <Handle id="top" type="target" position={Position.Top} style={{ background: '#282c34', border: '2px solid #3e4451', width: 6, height: 6, borderRadius: '50%', top: -3, opacity: 0 }} />
+      <Handle id="bottom" type="target" position={Position.Bottom} style={{ background: '#282c34', border: '2px solid #3e4451', width: 6, height: 6, borderRadius: '50%', bottom: -3, opacity: 0 }} />
+      <Handle id="left" type="target" position={Position.Left} style={{ background: '#282c34', border: '2px solid #3e4451', width: 6, height: 6, borderRadius: '50%', left: -3, opacity: 0 }} />
+      <Handle id="right" type="target" position={Position.Right} style={{ background: '#282c34', border: '2px solid #3e4451', width: 6, height: 6, borderRadius: '50%', right: -3, opacity: 0 }} />
 
       <div style={{ padding: '10px 12px 8px' }}>
         {/* Name + status dot */}
@@ -102,10 +102,10 @@ export default function AgentNode({ data }) {
         </div>
       </div>
 
-      <Handle type="source" position={Position.Bottom} style={{
-        background: '#282c34', border: '2px solid #3e4451',
-        width: 8, height: 8, borderRadius: '50%', bottom: -4,
-      }} />
+      <Handle id="s-top" type="source" position={Position.Top} style={{ opacity: 0, width: 1, height: 1, top: -1 }} />
+      <Handle id="s-bottom" type="source" position={Position.Bottom} style={{ opacity: 0, width: 1, height: 1, bottom: -1 }} />
+      <Handle id="s-left" type="source" position={Position.Left} style={{ opacity: 0, width: 1, height: 1, left: -1 }} />
+      <Handle id="s-right" type="source" position={Position.Right} style={{ opacity: 0, width: 1, height: 1, right: -1 }} />
     </div>
   );
 }

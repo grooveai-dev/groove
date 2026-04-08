@@ -1,7 +1,7 @@
 // GROOVE GUI — App Root
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useGrooveStore } from './stores/groove';
 import AgentTree from './views/AgentTree';
 import AgentPanel from './components/AgentPanel';
@@ -16,16 +16,22 @@ import IntegrationsStore from './views/IntegrationsStore';
 import ScheduleManager from './views/ScheduleManager';
 import FileEditor from './views/FileEditor';
 
-const TABS = [
+const MAIN_TABS = [
   { id: 'agents', label: 'Agents' },
   { id: 'editor', label: 'Editor' },
-  { id: 'integrations', label: 'Integrations' },
-  { id: 'skills', label: 'Skills' },
   { id: 'stats', label: 'Stats' },
-  { id: 'schedules', label: 'Schedules' },
   { id: 'teams', label: 'Teams' },
   { id: 'approvals', label: 'Approvals' },
 ];
+
+const DROPDOWN_TABS = [
+  { id: 'journalist', label: 'Journalist' },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'skills', label: 'Skills' },
+  { id: 'schedules', label: 'Schedules' },
+];
+
+const DROPDOWN_IDS = new Set(DROPDOWN_TABS.map((t) => t.id));
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -57,72 +63,99 @@ function AppInner() {
   const openDetail = useGrooveStore((s) => s.openDetail);
   const closeDetail = useGrooveStore((s) => s.closeDetail);
 
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
+  const moreBtnRef = useRef(null);
+
   useEffect(() => { connect(); }, [connect]);
 
-  const runningCount = agents.filter((a) => a.status === 'running').length;
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const handler = (e) => {
+      if (dropdownRef.current?.contains(e.target)) return;
+      if (moreBtnRef.current?.contains(e.target)) return;
+      setDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [dropdownOpen]);
+
   const hasAgents = agents.length > 0;
+  const moreActive = DROPDOWN_IDS.has(activeTab);
 
   return (
     <div style={styles.root}>
       {/* Header */}
       <header style={styles.header}>
-        <div style={styles.headerLeft}>
-          <img src="/groove-logo-short.png" alt="GROOVE" style={{ height: 18, marginTop: 3, opacity: 0.85 }} />
-          {daemonHost && (
-            <span style={styles.hostBadge}>{daemonHost}</span>
-          )}
-        </div>
+        <img src="/groove-logo-short.png" alt="GROOVE" style={{ height: 18, marginTop: 3, opacity: 0.85 }} />
+        {daemonHost && (
+          <span style={styles.hostBadge}>{daemonHost}</span>
+        )}
 
+        <div style={{ flex: 1 }} />
 
-        <div style={styles.headerCenter}>
-          {connected && TABS.map((tab) => (
+        {connected && MAIN_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              ...styles.tabBtn,
+              color: activeTab === tab.id ? 'var(--text-bright)' : 'var(--text-dim)',
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+
+        {connected && (
+          <div style={{ position: 'relative' }}>
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              ref={moreBtnRef}
+              onClick={() => setDropdownOpen((o) => !o)}
               style={{
                 ...styles.tabBtn,
-                color: activeTab === tab.id ? 'var(--text-bright)' : 'var(--text-primary)',
-                borderBottom: activeTab === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
-                background: activeTab === tab.id ? 'var(--bg-active)' : 'transparent',
+                color: moreActive || dropdownOpen ? 'var(--text-bright)' : 'var(--text-dim)',
               }}
             >
-              {tab.label}
+              More {'\u25BE'}
             </button>
-          ))}
-        </div>
+            {dropdownOpen && (
+              <div ref={dropdownRef} style={styles.dropdown}>
+                {DROPDOWN_TABS.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      if (tab.id === 'journalist') {
+                        detailPanel?.type === 'journalist' ? closeDetail() : openDetail({ type: 'journalist' });
+                      } else {
+                        setActiveTab(tab.id);
+                      }
+                      setDropdownOpen(false);
+                    }}
+                    style={{
+                      ...styles.dropdownItem,
+                      color: (tab.id === 'journalist' ? detailPanel?.type === 'journalist' : activeTab === tab.id) ? 'var(--text-bright)' : 'var(--text-primary)',
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
-        <div style={styles.headerRight}>
-          {statusMessage && (
-            <span style={styles.statusText}>{statusMessage}</span>
-          )}
-          <span style={styles.agentCount}>
-            {runningCount > 0
-              ? `${runningCount} running`
-              : agents.length > 0
-                ? `${agents.length} agent${agents.length !== 1 ? 's' : ''}`
-                : ''}
-          </span>
-          {connected && (
-            <>
-              <button
-                onClick={() => detailPanel?.type === 'journalist' ? closeDetail() : openDetail({ type: 'journalist' })}
-                style={{
-                  ...styles.tabBtn,
-                  color: detailPanel?.type === 'journalist' ? 'var(--text-bright)' : 'var(--text-primary)',
-                  borderBottom: detailPanel?.type === 'journalist' ? '2px solid var(--purple)' : '2px solid transparent',
-                }}
-              >
-                Journalist
-              </button>
-              <button
-                onClick={() => openDetail({ type: 'spawn' })}
-                style={styles.spawnBtn}
-              >
-                + Spawn
-              </button>
-            </>
-          )}
-        </div>
+        {statusMessage && (
+          <span style={styles.statusText}>{statusMessage}</span>
+        )}
+        {connected && (
+          <button
+            onClick={() => openDetail({ type: 'spawn' })}
+            style={styles.spawnBtn}
+          >
+            + Spawn
+          </button>
+        )}
       </header>
 
       {/* Status pill — bottom left */}
@@ -205,13 +238,10 @@ const styles = {
     height: 40,
     padding: '0 16px',
     borderBottom: '1px solid var(--border)',
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    display: 'flex', alignItems: 'center', gap: 2,
     background: 'var(--bg-chrome)',
     flexShrink: 0,
     position: 'relative',
-  },
-  headerLeft: {
-    display: 'flex', alignItems: 'center', gap: 8,
   },
   hostBadge: {
     fontSize: 9, fontWeight: 600, letterSpacing: 0.5,
@@ -219,37 +249,57 @@ const styles = {
     padding: '2px 6px', borderRadius: 3,
     border: '1px solid var(--border)',
     fontFamily: 'var(--font)',
-  },
-  logo: {
-    fontSize: 13, fontWeight: 600, letterSpacing: 1.5,
-    color: 'var(--text-bright)',
-  },
-  headerCenter: {
-    display: 'flex', alignItems: 'center', gap: 0,
-  },
-  headerRight: {
-    display: 'flex', alignItems: 'center', gap: 10,
+    marginRight: 4,
   },
   tabBtn: {
-    padding: '10px 14px',
+    padding: '0 10px',
     background: 'transparent',
     border: 'none',
     borderBottom: '2px solid transparent',
-    fontSize: 12, fontWeight: 500,
+    fontSize: 11, fontWeight: 500,
     fontFamily: 'var(--font)',
     cursor: 'pointer',
     transition: 'color 0.1s',
+    alignSelf: 'stretch',
+    display: 'flex',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  dropdown: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    background: '#1e2228',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    padding: '4px 0',
+    zIndex: 100,
+    minWidth: 160,
+    boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+  },
+  dropdownItem: {
+    display: 'block',
+    width: '100%',
+    padding: '8px 16px',
+    background: 'transparent',
+    border: 'none',
+    fontSize: 11,
+    fontWeight: 500,
+    fontFamily: 'var(--font)',
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+    textAlign: 'left',
   },
   spawnBtn: {
     padding: '4px 12px',
     background: 'transparent',
     border: '1px solid var(--accent)',
     borderRadius: 2,
-    color: 'var(--accent)', fontSize: 12, fontWeight: 600,
+    color: 'var(--accent)', fontSize: 11, fontWeight: 600,
     fontFamily: 'var(--font)',
     cursor: 'pointer',
+    marginLeft: 12,
   },
-  agentCount: { fontSize: 11, color: 'var(--text-dim)' },
   statusText: { fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic' },
   mainRow: {
     flex: 1, display: 'flex', overflow: 'hidden',

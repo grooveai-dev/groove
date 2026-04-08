@@ -5,7 +5,7 @@ import { createServer as createHttpServer } from 'http';
 import { createServer as createNetServer } from 'net';
 import { execFileSync } from 'child_process';
 import { resolve } from 'path';
-import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, readdirSync, statSync } from 'fs';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { Registry } from './registry.js';
@@ -290,6 +290,7 @@ export class Daemon {
         this.journalist.start();
         this.rotator.start();
         this.scheduler.start();
+        this._startGarbageCollector();
 
         // Scan codebase for workspace/structure awareness
         this.indexer.scan();
@@ -297,6 +298,62 @@ export class Daemon {
         resolvePromise(this);
       });
     });
+  }
+
+  _startGarbageCollector() {
+    // Run once on startup, then every 24 hours
+    this._gc();
+    this._gcInterval = setInterval(() => this._gc(), 24 * 60 * 60 * 1000);
+  }
+
+  _gc() {
+    const { grooveDir } = this;
+    let cleaned = 0;
+
+    try {
+      // 1. Clean old log files (>7 days, agent no longer exists)
+      const logsDir = resolve(grooveDir, 'logs');
+      if (existsSync(logsDir)) {
+        const now = Date.now();
+        const sevenDays = 7 * 24 * 60 * 60 * 1000;
+        for (const file of readdirSync(logsDir)) {
+          const p = resolve(logsDir, file);
+          try {
+            const age = now - statSync(p).mtimeMs;
+            if (age > sevenDays) { unlinkSync(p); cleaned++; }
+          } catch { /* skip */ }
+        }
+      }
+
+      // 2. Clean stale recommended-team.json from daemon dir (not working dirs — those are user-managed)
+      //    Only clean if no planner agent is currently running
+      const hasPlanner = this.registry.getAll().some((a) => a.role === 'planner' && (a.status === 'running' || a.status === 'starting'));
+      if (!hasPlanner) {
+        const teamFile = resolve(grooveDir, 'recommended-team.json');
+        if (existsSync(teamFile)) {
+          try {
+            const age = Date.now() - statSync(teamFile).mtimeMs;
+            if (age > 24 * 60 * 60 * 1000) { unlinkSync(teamFile); cleaned++; } // >24h old
+          } catch { /* skip */ }
+        }
+      }
+
+      // 3. Prune audit log (keep last 1000 lines)
+      const auditFile = resolve(grooveDir, 'audit.log');
+      if (existsSync(auditFile)) {
+        try {
+          const lines = readFileSync(auditFile, 'utf8').split('\n');
+          if (lines.length > 1000) {
+            writeFileSync(auditFile, lines.slice(-1000).join('\n'));
+            cleaned++;
+          }
+        } catch { /* skip */ }
+      }
+
+      if (cleaned > 0) {
+        this.audit.log('gc.run', { cleaned });
+      }
+    } catch { /* gc should never crash the daemon */ }
   }
 
   async stop() {
@@ -308,6 +365,7 @@ export class Daemon {
     this.journalist.stop();
     this.rotator.stop();
     this.scheduler.stop();
+    if (this._gcInterval) clearInterval(this._gcInterval);
 
     // Clean up file watchers and terminal sessions
     this.fileWatcher.unwatchAll();

@@ -17,7 +17,7 @@ export const useGrooveStore = create((set, get) => ({
   // UI state — unified panel model
   activeTab: 'agents',       // 'agents' | 'stats' | 'teams' | 'approvals' | 'editor'
   detailPanel: null,          // null | { type: 'agent', agentId } | { type: 'spawn' } | { type: 'journalist' }
-  activityLog: {},
+  activityLog: (() => { try { return JSON.parse(localStorage.getItem('groove:activityLog') || '{}'); } catch { return {}; } })(),
   statusMessage: null,        // inline status text (replaces toast notifications)
   commandHistory: [],          // last 50 commands for command bar
   chatHistory: (() => { try { return JSON.parse(localStorage.getItem('groove:chatHistory') || '{}'); } catch { return {}; } })(),
@@ -88,6 +88,7 @@ export const useGrooveStore = create((set, get) => ({
             type: data.type,
           }];
           set({ activityLog: log });
+          try { localStorage.setItem('groove:activityLog', JSON.stringify(log)); } catch { /* full */ }
           break;
         }
 
@@ -256,7 +257,18 @@ export const useGrooveStore = create((set, get) => ({
       set((s) => {
         const history = { ...s.chatHistory };
         history[newAgent.id] = [...oldChat];
+        try { localStorage.setItem('groove:chatHistory', JSON.stringify(history)); } catch {}
         return { chatHistory: history };
+      });
+    }
+    // Carry activity log (agent responses)
+    const oldLog = get().activityLog[id] || [];
+    if (oldLog.length > 0) {
+      set((s) => {
+        const log = { ...s.activityLog };
+        log[newAgent.id] = [...oldLog];
+        try { localStorage.setItem('groove:activityLog', JSON.stringify(log)); } catch {}
+        return { activityLog: log };
       });
     }
     // Also carry token timeline for continuity in stats

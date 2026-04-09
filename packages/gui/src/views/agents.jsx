@@ -67,7 +67,7 @@ function TeamTabBar() {
   }
 
   return (
-    <div className="flex items-end px-3 pt-2 pb-0 bg-surface-1 border-b border-border gap-px flex-shrink-0">
+    <div className="flex items-end px-0 pt-0 pb-0 bg-surface-1 border-b border-border gap-0 flex-shrink-0">
       {teams.map((team) => {
         const count = agents.filter((a) => a.teamId === team.id).length;
         const isActive = team.id === activeTeamId;
@@ -80,13 +80,14 @@ function TeamTabBar() {
             onClick={() => !isRenaming && switchTeam(team.id)}
             onDoubleClick={() => startRename(team)}
             className={cn(
-              'group relative flex items-center gap-2 px-4 h-9 rounded-t-lg text-xs font-sans cursor-pointer select-none transition-colors',
+              'group relative flex items-center gap-2 px-4 h-9 text-xs font-sans cursor-pointer select-none transition-colors',
               isActive
-                ? 'bg-surface-0 text-text-0 font-semibold border-t-2 border-x border-accent border-x-border'
-                : 'text-text-3 hover:text-text-1 hover:bg-surface-3/50 border-t-2 border-transparent',
+                ? 'bg-surface-0 text-text-0 font-semibold border-x border-x-border'
+                : 'text-text-3 hover:text-text-1 hover:bg-surface-3/50',
             )}
           >
-            {/* Active indicator bar is the top border */}
+            {/* Thin accent line at top */}
+            {isActive && <div className="absolute top-0 left-0 right-0 h-px bg-accent" style={{ height: '0.5px' }} />}
             <Users size={13} className={isActive ? 'text-accent' : 'text-text-4'} />
 
             {isRenaming ? (
@@ -145,7 +146,7 @@ function TeamTabBar() {
 
       {/* Create new team */}
       {creating ? (
-        <div className="flex items-center gap-1.5 px-3 h-9 rounded-t-lg bg-surface-3/50">
+        <div className="flex items-center gap-1.5 px-3 h-9 bg-surface-3/50">
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -168,7 +169,7 @@ function TeamTabBar() {
       ) : (
         <button
           onClick={() => setCreating(true)}
-          className="flex items-center justify-center w-9 h-9 text-text-4 hover:text-text-1 hover:bg-surface-3/50 rounded-t-lg cursor-pointer transition-colors"
+          className="flex items-center justify-center w-9 h-9 text-text-4 hover:text-text-1 hover:bg-surface-3/50 cursor-pointer transition-colors"
           title="New team"
         >
           <Plus size={14} />

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream } from 'fs';
 import { lookup as mimeLookup } from './mimetypes.js';
 import { listProviders, getProvider } from './providers/index.js';
+import { OllamaProvider } from './providers/ollama.js';
 import { validateAgentConfig } from './validate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -124,6 +125,57 @@ export function createApi(app, daemon) {
       p.hasKey = daemon.credentials.hasKey(p.id);
     }
     res.json(providers);
+  });
+
+  // --- Ollama ---
+
+  app.get('/api/providers/ollama/hardware', (req, res) => {
+    res.json(OllamaProvider.getSystemHardware());
+  });
+
+  app.get('/api/providers/ollama/models', (req, res) => {
+    const installed = OllamaProvider.isInstalled() ? OllamaProvider.getInstalledModels() : [];
+    const catalog = OllamaProvider.catalog;
+    const hardware = OllamaProvider.getSystemHardware();
+    res.json({ installed, catalog, hardware });
+  });
+
+  app.post('/api/providers/ollama/pull', async (req, res) => {
+    const { model } = req.body;
+    if (!model) return res.status(400).json({ error: 'model is required' });
+    if (!OllamaProvider.isInstalled()) return res.status(400).json({ error: 'Ollama is not installed' });
+    const broadcast = daemon.broadcast || (() => {});
+    try {
+      broadcast({ type: 'ollama:pull:start', model });
+      await OllamaProvider.pullModel(model, (progress) => {
+        broadcast({ type: 'ollama:pull:progress', model, progress: progress.trim() });
+      });
+      broadcast({ type: 'ollama:pull:complete', model });
+      daemon.audit.log('ollama.pull', { model });
+      res.json({ ok: true, model });
+    } catch (err) {
+      broadcast({ type: 'ollama:pull:error', model, error: err.message });
+      res.status(500).json({ error: `Pull failed: ${err.message}` });
+    }
+  });
+
+  app.delete('/api/providers/ollama/models/:model', (req, res) => {
+    if (!OllamaProvider.isInstalled()) return res.status(400).json({ error: 'Ollama is not installed' });
+    const success = OllamaProvider.deleteModel(req.params.model);
+    if (success) {
+      daemon.audit.log('ollama.delete', { model: req.params.model });
+      res.json({ ok: true });
+    } else {
+      res.status(500).json({ error: 'Failed to delete model' });
+    }
+  });
+
+  app.post('/api/providers/ollama/check', (req, res) => {
+    const installed = OllamaProvider.isInstalled();
+    const install = OllamaProvider.installCommand();
+    const hardware = OllamaProvider.getSystemHardware();
+    const requirements = OllamaProvider.hardwareRequirements();
+    res.json({ installed, install, hardware, requirements });
   });
 
   // --- Credentials ---

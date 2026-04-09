@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.19.3 — Ollama setup experience: hardware detection, model catalog, one-click pull (2026-04-08)
+
+- **Ollama model catalog** — 22 models across Code and General categories with RAM requirements and download sizes
+- **Hardware detection** — auto-detects RAM, CPU, GPU (Apple Silicon unified memory, NVIDIA), recommends best models for your system
+- **Model management** — pull models from GUI with progress via WebSocket, delete installed models, category tabs (Code/General)
+- **Install flow** — platform-specific install command (brew on macOS, curl on Linux), copy button, hardware readiness check, "Recheck" button
+- **5 new API endpoints** — `/api/providers/ollama/hardware`, `/models`, `/pull`, `/check`, `DELETE /models/:model`
+
 ## v0.19.2 — Config tab cleanup, remove restart, fix Ollama key prompt (2026-04-08)
 
 - **Remove restart button** — sending a chat message resumes with context, restart was redundant

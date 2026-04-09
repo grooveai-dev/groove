@@ -14,6 +14,7 @@ import { FolderBrowser } from './folder-browser';
 import { api } from '../../lib/api';
 import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
+import { OllamaSetup } from './ollama-setup';
 
 /* ── Segmented Control ─────────────────────────────────────── */
 
@@ -318,10 +319,15 @@ export function AgentConfig({ agent }) {
                 </button>
 
                 {/* Expanded: models + key management */}
-                {isExpanded && (
+                {isExpanded && p.authType === 'local' && (
                   <div className="border-t border-border-subtle">
-                    {/* API Key row — skip for local providers like Ollama */}
-                    {p.authType !== 'local' && (!available || p.hasKey) && (
+                    <OllamaSetup isInstalled={available} onModelChange={loadProviders} />
+                  </div>
+                )}
+                {isExpanded && p.authType !== 'local' && (
+                  <div className="border-t border-border-subtle">
+                    {/* API Key row */}
+                    {(!available || p.hasKey) && (
                       <div className="px-3 py-2 bg-surface-1/50">
                         {settingKeyFor === p.id ? (
                           <div className="flex gap-1.5">

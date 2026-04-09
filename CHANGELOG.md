@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.19.7 — Settings: full-width card grid layout (2026-04-08)
+
+- **Full viewport layout** — matches dashboard style, no max-width constraint, edge-to-edge cards
+- **Account hero bar** — top bar with page title, daemon info (version, port, uptime), marketplace sign-in/avatar, status dot
+- **Provider cards** — 4-column grid, each card shows status dot, name, ready badge, models, API key inline (no expand needed), Ollama gets "Manage Models" button that opens setup inline
+- **Config grid** — 3-column card grid, each setting is its own card with icon badge, label, description, and control. Auto-saves on change.
+- **Section headers** — uppercase tracking labels with horizontal rule and count/status on right
+
 ## v0.19.6 — Settings redesign: single-page layout, fix process.cwd crash (2026-04-08)
 
 - **Full redesign** — no more tabs, everything on one scrollable page with clear visual sections (icon headers, bordered cards, 2-col daemon grid)

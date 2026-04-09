@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.19.9 — Settings polish: correct provider states, segmented controls, folder browser (2026-04-08)
+
+- **Provider Ready logic** — API-key providers (Codex, Gemini) only show "Ready" when key is actually set, not just when CLI is installed
+- **Remove Auto Rotation** — removed from settings (per-agent setting, not global)
+- **Segmented controls** — Rotation Threshold (Auto/50%/65%/75%/85%), QC Threshold (2/3/4/6/8, default 2), Max Agents (∞/4/8/12/20), Journalist Interval (1m/2m/5m/10m) — no more broken number inputs
+- **Working Directory** — added Browse button using FolderBrowser component from agent panel
+- **Card alignment** — Add API Key buttons pinned to card bottom with flex spacer, no more stagger
+- **Subscription state** — Claude shows "Subscription active" + optional API key for headless, Codex/Gemini show "API Connected" when key is set
+
 ## v0.19.8 — Provider card states: API Connected, subscription toggle (2026-04-08)
 
 - **Codex/Gemini** — when API key is set, shows green "API Connected" badge instead of masked key + "Add API Key"

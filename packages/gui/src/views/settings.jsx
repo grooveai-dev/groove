@@ -7,13 +7,15 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { Skeleton } from '../components/ui/skeleton';
 import { StatusDot } from '../components/ui/status-dot';
 import { OllamaSetup } from '../components/agents/ollama-setup';
+import { FolderBrowser } from '../components/agents/folder-browser';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { fmtUptime } from '../lib/format';
 import {
   Key, Eye, EyeOff, Check, Cpu, ChevronDown,
-  FolderOpen, RotateCw, Users, Gauge, Zap,
-  LogIn, LogOut, User, ShieldCheck, Newspaper,
+  FolderOpen, FolderSearch, RotateCw, Users, Gauge, Zap,
+  LogIn, LogOut, User, ShieldCheck, Settings,
+  Newspaper, Layers,
 } from 'lucide-react';
 
 /* ── Toggle ────────────────────────────────────────────────── */
@@ -35,7 +37,7 @@ function Toggle({ value, onChange }) {
   );
 }
 
-/* ── Provider Card (always visible, no expand) ─────────────── */
+/* ── Provider Card ─────────────────────────────────────────── */
 
 function ProviderCard({ provider, onKeyChange }) {
   const [settingKey, setSettingKey] = useState(false);
@@ -44,8 +46,10 @@ function ProviderCard({ provider, onKeyChange }) {
   const [ollamaOpen, setOllamaOpen] = useState(false);
   const addToast = useGrooveStore((s) => s.addToast);
 
-  const available = provider.installed || provider.hasKey;
   const isLocal = provider.authType === 'local';
+  const isSubscription = provider.authType === 'subscription';
+  // "Ready" means: local + installed, subscription + installed, api-key + hasKey
+  const isReady = isLocal ? provider.installed : isSubscription ? provider.installed : provider.hasKey;
 
   async function handleSetKey() {
     if (!keyInput.trim()) return;
@@ -70,15 +74,15 @@ function ProviderCard({ provider, onKeyChange }) {
     }
   }
 
-  // Ollama gets its own tall card with setup inline
+  // Ollama card
   if (isLocal) {
     return (
       <div className="flex flex-col rounded-lg border border-border-subtle bg-surface-1 overflow-hidden min-w-[220px]">
         <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border-subtle">
-          <StatusDot status={available ? 'running' : 'crashed'} size="sm" />
+          <StatusDot status={isReady ? 'running' : 'crashed'} size="sm" />
           <span className="text-[13px] font-semibold text-text-0 font-sans">{provider.name}</span>
           <div className="flex-1" />
-          {available ? (
+          {isReady ? (
             <Badge variant="success" className="text-2xs gap-1"><Check size={8} /> Ready</Badge>
           ) : (
             <Badge variant="default" className="text-2xs">Not installed</Badge>
@@ -86,20 +90,20 @@ function ProviderCard({ provider, onKeyChange }) {
         </div>
         <div className="flex-1">
           {ollamaOpen ? (
-            <OllamaSetup isInstalled={available} onModelChange={onKeyChange} />
+            <OllamaSetup isInstalled={isReady} onModelChange={onKeyChange} />
           ) : (
-            <div className="px-4 py-3 space-y-2">
-              <div className="text-xs text-text-3 font-sans">
-                {available ? `${provider.models?.length || 0} models available` : 'Local AI models — free, private, no API key'}
+            <div className="px-4 py-3 flex flex-col h-full">
+              <div className="text-xs text-text-3 font-sans flex-1">
+                {isReady ? `${provider.models?.length || 0} models available` : 'Local AI models — free, private, no API key'}
               </div>
               <Button
-                variant={available ? 'secondary' : 'primary'}
+                variant={isReady ? 'secondary' : 'primary'}
                 size="sm"
                 onClick={() => setOllamaOpen(true)}
-                className="w-full h-8 text-2xs gap-1.5"
+                className="w-full h-7 text-2xs gap-1.5 mt-3"
               >
                 <Cpu size={11} />
-                {available ? 'Manage Models' : 'Set Up Ollama'}
+                {isReady ? 'Manage Models' : 'Set Up Ollama'}
               </Button>
             </div>
           )}
@@ -108,25 +112,26 @@ function ProviderCard({ provider, onKeyChange }) {
     );
   }
 
+  // Standard provider card (Claude, Codex, Gemini)
   return (
     <div className="flex flex-col rounded-lg border border-border-subtle bg-surface-1 overflow-hidden min-w-[220px]">
       {/* Header */}
       <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border-subtle">
-        <StatusDot status={available ? 'running' : 'crashed'} size="sm" />
+        <StatusDot status={isReady ? 'running' : 'crashed'} size="sm" />
         <span className="text-[13px] font-semibold text-text-0 font-sans">{provider.name}</span>
         <div className="flex-1" />
-        {available ? (
+        {isReady ? (
           <Badge variant="success" className="text-2xs gap-1"><Check size={8} /> Ready</Badge>
         ) : (
-          <Badge variant="default" className="text-2xs">No key</Badge>
+          <Badge variant="default" className="text-2xs">{isSubscription ? 'Not installed' : 'No key'}</Badge>
         )}
       </div>
 
       {/* Body */}
-      <div className="flex-1 px-4 py-3 space-y-2.5">
+      <div className="flex-1 flex flex-col px-4 py-3">
         {/* Models */}
         {provider.models?.length > 0 && (
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1 mb-2">
             {provider.models.map((m) => (
               <span key={m.id} className="px-1.5 py-0.5 rounded bg-surface-4 text-2xs font-mono text-text-3">
                 {m.name || m.id}
@@ -135,9 +140,27 @@ function ProviderCard({ provider, onKeyChange }) {
           </div>
         )}
 
+        {/* Subscription info for Claude */}
+        {isSubscription && isReady && !provider.hasKey && (
+          <div className="flex items-center gap-1.5 h-7 px-2 bg-accent/8 border border-accent/20 rounded text-2xs font-sans text-accent mb-2">
+            <Check size={10} /> Subscription active
+          </div>
+        )}
+
+        {/* Connected state */}
+        {provider.hasKey && !settingKey && (
+          <div className="flex items-center gap-1.5 mb-2">
+            <div className="flex-1 flex items-center gap-1.5 h-7 px-2 bg-success/8 border border-success/20 rounded text-2xs font-sans text-success">
+              <Check size={10} /> API Connected
+            </div>
+            <button onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }} className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans">Edit</button>
+            <button onClick={handleDeleteKey} className="text-2xs text-text-4 hover:text-danger cursor-pointer font-sans">Remove</button>
+          </div>
+        )}
+
         {/* Key input form */}
-        {settingKey ? (
-          <div className="space-y-1.5">
+        {settingKey && (
+          <div className="space-y-1.5 mb-2">
             <div className="flex gap-1.5">
               <div className="flex-1 relative">
                 <input
@@ -159,32 +182,21 @@ function ProviderCard({ provider, onKeyChange }) {
               <Button variant="ghost" size="sm" onClick={() => { setSettingKey(false); setKeyInput(''); }} className="h-7 text-2xs px-2">Cancel</Button>
             </div>
           </div>
-        ) : provider.hasKey ? (
-          /* Has API key — show connected state */
-          <div className="flex items-center gap-1.5">
-            <div className="flex-1 flex items-center gap-1.5 h-7 px-2 bg-success/8 border border-success/20 rounded text-2xs font-sans text-success">
-              <Check size={10} /> API Connected
-            </div>
-            <button onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }} className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans">Edit</button>
-            <button onClick={handleDeleteKey} className="text-2xs text-text-4 hover:text-danger cursor-pointer font-sans">Remove</button>
-          </div>
-        ) : provider.authType === 'subscription' ? (
-          /* Subscription provider (Claude) — show subscription status + option to add API key */
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-1.5 h-7 px-2 bg-accent/8 border border-accent/20 rounded text-2xs font-sans text-accent">
-              <Check size={10} /> Subscription active
-            </div>
-            <button
-              onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
-              className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans flex items-center gap-1"
-            >
-              <Key size={9} /> Add API key for headless mode
-            </button>
-          </div>
-        ) : (
-          /* No key, needs one */
-          <Button variant="primary" size="sm" onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }} className="w-full h-7 text-2xs gap-1">
-            <Key size={10} /> Add API Key
+        )}
+
+        {/* Spacer to push button to bottom */}
+        <div className="flex-1" />
+
+        {/* Bottom action — always at card bottom */}
+        {!settingKey && !provider.hasKey && (
+          <Button
+            variant={isSubscription ? 'secondary' : 'primary'}
+            size="sm"
+            onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
+            className="w-full h-7 text-2xs gap-1 mt-2"
+          >
+            <Key size={10} />
+            {isSubscription ? 'Add API key for headless mode' : 'Add API Key'}
           </Button>
         )}
       </div>
@@ -201,9 +213,7 @@ function ConfigCard({ icon: Icon, label, description, children }) {
         <div className="w-6 h-6 rounded bg-accent/8 flex items-center justify-center flex-shrink-0">
           <Icon size={12} className="text-accent" />
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-medium text-text-0 font-sans leading-tight">{label}</div>
-        </div>
+        <div className="text-[13px] font-medium text-text-0 font-sans leading-tight">{label}</div>
       </div>
       <div className="text-2xs text-text-4 font-sans leading-relaxed">{description}</div>
       <div className="mt-auto pt-1">{children}</div>
@@ -218,6 +228,7 @@ export default function SettingsView() {
   const [config, setConfig] = useState(null);
   const [daemonInfo, setDaemonInfo] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [folderBrowserOpen, setFolderBrowserOpen] = useState(false);
   const addToast = useGrooveStore((s) => s.addToast);
   const marketplaceUser = useGrooveStore((s) => s.marketplaceUser);
   const marketplaceAuthenticated = useGrooveStore((s) => s.marketplaceAuthenticated);
@@ -246,26 +257,33 @@ export default function SettingsView() {
   if (loading) {
     return (
       <div className="flex flex-col h-full">
-        <div className="h-16 bg-surface-1 border-b border-border" />
+        <div className="h-12 bg-surface-1 border-b border-border" />
         <div className="flex-1 p-4 space-y-4">
-          <div className="flex gap-3">{[...Array(4)].map((_, i) => <Skeleton key={i} className="flex-1 h-36 rounded-lg" />)}</div>
+          <div className="grid grid-cols-4 gap-3">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-40 rounded-lg" />)}</div>
           <div className="grid grid-cols-3 gap-3">{[...Array(6)].map((_, i) => <Skeleton key={i} className="h-28 rounded-lg" />)}</div>
         </div>
       </div>
     );
   }
 
-  const installedProviders = providers.filter((p) => p.installed || p.hasKey);
+  const connectedCount = providers.filter((p) => {
+    if (p.authType === 'local') return p.installed;
+    if (p.authType === 'subscription') return p.installed;
+    return p.hasKey;
+  }).length;
+
+  // Rotation threshold display: 0 = auto, otherwise show as percentage
+  const rotationValue = config?.rotationThreshold || 0;
+  const rotationDisplay = rotationValue === 0 ? 'auto' : `${Math.round(rotationValue * 100)}%`;
 
   return (
     <div className="flex flex-col h-full">
 
-      {/* ═══════ ACCOUNT HERO BAR ═══════ */}
+      {/* ═══════ HEADER BAR ═══════ */}
       <div className="flex items-center gap-4 px-4 py-2.5 bg-surface-1 border-b border-border flex-shrink-0">
         <h2 className="text-sm font-semibold text-text-0 font-sans">Settings</h2>
         <div className="flex-1" />
 
-        {/* Daemon info */}
         <div className="flex items-center gap-4 text-2xs text-text-3 font-sans">
           {daemonInfo?.version && <span>v{daemonInfo.version}</span>}
           {daemonInfo?.port && <span>:{daemonInfo.port}</span>}
@@ -274,7 +292,6 @@ export default function SettingsView() {
 
         <div className="w-px h-4 bg-border-subtle" />
 
-        {/* Account */}
         {marketplaceAuthenticated ? (
           <div className="flex items-center gap-2.5">
             {marketplaceUser?.avatar ? (
@@ -302,12 +319,12 @@ export default function SettingsView() {
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
 
-          {/* ═══════ PROVIDERS ROW ═══════ */}
+          {/* ═══════ PROVIDERS ═══════ */}
           <div>
             <div className="flex items-center gap-2 mb-2.5 px-0.5">
               <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Providers</span>
               <div className="flex-1 h-px bg-border-subtle" />
-              <span className="text-2xs text-text-4 font-sans">{installedProviders.length}/{providers.length} connected</span>
+              <span className="text-2xs text-text-4 font-sans">{connectedCount}/{providers.length} connected</span>
             </div>
             <div className="grid grid-cols-4 gap-3">
               {providers.map((p) => (
@@ -316,7 +333,7 @@ export default function SettingsView() {
             </div>
           </div>
 
-          {/* ═══════ CONFIGURATION GRID ═══════ */}
+          {/* ═══════ CONFIGURATION ═══════ */}
           {config && (
             <div>
               <div className="flex items-center gap-2 mb-2.5 px-0.5">
@@ -325,78 +342,125 @@ export default function SettingsView() {
                 <span className="text-2xs text-text-4 font-sans">Auto-saves</span>
               </div>
               <div className="grid grid-cols-3 gap-3">
+
                 <ConfigCard icon={Cpu} label="Default Provider" description="Provider used when spawning new agents.">
                   <select
                     value={config.defaultProvider || 'claude-code'}
                     onChange={(e) => updateConfig('defaultProvider', e.target.value)}
                     className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
                   >
-                    {installedProviders.map((p) => (
+                    {providers.filter((p) => p.installed || p.hasKey).map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </select>
                 </ConfigCard>
 
                 <ConfigCard icon={FolderOpen} label="Working Directory" description="Default root directory for new agents.">
-                  <code className="block w-full h-8 px-2.5 flex items-center bg-surface-0 border border-border-subtle rounded-md text-2xs font-mono text-text-2 truncate">
-                    {config.defaultWorkingDir || 'Project root'}
-                  </code>
-                </ConfigCard>
-
-                <ConfigCard icon={RotateCw} label="Auto Rotation" description="Rotate agents automatically when context window degrades.">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-text-2">{config.autoRotation !== false ? 'On' : 'Off'}</span>
-                    <Toggle value={config.autoRotation !== false} onChange={(v) => updateConfig('autoRotation', v)} />
-                  </div>
-                </ConfigCard>
-
-                <ConfigCard icon={Gauge} label="Rotation Threshold" description="Token count that triggers rotation. 0 uses adaptive threshold.">
-                  <input
-                    type="number"
-                    value={config.rotationThreshold || 0}
-                    onChange={(e) => updateConfig('rotationThreshold', parseInt(e.target.value, 10) || 0)}
-                    className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent"
-                    min={0} step={10000}
-                  />
-                </ConfigCard>
-
-                <ConfigCard icon={ShieldCheck} label="QC Threshold" description="Number of running agents that triggers an auto-QC agent.">
-                  <input
-                    type="number"
-                    value={config.qcThreshold || 4}
-                    onChange={(e) => updateConfig('qcThreshold', parseInt(e.target.value, 10) || 4)}
-                    className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent"
-                    min={2} max={20}
-                  />
-                </ConfigCard>
-
-                <ConfigCard icon={Users} label="Max Agents" description="Maximum concurrent agents. 0 means unlimited.">
-                  <input
-                    type="number"
-                    value={config.maxAgents || 0}
-                    onChange={(e) => updateConfig('maxAgents', parseInt(e.target.value, 10) || 0)}
-                    className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent"
-                    min={0} max={50}
-                  />
-                </ConfigCard>
-
-                <ConfigCard icon={Newspaper} label="Journalist Interval" description="Seconds between automatic synthesis cycles.">
                   <div className="flex items-center gap-1.5">
-                    <input
-                      type="number"
-                      value={config.journalistInterval || 120}
-                      onChange={(e) => updateConfig('journalistInterval', parseInt(e.target.value, 10) || 120)}
-                      className="flex-1 h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent"
-                      min={30} step={30}
-                    />
-                    <span className="text-2xs text-text-4 font-sans">sec</span>
+                    <code className="flex-1 h-8 px-2 flex items-center bg-surface-0 border border-border-subtle rounded-md text-2xs font-mono text-text-2 truncate min-w-0">
+                      {config.defaultWorkingDir || 'Project root'}
+                    </code>
+                    <Button variant="secondary" size="sm" onClick={() => setFolderBrowserOpen(true)} className="h-8 px-2 flex-shrink-0">
+                      <FolderSearch size={12} />
+                    </Button>
                   </div>
                 </ConfigCard>
+
+                <ConfigCard icon={Gauge} label="Rotation Threshold" description="Context usage that triggers auto-rotation.">
+                  <div className="flex bg-surface-0 rounded-md p-0.5 border border-border-subtle">
+                    {['auto', '50%', '65%', '75%', '85%'].map((opt) => {
+                      const val = opt === 'auto' ? 0 : parseInt(opt, 10) / 100;
+                      const isActive = rotationValue === val;
+                      return (
+                        <button
+                          key={opt}
+                          onClick={() => updateConfig('rotationThreshold', val)}
+                          className={cn(
+                            'flex-1 px-2 py-1.5 text-2xs font-semibold font-sans rounded transition-all cursor-pointer',
+                            isActive ? 'bg-accent/15 text-accent shadow-sm' : 'text-text-3 hover:text-text-1',
+                          )}
+                        >
+                          {opt === 'auto' ? 'Auto' : opt}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ConfigCard>
+
+                <ConfigCard icon={ShieldCheck} label="QC Threshold" description="Running agents count that triggers auto-QC.">
+                  <div className="flex bg-surface-0 rounded-md p-0.5 border border-border-subtle">
+                    {[2, 3, 4, 6, 8].map((n) => {
+                      const isActive = (config.qcThreshold || 2) === n;
+                      return (
+                        <button
+                          key={n}
+                          onClick={() => updateConfig('qcThreshold', n)}
+                          className={cn(
+                            'flex-1 px-2 py-1.5 text-2xs font-semibold font-sans rounded transition-all cursor-pointer',
+                            isActive ? 'bg-accent/15 text-accent shadow-sm' : 'text-text-3 hover:text-text-1',
+                          )}
+                        >
+                          {n}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ConfigCard>
+
+                <ConfigCard icon={Users} label="Max Agents" description="Concurrent agent limit. 0 = unlimited.">
+                  <div className="flex bg-surface-0 rounded-md p-0.5 border border-border-subtle">
+                    {[0, 4, 8, 12, 20].map((n) => {
+                      const isActive = (config.maxAgents || 0) === n;
+                      return (
+                        <button
+                          key={n}
+                          onClick={() => updateConfig('maxAgents', n)}
+                          className={cn(
+                            'flex-1 px-2 py-1.5 text-2xs font-semibold font-sans rounded transition-all cursor-pointer',
+                            isActive ? 'bg-accent/15 text-accent shadow-sm' : 'text-text-3 hover:text-text-1',
+                          )}
+                        >
+                          {n === 0 ? '\u221E' : n}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ConfigCard>
+
+                <ConfigCard icon={Newspaper} label="Journalist Interval" description="Seconds between synthesis cycles.">
+                  <div className="flex bg-surface-0 rounded-md p-0.5 border border-border-subtle">
+                    {[60, 120, 300, 600].map((n) => {
+                      const isActive = (config.journalistInterval || 120) === n;
+                      const label = n < 60 ? `${n}s` : `${n / 60}m`;
+                      return (
+                        <button
+                          key={n}
+                          onClick={() => updateConfig('journalistInterval', n)}
+                          className={cn(
+                            'flex-1 px-2 py-1.5 text-2xs font-semibold font-sans rounded transition-all cursor-pointer',
+                            isActive ? 'bg-accent/15 text-accent shadow-sm' : 'text-text-3 hover:text-text-1',
+                          )}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ConfigCard>
+
               </div>
             </div>
           )}
         </div>
       </ScrollArea>
+
+      {/* Folder Browser Modal */}
+      <FolderBrowser
+        open={folderBrowserOpen}
+        onOpenChange={setFolderBrowserOpen}
+        currentPath={config?.defaultWorkingDir || '/'}
+        onSelect={(dir) => updateConfig('defaultWorkingDir', dir)}
+      />
     </div>
   );
 }

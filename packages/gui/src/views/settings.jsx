@@ -16,7 +16,7 @@ import {
   FolderOpen, FolderSearch, RotateCw, Users, Gauge, Zap,
   LogIn, LogOut, User, ShieldCheck, Settings,
   Newspaper, Layers, Radio, Send, MessageSquare, MessageCircle,
-  Plus, Trash2, Plug, PlugZap, TestTube, X,
+  Plus, Trash2, Plug, PlugZap, TestTube, X, HelpCircle, ExternalLink, ChevronRight,
 } from 'lucide-react';
 
 /* ── Toggle ────────────────────────────────────────────────── */
@@ -262,6 +262,40 @@ const GATEWAY_LABELS = { telegram: 'Telegram', discord: 'Discord', slack: 'Slack
 const GATEWAY_PLACEHOLDERS = { telegram: 'Bot token from @BotFather', discord: 'Bot token from Developer Portal', slack: 'Bot token (xoxb-...)' };
 const NOTIFICATION_PRESETS = ['critical', 'lifecycle', 'all'];
 
+const SETUP_GUIDES = {
+  telegram: {
+    title: 'Telegram Setup',
+    steps: [
+      { text: 'Open Telegram and message', link: 'https://t.me/BotFather', linkText: '@BotFather' },
+      { text: 'Send /newbot and name it GroovePilot (or anything you like)' },
+      { text: 'Copy the bot token and paste it below' },
+      { text: 'After connecting, send any message to your bot to link the chat' },
+    ],
+  },
+  discord: {
+    title: 'Discord Setup',
+    steps: [
+      { text: 'Go to the', link: 'https://discord.com/developers/applications', linkText: 'Discord Developer Portal' },
+      { text: 'Create an app, go to Bot tab, click Reset Token, copy it' },
+      { text: 'OAuth2 > URL Generator: select bot scope + Send Messages + Read Message History' },
+      { text: 'Open the generated URL to invite the bot to your server' },
+      { text: 'Paste the bot token below' },
+    ],
+  },
+  slack: {
+    title: 'Slack Setup',
+    steps: [
+      { text: 'Create a new app at', link: 'https://api.slack.com/apps', linkText: 'api.slack.com/apps' },
+      { text: 'Settings > Socket Mode: enable it' },
+      { text: 'Basic Information > App-Level Tokens: generate one with connections:write scope' },
+      { text: 'OAuth & Permissions > Bot Token Scopes: add chat:write, channels:read, groups:read, channels:history, app_mentions:read' },
+      { text: 'Event Subscriptions: enable, subscribe to message.channels and app_mention bot events' },
+      { text: 'Install to Workspace and copy the Bot Token (xoxb-...)' },
+      { text: 'Paste both tokens below, then invite the bot to a channel' },
+    ],
+  },
+};
+
 /* ── Gateway Card ─────────────────────────────────────────── */
 
 function GatewayCard({ gateway, onRefresh }) {
@@ -272,6 +306,7 @@ function GatewayCard({ gateway, onRefresh }) {
   const [testing, setTesting] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [channels, setChannels] = useState([]);
+  const [showGuide, setShowGuide] = useState(false);
   const addToast = useGrooveStore((s) => s.addToast);
 
   // Fetch channels when connected Slack gateway has no chatId
@@ -502,10 +537,47 @@ function GatewayCard({ gateway, onRefresh }) {
           </>
         )}
 
-        {/* Not connected, not editing — show state */}
+        {/* Not connected, not editing — show state + guide */}
         {!gateway.connected && !settingToken && (
-          <div className="text-xs text-text-3 font-sans mb-3">
-            {!gateway.enabled ? 'Gateway is disabled.' : gateway.hasCredentials ? 'Tokens saved — click Connect.' : 'Configure bot token to connect.'}
+          <>
+            <div className="text-xs text-text-3 font-sans mb-2">
+              {!gateway.enabled ? 'Gateway is disabled.' : gateway.hasCredentials ? 'Tokens saved — click Connect.' : 'Configure bot token to connect.'}
+            </div>
+            {!gateway.hasCredentials && (
+              <button
+                onClick={() => setShowGuide(!showGuide)}
+                className="flex items-center gap-1.5 text-2xs text-accent hover:text-accent/80 font-sans font-medium cursor-pointer mb-2"
+              >
+                <HelpCircle size={11} />
+                {showGuide ? 'Hide setup guide' : 'How to set up'}
+                <ChevronRight size={10} className={cn('transition-transform', showGuide && 'rotate-90')} />
+              </button>
+            )}
+          </>
+        )}
+
+        {/* Setup guide */}
+        {showGuide && SETUP_GUIDES[gateway.type] && (
+          <div className="mb-3 p-2.5 bg-accent/5 border border-accent/15 rounded-md">
+            <div className="text-2xs font-semibold text-accent font-sans mb-2">{SETUP_GUIDES[gateway.type].title}</div>
+            <ol className="space-y-1.5">
+              {SETUP_GUIDES[gateway.type].steps.map((step, i) => (
+                <li key={i} className="text-2xs text-text-3 font-sans flex gap-1.5">
+                  <span className="text-text-4 font-mono w-4 flex-shrink-0">{i + 1}.</span>
+                  <span>
+                    {step.text}
+                    {step.link && (
+                      <>
+                        {' '}
+                        <a href={step.link} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline inline-flex items-center gap-0.5">
+                          {step.linkText}<ExternalLink size={8} />
+                        </a>
+                      </>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ol>
           </div>
         )}
 
@@ -514,6 +586,16 @@ function GatewayCard({ gateway, onRefresh }) {
         {/* Token input form */}
         {settingToken && (
           <div className="space-y-2.5 pt-1">
+            {/* Inline guide toggle when editing tokens */}
+            {SETUP_GUIDES[gateway.type] && (
+              <button
+                onClick={() => setShowGuide(!showGuide)}
+                className="flex items-center gap-1.5 text-2xs text-accent hover:text-accent/80 font-sans font-medium cursor-pointer"
+              >
+                <HelpCircle size={11} />
+                {showGuide ? 'Hide guide' : 'Where do I get these?'}
+              </button>
+            )}
             <div>
               <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">Bot Token</label>
               <div className="relative">

@@ -36,11 +36,19 @@ export class SlackGateway extends BaseGateway {
       token: botToken,
       appToken,
       socketMode: true,
+      // Log all incoming events for debugging
+      logLevel: 'DEBUG',
     });
 
     // Global error handler — prevent crashes
     this.app.error(async (error) => {
       console.log(`[Groove:Slack] App error: ${error.message}`);
+    });
+
+    // Catch-all: log every single event that comes through
+    this.app.use(async ({ event, body, next }) => {
+      console.log(`[Groove:Slack] Event received — type: ${body?.event?.type || body?.type || 'unknown'}, text: ${body?.event?.text?.slice(0, 50) || 'none'}`);
+      await next();
     });
 
     // Handle @mentions of the bot — primary way to interact

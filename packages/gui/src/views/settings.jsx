@@ -135,7 +135,7 @@ function ProviderCard({ provider, onKeyChange }) {
           </div>
         )}
 
-        {/* Key status + action */}
+        {/* Key input form */}
         {settingKey ? (
           <div className="space-y-1.5">
             <div className="flex gap-1.5">
@@ -159,24 +159,33 @@ function ProviderCard({ provider, onKeyChange }) {
               <Button variant="ghost" size="sm" onClick={() => { setSettingKey(false); setKeyInput(''); }} className="h-7 text-2xs px-2">Cancel</Button>
             </div>
           </div>
-        ) : provider.authType === 'subscription' ? (
-          <div className="text-2xs text-text-3 font-sans">Uses your Claude subscription</div>
-        ) : (
+        ) : provider.hasKey ? (
+          /* Has API key — show connected state */
           <div className="flex items-center gap-1.5">
-            {provider.hasKey ? (
-              <>
-                <code className="flex-1 h-7 px-2 flex items-center bg-surface-0 border border-border-subtle rounded text-2xs font-mono text-text-4 truncate">
-                  ••••••••••••
-                </code>
-                <button onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }} className="text-2xs text-accent hover:underline cursor-pointer font-sans">Edit</button>
-                <button onClick={handleDeleteKey} className="text-2xs text-danger hover:underline cursor-pointer font-sans">Remove</button>
-              </>
-            ) : (
-              <Button variant="primary" size="sm" onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }} className="w-full h-7 text-2xs gap-1">
-                <Key size={10} /> Add API Key
-              </Button>
-            )}
+            <div className="flex-1 flex items-center gap-1.5 h-7 px-2 bg-success/8 border border-success/20 rounded text-2xs font-sans text-success">
+              <Check size={10} /> API Connected
+            </div>
+            <button onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }} className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans">Edit</button>
+            <button onClick={handleDeleteKey} className="text-2xs text-text-4 hover:text-danger cursor-pointer font-sans">Remove</button>
           </div>
+        ) : provider.authType === 'subscription' ? (
+          /* Subscription provider (Claude) — show subscription status + option to add API key */
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5 h-7 px-2 bg-accent/8 border border-accent/20 rounded text-2xs font-sans text-accent">
+              <Check size={10} /> Subscription active
+            </div>
+            <button
+              onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
+              className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans flex items-center gap-1"
+            >
+              <Key size={9} /> Add API key for headless mode
+            </button>
+          </div>
+        ) : (
+          /* No key, needs one */
+          <Button variant="primary" size="sm" onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }} className="w-full h-7 text-2xs gap-1">
+            <Key size={10} /> Add API Key
+          </Button>
         )}
       </div>
     </div>

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.19.8 — Provider card states: API Connected, subscription toggle (2026-04-08)
+
+- **Codex/Gemini** — when API key is set, shows green "API Connected" badge instead of masked key + "Add API Key"
+- **Claude Code** — shows blue "Subscription active" badge when installed, plus "Add API key for headless mode" link to optionally add an API key
+- **All providers** — three clear states: connected (green), subscription (blue), needs key (add button). Edit/Remove links for connected keys.
+
 ## v0.19.7 — Settings: full-width card grid layout (2026-04-08)
 
 - **Full viewport layout** — matches dashboard style, no max-width constraint, edge-to-edge cards

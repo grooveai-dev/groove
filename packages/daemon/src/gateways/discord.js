@@ -54,7 +54,8 @@ export class DiscordGateway extends BaseGateway {
       if (!msg.content.startsWith('/')) return;
 
       const userId = msg.author.id;
-      const [command, ...args] = msg.content.slice(1).split(/\s+/);
+      const [rawCmd, ...args] = msg.content.slice(1).split(/\s+/);
+      const command = rawCmd.toLowerCase();
 
       // Auto-capture channelId
       if (!this.config.chatId) {

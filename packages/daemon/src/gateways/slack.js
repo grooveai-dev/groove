@@ -73,7 +73,8 @@ export class SlackGateway extends BaseGateway {
         }
 
         // Parse command — no / prefix needed when mentioning
-        const [command, ...args] = text.split(/\s+/);
+        const [rawCmd, ...args] = text.split(/\s+/);
+        const command = rawCmd.toLowerCase();
         const response = await this.handleCommand(command, args, event.user);
         if (response) {
           await say(this._buildReply(response));
@@ -102,9 +103,10 @@ export class SlackGateway extends BaseGateway {
         const text = message.text.trim();
         if (!text) return;
 
-        // Strip leading / if someone tries it anyway
+        // Strip leading / if someone tries it anyway, lowercase for matching
         const cleaned = text.startsWith('/') ? text.slice(1) : text;
-        const [command, ...args] = cleaned.split(/\s+/);
+        const [rawCommand, ...args] = cleaned.split(/\s+/);
+        const command = rawCommand.toLowerCase();
 
         // Only respond to known commands
         const known = ['status', 'agents', 'spawn', 'kill', 'approve', 'reject', 'rotate', 'teams', 'schedules', 'help'];

@@ -141,7 +141,8 @@ export class TelegramGateway extends BaseGateway {
 
     const userId = String(msg.from.id);
     const text = msg.text.split('@')[0]; // Remove @botname suffix from group commands
-    const [command, ...args] = text.slice(1).split(/\s+/);
+    const [rawCmd, ...args] = text.slice(1).split(/\s+/);
+    const command = rawCmd.toLowerCase();
 
     const response = await this.handleCommand(command, args, userId);
     if (response) {

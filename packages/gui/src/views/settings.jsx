@@ -388,7 +388,7 @@ function GatewaySetupGuide({ type, open, onOpenChange }) {
             { text: 'Go to Features > OAuth & Permissions' },
             { text: 'Scroll to Bot Token Scopes and add all of these:' },
           ],
-          scopes: ['chat:write', 'channels:read', 'groups:read', 'channels:history', 'app_mentions:read'],
+          scopes: ['chat:write', 'channels:read', 'channels:history', 'groups:read', 'groups:history', 'im:history', 'app_mentions:read'],
           after: [
             { text: 'Scroll up and click Install to Workspace' },
             { text: 'Click Allow to grant permissions' },

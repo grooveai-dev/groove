@@ -71,6 +71,43 @@ export class OllamaProvider extends Provider {
     return { command: 'Download from https://ollama.ai/download', platform: 'other' };
   }
 
+  static async isServerRunning() {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch('http://localhost:11434/', { signal: controller.signal });
+      clearTimeout(timeout);
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  static startServer() {
+    const platform = process.platform;
+    if (platform === 'darwin') {
+      // Try brew services first, fall back to ollama serve
+      try {
+        execSync('brew services start ollama', { stdio: 'ignore', timeout: 10000 });
+        return { started: true, method: 'brew services' };
+      } catch {
+        try {
+          execFile('ollama', ['serve'], { stdio: 'ignore', detached: true }).unref();
+          return { started: true, method: 'ollama serve' };
+        } catch {
+          return { started: false, command: 'ollama serve' };
+        }
+      }
+    }
+    // Linux / other
+    try {
+      execFile('ollama', ['serve'], { stdio: 'ignore', detached: true }).unref();
+      return { started: true, method: 'ollama serve' };
+    } catch {
+      return { started: false, command: 'ollama serve' };
+    }
+  }
+
   static hardwareRequirements() {
     return {
       minRAM: 4,

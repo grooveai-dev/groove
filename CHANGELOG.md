@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.19.4 — Ollama server lifecycle, UI state fix (2026-04-08)
+
+- **Server detection** — checks if Ollama server is running (not just binary installed), shows "Start Ollama Server" button with auto-start via brew services or ollama serve
+- **Three-state install flow** — not installed → installed but server down → ready with models
+- **UI state fix** — closing/reopening Ollama dropdown no longer reverts to install screen; provider list refreshes on state change
+- **New API endpoints** — `POST /api/providers/ollama/serve` (auto-start server), `/check` now returns `serverRunning` flag
+
 ## v0.19.3 — Ollama setup experience: hardware detection, model catalog, one-click pull (2026-04-08)
 
 - **Ollama model catalog** — 22 models across Code and General categories with RAM requirements and download sizes

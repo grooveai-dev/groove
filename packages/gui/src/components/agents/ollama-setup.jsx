@@ -48,6 +48,7 @@ function HardwareBar({ hardware }) {
 function InstallSection({ onRecheck }) {
   const [data, setData] = useState(null);
   const [checking, setChecking] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [copied, setCopied] = useState(false);
   const addToast = useGrooveStore((s) => s.addToast);
 
@@ -60,14 +61,33 @@ function InstallSection({ onRecheck }) {
     try {
       const result = await api.post('/providers/ollama/check');
       setData(result);
-      if (result.installed) {
-        addToast('success', 'Ollama detected!');
+      if (result.installed && result.serverRunning) {
+        addToast('success', 'Ollama is ready!');
         onRecheck();
+      } else if (result.installed) {
+        addToast('info', 'Ollama installed — server needs to start');
       } else {
         addToast('info', 'Ollama not found — install and try again');
       }
     } catch {}
     setChecking(false);
+  }
+
+  async function handleStartServer() {
+    setStarting(true);
+    try {
+      const result = await api.post('/providers/ollama/serve');
+      if (result.ok) {
+        addToast('success', 'Ollama server started!');
+        // Recheck to update state
+        const check = await api.post('/providers/ollama/check');
+        setData(check);
+        if (check.serverRunning) onRecheck();
+      }
+    } catch (err) {
+      addToast('error', 'Could not start server', err.message);
+    }
+    setStarting(false);
   }
 
   function handleCopy(text) {
@@ -78,7 +98,7 @@ function InstallSection({ onRecheck }) {
 
   if (!data) return <div className="py-4 text-center text-xs text-text-4 font-sans">Loading...</div>;
 
-  const { hardware, install, requirements } = data;
+  const { hardware, install, requirements, installed, serverRunning } = data;
   const canRun = hardware.totalRamGb >= requirements.minRAM;
   const recommended = hardware.recommended;
 
@@ -108,31 +128,50 @@ function InstallSection({ onRecheck }) {
         </div>
       )}
 
-      {/* Install command */}
-      <div className="space-y-1.5">
-        <p className="text-xs font-semibold text-text-1 font-sans">Install Ollama</p>
-        <div className="flex items-center gap-2">
-          <code className="flex-1 bg-surface-0 border border-border-subtle rounded-md px-3 py-2 text-xs font-mono text-text-1 truncate">
-            {install.command}
-          </code>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => handleCopy(install.command)}
-            className="h-8 px-2.5 gap-1 flex-shrink-0"
-          >
-            {copied ? <Check size={12} /> : <Copy size={12} />}
-            {copied ? 'Copied' : 'Copy'}
+      {/* State: Installed but server not running */}
+      {installed && !serverRunning && (
+        <div className="space-y-2">
+          <div className="flex items-start gap-2 bg-warning/8 border border-warning/20 rounded-lg px-3 py-2.5">
+            <AlertCircle size={14} className="text-warning flex-shrink-0 mt-0.5" />
+            <div className="text-xs font-sans text-text-2">
+              <span className="text-warning font-semibold">Ollama installed but server not running.</span>
+              {' '}The server needs to be running to pull and use models.
+            </div>
+          </div>
+          <Button variant="primary" size="md" onClick={handleStartServer} disabled={starting} className="w-full gap-1.5">
+            <Zap size={12} />
+            {starting ? 'Starting...' : 'Start Ollama Server'}
           </Button>
         </div>
-        {install.alt && (
-          <p className="text-2xs text-text-4 font-sans">{install.alt}</p>
-        )}
-      </div>
+      )}
+
+      {/* State: Not installed */}
+      {!installed && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold text-text-1 font-sans">Install Ollama</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 bg-surface-0 border border-border-subtle rounded-md px-3 py-2 text-xs font-mono text-text-1 truncate">
+              {install.command}
+            </code>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleCopy(install.command)}
+              className="h-8 px-2.5 gap-1 flex-shrink-0"
+            >
+              {copied ? <Check size={12} /> : <Copy size={12} />}
+              {copied ? 'Copied' : 'Copy'}
+            </Button>
+          </div>
+          {install.alt && (
+            <p className="text-2xs text-text-4 font-sans">{install.alt}</p>
+          )}
+        </div>
+      )}
 
       <Button variant="secondary" size="md" onClick={handleRecheck} disabled={checking} className="w-full gap-1.5">
         <RefreshCw size={12} className={checking ? 'animate-spin' : ''} />
-        {checking ? 'Checking...' : 'I installed it — check again'}
+        {checking ? 'Checking...' : installed ? 'Check again' : 'I installed it — check again'}
       </Button>
     </div>
   );
@@ -312,10 +351,24 @@ function ModelBrowser({ onModelChange }) {
 /* ── Main Export ────────────────────────────────────────────── */
 
 export function OllamaSetup({ isInstalled: initialInstalled, onModelChange }) {
-  const [installed, setInstalled] = useState(initialInstalled);
+  const [ready, setReady] = useState(false);
+  const [checked, setChecked] = useState(false);
 
-  if (!installed) {
-    return <InstallSection onRecheck={() => setInstalled(true)} />;
+  // On mount, verify server is actually running (not just binary installed)
+  useEffect(() => {
+    if (initialInstalled) {
+      api.post('/providers/ollama/check')
+        .then((data) => { setReady(data.installed && data.serverRunning); setChecked(true); })
+        .catch(() => setChecked(true));
+    } else {
+      setChecked(true);
+    }
+  }, [initialInstalled]);
+
+  if (!checked) return <div className="py-4 text-center text-xs text-text-4 font-sans">Checking Ollama...</div>;
+
+  if (!ready) {
+    return <InstallSection onRecheck={() => { setReady(true); if (onModelChange) onModelChange(); }} />;
   }
 
   return <ModelBrowser onModelChange={onModelChange} />;

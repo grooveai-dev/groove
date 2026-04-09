@@ -170,12 +170,28 @@ export function createApi(app, daemon) {
     }
   });
 
-  app.post('/api/providers/ollama/check', (req, res) => {
+  app.post('/api/providers/ollama/check', async (req, res) => {
     const installed = OllamaProvider.isInstalled();
+    const serverRunning = installed ? await OllamaProvider.isServerRunning() : false;
     const install = OllamaProvider.installCommand();
     const hardware = OllamaProvider.getSystemHardware();
     const requirements = OllamaProvider.hardwareRequirements();
-    res.json({ installed, install, hardware, requirements });
+    res.json({ installed, serverRunning, install, hardware, requirements });
+  });
+
+  app.post('/api/providers/ollama/serve', async (req, res) => {
+    if (!OllamaProvider.isInstalled()) return res.status(400).json({ error: 'Ollama is not installed' });
+    const already = await OllamaProvider.isServerRunning();
+    if (already) return res.json({ ok: true, alreadyRunning: true });
+    const result = OllamaProvider.startServer();
+    if (result.started) {
+      // Wait a moment for server to come up
+      await new Promise((r) => setTimeout(r, 2000));
+      const running = await OllamaProvider.isServerRunning();
+      res.json({ ok: running, method: result.method });
+    } else {
+      res.status(500).json({ error: 'Could not start server', command: result.command });
+    }
   });
 
   // --- Credentials ---

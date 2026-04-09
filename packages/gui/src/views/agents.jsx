@@ -10,7 +10,7 @@ import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield } from 'lucide-react';
+import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil } from 'lucide-react';
 
 const NODE_TYPES = { agentNode: AgentNode, rootNode: RootNode };
 const NODE_W = 220;
@@ -28,7 +28,7 @@ function savePositions(positions) {
   try { localStorage.setItem('groove:nodePositions', JSON.stringify(positions)); } catch {}
 }
 
-/* ── Team Tab Bar ──────────────────────────────────────────── */
+/* ── Team Tab Bar (IDE-style) ──────────────────────────────── */
 
 function TeamTabBar() {
   const teams = useGrooveStore((s) => s.teams);
@@ -37,9 +37,12 @@ function TeamTabBar() {
   const switchTeam = useGrooveStore((s) => s.switchTeam);
   const createTeam = useGrooveStore((s) => s.createTeam);
   const deleteTeam = useGrooveStore((s) => s.deleteTeam);
+  const renameTeam = useGrooveStore((s) => s.renameTeam);
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
   const submitting = useRef(false);
 
   function handleCreate() {
@@ -51,36 +54,90 @@ function TeamTabBar() {
     createTeam(name).finally(() => { submitting.current = false; });
   }
 
+  function startRename(team) {
+    setRenamingId(team.id);
+    setRenameValue(team.name);
+  }
+
+  function handleRename() {
+    const name = renameValue.trim();
+    if (!name || !renamingId) { setRenamingId(null); return; }
+    renameTeam(renamingId, name);
+    setRenamingId(null);
+  }
+
   return (
-    <div className="flex items-center h-9 bg-surface-1 border-b border-border-subtle px-2 gap-0.5 flex-shrink-0">
+    <div className="flex items-end px-3 pt-2 pb-0 bg-surface-1 border-b border-border gap-px flex-shrink-0">
       {teams.map((team) => {
         const count = agents.filter((a) => a.teamId === team.id).length;
         const isActive = team.id === activeTeamId;
+        const isRenaming = renamingId === team.id;
+        const running = agents.filter((a) => a.teamId === team.id && (a.status === 'running' || a.status === 'starting')).length;
+
         return (
           <div
             key={team.id}
+            onClick={() => !isRenaming && switchTeam(team.id)}
+            onDoubleClick={() => startRename(team)}
             className={cn(
-              'group flex items-center gap-1 pl-2.5 pr-1 h-7 rounded text-2xs font-sans cursor-pointer select-none transition-colors',
+              'group relative flex items-center gap-2 px-4 h-9 rounded-t-lg text-xs font-sans cursor-pointer select-none transition-colors',
               isActive
-                ? 'bg-surface-3 text-text-0 font-semibold'
-                : 'text-text-3 hover:text-text-1 hover:bg-surface-3/50',
+                ? 'bg-surface-0 text-text-0 font-semibold border-t-2 border-x border-accent border-x-border'
+                : 'text-text-3 hover:text-text-1 hover:bg-surface-3/50 border-t-2 border-transparent',
             )}
           >
-            <button
-              onClick={() => switchTeam(team.id)}
-              className="flex items-center gap-1.5 cursor-pointer"
-            >
-              <Users size={10} />
-              <span className="truncate max-w-[80px]">{team.name}</span>
-              {count > 0 && <span className="text-text-4 font-mono">{count}</span>}
-            </button>
-            {!team.isDefault && (
-              <button
-                onClick={(e) => { e.stopPropagation(); deleteTeam(team.id); }}
-                className="ml-0.5 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-surface-5 text-text-4 hover:text-danger cursor-pointer transition-all"
-              >
-                <X size={9} />
-              </button>
+            {/* Active indicator bar is the top border */}
+            <Users size={13} className={isActive ? 'text-accent' : 'text-text-4'} />
+
+            {isRenaming ? (
+              <input
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); if (e.key === 'Escape') setRenamingId(null); }}
+                onBlur={handleRename}
+                className="h-5 w-24 px-1.5 text-xs bg-surface-0 border border-accent rounded text-text-0 font-sans focus:outline-none"
+                autoFocus
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <span className="truncate max-w-[120px]">{team.name}</span>
+            )}
+
+            {/* Agent count badge */}
+            {count > 0 && !isRenaming && (
+              <span className={cn(
+                'flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-2xs font-mono font-semibold',
+                running > 0 ? 'bg-accent/15 text-accent' : 'bg-surface-4 text-text-3',
+              )}>
+                {count}
+              </span>
+            )}
+
+            {/* Actions — rename + close */}
+            {!isRenaming && (
+              <div className="flex items-center gap-0.5 ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => { e.stopPropagation(); startRename(team); }}
+                  className="p-0.5 rounded hover:bg-surface-5 text-text-4 hover:text-text-1 cursor-pointer"
+                  title="Rename team"
+                >
+                  <Pencil size={10} />
+                </button>
+                {!team.isDefault && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); deleteTeam(team.id); }}
+                    className="p-0.5 rounded hover:bg-surface-5 text-text-4 hover:text-danger cursor-pointer"
+                    title="Delete team"
+                  >
+                    <X size={10} />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Bottom edge hides the parent border for active tab */}
+            {isActive && (
+              <div className="absolute bottom-[-1px] left-0 right-0 h-px bg-surface-0" />
             )}
           </div>
         );
@@ -88,13 +145,13 @@ function TeamTabBar() {
 
       {/* Create new team */}
       {creating ? (
-        <div className="flex items-center gap-1 ml-1">
+        <div className="flex items-center gap-1.5 px-3 h-9 rounded-t-lg bg-surface-3/50">
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') { setCreating(false); setNewName(''); } }}
             placeholder="Team name..."
-            className="h-6 w-24 px-2 text-2xs bg-surface-0 border border-border-subtle rounded text-text-0 font-sans placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+            className="h-5 w-28 px-1.5 text-xs bg-surface-0 border border-border-subtle rounded text-text-0 font-sans placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
             autoFocus
           />
           <button
@@ -102,19 +159,19 @@ function TeamTabBar() {
             disabled={!newName.trim()}
             className="p-1 rounded text-accent hover:bg-accent/10 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            <Check size={11} />
+            <Check size={12} />
           </button>
           <button onClick={() => { setCreating(false); setNewName(''); }} className="p-1 rounded text-text-4 hover:text-text-1 cursor-pointer">
-            <X size={11} />
+            <X size={12} />
           </button>
         </div>
       ) : (
         <button
           onClick={() => setCreating(true)}
-          className="flex items-center justify-center w-7 h-7 text-text-4 hover:text-text-1 hover:bg-surface-3/50 rounded cursor-pointer transition-colors ml-0.5"
+          className="flex items-center justify-center w-9 h-9 text-text-4 hover:text-text-1 hover:bg-surface-3/50 rounded-t-lg cursor-pointer transition-colors"
           title="New team"
         >
-          <Plus size={12} />
+          <Plus size={14} />
         </button>
       )}
     </div>

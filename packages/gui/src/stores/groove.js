@@ -31,7 +31,7 @@ export const useGrooveStore = create((set, get) => ({
   activeTeamId: localStorage.getItem('groove:activeTeamId') || null,
 
   // ── Navigation ────────────────────────────────────────────
-  activeView: 'agents',           // 'agents' | 'editor' | 'dashboard' | 'marketplace' | 'teams'
+  activeView: 'agents',           // 'agents' | 'editor' | 'dashboard' | 'marketplace' | 'teams' | 'settings'
   detailPanel: null,              // null | { type: 'agent', agentId } | { type: 'spawn' } | { type: 'journalist' }
   commandPaletteOpen: false,
 

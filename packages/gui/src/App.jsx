@@ -11,6 +11,7 @@ import EditorView from './views/editor';
 import DashboardView from './views/dashboard';
 import MarketplaceView from './views/marketplace';
 import TeamsView from './views/teams';
+import SettingsView from './views/settings';
 
 // Agent components
 import { AgentPanel } from './components/agents/agent-panel';
@@ -56,6 +57,7 @@ function ViewRouter() {
     case 'dashboard':   content = <DashboardView />;   break;
     case 'marketplace': content = <MarketplaceView />; break;
     case 'teams':       content = <TeamsView />;       break;
+    case 'settings':    content = <SettingsView />;    break;
     default:            content = <AgentsView />;
   }
 

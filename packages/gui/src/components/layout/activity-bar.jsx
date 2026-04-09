@@ -13,7 +13,7 @@ const NAV_ITEMS = [
 
 const UTIL_ITEMS = [
   { id: 'journalist', icon: Newspaper, label: 'Journalist', panel: true },
-  { id: 'teams',      icon: Settings,  label: 'Settings',   nav: true },
+  { id: 'settings',   icon: Settings,  label: 'Settings',   nav: true },
 ];
 
 export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel }) {

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.19.5 — Settings page: providers, API keys, config, account (2026-04-08)
+
+- **Settings view** — proper settings page with three tabs: Providers, Configuration, Account
+- **Providers tab** — all providers with status badges, expandable cards, API key management (add/update/remove with masked display), Ollama setup inline with full model catalog
+- **Configuration tab** — daemon settings with live save: default provider, working directory, auto-rotation toggle, rotation threshold, QC threshold, max agents, journalist interval
+- **Account tab** — marketplace sign-in/out, user profile display, daemon info (version, port, host, PID, uptime)
+- **Activity bar fix** — Settings gear icon now opens Settings view (was incorrectly pointing to Teams/Management)
+
 ## v0.19.4 — Ollama server lifecycle, UI state fix (2026-04-08)
 
 - **Server detection** — checks if Ollama server is running (not just binary installed), shows "Start Ollama Server" button with auto-start via brew services or ollama serve

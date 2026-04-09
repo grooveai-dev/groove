@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.19.6 — Settings redesign: single-page layout, fix process.cwd crash (2026-04-08)
+
+- **Full redesign** — no more tabs, everything on one scrollable page with clear visual sections (icon headers, bordered cards, 2-col daemon grid)
+- **Fix crash** — removed `process.cwd()` call that doesn't exist in browser context
+- **Providers section** — expandable cards with status dots, model pills, API key management, Ollama setup inline
+- **Configuration section** — all settings in a single bordered card with dividers, compact number inputs with suffix labels, slim toggle switches
+- **Account section** — marketplace sign-in card, 2-column daemon info grid (version, port, host, PID, uptime, agents)
+- **Footer** — groovedev.ai and docs links
+
 ## v0.19.5 — Settings page: providers, API keys, config, account (2026-04-08)
 
 - **Settings view** — proper settings page with three tabs: Providers, Configuration, Account

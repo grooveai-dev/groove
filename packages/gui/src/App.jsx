@@ -83,9 +83,21 @@ function ViewRouter() {
   );
 }
 
+function LoadingScreen() {
+  return (
+    <div className="h-screen bg-surface-0 flex flex-col items-center justify-center gap-4">
+      <img src="/favicon.png" alt="" className="w-10 h-10 opacity-60 animate-pulse" />
+      <p className="text-sm text-text-3 font-sans">Connecting...</p>
+    </div>
+  );
+}
+
 export default function App() {
   const connect = useGrooveStore((s) => s.connect);
+  const hydrated = useGrooveStore((s) => s.hydrated);
   useEffect(() => { connect(); }, [connect]);
+
+  if (!hydrated) return <LoadingScreen />;
 
   return (
     <ErrorBoundary>

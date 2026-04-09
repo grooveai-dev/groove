@@ -53,11 +53,11 @@ function ToastItem({ toast }) {
       transition={{ duration: 0.2 }}
       className={cn(
         'w-80 rounded-md border border-border bg-surface-1 shadow-xl',
-        'border-l-4 flex items-start gap-3 px-4 py-3',
+        'border-l-4 flex items-center gap-3 px-4 py-3',
         BORDER_COLORS[toast.type],
       )}
     >
-      <Icon size={16} className={cn('mt-0.5 flex-shrink-0', ICON_COLORS[toast.type])} />
+      <Icon size={16} className={cn('flex-shrink-0', ICON_COLORS[toast.type])} />
       <div className="flex-1 min-w-0">
         <p className="text-sm text-text-0 font-sans">{toast.message}</p>
         {toast.detail && (

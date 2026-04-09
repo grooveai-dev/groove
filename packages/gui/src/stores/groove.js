@@ -21,6 +21,7 @@ export const useGrooveStore = create((set, get) => ({
   // ── Connection ────────────────────────────────────────────
   agents: [],
   connected: false,
+  hydrated: false,  // true after first WS state message — gates the UI to prevent flicker
   ws: null,
   daemonHost: null,
   tunneled: false,
@@ -108,7 +109,7 @@ export const useGrooveStore = create((set, get) => ({
               if (arr.length > 200) timeline[agent.id] = arr.slice(-200);
             }
           }
-          set({ agents: msg.data, tokenTimeline: timeline });
+          set({ agents: msg.data, tokenTimeline: timeline, hydrated: true });
           break;
         }
 
@@ -228,7 +229,7 @@ export const useGrooveStore = create((set, get) => ({
     };
 
     ws.onclose = () => {
-      set({ connected: false, ws: null, daemonHost: null, tunneled: false });
+      set({ connected: false, hydrated: false, ws: null, daemonHost: null, tunneled: false });
       setTimeout(() => get().connect(), 2000);
     };
     ws.onerror = () => ws.close();

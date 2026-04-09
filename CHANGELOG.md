@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.19.1 — Fix page load flicker, toast text alignment (2026-04-08)
+
+- **Loading screen**: Show pulsing logo + "Connecting..." until first WebSocket state arrives — eliminates the 1-2s flash of empty welcome screen
+- **Toast alignment**: Fixed vertical text alignment (was too high) — switched from `items-start` to `items-center`, removed icon margin
+
 ## v0.19.0 — GUI v2 complete rebuild, backend overhaul, tech debt cleanup (2026-04-08)
 
 ### GUI — Complete Rebuild

@@ -199,3 +199,98 @@ export function schedulesText(schedules) {
     return `${status} ${s.name} — ${s.cronDescription || s.cron}${running}`;
   }).join('\n');
 }
+
+/**
+ * Format journalist brief for chat.
+ */
+export function briefText(status, lastSynthesis) {
+  const lines = ['\ud83d\udcf0 Project Brief'];
+
+  if (status) {
+    const state = status.synthesizing ? 'synthesizing...' : status.running ? 'active' : 'idle';
+    lines.push(`Journalist: ${state} | ${status.cycleCount || 0} cycles`);
+  }
+
+  if (lastSynthesis) {
+    if (lastSynthesis.summary) {
+      lines.push('');
+      lines.push(lastSynthesis.summary);
+    }
+    if (lastSynthesis.projectMap) {
+      const map = truncate(lastSynthesis.projectMap, 1500);
+      lines.push('');
+      lines.push(map);
+    }
+  } else {
+    lines.push('No synthesis available yet. Journalist runs after agents produce output.');
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format token usage summary for chat.
+ */
+export function tokensText(summary) {
+  if (!summary) return 'No token data available.';
+
+  const lines = [
+    '\ud83d\udcca Token Usage',
+    `Agents: ${summary.agentCount} | Turns: ${summary.totalTurns} | Session: ${formatDuration(summary.sessionDurationMs)}`,
+    `Tokens: ${formatTokens(summary.totalTokens)} (${formatTokens(summary.totalInputTokens)} in / ${formatTokens(summary.totalOutputTokens)} out)`,
+    `Cost: ${formatCost(summary.totalCostUsd)}`,
+  ];
+
+  if (summary.cacheHitRate > 0) {
+    lines.push(`Cache: ${Math.round(summary.cacheHitRate * 100)}% hit rate (${formatTokens(summary.cacheReadTokens)} reads)`);
+  }
+
+  if (summary.savings && summary.savings.total > 0) {
+    lines.push('');
+    lines.push(`\ud83d\udcb0 Savings: ${formatTokens(summary.savings.total)} tokens (${summary.savings.percentage}%)`);
+    if (summary.savings.fromRotation > 0) lines.push(`  Rotation: ${formatTokens(summary.savings.fromRotation)}`);
+    if (summary.savings.fromConflictPrevention > 0) lines.push(`  Conflict prevention: ${formatTokens(summary.savings.fromConflictPrevention)}`);
+    if (summary.savings.fromColdStartSkip > 0) lines.push(`  Cold-start skip: ${formatTokens(summary.savings.fromColdStartSkip)}`);
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format agent log output for chat.
+ */
+export function logText(agentName, lines) {
+  if (!lines || lines.length === 0) return `No log output for ${agentName}.`;
+  return `\ud83d\udccb Log: ${agentName} (last ${lines.length} lines)\n\n${lines.join('\n')}`;
+}
+
+/**
+ * Format a recommended team plan for chat approval.
+ */
+export function planText(agents, description) {
+  if (!agents || agents.length === 0) return 'Empty plan.';
+
+  const phase1 = agents.filter((a) => !a.phase || a.phase === 1);
+  const phase2 = agents.filter((a) => a.phase === 2);
+
+  const lines = [
+    `\ud83d\udccb Plan: ${truncate(description || 'New project', 200)}`,
+    '',
+    `Team: ${agents.length} agents (${phase1.length} builders${phase2.length > 0 ? `, ${phase2.length} QC` : ''})`,
+    '',
+  ];
+
+  for (const a of phase1) {
+    const scope = a.scope?.length > 0 ? ` [${a.scope.join(', ')}]` : '';
+    const model = a.model && a.model !== 'auto' ? ` (${a.model})` : '';
+    lines.push(`  Phase 1: ${a.role}${model}${scope}`);
+    if (a.prompt) lines.push(`    ${truncate(a.prompt, 120)}`);
+  }
+
+  for (const a of phase2) {
+    lines.push(`  Phase 2: ${a.role} (auto-spawns after Phase 1)`);
+    if (a.prompt) lines.push(`    ${truncate(a.prompt, 120)}`);
+  }
+
+  return lines.join('\n');
+}

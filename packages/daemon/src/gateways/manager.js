@@ -4,7 +4,8 @@
 import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, unlinkSync } from 'fs';
 import { resolve } from 'path';
 import { randomUUID } from 'crypto';
-import { eventToSummary, agentListText, statusText, approvalsText, teamsText, schedulesText, truncate, formatTokens } from './formatter.js';
+import { validateAgentConfig } from '../validate.js';
+import { eventToSummary, agentListText, statusText, approvalsText, teamsText, schedulesText, briefText, tokensText, logText, planText, truncate, formatTokens } from './formatter.js';
 
 const GATEWAY_TYPES = ['telegram', 'discord', 'slack'];
 
@@ -49,10 +50,13 @@ const NEVER_FORWARD = new Set(['state', 'agent:output', 'file:changed', 'ollama:
 const COALESCE_WINDOW = 3000; // 3 seconds
 const NEVER_COALESCE = new Set(['approval:request']); // Always send immediately
 
+// Team lead role priority — first match wins
+const LEAD_PRIORITY = ['qc', 'fullstack', 'lead', 'senior', 'pm', 'planner'];
+
 // Commands that require 'full' permission (mutate state)
-const WRITE_COMMANDS = new Set(['spawn', 'kill', 'approve', 'reject', 'rotate']);
+const WRITE_COMMANDS = new Set(['spawn', 'kill', 'approve', 'reject', 'rotate', 'instruct', 'plan']);
 // Commands allowed in 'read-only' mode
-const READ_COMMANDS = new Set(['status', 'agents', 'teams', 'schedules', 'help']);
+const READ_COMMANDS = new Set(['status', 'agents', 'teams', 'schedules', 'help', 'log', 'query', 'brief', 'tokens']);
 
 export class GatewayManager {
   constructor(daemon) {
@@ -61,6 +65,7 @@ export class GatewayManager {
     mkdirSync(this.gatewaysDir, { recursive: true });
     this.gateways = new Map(); // id -> gateway instance
     this._coalesceTimers = new Map(); // eventType -> { timer, events[] }
+    this._pendingPlans = new Map(); // agentId -> { gatewayId, timestamp }
     this._originalBroadcast = null;
     this._load();
   }
@@ -335,6 +340,18 @@ export class GatewayManager {
           return this._cmdTeams();
         case 'schedules':
           return this._cmdSchedules();
+        case 'instruct':
+          return await this._cmdInstruct(args);
+        case 'query':
+          return await this._cmdQuery(args, gateway);
+        case 'log':
+          return this._cmdLog(args);
+        case 'plan':
+          return await this._cmdPlan(args, gateway);
+        case 'brief':
+          return this._cmdBrief();
+        case 'tokens':
+          return this._cmdTokens();
         case 'help':
           return this._cmdHelp();
         default:
@@ -383,30 +400,159 @@ export class GatewayManager {
     return { text: `\u2705 Spawned ${agent.name || agent.id} (${role})` };
   }
 
+  // -------------------------------------------------------------------
+  // Team-First Resolver
+  // -------------------------------------------------------------------
+
+  /**
+   * Resolve identifier to a team or agent.
+   * Priority: team name → team prefix → exact agent ID → agent name → agent prefix → role
+   */
+  _resolveTarget(identifier) {
+    const agents = this.daemon.registry.getAll();
+    const teams = this.daemon.teams.list();
+    const lower = identifier.toLowerCase();
+
+    // 1. Team name (case-insensitive) — primary target
+    const team = teams.find((t) => t.name.toLowerCase() === lower);
+    if (team) {
+      return { type: 'team', team, agents: agents.filter((a) => a.teamId === team.id) };
+    }
+
+    // 2. Team name prefix
+    const teamPrefix = teams.filter((t) => t.name.toLowerCase().startsWith(lower));
+    if (teamPrefix.length === 1) {
+      return { type: 'team', team: teamPrefix[0], agents: agents.filter((a) => a.teamId === teamPrefix[0].id) };
+    }
+
+    // 3. Exact agent ID
+    const byId = agents.find((a) => a.id === identifier);
+    if (byId) return { type: 'agent', agent: byId };
+
+    // 4. Exact agent name (case-insensitive)
+    const byName = agents.find((a) => (a.name || '').toLowerCase() === lower);
+    if (byName) return { type: 'agent', agent: byName };
+
+    // 5. Agent name/ID prefix
+    const byPrefix = agents.filter((a) =>
+      a.id.toLowerCase().startsWith(lower) ||
+      (a.name || '').toLowerCase().startsWith(lower)
+    );
+    if (byPrefix.length === 1) return { type: 'agent', agent: byPrefix[0] };
+
+    // 6. Role match (only if one agent has that role)
+    const byRole = agents.filter((a) => (a.role || '').toLowerCase() === lower);
+    if (byRole.length === 1) return { type: 'agent', agent: byRole[0] };
+
+    // Ambiguous
+    if (byPrefix.length > 1 || teamPrefix.length > 1) {
+      const names = [
+        ...teamPrefix.map((t) => `team:${t.name}`),
+        ...byPrefix.map((a) => a.name || a.id),
+      ];
+      return { type: 'ambiguous', matches: names };
+    }
+
+    return null;
+  }
+
+  /**
+   * Resolve to agent only (for kill, rotate — not team-aware).
+   */
+  _resolveAgent(identifier) {
+    const result = this._resolveTarget(identifier);
+    if (!result) return { error: `Not found: ${identifier}. Try /agents or /teams.` };
+    if (result.type === 'ambiguous') return { error: `Ambiguous — did you mean: ${result.matches.join(', ')}?` };
+    if (result.type === 'team') return { error: `"${result.team.name}" is a team (${result.agents.length} agents). Use a specific agent name.` };
+    return { agent: result.agent };
+  }
+
+  /**
+   * Find the team lead — the senior agent who routes messages.
+   * Priority: QC > fullstack > lead > senior > PM > planner > first running
+   */
+  _findTeamLead(agents) {
+    const running = agents.filter((a) => a.status === 'running' || a.status === 'starting');
+    if (running.length === 0) return null;
+    for (const keyword of LEAD_PRIORITY) {
+      const match = running.find((a) => (a.role || '').toLowerCase().includes(keyword));
+      if (match) return match;
+    }
+    return running[0];
+  }
+
+  // -------------------------------------------------------------------
+  // Helpers
+  // -------------------------------------------------------------------
+
+  _readAgentLog(agent, lineCount = 20) {
+    const logDir = resolve(this.daemon.grooveDir, 'logs');
+    const name = (agent.name || agent.id).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const logPath = resolve(logDir, `${name}.log`);
+    if (!existsSync(logPath)) return null;
+    const content = readFileSync(logPath, 'utf8');
+    const allLines = content.split('\n').filter(Boolean);
+    return allLines.slice(-lineCount);
+  }
+
+  /**
+   * Find recommended-team.json — same logic as api.js findRecommendedTeam()
+   */
+  _findRecommendedTeam() {
+    const agents = this.daemon.registry.getAll();
+    for (const agent of agents) {
+      if (agent.workingDir) {
+        const p = resolve(agent.workingDir, '.groove', 'recommended-team.json');
+        if (existsSync(p)) return p;
+      }
+    }
+    const p = resolve(this.daemon.grooveDir, 'recommended-team.json');
+    if (existsSync(p)) return p;
+    return null;
+  }
+
+  // -------------------------------------------------------------------
+  // Command Implementations
+  // -------------------------------------------------------------------
+
   _cmdKill(args) {
-    if (args.length === 0) return { text: 'Usage: /kill <agent-id>' };
-    const id = args[0];
-    this.daemon.processes.kill(id);
-    return { text: `\u26d4 Killed agent ${id}` };
+    if (args.length === 0) return { text: 'Usage: /kill <agent-name>' };
+    const { agent, error } = this._resolveAgent(args[0]);
+    if (error) return { text: error };
+    this.daemon.processes.kill(agent.id);
+    return { text: `\u26d4 Killed ${agent.name || agent.id}` };
   }
 
   _cmdApprove(args) {
     if (args.length === 0) return { text: 'Usage: /approve <approval-id>' };
+    // Check if approving a pending plan
+    const planId = args[0];
+    if (this._pendingPlans.has(planId)) {
+      return this._launchPlan(planId);
+    }
     this.daemon.supervisor.approve(args[0]);
     return { text: `\u2705 Approved: ${args[0]}` };
   }
 
   _cmdReject(args) {
     if (args.length === 0) return { text: 'Usage: /reject <approval-id> [reason]' };
+    // Check if rejecting a pending plan
+    const planId = args[0];
+    if (this._pendingPlans.has(planId)) {
+      this._pendingPlans.delete(planId);
+      return { text: `\u274c Plan discarded.` };
+    }
     const reason = args.slice(1).join(' ') || undefined;
     this.daemon.supervisor.reject(args[0], reason);
     return { text: `\u274c Rejected: ${args[0]}${reason ? ` — ${reason}` : ''}` };
   }
 
   async _cmdRotate(args) {
-    if (args.length === 0) return { text: 'Usage: /rotate <agent-id>' };
-    await this.daemon.rotator.rotate(args[0]);
-    return { text: `\u{1f504} Rotating agent ${args[0]}...` };
+    if (args.length === 0) return { text: 'Usage: /rotate <agent-name>' };
+    const { agent, error } = this._resolveAgent(args[0]);
+    if (error) return { text: error };
+    await this.daemon.rotator.rotate(agent.id);
+    return { text: `\u{1f504} Rotating ${agent.name || agent.id}...` };
   }
 
   _cmdTeams() {
@@ -419,18 +565,330 @@ export class GatewayManager {
     return { text: schedulesText(schedules) };
   }
 
+  /**
+   * Instruct a team or agent. Team-first: routes to team lead.
+   */
+  async _cmdInstruct(args) {
+    if (args.length < 2) return { text: 'Usage: /instruct <team> <message>' };
+    const target = args[0];
+    const message = args.slice(1).join(' ');
+
+    const result = this._resolveTarget(target);
+    if (!result) return { text: `Not found: ${target}. Try /teams to see available teams.` };
+    if (result.type === 'ambiguous') return { text: `Ambiguous — did you mean: ${result.matches.join(', ')}?` };
+
+    // Team target — route to team lead
+    if (result.type === 'team') {
+      const lead = this._findTeamLead(result.agents);
+      if (!lead) return { text: `No running agents in team ${result.team.name}. Use /plan to start a new project.` };
+
+      const resumed = !!lead.sessionId;
+      const newAgent = resumed
+        ? await this.daemon.processes.resume(lead.id, message)
+        : await this.daemon.rotator.rotate(lead.id, { additionalPrompt: message });
+
+      this.daemon.audit.log('agent.instruct', { id: lead.id, newId: newAgent.id, resumed, source: 'gateway', team: result.team.name });
+      return { text: `\u2705 Sent to ${lead.name} (${result.team.name} lead): ${truncate(message, 100)}` };
+    }
+
+    // Direct agent target (fallback)
+    const agent = result.agent;
+    const resumed = !!agent.sessionId;
+    const newAgent = resumed
+      ? await this.daemon.processes.resume(agent.id, message)
+      : await this.daemon.rotator.rotate(agent.id, { additionalPrompt: message });
+
+    this.daemon.audit.log('agent.instruct', { id: agent.id, newId: newAgent.id, resumed, source: 'gateway' });
+    return { text: `\u2705 Instructed ${agent.name || agent.id}: ${truncate(message, 100)}` };
+  }
+
+  /**
+   * Query a team or agent — journalist synthesis, no disruption.
+   */
+  async _cmdQuery(args, gateway) {
+    if (args.length < 2) return { text: 'Usage: /query <team> <question>' };
+    const target = args[0];
+    const question = args.slice(1).join(' ');
+
+    const result = this._resolveTarget(target);
+    if (!result) return { text: `Not found: ${target}. Try /teams to see available teams.` };
+    if (result.type === 'ambiguous') return { text: `Ambiguous — did you mean: ${result.matches.join(', ')}?` };
+
+    if (result.type === 'team') {
+      const active = result.agents.filter((a) => a.status === 'running' || a.status === 'completed');
+      if (active.length === 0) return { text: `No active agents in team ${result.team.name}.` };
+
+      await gateway.send(`\u{1f914} Querying team ${result.team.name} (${active.length} agents)...`).catch(() => {});
+
+      const agentContexts = active.map((a) => {
+        const activity = this.daemon.classifier?.agentWindows?.[a.id] || [];
+        const recent = activity.slice(-10).map((e) => e.data || e.text || '').join('\n');
+        return [
+          `Agent "${a.name}" (${a.role}, ${a.status})`,
+          `Scope: ${(a.scope || []).join(', ') || 'unrestricted'}`,
+          a.prompt ? `Task: ${a.prompt}` : '',
+          recent ? `Recent activity:\n${recent}` : '',
+        ].filter(Boolean).join('\n');
+      }).join('\n\n');
+
+      const prompt = [
+        `You are answering a question about team "${result.team.name}" with ${active.length} agents.`,
+        `\nTeam members:\n${agentContexts}`,
+        `\nUser question: ${question}`,
+        '\nSynthesize a concise answer based on the team\'s collective context.',
+      ].join('\n');
+
+      const response = await this.daemon.journalist.callHeadless(prompt);
+      return { text: `\ud83d\udcac Team ${result.team.name}:\n${truncate(response, 3000)}` };
+    }
+
+    // Single agent query
+    const agent = result.agent;
+    await gateway.send(`\u{1f914} Querying ${agent.name || agent.id}...`).catch(() => {});
+
+    const activity = this.daemon.classifier?.agentWindows?.[agent.id] || [];
+    const recentActivity = activity.slice(-20).map((e) => e.data || e.text || '').join('\n');
+
+    const prompt = [
+      `You are answering a question about agent "${agent.name}" (role: ${agent.role}).`,
+      `File scope: ${(agent.scope || []).join(', ') || 'unrestricted'}`,
+      `Provider: ${agent.provider}, Tokens used: ${agent.tokensUsed || 0}`,
+      agent.prompt ? `Original task: ${agent.prompt}` : '',
+      recentActivity ? `\nRecent activity:\n${recentActivity}` : '',
+      `\nUser question: ${question}`,
+      '\nAnswer concisely based on the agent context above.',
+    ].filter(Boolean).join('\n');
+
+    const response = await this.daemon.journalist.callHeadless(prompt);
+    return { text: `\ud83d\udcac ${agent.name || agent.id}:\n${truncate(response, 3000)}` };
+  }
+
+  /**
+   * View logs for a team or agent.
+   */
+  _cmdLog(args) {
+    if (args.length === 0) return { text: 'Usage: /log <team> [lines]' };
+    const target = args[0];
+    const lineCount = Math.min(parseInt(args[1], 10) || 20, 50);
+
+    const result = this._resolveTarget(target);
+    if (!result) return { text: `Not found: ${target}. Try /teams to see available teams.` };
+    if (result.type === 'ambiguous') return { text: `Ambiguous — did you mean: ${result.matches.join(', ')}?` };
+
+    if (result.type === 'team') {
+      const sections = [];
+      const perAgent = Math.max(Math.floor(lineCount / Math.max(result.agents.length, 1)), 5);
+      for (const agent of result.agents) {
+        const lines = this._readAgentLog(agent, perAgent);
+        if (lines && lines.length > 0) {
+          sections.push(`\u2014 ${agent.name || agent.id} (${agent.role}) \u2014\n${lines.join('\n')}`);
+        }
+      }
+      if (sections.length === 0) return { text: `No logs for team ${result.team.name}.` };
+      return { text: `\ud83d\udccb Team ${result.team.name} logs:\n\n${sections.join('\n\n')}` };
+    }
+
+    const agent = result.agent;
+    const lines = this._readAgentLog(agent, lineCount);
+    if (!lines) return { text: `No log file found for ${agent.name || agent.id}.` };
+    return { text: logText(agent.name || agent.id, lines) };
+  }
+
+  // -------------------------------------------------------------------
+  // Plan → Approve → Build Flow
+  // -------------------------------------------------------------------
+
+  /**
+   * Start a new project — spawns a planner, tracks it for gateway feedback.
+   */
+  async _cmdPlan(args, gateway) {
+    if (args.length === 0) return { text: 'Usage: /plan <description of what to build>' };
+    const description = args.join(' ');
+
+    await gateway.send(`\u{1f4cb} Planning: ${truncate(description, 200)}\nSpawning planner agent...`).catch(() => {});
+
+    const agent = await this.daemon.processes.spawn({
+      role: 'planner',
+      prompt: description,
+    });
+
+    // Track this planner so we send results back to the right gateway
+    this._pendingPlans.set(agent.id, {
+      gatewayId: gateway.config.id,
+      description,
+      timestamp: Date.now(),
+    });
+
+    this.daemon.audit.log('gateway.plan', { agentId: agent.id, source: 'gateway', gatewayId: gateway.config.id });
+    return { text: `\u{1f9e0} Planner ${agent.name} is analyzing the codebase and building a team plan.\nYou'll get the plan here for approval when it's ready.` };
+  }
+
+  /**
+   * Called from _routeEvent when a planner agent completes.
+   * Reads recommended-team.json and sends plan to chat for approval.
+   */
+  _handlePlannerComplete(agentId) {
+    const plan = this._pendingPlans.get(agentId);
+    if (!plan) return; // Not a gateway-initiated planner
+
+    const gw = this.gateways.get(plan.gatewayId);
+    if (!gw || !gw.connected) {
+      this._pendingPlans.delete(agentId);
+      return;
+    }
+
+    const teamPath = this._findRecommendedTeam();
+    if (!teamPath) {
+      gw.send('\u274c Planner finished but no team plan was generated. Try again with a more specific description.').catch(() => {});
+      this._pendingPlans.delete(agentId);
+      return;
+    }
+
+    try {
+      const agents = JSON.parse(readFileSync(teamPath, 'utf8'));
+      if (!Array.isArray(agents) || agents.length === 0) {
+        gw.send('\u274c Planner generated an empty team plan.').catch(() => {});
+        this._pendingPlans.delete(agentId);
+        return;
+      }
+
+      // Store the plan data for launch
+      plan.agents = agents;
+      plan.teamPath = teamPath;
+
+      const summary = planText(agents, plan.description);
+      const approveMsg = `\n\nApprove this plan?\n/approve ${agentId} — launch the team\n/reject ${agentId} — discard\n/plan <edits> — replan with changes`;
+
+      gw.send(summary + approveMsg, { planId: agentId }).catch(() => {});
+    } catch (err) {
+      gw.send(`\u274c Error reading plan: ${err.message}`).catch(() => {});
+      this._pendingPlans.delete(agentId);
+    }
+  }
+
+  /**
+   * Launch a team from an approved plan.
+   */
+  _launchPlan(planId) {
+    const plan = this._pendingPlans.get(planId);
+    if (!plan || !plan.agents) return { text: 'Plan not found or already launched.' };
+
+    const agents = plan.agents;
+    const defaultDir = this.daemon.config?.defaultWorkingDir || undefined;
+
+    // Separate phases
+    const phase1 = agents.filter((a) => !a.phase || a.phase === 1);
+    let phase2 = agents.filter((a) => a.phase === 2);
+
+    // Auto-add QC if planner forgot
+    if (phase2.length === 0 && phase1.length >= 2) {
+      phase2 = [{
+        role: 'fullstack', phase: 2, scope: [],
+        prompt: 'QC Senior Dev: All builder agents have completed. Audit their changes for correctness, fix any issues, run tests, build the project, commit all changes, and launch. Output the localhost URL.',
+      }];
+    }
+
+    // Spawn phase 1
+    const spawned = [];
+    const phase1Ids = [];
+    const spawnAll = async () => {
+      for (const config of phase1) {
+        try {
+          const validated = validateAgentConfig({
+            role: config.role,
+            scope: config.scope || [],
+            prompt: config.prompt || '',
+            provider: config.provider || 'claude-code',
+            model: config.model || 'auto',
+            permission: config.permission || 'auto',
+            workingDir: config.workingDir || defaultDir,
+            name: config.name || undefined,
+          });
+          const agent = await this.daemon.processes.spawn(validated);
+          spawned.push(agent);
+          phase1Ids.push(agent.id);
+        } catch (err) {
+          console.log(`[Groove:Gateway] Failed to spawn ${config.role}: ${err.message}`);
+        }
+      }
+
+      // Register phase 2 for auto-spawn
+      if (phase2.length > 0 && phase1Ids.length > 0) {
+        this.daemon._pendingPhase2 = this.daemon._pendingPhase2 || [];
+        this.daemon._pendingPhase2.push({
+          waitFor: phase1Ids,
+          agents: phase2.map((c) => ({
+            role: c.role, scope: c.scope || [], prompt: c.prompt || '',
+            provider: c.provider || 'claude-code', model: c.model || 'auto',
+            permission: c.permission || 'auto',
+            workingDir: c.workingDir || defaultDir,
+            name: c.name || undefined,
+          })),
+        });
+      }
+
+      this.daemon.audit.log('team.launch', {
+        phase1: spawned.length, phase2Pending: phase2.length,
+        agents: spawned.map((a) => a.role), source: 'gateway',
+      });
+
+      // Notify via gateway
+      const gw = this.gateways.get(plan.gatewayId);
+      if (gw?.connected) {
+        const names = spawned.map((a) => `${a.name} (${a.role})`).join(', ');
+        const msg = `\u{1f680} Team launched! ${spawned.length} agents building${phase2.length > 0 ? `, ${phase2.length} QC agents queued` : ''}.\n${names}`;
+        gw.send(msg).catch(() => {});
+      }
+    };
+
+    // Fire and forget — spawn is async but we return immediately
+    spawnAll().catch((err) => console.log(`[Groove:Gateway] Launch error: ${err.message}`));
+    this._pendingPlans.delete(planId);
+
+    return { text: `\u2705 Launching team (${phase1.length} agents)...` };
+  }
+
+  // -------------------------------------------------------------------
+  // Intelligence + Help
+  // -------------------------------------------------------------------
+
+  _cmdBrief() {
+    const status = this.daemon.journalist.getStatus();
+    const lastSynthesis = this.daemon.journalist.getLastSynthesis();
+    return { text: briefText(status, lastSynthesis) };
+  }
+
+  _cmdTokens() {
+    const summary = this.daemon.tokens.getSummary();
+    return { text: tokensText(summary) };
+  }
+
   _cmdHelp() {
     return {
       text: [
         'Groove Commands:',
+        '',
+        'Talk to Teams:',
+        '/instruct <team> <message> — send to team lead',
+        '/query <team> <question> — ask without disrupting work',
+        '/log <team> [lines] — view team logs',
+        '/plan <description> — plan + build a new project',
+        '',
+        'Fleet:',
         '/status — daemon status + active agents',
         '/agents — list all agents',
-        '/spawn <role> [--name X] [--prompt "Y"] — spawn agent',
-        '/kill <id> — kill agent',
-        '/approve <id> — approve pending request',
-        '/reject <id> [reason] — reject request',
-        '/rotate <id> — rotate agent context',
         '/teams — list teams',
+        '/spawn <role> [--name X] [--prompt "Y"] — manual spawn',
+        '/kill <name> — kill agent',
+        '/rotate <name> — rotate agent context',
+        '',
+        'Intelligence:',
+        '/brief — journalist project summary',
+        '/tokens — token usage + savings',
+        '',
+        'Workflow:',
+        '/approve <id> — approve plan or request',
+        '/reject <id> [reason] — reject plan or request',
         '/schedules — list schedules',
         '/help — this message',
       ].join('\n'),
@@ -447,6 +905,11 @@ export class GatewayManager {
   _routeEvent(message) {
     if (!message || !message.type) return;
     if (NEVER_FORWARD.has(message.type)) return;
+
+    // Intercept planner completions for the plan→approve→build flow
+    if (message.type === 'agent:exit' && message.status === 'completed' && message.agentId) {
+      this._handlePlannerComplete(message.agentId);
+    }
 
     for (const gw of this.gateways.values()) {
       if (!gw.connected || !gw.config.enabled) continue;

@@ -109,7 +109,7 @@ export class SlackGateway extends BaseGateway {
         const command = rawCommand.toLowerCase();
 
         // Only respond to known commands
-        const known = ['status', 'agents', 'spawn', 'kill', 'approve', 'reject', 'rotate', 'teams', 'schedules', 'help'];
+        const known = ['status', 'agents', 'spawn', 'kill', 'approve', 'reject', 'rotate', 'teams', 'schedules', 'help', 'instruct', 'query', 'log', 'plan', 'brief', 'tokens'];
         if (!known.includes(command)) return; // Not a command, ignore
 
         const response = await this.handleCommand(command, args, message.user);

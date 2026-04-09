@@ -287,7 +287,7 @@ function GatewaySetupGuide({ type, open, onOpenChange }) {
         {
           title: 'Connect to Groove',
           steps: [
-            { text: 'In Groove Settings > Gateways, click the Slack card\'s Set Token button' },
+            { text: 'In Groove Settings > Gateways, click Set Token on the Telegram card' },
             { text: 'Paste your bot token and click Save' },
             { text: 'The gateway will connect automatically' },
           ],
@@ -303,7 +303,7 @@ function GatewaySetupGuide({ type, open, onOpenChange }) {
         {
           title: 'Commands',
           note: 'All commands use / prefix in Telegram:',
-          commands: ['/status', '/agents', '/spawn backend', '/kill <id>', '/approve <id>', '/help'],
+          commands: ['/instruct <team> <msg>', '/query <team> <question>', '/plan <description>', '/log <team>', '/brief', '/tokens', '/status', '/agents', '/help'],
         },
       ],
     },
@@ -354,7 +354,7 @@ function GatewaySetupGuide({ type, open, onOpenChange }) {
         {
           title: 'Commands',
           note: 'All commands use / prefix in Discord:',
-          commands: ['/status', '/agents', '/spawn backend', '/kill <id>', '/approve <id>', '/help'],
+          commands: ['/instruct <team> <msg>', '/query <team> <question>', '/plan <description>', '/log <team>', '/brief', '/tokens', '/status', '/agents', '/help'],
         },
       ],
     },
@@ -429,7 +429,7 @@ function GatewaySetupGuide({ type, open, onOpenChange }) {
         {
           title: 'Commands',
           note: 'In Slack, use plain text commands (no / prefix) or @mention the bot:',
-          commands: ['status', 'agents', 'spawn backend', 'kill <id>', 'approve <id>', 'help', '@GroovePilot status'],
+          commands: ['instruct <team> <msg>', 'query <team> <question>', 'plan <description>', 'log <team>', 'brief', 'tokens', 'status', 'agents', 'help', '@GroovePilot status'],
         },
       ],
     },
@@ -518,6 +518,17 @@ function GatewaySetupGuide({ type, open, onOpenChange }) {
               )}
             </div>
           ))}
+
+          {/* Link to full docs */}
+          <a
+            href="https://docs.groovedev.ai/guide/gateways"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-2xs text-accent hover:text-accent/80 font-sans font-medium mt-2"
+          >
+            <ExternalLink size={10} />
+            Full documentation at docs.groovedev.ai
+          </a>
         </div>
       </SheetContent>
     </Sheet>

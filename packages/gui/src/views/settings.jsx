@@ -128,10 +128,10 @@ function ProviderCard({ provider, onKeyChange }) {
       </div>
 
       {/* Body */}
-      <div className="flex-1 flex flex-col px-4 py-3">
+      <div className="flex-1 flex flex-col px-4 py-3 min-h-[120px]">
         {/* Models */}
         {provider.models?.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-2">
+          <div className="flex flex-wrap gap-1 mb-3">
             {provider.models.map((m) => (
               <span key={m.id} className="px-1.5 py-0.5 rounded bg-surface-4 text-2xs font-mono text-text-3">
                 {m.name || m.id}
@@ -141,16 +141,16 @@ function ProviderCard({ provider, onKeyChange }) {
         )}
 
         {/* Subscription info for Claude */}
-        {isSubscription && isReady && !provider.hasKey && (
-          <div className="flex items-center gap-1.5 h-7 px-2 bg-accent/8 border border-accent/20 rounded text-2xs font-sans text-accent mb-2">
+        {isSubscription && isReady && !provider.hasKey && !settingKey && (
+          <div className="flex items-center gap-1.5 h-8 px-2.5 bg-accent/8 border border-accent/20 rounded-md text-2xs font-sans text-accent mb-3">
             <Check size={10} /> Subscription active
           </div>
         )}
 
         {/* Connected state */}
         {provider.hasKey && !settingKey && (
-          <div className="flex items-center gap-1.5 mb-2">
-            <div className="flex-1 flex items-center gap-1.5 h-7 px-2 bg-success/8 border border-success/20 rounded text-2xs font-sans text-success">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="flex-1 flex items-center gap-1.5 h-8 px-2.5 bg-success/8 border border-success/20 rounded-md text-2xs font-sans text-success">
               <Check size={10} /> API Connected
             </div>
             <button onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }} className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans">Edit</button>
@@ -158,34 +158,41 @@ function ProviderCard({ provider, onKeyChange }) {
           </div>
         )}
 
-        {/* Key input form */}
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Key input form — takes over the bottom area */}
         {settingKey && (
-          <div className="space-y-1.5 mb-2">
-            <div className="flex gap-1.5">
-              <div className="flex-1 relative">
+          <div className="space-y-2.5 pt-1">
+            <div>
+              <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">
+                {provider.hasKey ? 'Update API Key' : `${provider.name} API Key`}
+              </label>
+              <div className="relative">
                 <input
                   value={keyInput}
                   onChange={(e) => setKeyInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSetKey()}
                   type={showKey ? 'text' : 'password'}
-                  placeholder="Paste API key..."
-                  className="w-full h-7 px-2.5 pr-7 text-2xs bg-surface-0 border border-border rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+                  placeholder="sk-..."
+                  className="w-full h-9 px-3 pr-9 text-xs bg-surface-0 border border-border rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
                   autoFocus
                 />
-                <button onClick={() => setShowKey(!showKey)} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-4 hover:text-text-2 cursor-pointer">
-                  {showKey ? <EyeOff size={10} /> : <Eye size={10} />}
+                <button onClick={() => setShowKey(!showKey)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-4 hover:text-text-2 cursor-pointer">
+                  {showKey ? <EyeOff size={12} /> : <Eye size={12} />}
                 </button>
               </div>
             </div>
-            <div className="flex gap-1.5">
-              <Button variant="primary" size="sm" onClick={handleSetKey} disabled={!keyInput.trim()} className="flex-1 h-7 text-2xs">Save</Button>
-              <Button variant="ghost" size="sm" onClick={() => { setSettingKey(false); setKeyInput(''); }} className="h-7 text-2xs px-2">Cancel</Button>
+            <div className="flex gap-2">
+              <Button variant="primary" size="sm" onClick={handleSetKey} disabled={!keyInput.trim()} className="flex-1 h-8 text-xs">
+                Save Key
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => { setSettingKey(false); setKeyInput(''); }} className="h-8 text-xs px-3">
+                Cancel
+              </Button>
             </div>
           </div>
         )}
-
-        {/* Spacer to push button to bottom */}
-        <div className="flex-1" />
 
         {/* Bottom action — always at card bottom */}
         {!settingKey && !provider.hasKey && (
@@ -193,9 +200,9 @@ function ProviderCard({ provider, onKeyChange }) {
             variant={isSubscription ? 'secondary' : 'primary'}
             size="sm"
             onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
-            className="w-full h-7 text-2xs gap-1 mt-2"
+            className="w-full h-8 text-2xs gap-1.5 mt-2"
           >
-            <Key size={10} />
+            <Key size={11} />
             {isSubscription ? 'Add API key for headless mode' : 'Add API Key'}
           </Button>
         )}

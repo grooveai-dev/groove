@@ -24,7 +24,7 @@ import { federationPair, federationUnpair, federationList, federationStatus } fr
 program
   .name('groove')
   .description('Agent orchestration layer for AI coding tools')
-  .version('0.19.9');
+  .version('0.20.0');
 
 program
   .command('start')

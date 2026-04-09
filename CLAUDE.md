@@ -226,7 +226,7 @@ GROOVE is a process manager, NOT a harness. Hard rules:
 - **Website:** groovedev.ai
 - **Docs:** docs.groovedev.ai
 
-## Current Status (v0.19.0)
+## Current Status (v0.20.0)
 
 Fully functional multi-agent orchestration system with complete GUI v2 rebuild. 29 daemon source files, 59 GUI components, 21+ CLI commands, 50+ API endpoints.
 

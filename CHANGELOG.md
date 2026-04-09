@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.20.0 — Settings page, Ollama setup, GUI v2 rebuild, full system overhaul (2026-04-08)
+
+Major release: complete GUI rebuild + Settings page + Ollama setup + tech debt cleanup.
+
+**Settings Page**
+- Full-width card grid layout matching dashboard style
+- Provider cards: status dots, model pills, "API Connected" / "Subscription active" / "Add API Key" states
+- API key management: labeled input with show/hide toggle, Save/Cancel, proper spacing when active
+- Ollama setup inline: hardware detection, install guide, model catalog with one-click pull
+- Configuration: segmented pill controls — Rotation Threshold (Auto/50-85%), QC Threshold (2-8), Max Agents (∞/4-20), Journalist Interval (1-10m)
+- Working Directory with FolderBrowser, Default Provider dropdown
+- Account hero bar: daemon info, marketplace sign-in, status dot
+
+**GUI v2 Rebuild (v0.19.0)**
+- 23 old files deleted, 59 new components across 6 categories
+- Tailwind CSS v4, Radix UI, CodeMirror 6, xterm.js, React Flow
+- VS Code-style layout: Activity Bar, Breadcrumb, Status Bar, Detail Panel, Terminal
+
+**Backend**
+- Timeline tracking (metrics snapshots + lifecycle events)
+- Teams overhaul (live groups replacing snapshots)
+- Ollama provider: 22-model catalog, hardware detection, server lifecycle, model pull/delete
+- 7 new API endpoints for Ollama operations
+- Provider interface cleanup, dead code removal
+
+**Fixes**
+- Page load flicker (hydration gate)
+- Toast text alignment
+- Restart button removed (chat resumes agents)
+- Config tab reorder (model first)
+- CLI version synced
+- Auto-generated files gitignored
+
 ## v0.19.9 — Settings polish: correct provider states, segmented controls, folder browser (2026-04-08)
 
 - **Provider Ready logic** — API-key providers (Codex, Gemini) only show "Ready" when key is actually set, not just when CLI is installed

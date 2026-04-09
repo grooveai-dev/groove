@@ -52,7 +52,7 @@ export class TelegramGateway extends BaseGateway {
 
   async send(text, options = {}) {
     const chatId = this.config.chatId;
-    if (!chatId) return; // No chat configured yet — will auto-capture on first command
+    if (!chatId) throw new Error('No chat configured. Send a message to the bot first, or set a Chat ID in Settings.');
 
     const params = {
       chat_id: chatId,

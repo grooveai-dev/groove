@@ -64,6 +64,7 @@ export class SkillStore {
       });
       if (res.ok) {
         user = await res.json();
+        console.log('[Groove:Auth] User object from API:', JSON.stringify(user));
       } else {
         return null; // Invalid token
       }

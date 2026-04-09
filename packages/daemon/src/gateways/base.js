@@ -72,12 +72,18 @@ export class BaseGateway {
    * Return current gateway status for API responses.
    */
   getStatus() {
+    // Check if required credentials are set
+    const hasCredentials = this.constructor.credentialKeys
+      .filter((ck) => ck.required)
+      .every((ck) => !!this._getCredential(ck.key));
+
     return {
       id: this.config.id,
       type: this.constructor.type,
       displayName: this.constructor.displayName,
       connected: this.connected,
       enabled: this.config.enabled,
+      hasCredentials,
       chatId: this.config.chatId || null,
       notifications: this.config.notifications || { preset: 'critical' },
       commandPermission: this.config.commandPermission || 'full',

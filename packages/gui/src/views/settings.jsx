@@ -38,6 +38,32 @@ function Toggle({ value, onChange }) {
   );
 }
 
+/* ── Profile Pic ──────────────────────────────────────────── */
+
+function ProfilePic({ user }) {
+  const [broken, setBroken] = useState(false);
+  const src = user?.avatar || user?.picture || user?.photoURL || user?.photo;
+
+  if (src && !broken) {
+    return (
+      <img
+        src={src}
+        alt=""
+        className="w-6 h-6 rounded-full"
+        referrerPolicy="no-referrer"
+        crossOrigin="anonymous"
+        onError={() => setBroken(true)}
+      />
+    );
+  }
+
+  return (
+    <div className="w-6 h-6 rounded-full bg-accent/10 flex items-center justify-center">
+      <User size={12} className="text-accent" />
+    </div>
+  );
+}
+
 /* ── Provider Card ─────────────────────────────────────────── */
 
 function ProviderCard({ provider, onKeyChange }) {
@@ -245,7 +271,15 @@ function GatewayCard({ gateway, onRefresh }) {
   const [showToken, setShowToken] = useState(false);
   const [testing, setTesting] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [channels, setChannels] = useState([]);
   const addToast = useGrooveStore((s) => s.addToast);
+
+  // Fetch channels when connected Slack gateway has no chatId
+  useEffect(() => {
+    if (gateway.connected && !gateway.chatId && gateway.type === 'slack') {
+      api.get(`/gateways/${gateway.id}/channels`).then((ch) => setChannels(Array.isArray(ch) ? ch : [])).catch(() => {});
+    }
+  }, [gateway.connected, gateway.chatId, gateway.id, gateway.type]);
 
   const Icon = GATEWAY_ICONS[gateway.type] || Radio;
   const isSlack = gateway.type === 'slack';
@@ -257,10 +291,17 @@ function GatewayCard({ gateway, onRefresh }) {
       if (isSlack && appTokenInput.trim()) {
         await api.post(`/gateways/${gateway.id}/credentials`, { key: 'app_token', value: appTokenInput.trim() });
       }
-      addToast('success', `Token saved for ${GATEWAY_LABELS[gateway.type]}`);
+      addToast('success', `Token saved — connecting...`);
       setTokenInput('');
       setAppTokenInput('');
       setSettingToken(false);
+      // Auto-connect after saving tokens
+      try {
+        await api.post(`/gateways/${gateway.id}/connect`);
+        addToast('success', `${GATEWAY_LABELS[gateway.type]} connected!`);
+      } catch (connErr) {
+        addToast('error', 'Token saved but connect failed', connErr.message);
+      }
       onRefresh();
     } catch (err) {
       addToast('error', 'Failed to save token', err.message);
@@ -363,6 +404,64 @@ function GatewayCard({ gateway, onRefresh }) {
               {gateway.botTag && <span className="text-text-4 ml-1">{gateway.botTag}</span>}
             </div>
 
+            {/* Channel / Chat ID */}
+            <div className="mb-3">
+              <label className="text-2xs font-semibold text-text-3 font-sans mb-1.5 block">
+                {gateway.type === 'slack' ? 'Channel' : 'Chat ID'}
+              </label>
+              {gateway.chatId ? (
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 flex items-center h-7 px-2 bg-surface-0 border border-border-subtle rounded-md text-2xs font-mono text-text-2">
+                    {gateway.type === 'slack' && channels.length > 0
+                      ? `#${channels.find((c) => c.id === gateway.chatId)?.name || gateway.chatId}`
+                      : gateway.chatId}
+                  </code>
+                  <button
+                    onClick={async () => {
+                      try { await api.patch(`/gateways/${gateway.id}`, { chatId: null }); onRefresh(); }
+                      catch (err) { addToast('error', 'Failed', err.message); }
+                    }}
+                    className="text-2xs text-text-4 hover:text-text-1 cursor-pointer font-sans"
+                  >Change</button>
+                </div>
+              ) : gateway.type === 'slack' && channels.length > 0 ? (
+                <select
+                  onChange={async (e) => {
+                    if (!e.target.value) return;
+                    try {
+                      await api.patch(`/gateways/${gateway.id}`, { chatId: e.target.value });
+                      onRefresh();
+                    } catch (err) { addToast('error', 'Failed to set channel', err.message); }
+                  }}
+                  className="w-full h-7 px-2 text-2xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-sans focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
+                  defaultValue=""
+                >
+                  <option value="" disabled>Select a channel...</option>
+                  {channels.map((c) => (
+                    <option key={c.id} value={c.id}>#{c.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <div className="text-2xs text-warning font-sans">
+                  {gateway.type === 'slack'
+                    ? 'No channels found — invite the bot to a channel first.'
+                    : 'Send a message to the bot to auto-capture, or enter manually:'}
+                  <input
+                    placeholder={gateway.type === 'slack' ? 'C0123456789' : 'Chat ID'}
+                    className="mt-1 w-full h-7 px-2 text-2xs bg-surface-0 border border-border rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter' && e.target.value.trim()) {
+                        try {
+                          await api.patch(`/gateways/${gateway.id}`, { chatId: e.target.value.trim() });
+                          onRefresh();
+                        } catch (err) { addToast('error', 'Failed to set channel', err.message); }
+                      }
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
             {/* Notification preset */}
             <div className="mb-3">
               <label className="text-2xs font-semibold text-text-3 font-sans mb-1.5 block">Notifications</label>
@@ -403,10 +502,10 @@ function GatewayCard({ gateway, onRefresh }) {
           </>
         )}
 
-        {/* Not connected, not editing — show action */}
+        {/* Not connected, not editing — show state */}
         {!gateway.connected && !settingToken && (
           <div className="text-xs text-text-3 font-sans mb-3">
-            {gateway.enabled ? 'Configure bot token to connect.' : 'Gateway is disabled.'}
+            {!gateway.enabled ? 'Gateway is disabled.' : gateway.hasCredentials ? 'Tokens saved — click Connect.' : 'Configure bot token to connect.'}
           </div>
         )}
 
@@ -634,13 +733,7 @@ export default function SettingsView() {
 
         {marketplaceAuthenticated ? (
           <div className="flex items-center gap-2.5">
-            {marketplaceUser?.avatar ? (
-              <img src={marketplaceUser.avatar} alt="" className="w-6 h-6 rounded-full" />
-            ) : (
-              <div className="w-6 h-6 rounded-full bg-accent/10 flex items-center justify-center">
-                <User size={12} className="text-accent" />
-              </div>
-            )}
+            <ProfilePic user={marketplaceUser} />
             <span className="text-xs font-medium text-text-0 font-sans">{marketplaceUser?.displayName || 'User'}</span>
             <button onClick={marketplaceLogout} className="text-2xs text-text-4 hover:text-text-1 cursor-pointer font-sans flex items-center gap-1">
               <LogOut size={10} /> Sign out

@@ -924,6 +924,19 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
+  app.get('/api/gateways/:id/channels', async (req, res) => {
+    try {
+      const gw = daemon.gateways.gateways.get(req.params.id);
+      if (!gw) return res.status(404).json({ error: 'Gateway not found' });
+      if (!gw.connected) return res.status(400).json({ error: 'Gateway not connected' });
+      if (typeof gw.listChannels !== 'function') return res.json([]);
+      const channels = await gw.listChannels();
+      res.json(channels);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // --- Schedules ---
 
   app.get('/api/schedules', (req, res) => {

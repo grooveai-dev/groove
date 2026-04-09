@@ -2,7 +2,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { BaseGateway } from './base.js';
-import { truncate, statusEmoji, formatTokens } from './formatter.js';
+import { truncate } from './formatter.js';
 
 export class SlackGateway extends BaseGateway {
   static type = 'slack';
@@ -38,20 +38,75 @@ export class SlackGateway extends BaseGateway {
       socketMode: true,
     });
 
-    // Handle messages starting with /
-    this.app.message(/^\/\w+/, async ({ message, say }) => {
-      const userId = message.user;
-      const [command, ...args] = message.text.slice(1).split(/\s+/);
+    // Global error handler — prevent crashes
+    this.app.error(async (error) => {
+      console.log(`[Groove:Slack] App error: ${error.message}`);
+    });
 
-      // Auto-capture channelId
-      if (!this.config.chatId) {
-        this.config.chatId = message.channel;
-        this.daemon.gateways._save(this.config.id);
+    // Handle @mentions of the bot — primary way to interact
+    this.app.event('app_mention', async ({ event, say }) => {
+      try {
+        if (!event.text) return;
+
+        // Auto-capture channelId
+        if (!this.config.chatId) {
+          this.config.chatId = event.channel;
+          this.daemon.gateways._save(this.config.id);
+          console.log(`[Groove:Slack] Auto-captured channel: ${this.config.chatId}`);
+        }
+
+        // Strip the bot mention to get the command
+        const text = event.text.replace(/<@[A-Z0-9]+>/g, '').trim();
+
+        if (!text) {
+          await say('\u2705 Groove connected to this channel! Commands: `status`, `agents`, `spawn <role>`, `kill <id>`, `approve <id>`, `help`');
+          return;
+        }
+
+        // Parse command — no / prefix needed when mentioning
+        const [command, ...args] = text.split(/\s+/);
+        const response = await this.handleCommand(command, args, event.user);
+        if (response) {
+          await say(this._buildReply(response));
+        }
+      } catch (err) {
+        console.log(`[Groove:Slack] Mention handler error: ${err.message}`);
+        try { await say(`Error: ${err.message}`); } catch { /* ignore */ }
       }
+    });
 
-      const response = await this.handleCommand(command, args, userId);
-      if (response) {
-        await say(this._buildReply(response));
+    // Handle direct messages to the bot
+    this.app.message(async ({ message, say }) => {
+      try {
+        if (!message.text || message.bot_id || message.subtype) return;
+
+        // Auto-capture channelId from DMs or channels
+        if (!this.config.chatId) {
+          this.config.chatId = message.channel;
+          this.daemon.gateways._save(this.config.id);
+          console.log(`[Groove:Slack] Auto-captured channel: ${this.config.chatId}`);
+          await say('\u2705 Groove connected to this channel! Commands: `status`, `agents`, `spawn <role>`, `kill <id>`, `approve <id>`, `help`');
+        }
+
+        // In Slack, / is reserved for slash commands — use plain text commands instead
+        const text = message.text.trim();
+        if (!text) return;
+
+        // Strip leading / if someone tries it anyway
+        const cleaned = text.startsWith('/') ? text.slice(1) : text;
+        const [command, ...args] = cleaned.split(/\s+/);
+
+        // Only respond to known commands
+        const known = ['status', 'agents', 'spawn', 'kill', 'approve', 'reject', 'rotate', 'teams', 'schedules', 'help'];
+        if (!known.includes(command)) return; // Not a command, ignore
+
+        const response = await this.handleCommand(command, args, message.user);
+        if (response) {
+          await say(this._buildReply(response));
+        }
+      } catch (err) {
+        console.log(`[Groove:Slack] Message handler error: ${err.message}`);
+        try { await say(`Error: ${err.message}`); } catch { /* ignore */ }
       }
     });
 
@@ -91,7 +146,12 @@ export class SlackGateway extends BaseGateway {
       }
     });
 
-    await this.app.start();
+    try {
+      await this.app.start();
+    } catch (err) {
+      this.app = null;
+      throw new Error(`Slack connection failed: ${err.message}`);
+    }
 
     this.connected = true;
     console.log('[Groove:Slack] Connected via Socket Mode');
@@ -99,7 +159,7 @@ export class SlackGateway extends BaseGateway {
 
   async disconnect() {
     if (this.app) {
-      await this.app.stop();
+      try { await this.app.stop(); } catch { /* ignore */ }
       this.app = null;
     }
     this.connected = false;
@@ -107,13 +167,13 @@ export class SlackGateway extends BaseGateway {
   }
 
   async send(text, options = {}) {
-    if (!this.app || !this.config.chatId) return;
+    if (!this.app) return;
+    if (!this.config.chatId) throw new Error('No channel configured. Mention the bot in a channel or send it a DM to auto-capture.');
 
     const payload = { channel: this.config.chatId };
 
     if (options.approvalId) {
-      // Block Kit message with approve/reject buttons
-      payload.text = text; // Fallback for notifications
+      payload.text = text;
       payload.blocks = [
         { type: 'section', text: { type: 'mrkdwn', text: `\ud83d\udea8 *Approval Required*\n${truncate(text, 2800)}` } },
         { type: 'divider' },
@@ -138,8 +198,7 @@ export class SlackGateway extends BaseGateway {
         },
       ];
     } else {
-      // Standard Block Kit message
-      payload.text = truncate(text, 3000); // Fallback
+      payload.text = truncate(text, 3000);
       payload.blocks = [
         { type: 'section', text: { type: 'mrkdwn', text: truncate(text, 3000) } },
       ];
@@ -149,12 +208,31 @@ export class SlackGateway extends BaseGateway {
   }
 
   /**
-   * Build a reply payload from a command response.
+   * List channels the bot is a member of.
    */
+  async listChannels() {
+    if (!this.app) return [];
+    try {
+      const result = await this.app.client.conversations.list({
+        types: 'public_channel,private_channel',
+        exclude_archived: true,
+        limit: 200,
+      });
+      // Return all channels — mark which ones the bot is in
+      return (result.channels || []).map((c) => ({
+        id: c.id,
+        name: c.name,
+        isMember: c.is_member,
+      }));
+    } catch (err) {
+      console.log(`[Groove:Slack] listChannels error: ${err.message}`);
+      return [];
+    }
+  }
+
   _buildReply(response) {
     if (!response) return {};
     const text = response.text || '';
-    // Wrap in a code block for command output readability
     return {
       text,
       blocks: [

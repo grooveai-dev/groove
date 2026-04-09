@@ -2,9 +2,9 @@
 import { useState, useEffect } from 'react';
 import {
   FolderOpen, Cpu, Zap, Shield, ChevronDown, X, Plus,
-  Gauge, FolderSearch, Key, Check, Circle, Eye, EyeOff,
-  AlertCircle, Layers, Clock, Activity,
-  RotateCw, Skull, Copy, Play, Trash2,
+  Gauge, FolderSearch, Key, Check, Eye, EyeOff,
+  AlertCircle, Layers, Activity,
+  RotateCw, Skull, Copy, Trash2,
   Sparkles, Calendar,
 } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
@@ -95,26 +95,14 @@ function AgentActions({ agent }) {
     setLoading(null);
   }
 
-  async function handleRestart() {
-    setLoading('restart');
-    try {
-      await spawnAgent({
-        role: agent.role, provider: agent.provider, model: agent.model,
-        name: agent.name, scope: agent.scope, workingDir: agent.workingDir, prompt: agent.prompt,
-      });
-      addToast('success', `Restarted ${agent.name}`);
-    } catch {}
-    setLoading(null);
-  }
-
   if (isAlive) {
     return (
       <div className="space-y-2">
-        <Button variant="primary" size="md" onClick={handleRotate} disabled={loading === 'rotate'} className="w-full gap-1.5">
-          <RotateCw size={12} className={loading === 'rotate' ? 'animate-spin' : ''} />
-          Rotate Context
-        </Button>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
+          <Button variant="primary" size="md" onClick={handleRotate} disabled={loading === 'rotate'} className="gap-1.5">
+            <RotateCw size={12} className={loading === 'rotate' ? 'animate-spin' : ''} />
+            Rotate
+          </Button>
           <Button variant="info" size="md" onClick={handleClone} disabled={!!loading} className="gap-1.5">
             <Copy size={12} /> Clone
           </Button>
@@ -126,7 +114,7 @@ function AgentActions({ agent }) {
             className="gap-1.5"
           >
             <Skull size={12} />
-            {confirmKill ? 'Confirm Kill' : 'Kill'}
+            {confirmKill ? 'Confirm' : 'Kill'}
           </Button>
         </div>
       </div>
@@ -134,25 +122,20 @@ function AgentActions({ agent }) {
   }
 
   return (
-    <div className="space-y-2">
-      <Button variant="primary" size="md" onClick={handleRestart} disabled={!!loading} className="w-full gap-1.5">
-        <Play size={12} /> Restart Agent
+    <div className="grid grid-cols-2 gap-2">
+      <Button variant="info" size="md" onClick={handleClone} disabled={!!loading} className="gap-1.5">
+        <Copy size={12} /> Clone
       </Button>
-      <div className="grid grid-cols-2 gap-2">
-        <Button variant="info" size="md" onClick={handleClone} disabled={!!loading} className="gap-1.5">
-          <Copy size={12} /> Clone
-        </Button>
-        <Button
-          variant="danger"
-          size="md"
-          onClick={handleKill}
-          disabled={loading === 'kill'}
-          className="gap-1.5"
-        >
-          <Trash2 size={12} />
-          {confirmKill ? 'Confirm' : 'Remove'}
-        </Button>
-      </div>
+      <Button
+        variant="danger"
+        size="md"
+        onClick={handleKill}
+        disabled={loading === 'kill'}
+        className="gap-1.5"
+      >
+        <Trash2 size={12} />
+        {confirmKill ? 'Confirm' : 'Remove'}
+      </Button>
     </div>
   );
 }
@@ -267,9 +250,6 @@ export function AgentConfig({ agent }) {
   return (
     <div className="px-5 py-5 space-y-6 overflow-y-auto h-full">
 
-      {/* ── Agent Actions (top of config) ──────────────────── */}
-      <AgentActions agent={agent} />
-
       {/* ── Active Model ──────────────────────────────────── */}
       <ConfigSection label="Active Model" icon={Cpu}>
         <div className="bg-surface-0 rounded-lg border border-border-subtle px-3.5 py-3">
@@ -310,6 +290,9 @@ export function AgentConfig({ agent }) {
         </div>
       </ConfigSection>
 
+      {/* ── Agent Actions ──────────────────────────────────── */}
+      <AgentActions agent={agent} />
+
       {/* ── Providers ──────────────────────────────────────── */}
       <ConfigSection label="Providers" icon={Layers} description="Click a provider to see its models and connection status.">
         <div className="space-y-1.5">
@@ -330,15 +313,15 @@ export function AgentConfig({ agent }) {
                     {p.name || p.id}
                   </span>
                   {isActive && <Badge variant="accent" className="text-2xs">Active</Badge>}
-                  {!available && <span className="text-2xs text-text-4 font-sans">No key</span>}
+                  {!available && <span className="text-2xs text-text-4 font-sans">{p.authType === 'local' ? 'Not installed' : 'No key'}</span>}
                   <ChevronDown size={12} className={cn('text-text-4 transition-transform', isExpanded && 'rotate-180')} />
                 </button>
 
                 {/* Expanded: models + key management */}
                 {isExpanded && (
                   <div className="border-t border-border-subtle">
-                    {/* API Key row */}
-                    {(!available || p.hasKey) && (
+                    {/* API Key row — skip for local providers like Ollama */}
+                    {p.authType !== 'local' && (!available || p.hasKey) && (
                       <div className="px-3 py-2 bg-surface-1/50">
                         {settingKeyFor === p.id ? (
                           <div className="flex gap-1.5">

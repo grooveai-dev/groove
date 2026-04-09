@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.19.2 — Config tab cleanup, remove restart, fix Ollama key prompt (2026-04-08)
+
+- **Remove restart button** — sending a chat message resumes with context, restart was redundant
+- **Config tab reorder** — Active Model now at top, then actions (Rotate/Clone/Kill), then providers
+- **Compact actions** — alive agents: 3-col grid (Rotate | Clone | Kill), dead: 2-col (Clone | Remove)
+- **Fix Ollama** — no longer shows API key prompt for local providers, shows "Not installed" instead of "No key"
+
 ## v0.19.1 — Fix page load flicker, toast text alignment (2026-04-08)
 
 - **Loading screen**: Show pulsing logo + "Connecting..." until first WebSocket state arrives — eliminates the 1-2s flash of empty welcome screen

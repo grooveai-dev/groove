@@ -128,32 +128,52 @@ export class ClaudeCodeProvider extends Provider {
         }
 
         if (data.type === 'assistant') {
+          const usage = data.message?.usage;
+          const inputTokens = usage?.input_tokens || 0;
+          const cacheReadTokens = usage?.cache_read_input_tokens || 0;
+          const cacheCreationTokens = usage?.cache_creation_input_tokens || 0;
+          const outputTokens = usage?.output_tokens || 0;
+          const totalIn = inputTokens + cacheReadTokens + cacheCreationTokens;
           events.push({
             type: 'activity',
             subtype: 'assistant',
             data: data.message?.content || '',
-            tokensUsed: data.message?.usage?.output_tokens || 0,
+            tokensUsed: totalIn + outputTokens,
+            inputTokens,
+            outputTokens,
+            cacheReadTokens,
+            cacheCreationTokens,
             model: data.message?.model,
           });
+          // Compute context usage from assistant message usage
+          if (totalIn > 0) {
+            const modelId = data.message?.model || '';
+            const modelMeta = ClaudeCodeProvider.models.find((m) => modelId.includes(m.id));
+            const contextWindow = modelMeta?.contextWindow || 200_000;
+            events.push({
+              type: 'usage',
+              contextUsage: totalIn / contextWindow,
+            });
+          }
         } else if (data.type === 'result') {
+          // Result has cumulative usage for the full session
+          const usage = data.usage;
+          const inputTokens = usage?.input_tokens || 0;
+          const cacheReadTokens = usage?.cache_read_input_tokens || 0;
+          const cacheCreationTokens = usage?.cache_creation_input_tokens || 0;
+          const outputTokens = usage?.output_tokens || 0;
+          const totalIn = inputTokens + cacheReadTokens + cacheCreationTokens;
           events.push({
             type: 'result',
             data: data.result,
-            tokensUsed: data.total_cost_usd ? undefined : 0,
+            tokensUsed: totalIn + outputTokens,
+            inputTokens,
+            outputTokens,
+            cacheReadTokens,
+            cacheCreationTokens,
             cost: data.total_cost_usd,
             duration: data.duration_ms,
             turns: data.num_turns,
-          });
-        } else if (data.type === 'system' && data.subtype === 'usage') {
-          // Use actual context window size from model metadata, not hardcoded 200K
-          // Opus has 1M, Sonnet/Haiku have 200K — rotation must account for this
-          const totalTokens = (data.usage?.cache_read_input_tokens || 0) + (data.usage?.input_tokens || 0);
-          const modelId = data.model || events.find((e) => e.model)?.model;
-          const modelMeta = ClaudeCodeProvider.models.find((m) => m.id === modelId);
-          const contextWindow = modelMeta?.contextWindow || 200_000;
-          events.push({
-            type: 'usage',
-            contextUsage: totalTokens > 0 ? totalTokens / contextWindow : undefined,
           });
         }
       } catch {
@@ -167,19 +187,20 @@ export class ClaudeCodeProvider extends Provider {
     // but return the most significant event type (usage > result > activity)
     const merged = events[events.length - 1];
     let totalTokens = 0;
+    let totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheCreation = 0;
     for (const e of events) {
       if (e.tokensUsed > 0) totalTokens += e.tokensUsed;
+      if (e.inputTokens > 0) totalInput += e.inputTokens;
+      if (e.outputTokens > 0) totalOutput += e.outputTokens;
+      if (e.cacheReadTokens > 0) totalCacheRead += e.cacheReadTokens;
+      if (e.cacheCreationTokens > 0) totalCacheCreation += e.cacheCreationTokens;
     }
     if (totalTokens > 0) merged.tokensUsed = totalTokens;
+    if (totalInput > 0) merged.inputTokens = totalInput;
+    if (totalOutput > 0) merged.outputTokens = totalOutput;
+    if (totalCacheRead > 0) merged.cacheReadTokens = totalCacheRead;
+    if (totalCacheCreation > 0) merged.cacheCreationTokens = totalCacheCreation;
 
     return merged;
-  }
-
-  injectContext(agent, contextMarkdown) {
-    // For Claude Code, inject context by writing to a .groove/context/<agent>.md file
-    // and referencing it. Claude Code auto-reads CLAUDE.md, so we append there.
-    // But we don't want to pollute the user's CLAUDE.md permanently — we use
-    // the append-only GROOVE section approach.
-    return contextMarkdown;
   }
 }

@@ -1,76 +1,110 @@
-// GROOVE GUI — Zustand Store + WebSocket
+// GROOVE GUI v2 — Zustand Store
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { create } from 'zustand';
+import { api } from '../lib/api';
 
 const WS_URL = `ws://${window.location.hostname}:${window.location.port || 31415}`;
-const API_BASE = '';
+
+let toastCounter = 0;
+
+function loadJSON(key, fallback = {}) {
+  try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); }
+  catch { return fallback; }
+}
+
+function persistJSON(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* quota */ }
+}
 
 export const useGrooveStore = create((set, get) => ({
-  // Connection state
+  // ── Connection ────────────────────────────────────────────
   agents: [],
   connected: false,
   ws: null,
-  daemonHost: null,   // bound host IP (null = localhost)
-  tunneled: false,    // true when accessed via SSH tunnel (port mismatch)
+  daemonHost: null,
+  tunneled: false,
 
-  // UI state — unified panel model
-  activeTab: 'agents',       // 'agents' | 'stats' | 'teams' | 'approvals' | 'editor'
-  detailPanel: null,          // null | { type: 'agent', agentId } | { type: 'spawn' } | { type: 'journalist' }
-  activityLog: (() => { try { return JSON.parse(localStorage.getItem('groove:activityLog') || '{}'); } catch { return {}; } })(),
-  statusMessage: null,        // inline status text (replaces toast notifications)
-  commandHistory: [],          // last 50 commands for command bar
-  chatHistory: (() => { try { return JSON.parse(localStorage.getItem('groove:chatHistory') || '{}'); } catch { return {}; } })(),
-  tokenTimeline: {},            // { [agentId]: [{ t: timestamp, v: tokensUsed }] }
-  dashTelemetry: {},            // { [agentId]: [{ t, v, name }] } — persists across tab switches
+  // ── Teams ─────────────────────────────────────────────────
+  teams: [],
+  activeTeamId: localStorage.getItem('groove:activeTeamId') || null,
 
-  // Editor state
-  editorFiles: {},           // { [path]: { content, originalContent, language, loadedAt } }
-  editorActiveFile: null,    // currently visible file path
-  editorOpenTabs: [],        // ordered array of open file paths
-  editorTreeCache: {},       // { [dirPath]: entries[] }
-  editorChangedFiles: {},    // { [path]: timestamp } — externally modified files
-  editorRecentSaves: {},     // { [path]: timestamp } — suppress self-triggered change events
+  // ── Navigation ────────────────────────────────────────────
+  activeView: 'agents',           // 'agents' | 'editor' | 'dashboard' | 'marketplace' | 'teams'
+  detailPanel: null,              // null | { type: 'agent', agentId } | { type: 'spawn' } | { type: 'journalist' }
+  commandPaletteOpen: false,
 
-  // Connection
+  // ── Layout persistence ────────────────────────────────────
+  detailPanelWidth: Number(localStorage.getItem('groove:detailWidth')) || 480,
+  terminalVisible: localStorage.getItem('groove:terminalVisible') === 'true',
+  terminalHeight: Number(localStorage.getItem('groove:terminalHeight')) || 260,
+  terminalFullHeight: false,
+
+  // ── Agent data ────────────────────────────────────────────
+  activityLog: loadJSON('groove:activityLog'),
+  chatHistory: loadJSON('groove:chatHistory'),
+  tokenTimeline: {},
+  dashTelemetry: {},
+  ccChartTimeline: [],
+
+  // ── Approvals ─────────────────────────────────────────────
+  pendingApprovals: [],
+  resolvedApprovals: [],
+
+  // ── Recommended Team ──────────────────────────────────────
+  recommendedTeam: null,  // { name, agents: [...] } from planner
+
+  // ── Journalist ────────────────────────────────────────────
+  journalistStatus: null, // { cycleCount, lastCycleTime, history, lastSynthesis }
+
+  // ── Marketplace Auth ───────────────────────────────────────
+  marketplaceUser: null,        // { id, displayName, avatar, ... } or null
+  marketplaceAuthenticated: false,
+
+  // ── Toasts ────────────────────────────────────────────────
+  toasts: [],
+
+  // ── Editor state ──────────────────────────────────────────
+  editorFiles: {},
+  editorActiveFile: null,
+  editorOpenTabs: [],
+  editorTreeCache: {},
+  editorChangedFiles: {},
+  editorRecentSaves: {},
+
+  // ── Connection ────────────────────────────────────────────
+
   connect() {
     if (get().ws) return;
-
     const ws = new WebSocket(WS_URL);
+    set({ ws }); // Claim slot immediately to prevent StrictMode double-connect
 
     ws.onopen = () => {
-      set({ connected: true, ws });
-      // Fetch daemon info for instance badge + tunnel detection
-      fetch(`${API_BASE}/api/status`).then((r) => r.json()).then((s) => {
+      set({ connected: true });
+      api.get('/status').then((s) => {
         const updates = {};
-        if (s.host && s.host !== '127.0.0.1') {
-          updates.daemonHost = s.host;
-        }
-        // Detect tunnel: browser port differs from daemon's actual port
+        if (s.host && s.host !== '127.0.0.1') updates.daemonHost = s.host;
         const browserPort = window.location.port || '80';
-        if (String(s.port) !== browserPort) {
-          updates.tunneled = true;
-        }
+        if (String(s.port) !== browserPort) updates.tunneled = true;
         if (Object.keys(updates).length > 0) set(updates);
       }).catch(() => {});
+      get().fetchTeams();
+      get().fetchApprovals();
+      get().checkMarketplaceAuth();
     };
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
-
       switch (msg.type) {
         case 'state': {
-          // Track token timeline for live charts
           const timeline = { ...get().tokenTimeline };
           const now = Date.now();
           for (const agent of msg.data) {
             if (!timeline[agent.id]) timeline[agent.id] = [];
             const arr = timeline[agent.id];
             const last = arr[arr.length - 1];
-            // Only record if tokens changed or every 5s for heartbeat
             if (!last || agent.tokensUsed !== last.v || now - last.t > 5000) {
               arr.push({ t: now, v: agent.tokensUsed || 0 });
-              // Keep last 200 points
               if (arr.length > 200) timeline[agent.id] = arr.slice(-200);
             }
           }
@@ -80,86 +114,116 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'agent:output': {
           const { agentId, data } = msg;
-          const log = { ...get().activityLog };
-          if (!log[agentId]) log[agentId] = [];
-          log[agentId] = [...log[agentId].slice(-200), {
-            timestamp: Date.now(),
-            text: typeof data.data === 'string' ? data.data : JSON.stringify(data.data),
-            type: data.type,
-          }];
-          set({ activityLog: log });
-          try { localStorage.setItem('groove:activityLog', JSON.stringify(log)); } catch { /* full */ }
+          const text = typeof data.data === 'string' ? data.data : (Array.isArray(data.data) ? data.data.filter((b) => b.type === 'text').map((b) => b.text).join('\n') : JSON.stringify(data.data));
+
+          // Promote assistant text and result responses to chat bubbles
+          if ((data.subtype === 'assistant' || data.type === 'result') && text && text.trim()) {
+            const history = { ...get().chatHistory };
+            if (!history[agentId]) history[agentId] = [];
+            history[agentId] = [...history[agentId].slice(-100), { from: 'agent', text: text.trim(), timestamp: Date.now() }];
+            set({ chatHistory: history });
+            persistJSON('groove:chatHistory', history);
+          } else {
+            // Everything else goes to activity log
+            const log = { ...get().activityLog };
+            if (!log[agentId]) log[agentId] = [];
+            log[agentId] = [...log[agentId].slice(-200), {
+              timestamp: Date.now(),
+              text: text || '',
+              type: data.type,
+            }];
+            set({ activityLog: log });
+            persistJSON('groove:activityLog', log);
+          }
           break;
         }
 
         case 'agent:exit': {
           const agent = get().agents.find((a) => a.id === msg.agentId);
           const name = agent?.name || msg.agentId;
+          // Exit 143 = SIGTERM (kill), exit 137 = SIGKILL — treat as intentional kill
+          const isKill = msg.status === 'killed' || msg.code === 143 || msg.code === 137;
           const text = msg.status === 'completed' ? `${name} completed`
-            : msg.status === 'killed' ? `${name} killed`
+            : isKill ? `${name} stopped`
             : `${name} crashed (exit ${msg.code})`;
-          get().showStatus(text);
-
-          // Check if all agents are done and no fullstack/QC exists — nudge user
-          setTimeout(() => {
-            const agents = get().agents;
-            const alive = agents.filter((a) => a.status === 'running' || a.status === 'starting');
-            const done = agents.filter((a) => a.status === 'completed' || a.status === 'crashed');
-            const hasQC = agents.some((a) => a.role === 'fullstack' && (a.status === 'running' || a.status === 'starting'));
-            if (alive.length === 0 && done.length >= 2 && !hasQC) {
-              get().showStatus('All agents finished — no QC agent. Consider spawning a fullstack to audit and integrate.');
-            }
-          }, 2000);
+          const type = msg.status === 'completed' ? 'success' : isKill ? 'info' : 'warning';
+          get().addToast(type, text);
+          // Check for recommended team when planner completes
+          if (agent?.role === 'planner' && msg.status === 'completed') {
+            setTimeout(() => get().checkRecommendedTeam(), 1000);
+          }
           break;
         }
 
-        case 'phase2:spawned': {
-          get().showStatus(`QC agent ${msg.name} auto-spawned — auditing phase 1 work`);
+        case 'phase2:spawned':
+          get().addToast('info', `QC agent ${msg.name} auto-spawned`, 'Auditing phase 1 work');
           break;
-        }
 
         case 'rotation:start':
-          get().showStatus(`rotating ${msg.agentName}...`);
+          get().addToast('info', `Rotating ${msg.agentName}...`);
           break;
 
         case 'rotation:complete': {
-          get().showStatus(`rotated ${msg.agentName} (saved ${msg.tokensSaved} tokens)`);
+          get().addToast('success', `Rotated ${msg.agentName}`, `Saved ${msg.tokensSaved} tokens`);
           const panel = get().detailPanel;
           if (panel?.type === 'agent' && panel.agentId === msg.oldAgentId && msg.newAgentId) {
-            // Copy chat history and timeline BEFORE switching to new agent
-            // (this fires before the HTTP response in instructAgent, preventing empty chat)
             set((s) => {
               const chatHistory = { ...s.chatHistory };
               const tokenTimeline = { ...s.tokenTimeline };
-              const oldChat = chatHistory[msg.oldAgentId] || [];
-              const oldTimeline = tokenTimeline[msg.oldAgentId] || [];
-              if (oldChat.length > 0) chatHistory[msg.newAgentId] = [...oldChat];
-              if (oldTimeline.length > 0) tokenTimeline[msg.newAgentId] = [...oldTimeline];
-              return {
-                chatHistory,
-                tokenTimeline,
-                detailPanel: { type: 'agent', agentId: msg.newAgentId },
-              };
+              if (chatHistory[msg.oldAgentId]?.length) chatHistory[msg.newAgentId] = [...chatHistory[msg.oldAgentId]];
+              if (tokenTimeline[msg.oldAgentId]?.length) tokenTimeline[msg.newAgentId] = [...tokenTimeline[msg.oldAgentId]];
+              return { chatHistory, tokenTimeline, detailPanel: { type: 'agent', agentId: msg.newAgentId } };
             });
           }
           break;
         }
 
         case 'rotation:failed':
-          get().showStatus(`rotation failed: ${msg.error}`);
+          get().addToast('error', 'Rotation failed', msg.error);
           break;
 
         case 'file:changed': {
           const savedAt = get().editorRecentSaves[msg.path];
-          if (savedAt && Date.now() - savedAt < 2000) break; // ignore self-triggered
+          if (savedAt && Date.now() - savedAt < 2000) break;
+          set((s) => ({ editorChangedFiles: { ...s.editorChangedFiles, [msg.path]: msg.timestamp } }));
+          break;
+        }
+
+        case 'team:created':
+        case 'team:deleted':
+        case 'team:updated':
+          get().fetchTeams();
+          break;
+
+        case 'approval:request':
+          set((s) => ({ pendingApprovals: [...s.pendingApprovals, msg.data] }));
+          get().addToast('warning', `Approval needed: ${msg.data?.agentName || 'agent'}`, msg.data?.action?.description);
+          break;
+
+        case 'approval:resolved': {
+          const resolved = msg.data;
           set((s) => ({
-            editorChangedFiles: { ...s.editorChangedFiles, [msg.path]: msg.timestamp },
+            pendingApprovals: s.pendingApprovals.filter((a) => a.id !== resolved.id),
+            resolvedApprovals: [resolved, ...s.resolvedApprovals].slice(0, 200),
           }));
           break;
         }
 
+        case 'conflict:detected':
+          get().addToast('error', `Scope conflict: ${msg.agentName || 'agent'}`, msg.filePath ? `File: ${msg.filePath}` : undefined);
+          break;
+
+        case 'qc:activated':
+          get().addToast('info', 'QC agent activated', `${msg.agentCount || '4+'} agents running`);
+          break;
+
         case 'journalist:cycle':
-          break; // Journalist feed polls separately
+          set({ journalistStatus: msg.data || null });
+          break;
+
+        case 'schedule:execute':
+          get().addToast('info', `Scheduled agent spawned: ${msg.name || msg.role || 'agent'}`);
+          break;
       }
     };
 
@@ -167,69 +231,282 @@ export const useGrooveStore = create((set, get) => ({
       set({ connected: false, ws: null, daemonHost: null, tunneled: false });
       setTimeout(() => get().connect(), 2000);
     };
-
     ws.onerror = () => ws.close();
   },
 
-  // Agent actions
-  async spawnAgent(config) {
-    const res = await fetch(`${API_BASE}/api/agents`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || 'Spawn failed');
+  // ── Navigation ────────────────────────────────────────────
+
+  setActiveView(view) { set({ activeView: view }); },
+
+  // ── Teams ─────────────────────────────────────────────────
+
+  async fetchTeams() {
+    try {
+      const data = await api.get('/teams');
+      const teams = data.teams || [];
+      const defaultTeamId = data.defaultTeamId;
+      const { activeTeamId } = get();
+      const ids = teams.map((t) => t.id);
+      const resolved = ids.includes(activeTeamId) ? activeTeamId : defaultTeamId;
+      set({ teams, activeTeamId: resolved });
+      if (resolved) localStorage.setItem('groove:activeTeamId', resolved);
+    } catch { /* ignore */ }
+  },
+
+  switchTeam(id) {
+    set({ activeTeamId: id, detailPanel: null });
+    localStorage.setItem('groove:activeTeamId', id);
+  },
+
+  async createTeam(name) {
+    try {
+      const team = await api.post('/teams', { name });
+      // Only set activeTeamId — the WS team:created handler adds to the teams array
+      set({ activeTeamId: team.id });
+      localStorage.setItem('groove:activeTeamId', team.id);
+      get().addToast('success', `Team "${name}" created`);
+      return team;
+    } catch (err) {
+      get().addToast('error', 'Failed to create team', err.message);
+      throw err;
     }
-    const agent = await res.json();
-    get().showStatus(`spawned ${agent.name}`);
-    return agent;
+  },
+
+  async deleteTeam(id) {
+    const team = get().teams.find((t) => t.id === id);
+    if (team?.isDefault) { get().addToast('warning', 'Cannot delete the default team'); return; }
+    try {
+      await api.delete(`/teams/${id}`);
+      // WS team:deleted handler removes from array and switches activeTeamId
+      get().addToast('info', `Team "${team?.name}" deleted`);
+    } catch (err) {
+      get().addToast('error', 'Failed to delete team', err.message);
+    }
+  },
+
+  async renameTeam(id, name) {
+    try {
+      const team = await api.patch(`/teams/${id}`, { name });
+      set((s) => ({ teams: s.teams.map((t) => (t.id === id ? team : t)) }));
+      return team;
+    } catch (err) {
+      get().addToast('error', 'Failed to rename team', err.message);
+      throw err;
+    }
+  },
+  openDetail(descriptor) { set({ detailPanel: descriptor }); },
+  closeDetail() { set({ detailPanel: null }); },
+  selectAgent(id) { set({ detailPanel: { type: 'agent', agentId: id } }); },
+  clearSelection() { set({ detailPanel: null }); },
+  toggleCommandPalette() { set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })); },
+
+  setDetailPanelWidth(w) {
+    set({ detailPanelWidth: w });
+    localStorage.setItem('groove:detailWidth', String(w));
+  },
+  setTerminalVisible(v) {
+    set({ terminalVisible: v });
+    localStorage.setItem('groove:terminalVisible', String(v));
+  },
+  setTerminalHeight(h) {
+    set({ terminalHeight: h });
+    localStorage.setItem('groove:terminalHeight', String(h));
+  },
+  setTerminalFullHeight(v) { set({ terminalFullHeight: v }); },
+
+  // ── Toasts ────────────────────────────────────────────────
+
+  addToast(type, message, detail) {
+    const id = ++toastCounter;
+    set((s) => ({ toasts: [...s.toasts, { id, type, message, detail }] }));
+  },
+  removeToast(id) {
+    set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+  },
+
+  // ── Marketplace Auth ────────────────────────────────────────
+
+  async checkMarketplaceAuth() {
+    try {
+      const data = await api.get('/auth/status');
+      set({
+        marketplaceAuthenticated: data.authenticated || false,
+        marketplaceUser: data.user || null,
+      });
+    } catch {
+      set({ marketplaceAuthenticated: false, marketplaceUser: null });
+    }
+  },
+
+  async marketplaceLogin() {
+    try {
+      const data = await api.get('/auth/login-url');
+      if (data.url) window.open(data.url, '_blank');
+      // Poll for auth completion (user logs in via browser)
+      const poll = setInterval(async () => {
+        try {
+          const status = await api.get('/auth/status');
+          if (status.authenticated) {
+            clearInterval(poll);
+            set({ marketplaceAuthenticated: true, marketplaceUser: status.user });
+            get().addToast('success', `Signed in as ${status.user?.displayName || status.user?.id || 'user'}`);
+          }
+        } catch { /* keep polling */ }
+      }, 2000);
+      // Stop polling after 5 minutes
+      setTimeout(() => clearInterval(poll), 300000);
+    } catch (err) {
+      get().addToast('error', 'Login failed', err.message);
+    }
+  },
+
+  async marketplaceLogout() {
+    try {
+      await api.post('/auth/logout');
+      set({ marketplaceAuthenticated: false, marketplaceUser: null });
+      get().addToast('info', 'Signed out of marketplace');
+    } catch (err) {
+      get().addToast('error', 'Logout failed', err.message);
+    }
+  },
+
+  async marketplaceCheckout(skillId) {
+    try {
+      const data = await api.post('/auth/checkout', { skillId });
+      if (data.url) window.open(data.url, '_blank');
+      return data;
+    } catch (err) {
+      get().addToast('error', 'Checkout failed', err.message);
+      throw err;
+    }
+  },
+
+  // ── Approvals ──────────────────────────────────────────────
+
+  async fetchApprovals() {
+    try {
+      const data = await api.get('/approvals');
+      set({
+        pendingApprovals: data.pending || [],
+        resolvedApprovals: data.resolved || [],
+      });
+    } catch { /* ignore */ }
+  },
+
+  async approveRequest(id) {
+    try {
+      await api.post(`/approvals/${id}/approve`);
+      set((s) => ({ pendingApprovals: s.pendingApprovals.filter((a) => a.id !== id) }));
+      get().addToast('success', 'Approved');
+    } catch (err) {
+      get().addToast('error', 'Approve failed', err.message);
+    }
+  },
+
+  async rejectRequest(id, reason = '') {
+    try {
+      await api.post(`/approvals/${id}/reject`, { reason });
+      set((s) => ({ pendingApprovals: s.pendingApprovals.filter((a) => a.id !== id) }));
+      get().addToast('info', 'Rejected');
+    } catch (err) {
+      get().addToast('error', 'Reject failed', err.message);
+    }
+  },
+
+  // ── Recommended Team ──────────────────────────────────────
+
+  async checkRecommendedTeam() {
+    try {
+      const data = await api.get('/recommended-team');
+      if (data && data.agents?.length) {
+        set({ recommendedTeam: data });
+      } else {
+        set({ recommendedTeam: null });
+      }
+    } catch {
+      set({ recommendedTeam: null });
+    }
+  },
+
+  async launchRecommendedTeam() {
+    try {
+      const result = await api.post('/recommended-team/launch');
+      set({ recommendedTeam: null });
+      get().addToast('success', `Launched ${result.launched} agents`, result.phase2Pending ? `${result.phase2Pending} QC agents queued` : undefined);
+      // Clean up stale files
+      api.post('/cleanup').catch(() => {});
+      return result;
+    } catch (err) {
+      get().addToast('error', 'Launch failed', err.message);
+      throw err;
+    }
+  },
+
+  // ── Journalist ────────────────────────────────────────────
+
+  async fetchJournalist() {
+    try {
+      const data = await api.get('/journalist');
+      set({ journalistStatus: data });
+      return data;
+    } catch { return null; }
+  },
+
+  async triggerJournalistCycle() {
+    try {
+      const data = await api.post('/journalist/cycle');
+      get().addToast('success', 'Synthesis cycle triggered');
+      set({ journalistStatus: data });
+      return data;
+    } catch (err) {
+      get().addToast('error', 'Synthesis failed', err.message);
+      throw err;
+    }
+  },
+
+  // ── Agent Actions ─────────────────────────────────────────
+
+  async spawnAgent(config) {
+    try {
+      const teamId = get().activeTeamId;
+      const agent = await api.post('/agents', { ...config, teamId });
+      get().addToast('success', `Spawned ${agent.name}`);
+      return agent;
+    } catch (err) {
+      get().addToast('error', 'Spawn failed', err.message);
+      throw err;
+    }
   },
 
   async killAgent(id, purge = false) {
-    await fetch(`${API_BASE}/api/agents/${id}?purge=${purge}`, { method: 'DELETE' });
+    try {
+      await api.delete(`/agents/${id}?purge=${purge}`);
+    } catch (err) {
+      get().addToast('error', 'Kill failed', err.message);
+    }
   },
 
   async rotateAgent(id) {
-    const res = await fetch(`${API_BASE}/api/agents/${id}/rotate`, { method: 'POST' });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || 'Rotation failed');
+    try {
+      return await api.post(`/agents/${id}/rotate`);
+    } catch (err) {
+      get().addToast('error', 'Rotation failed', err.message);
+      throw err;
     }
-    return res.json();
   },
 
   async fetchProviders() {
-    const res = await fetch(`${API_BASE}/api/providers`);
-    return res.json();
+    return api.get('/providers');
   },
 
-  // UI actions — unified panel control
-  setActiveTab(tab) { set({ activeTab: tab }); },
+  // ── Chat ──────────────────────────────────────────────────
 
-  openDetail(descriptor) { set({ detailPanel: descriptor }); },
-  closeDetail() { set({ detailPanel: null }); },
-
-  selectAgent(id) { set({ detailPanel: { type: 'agent', agentId: id } }); },
-  clearSelection() { set({ detailPanel: null }); },
-
-  showStatus(text) {
-    set({ statusMessage: text });
-    setTimeout(() => {
-      if (get().statusMessage === text) set({ statusMessage: null });
-    }, 4000);
-  },
-
-  // Agent interaction
   addChatMessage(agentId, from, text, isQuery = false) {
     set((s) => {
       const history = { ...s.chatHistory };
       if (!history[agentId]) history[agentId] = [];
-      history[agentId] = [...history[agentId].slice(-100), {
-        from, text, timestamp: Date.now(), isQuery,
-      }];
-      try { localStorage.setItem('groove:chatHistory', JSON.stringify(history)); } catch { /* full */ }
+      history[agentId] = [...history[agentId].slice(-100), { from, text, timestamp: Date.now(), isQuery }];
+      persistJSON('groove:chatHistory', history);
       return { chatHistory: history };
     });
   },
@@ -237,74 +514,43 @@ export const useGrooveStore = create((set, get) => ({
   async instructAgent(id, message) {
     const agent = get().agents.find((a) => a.id === id);
     const isAlive = agent && (agent.status === 'running' || agent.status === 'starting');
-
     get().addChatMessage(id, 'user', message, false);
     get().addChatMessage(id, 'system', isAlive ? 'sending instruction...' : 'continuing conversation...');
-    const res = await fetch(`${API_BASE}/api/agents/${id}/instruct`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      get().addChatMessage(id, 'system', `failed: ${err.error || 'unknown error'}`);
-      throw new Error(err.error || 'Instruction failed');
+    try {
+      const newAgent = await api.post(`/agents/${id}/instruct`, { message });
+      // Carry history to new agent ID
+      for (const key of ['chatHistory', 'activityLog', 'tokenTimeline']) {
+        const old = get()[key][id];
+        if (old?.length) {
+          set((s) => ({ [key]: { ...s[key], [newAgent.id]: [...old] } }));
+        }
+      }
+      if (get().chatHistory[id]?.length) persistJSON('groove:chatHistory', get().chatHistory);
+      if (get().activityLog[id]?.length) persistJSON('groove:activityLog', get().activityLog);
+      get().selectAgent(newAgent.id);
+      get().addChatMessage(newAgent.id, 'system', 'agent resumed with context');
+      return newAgent;
+    } catch (err) {
+      get().addChatMessage(id, 'system', `failed: ${err.message}`);
+      throw err;
     }
-    const newAgent = await res.json();
-    // Carry chat history from old agent to new (same conversation, new ID)
-    const oldChat = get().chatHistory[id] || [];
-    if (oldChat.length > 0) {
-      set((s) => {
-        const history = { ...s.chatHistory };
-        history[newAgent.id] = [...oldChat];
-        try { localStorage.setItem('groove:chatHistory', JSON.stringify(history)); } catch {}
-        return { chatHistory: history };
-      });
-    }
-    // Carry activity log (agent responses)
-    const oldLog = get().activityLog[id] || [];
-    if (oldLog.length > 0) {
-      set((s) => {
-        const log = { ...s.activityLog };
-        log[newAgent.id] = [...oldLog];
-        try { localStorage.setItem('groove:activityLog', JSON.stringify(log)); } catch {}
-        return { activityLog: log };
-      });
-    }
-    // Also carry token timeline for continuity in stats
-    const oldTimeline = get().tokenTimeline[id] || [];
-    if (oldTimeline.length > 0) {
-      set((s) => {
-        const timeline = { ...s.tokenTimeline };
-        timeline[newAgent.id] = [...oldTimeline];
-        return { tokenTimeline: timeline };
-      });
-    }
-    get().selectAgent(newAgent.id);
-    get().addChatMessage(newAgent.id, 'system', 'agent resumed with context');
-    return newAgent;
   },
 
   async queryAgent(id, message) {
     get().addChatMessage(id, 'user', message, true);
-    const res = await fetch(`${API_BASE}/api/agents/${id}/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      get().addChatMessage(id, 'system', `query failed: ${err.error || 'unknown error'}`);
-      throw new Error(err.error || 'Query failed');
+    try {
+      const data = await api.post(`/agents/${id}/query`, { message });
+      get().addChatMessage(id, 'agent', data.response);
+      return data;
+    } catch (err) {
+      get().addChatMessage(id, 'system', `query failed: ${err.message}`);
+      throw err;
     }
-    const data = await res.json();
-    get().addChatMessage(id, 'agent', data.response);
-    return data;
   },
 
-  // Editor actions
+  // ── Editor ────────────────────────────────────────────────
+
   async openFile(path) {
-    // Already loaded — just switch tab
     if (get().editorFiles[path] || get().editorOpenTabs.includes(path)) {
       set((s) => ({
         editorActiveFile: path,
@@ -312,45 +558,24 @@ export const useGrooveStore = create((set, get) => ({
       }));
       return;
     }
-
-    // Media files — open as tab directly (served via /api/files/raw)
     const ext = path.split('.').pop()?.toLowerCase();
-    const MEDIA_EXTS = ['png','jpg','jpeg','gif','svg','webp','ico','bmp','avif','mp4','webm','mov','avi','mkv','ogv'];
-    if (MEDIA_EXTS.includes(ext)) {
-      set((s) => ({
-        editorActiveFile: path,
-        editorOpenTabs: [...s.editorOpenTabs, path],
-      }));
+    const MEDIA = ['png','jpg','jpeg','gif','svg','webp','ico','bmp','avif','mp4','webm','mov','avi','mkv','ogv'];
+    if (MEDIA.includes(ext)) {
+      set((s) => ({ editorActiveFile: path, editorOpenTabs: [...s.editorOpenTabs, path] }));
       return;
     }
-
     try {
-      const res = await fetch(`${API_BASE}/api/files/read?path=${encodeURIComponent(path)}`);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        get().showStatus(err.error || 'Failed to read file');
-        return;
-      }
-      const data = await res.json();
-      if (data.binary) {
-        get().showStatus('Binary file — cannot open');
-        return;
-      }
+      const data = await api.get(`/files/read?path=${encodeURIComponent(path)}`);
+      if (data.binary) { get().addToast('warning', 'Binary file — cannot open'); return; }
       set((s) => ({
-        editorFiles: {
-          ...s.editorFiles,
-          [path]: { content: data.content, originalContent: data.content, language: data.language, loadedAt: Date.now() },
-        },
+        editorFiles: { ...s.editorFiles, [path]: { content: data.content, originalContent: data.content, language: data.language, loadedAt: Date.now() } },
         editorActiveFile: path,
         editorOpenTabs: s.editorOpenTabs.includes(path) ? s.editorOpenTabs : [...s.editorOpenTabs, path],
       }));
-      // Tell daemon to watch this file
       const ws = get().ws;
-      if (ws?.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'editor:watch', path }));
-      }
-    } catch {
-      get().showStatus('Failed to open file');
+      if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'editor:watch', path }));
+    } catch (err) {
+      get().addToast('error', 'Failed to open file', err.message);
     }
   },
 
@@ -368,212 +593,114 @@ export const useGrooveStore = create((set, get) => ({
       }
       return { editorOpenTabs: tabs, editorFiles: files, editorChangedFiles: changed, editorActiveFile: active };
     });
-    // Stop watching
     const ws = get().ws;
-    if (ws?.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'editor:unwatch', path }));
-    }
+    if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'editor:unwatch', path }));
   },
 
-  setActiveFile(path) {
-    set({ editorActiveFile: path });
-  },
+  setActiveFile(path) { set({ editorActiveFile: path }); },
 
   updateFileContent(path, content) {
-    set((s) => ({
-      editorFiles: {
-        ...s.editorFiles,
-        [path]: { ...s.editorFiles[path], content },
-      },
-    }));
+    set((s) => ({ editorFiles: { ...s.editorFiles, [path]: { ...s.editorFiles[path], content } } }));
   },
 
   async saveFile(path) {
     const file = get().editorFiles[path];
     if (!file) return;
     try {
-      const res = await fetch(`${API_BASE}/api/files/write`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, content: file.content }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        get().showStatus(err.error || 'Save failed');
-        return;
-      }
+      await api.post('/files/write', { path, content: file.content });
       set((s) => ({
-        editorFiles: {
-          ...s.editorFiles,
-          [path]: { ...s.editorFiles[path], originalContent: file.content },
-        },
-        editorChangedFiles: (() => {
-          const c = { ...s.editorChangedFiles };
-          delete c[path];
-          return c;
-        })(),
+        editorFiles: { ...s.editorFiles, [path]: { ...s.editorFiles[path], originalContent: file.content } },
+        editorChangedFiles: (() => { const c = { ...s.editorChangedFiles }; delete c[path]; return c; })(),
         editorRecentSaves: { ...s.editorRecentSaves, [path]: Date.now() },
       }));
-      get().showStatus('Saved');
-    } catch {
-      get().showStatus('Save failed');
+      get().addToast('success', 'File saved');
+    } catch (err) {
+      get().addToast('error', 'Save failed', err.message);
     }
   },
 
   async reloadFile(path) {
     try {
-      const res = await fetch(`${API_BASE}/api/files/read?path=${encodeURIComponent(path)}`);
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await api.get(`/files/read?path=${encodeURIComponent(path)}`);
       if (data.binary) return;
       set((s) => ({
-        editorFiles: {
-          ...s.editorFiles,
-          [path]: { content: data.content, originalContent: data.content, language: data.language, loadedAt: Date.now() },
-        },
-        editorChangedFiles: (() => {
-          const c = { ...s.editorChangedFiles };
-          delete c[path];
-          return c;
-        })(),
+        editorFiles: { ...s.editorFiles, [path]: { content: data.content, originalContent: data.content, language: data.language, loadedAt: Date.now() } },
+        editorChangedFiles: (() => { const c = { ...s.editorChangedFiles }; delete c[path]; return c; })(),
       }));
     } catch { /* ignore */ }
   },
 
   dismissFileChange(path) {
-    set((s) => {
-      const c = { ...s.editorChangedFiles };
-      delete c[path];
-      return { editorChangedFiles: c };
-    });
+    set((s) => { const c = { ...s.editorChangedFiles }; delete c[path]; return { editorChangedFiles: c }; });
   },
 
   async fetchTreeDir(dirPath) {
     try {
-      const res = await fetch(`${API_BASE}/api/files/tree?path=${encodeURIComponent(dirPath)}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      set((s) => ({
-        editorTreeCache: { ...s.editorTreeCache, [dirPath]: data.entries },
-      }));
+      const data = await api.get(`/files/tree?path=${encodeURIComponent(dirPath)}`);
+      set((s) => ({ editorTreeCache: { ...s.editorTreeCache, [dirPath]: data.entries } }));
     } catch { /* ignore */ }
   },
 
   async createFile(relPath) {
     try {
-      const res = await fetch(`${API_BASE}/api/files/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: relPath }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        get().showStatus(err.error || 'Create failed');
-        return false;
-      }
-      // Refresh parent directory in tree
-      const parentDir = relPath.includes('/') ? relPath.split('/').slice(0, -1).join('/') : '';
-      await get().fetchTreeDir(parentDir);
-      get().showStatus('File created');
+      await api.post('/files/create', { path: relPath });
+      const parent = relPath.includes('/') ? relPath.split('/').slice(0, -1).join('/') : '';
+      await get().fetchTreeDir(parent);
+      get().addToast('success', 'File created');
       return true;
-    } catch {
-      get().showStatus('Create failed');
+    } catch (err) {
+      get().addToast('error', 'Create failed', err.message);
       return false;
     }
   },
 
   async createDir(relPath) {
     try {
-      const res = await fetch(`${API_BASE}/api/files/mkdir`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: relPath }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        get().showStatus(err.error || 'Create failed');
-        return false;
-      }
-      const parentDir = relPath.includes('/') ? relPath.split('/').slice(0, -1).join('/') : '';
-      await get().fetchTreeDir(parentDir);
-      get().showStatus('Folder created');
+      await api.post('/files/mkdir', { path: relPath });
+      const parent = relPath.includes('/') ? relPath.split('/').slice(0, -1).join('/') : '';
+      await get().fetchTreeDir(parent);
+      get().addToast('success', 'Folder created');
       return true;
-    } catch {
-      get().showStatus('Create failed');
+    } catch (err) {
+      get().addToast('error', 'Create failed', err.message);
       return false;
     }
   },
 
   async deleteFile(relPath) {
     try {
-      const res = await fetch(`${API_BASE}/api/files/delete?path=${encodeURIComponent(relPath)}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        get().showStatus(err.error || 'Delete failed');
-        return false;
-      }
-      // Close tab if open
-      if (get().editorOpenTabs.includes(relPath)) {
-        get().closeFile(relPath);
-      }
-      // Refresh parent
-      const parentDir = relPath.includes('/') ? relPath.split('/').slice(0, -1).join('/') : '';
-      await get().fetchTreeDir(parentDir);
-      // Also clear cached children if it was a dir
-      set((s) => {
-        const cache = { ...s.editorTreeCache };
-        delete cache[relPath];
-        return { editorTreeCache: cache };
-      });
-      get().showStatus('Deleted');
+      await api.delete(`/files/delete?path=${encodeURIComponent(relPath)}`);
+      if (get().editorOpenTabs.includes(relPath)) get().closeFile(relPath);
+      const parent = relPath.includes('/') ? relPath.split('/').slice(0, -1).join('/') : '';
+      await get().fetchTreeDir(parent);
+      set((s) => { const cache = { ...s.editorTreeCache }; delete cache[relPath]; return { editorTreeCache: cache }; });
+      get().addToast('success', 'Deleted');
       return true;
-    } catch {
-      get().showStatus('Delete failed');
+    } catch (err) {
+      get().addToast('error', 'Delete failed', err.message);
       return false;
     }
   },
 
   async renameFile(oldPath, newPath) {
     try {
-      const res = await fetch(`${API_BASE}/api/files/rename`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ oldPath, newPath }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        get().showStatus(err.error || 'Rename failed');
-        return false;
-      }
-      // Update open tabs if renamed file was open
+      await api.post('/files/rename', { oldPath, newPath });
       set((s) => {
         const tabs = s.editorOpenTabs.map((t) => t === oldPath ? newPath : t);
         const files = { ...s.editorFiles };
-        if (files[oldPath]) {
-          files[newPath] = files[oldPath];
-          delete files[oldPath];
-        }
+        if (files[oldPath]) { files[newPath] = files[oldPath]; delete files[oldPath]; }
         const active = s.editorActiveFile === oldPath ? newPath : s.editorActiveFile;
         return { editorOpenTabs: tabs, editorFiles: files, editorActiveFile: active };
       });
-      // Refresh both parent dirs
       const oldParent = oldPath.includes('/') ? oldPath.split('/').slice(0, -1).join('/') : '';
       const newParent = newPath.includes('/') ? newPath.split('/').slice(0, -1).join('/') : '';
       await get().fetchTreeDir(oldParent);
       if (newParent !== oldParent) await get().fetchTreeDir(newParent);
-      get().showStatus('Renamed');
+      get().addToast('success', 'Renamed');
       return true;
-    } catch {
-      get().showStatus('Rename failed');
+    } catch (err) {
+      get().addToast('error', 'Rename failed', err.message);
       return false;
     }
-  },
-
-  addCommand(text) {
-    set((s) => ({
-      commandHistory: [...s.commandHistory.slice(-49), text],
-    }));
   },
 }));

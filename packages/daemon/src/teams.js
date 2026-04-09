@@ -1,203 +1,105 @@
-// GROOVE — Teams (Saved Agent Configurations)
+// GROOVE — Teams (Live Agent Groups)
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
-import { validateTeamName, sanitizeForFilename, validateAgentConfig } from './validate.js';
+import { randomUUID } from 'crypto';
+import { validateTeamName } from './validate.js';
 
 export class Teams {
   constructor(daemon) {
     this.daemon = daemon;
-    this.teamsDir = resolve(daemon.grooveDir, 'teams');
-    this.activeTeam = null; // Name of the currently active team
-    this.autoSave = false;
-
-    mkdirSync(this.teamsDir, { recursive: true });
+    this.filePath = resolve(daemon.grooveDir, 'teams.json');
+    this.teams = new Map();
+    this._load();
+    this._ensureDefault();
   }
 
-  // Save current agents as a team
-  save(name) {
+  _load() {
+    if (!existsSync(this.filePath)) return;
+    try {
+      const data = JSON.parse(readFileSync(this.filePath, 'utf8'));
+      if (Array.isArray(data)) {
+        for (const team of data) this.teams.set(team.id, team);
+      }
+    } catch { /* ignore corrupt file */ }
+  }
+
+  _save() {
+    writeFileSync(this.filePath, JSON.stringify([...this.teams.values()], null, 2));
+  }
+
+  _ensureDefault() {
+    const hasDefault = [...this.teams.values()].some((t) => t.isDefault);
+    if (!hasDefault) {
+      const id = randomUUID().slice(0, 8);
+      const team = { id, name: 'Default', isDefault: true, createdAt: new Date().toISOString() };
+      this.teams.set(id, team);
+      this._save();
+    }
+  }
+
+  create(name) {
     validateTeamName(name);
-
-    const agents = this.daemon.registry.getAll();
-    if (agents.length === 0) throw new Error('No agents to save');
-
-    const team = {
-      name,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      agents: agents.map((a) => ({
-        role: a.role,
-        scope: a.scope,
-        provider: a.provider,
-        model: a.model,
-        prompt: a.prompt,
-        name: a.name,
-      })),
-    };
-
-    const path = resolve(this.teamsDir, `${this.sanitizeName(name)}.json`);
-    writeFileSync(path, JSON.stringify(team, null, 2));
-
-    this.activeTeam = name;
-    this.autoSave = true;
-
+    const id = randomUUID().slice(0, 8);
+    const team = { id, name, isDefault: false, createdAt: new Date().toISOString() };
+    this.teams.set(id, team);
+    this._save();
+    this.daemon.broadcast({ type: 'team:created', team });
     return team;
   }
 
-  // Load a team — spawns all agents from config
-  async load(name) {
-    const team = this.get(name);
-    if (!team) throw new Error(`Team "${name}" not found`);
-
-    // Kill all running agents first
-    await this.daemon.processes.killAll();
-
-    // Clear registry of old entries
-    const old = this.daemon.registry.getAll();
-    for (const a of old) this.daemon.registry.remove(a.id);
-
-    // Spawn all agents from team config
-    const spawned = [];
-    for (const config of team.agents) {
-      try {
-        const agent = await this.daemon.processes.spawn(config);
-        spawned.push(agent);
-      } catch (err) {
-        console.error(`  Failed to spawn ${config.name || config.role}:`, err.message);
-      }
-    }
-
-    this.activeTeam = name;
-    this.autoSave = true;
-
-    this.daemon.broadcast({
-      type: 'team:loaded',
-      name,
-      agentCount: spawned.length,
-    });
-
-    return { name, agents: spawned };
+  get(id) {
+    return this.teams.get(id) || null;
   }
 
-  // Get a team definition by name
-  get(name) {
-    const path = resolve(this.teamsDir, `${this.sanitizeName(name)}.json`);
-    if (!existsSync(path)) return null;
-    try {
-      return JSON.parse(readFileSync(path, 'utf8'));
-    } catch {
-      return null;
-    }
-  }
-
-  // List all saved teams
   list() {
-    if (!existsSync(this.teamsDir)) return [];
-
-    return readdirSync(this.teamsDir)
-      .filter((f) => f.endsWith('.json'))
-      .map((f) => {
-        try {
-          const data = JSON.parse(readFileSync(resolve(this.teamsDir, f), 'utf8'));
-          return {
-            name: data.name,
-            agents: data.agents?.length || 0,
-            createdAt: data.createdAt,
-            updatedAt: data.updatedAt,
-          };
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean);
+    return [...this.teams.values()];
   }
 
-  // Delete a team
-  delete(name) {
-    const path = resolve(this.teamsDir, `${this.sanitizeName(name)}.json`);
-    if (!existsSync(path)) throw new Error(`Team "${name}" not found`);
-    unlinkSync(path);
-    if (this.activeTeam === name) {
-      this.activeTeam = null;
-      this.autoSave = false;
+  getDefault() {
+    return [...this.teams.values()].find((t) => t.isDefault) || null;
+  }
+
+  rename(id, name) {
+    validateTeamName(name);
+    const team = this.teams.get(id);
+    if (!team) throw new Error('Team not found');
+    team.name = name;
+    this._save();
+    this.daemon.broadcast({ type: 'team:updated', team });
+    return team;
+  }
+
+  delete(id) {
+    const team = this.teams.get(id);
+    if (!team) throw new Error('Team not found');
+    if (team.isDefault) throw new Error('Cannot delete the default team');
+
+    const defaultTeam = this.getDefault();
+    const agents = this.daemon.registry.getAll().filter((a) => a.teamId === id);
+    for (const agent of agents) {
+      this.daemon.registry.update(agent.id, { teamId: defaultTeam.id });
     }
+
+    this.teams.delete(id);
+    this._save();
+    this.daemon.broadcast({ type: 'team:deleted', teamId: id, movedTo: defaultTeam.id });
     return true;
   }
 
-  // Export team as portable JSON string
-  export(name) {
-    const team = this.get(name);
-    if (!team) throw new Error(`Team "${name}" not found`);
-    return JSON.stringify(team, null, 2);
-  }
-
-  // Import team from JSON string
-  import(jsonStr) {
-    let team;
-    try {
-      team = JSON.parse(jsonStr);
-    } catch {
-      throw new Error('Invalid JSON');
-    }
-
-    if (!team.name || !Array.isArray(team.agents)) {
-      throw new Error('Invalid team format: needs "name" and "agents" array');
-    }
-
-    validateTeamName(team.name);
-
-    if (team.agents.length > 20) {
-      throw new Error('Too many agents in team (max 20)');
-    }
-
-    // Validate each agent config
-    for (const a of team.agents) {
-      validateAgentConfig(a);
-    }
-
-    team.updatedAt = new Date().toISOString();
-    const path = resolve(this.teamsDir, `${this.sanitizeName(team.name)}.json`);
-    writeFileSync(path, JSON.stringify(team, null, 2));
-
-    return team;
-  }
-
-  // Auto-save: called when agents change while a team is active
-  onAgentChange() {
-    if (!this.activeTeam || !this.autoSave) return;
-
-    const agents = this.daemon.registry.getAll().filter(
-      (a) => a.status === 'running' || a.status === 'starting'
-    );
-
-    if (agents.length === 0) return;
-
-    const path = resolve(this.teamsDir, `${this.sanitizeName(this.activeTeam)}.json`);
-    if (!existsSync(path)) return;
-
-    try {
-      const team = JSON.parse(readFileSync(path, 'utf8'));
-      team.updatedAt = new Date().toISOString();
-      team.agents = agents.map((a) => ({
-        role: a.role,
-        scope: a.scope,
-        provider: a.provider,
-        model: a.model,
-        prompt: a.prompt,
-        name: a.name,
-      }));
-      writeFileSync(path, JSON.stringify(team, null, 2));
-    } catch {
-      // Non-critical — don't break the flow
+  // Migrate old agents (teamName but no teamId) to default team
+  migrateAgents() {
+    const defaultTeam = this.getDefault();
+    if (!defaultTeam) return;
+    for (const agent of this.daemon.registry.getAll()) {
+      if (!agent.teamId) {
+        this.daemon.registry.update(agent.id, { teamId: defaultTeam.id });
+      }
     }
   }
 
-  getActiveTeam() {
-    return this.activeTeam;
-  }
-
-  sanitizeName(name) {
-    return sanitizeForFilename(name);
-  }
+  // Backward compat stubs
+  onAgentChange() {}
+  getActiveTeam() { return this.getDefault()?.name || null; }
 }

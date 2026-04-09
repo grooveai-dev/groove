@@ -12,7 +12,7 @@ import { agents } from '../src/commands/agents.js';
 import { status } from '../src/commands/status.js';
 import { nuke } from '../src/commands/nuke.js';
 import { rotate } from '../src/commands/rotate.js';
-import { teamSave, teamLoad, teamList, teamDelete, teamExport, teamImport } from '../src/commands/team.js';
+import { teamCreate, teamSave, teamLoad, teamList, teamDelete, teamRename, teamExport, teamImport } from '../src/commands/team.js';
 import { approvals, approve, reject } from '../src/commands/approve.js';
 import { providers, setKey } from '../src/commands/providers.js';
 import { configShow, configSet } from '../src/commands/config.js';
@@ -24,7 +24,7 @@ import { federationPair, federationUnpair, federationList, federationStatus } fr
 program
   .name('groove')
   .description('Agent orchestration layer for AI coding tools')
-  .version('0.4.0');
+  .version('0.19.0');
 
 program
   .command('start')
@@ -74,13 +74,15 @@ program
   .action(rotate);
 
 // Teams
-const team = program.command('team').description('Manage saved agent teams');
-team.command('save <name>').description('Save current agents as a team').action(teamSave);
-team.command('load <name>').description('Load and spawn a saved team').action(teamLoad);
-team.command('list').description('List saved teams').action(teamList);
-team.command('delete <name>').description('Delete a saved team').action(teamDelete);
-team.command('export <name>').description('Export team as JSON').action(teamExport);
-team.command('import <file>').description('Import team from JSON file').action(teamImport);
+const team = program.command('team').description('Manage agent teams');
+team.command('create <name>').description('Create a new team').action(teamCreate);
+team.command('save <name>').description('Create a new team (alias)').action(teamSave);
+team.command('list').description('List teams').action(teamList);
+team.command('delete <id>').description('Delete a team by ID').action(teamDelete);
+team.command('rename <id> <name>').description('Rename a team').action(teamRename);
+team.command('load <name>').description('(deprecated)').action(teamLoad);
+team.command('export <name>').description('(deprecated)').action(teamExport);
+team.command('import <file>').description('(deprecated)').action(teamImport);
 
 // Approvals
 program.command('approvals').description('List pending approvals').action(approvals);

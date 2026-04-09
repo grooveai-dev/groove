@@ -11,11 +11,11 @@ export class CodexProvider extends Provider {
   static authType = 'api-key';
   static envKey = 'OPENAI_API_KEY';
   static models = [
-    { id: 'o3', name: 'o3', tier: 'heavy' },
-    { id: 'o4-mini', name: 'o4-mini', tier: 'medium' },
-    { id: 'gpt-4.1', name: 'GPT-4.1', tier: 'heavy' },
-    { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', tier: 'medium' },
-    { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', tier: 'light' },
+    { id: 'o3', name: 'o3', tier: 'heavy', pricing: { input: 0.01, output: 0.04 } },
+    { id: 'o4-mini', name: 'o4-mini', tier: 'medium', pricing: { input: 0.001, output: 0.004 } },
+    { id: 'gpt-4.1', name: 'GPT-4.1', tier: 'heavy', pricing: { input: 0.002, output: 0.008 } },
+    { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', tier: 'medium', pricing: { input: 0.0004, output: 0.0016 } },
+    { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', tier: 'light', pricing: { input: 0.0001, output: 0.0004 } },
   ];
 
   static isInstalled() {
@@ -55,8 +55,17 @@ export class CodexProvider extends Provider {
     return { command: 'codex', args, env: {} };
   }
 
-  switchModel() {
+  switchModel(agent, newModel) {
     return false; // Codex doesn't support mid-session model switch
+  }
+
+  static estimateCost(tokens, modelId) {
+    const model = CodexProvider.models.find((m) => m.id === modelId);
+    if (!model?.pricing) return 0;
+    // Rough 3:1 input:output ratio estimate
+    const inputTokens = Math.round(tokens * 0.75);
+    const outputTokens = tokens - inputTokens;
+    return (inputTokens / 1000) * model.pricing.input + (outputTokens / 1000) * model.pricing.output;
   }
 
   parseOutput(line) {
@@ -68,7 +77,12 @@ export class CodexProvider extends Provider {
     try {
       const data = JSON.parse(trimmed);
       if (data.usage?.total_tokens) {
-        return { type: 'activity', data: trimmed, tokensUsed: data.usage.total_tokens };
+        const tokens = data.usage.total_tokens;
+        return {
+          type: 'activity', data: trimmed, tokensUsed: tokens,
+          estimatedCostUsd: CodexProvider.estimateCost(tokens, data.model),
+          costSource: 'estimated',
+        };
       }
     } catch { /* plain text */ }
 
@@ -80,6 +94,8 @@ export class CodexProvider extends Provider {
       type: 'activity',
       data: trimmed,
       tokensUsed: estimatedTokens,
+      estimatedCostUsd: 0, // Can't estimate without knowing the model here
+      costSource: 'estimated',
     };
   }
 }

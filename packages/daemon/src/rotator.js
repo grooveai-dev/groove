@@ -119,6 +119,7 @@ export class Rotator extends EventEmitter {
         permission: agent.permission || 'full',
         workingDir: agent.workingDir,
         name: agent.name, // Keep the same name for continuity
+        teamId: agent.teamId, // Keep the same team
       });
 
       // Carry cumulative token stats so the dashboard shows lifetime totals
@@ -138,6 +139,15 @@ export class Rotator extends EventEmitter {
       // Keep last 100 rotations
       if (this.rotationHistory.length > 100) {
         this.rotationHistory = this.rotationHistory.slice(-100);
+      }
+
+      // Record rotation lifecycle event for timeline
+      if (this.daemon.timeline) {
+        this.daemon.timeline.recordEvent('rotate', {
+          agentId: newAgent.id, oldAgentId: agentId,
+          agentName: newAgent.name, role: agent.role,
+          tokensBefore: agent.tokensUsed,
+        });
       }
 
       this.daemon.broadcast({

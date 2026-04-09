@@ -195,12 +195,16 @@ export class ProcessManager {
 
     // Apply role-specific prompt prefix so agents always get their role constraints
     const rolePrompt = ROLE_PROMPTS[agent.role];
-    if (rolePrompt && spawnConfig.prompt) {
-      if (spawnConfig.prompt.startsWith('# Agent Handoff Brief')) {
+    if (rolePrompt) {
+      if (!spawnConfig.prompt) {
+        spawnConfig.prompt = rolePrompt + 'No task has been assigned yet. Introduce yourself briefly and ask the user what they would like you to work on. Stay focused — do not analyze the codebase until given a task.';
+      } else if (spawnConfig.prompt.startsWith('# Agent Handoff Brief')) {
         spawnConfig.prompt += '\n\n## Role Constraints\n\n' + rolePrompt.trim();
       } else {
         spawnConfig.prompt = rolePrompt + 'Task: ' + spawnConfig.prompt;
       }
+    } else if (!spawnConfig.prompt) {
+      spawnConfig.prompt = `You are a ${agent.role} agent. No task has been assigned yet. Introduce yourself briefly and ask the user what they would like you to work on. Stay focused — do not analyze the codebase until given a task.`;
     }
 
     // Apply PM review instructions for Auto permission mode
@@ -277,6 +281,14 @@ For normal file edits within your scope, proceed without review.
     this.handles.set(agent.id, { proc, logStream });
     registry.update(agent.id, { status: 'running', pid: proc.pid });
 
+    // Record spawn lifecycle event for timeline
+    if (this.daemon.timeline) {
+      this.daemon.timeline.recordEvent('spawn', {
+        agentId: agent.id, agentName: agent.name, role: agent.role,
+        provider: agent.provider, model: agent.model,
+      });
+    }
+
     // Capture stdout (stream-json from Claude Code)
     proc.stdout.on('data', (chunk) => {
       logStream.write(chunk);
@@ -295,9 +307,28 @@ For normal file edits within your scope, proceed without review.
           const current = registry.get(agent.id);
           if (current) {
             updates.tokensUsed = current.tokensUsed + output.tokensUsed;
-            // Feed token tracker for savings calculations
-            this.daemon.tokens.record(agent.id, output.tokensUsed);
+            // Feed token tracker with full breakdown for savings calculations
+            this.daemon.tokens.record(agent.id, {
+              tokens: output.tokensUsed,
+              inputTokens: output.inputTokens,
+              outputTokens: output.outputTokens,
+              cacheReadTokens: output.cacheReadTokens,
+              cacheCreationTokens: output.cacheCreationTokens,
+              model: output.model,
+              estimatedCostUsd: output.estimatedCostUsd,
+            });
           }
+        }
+        // Record session result data (cost, duration, turns)
+        if (output.type === 'result') {
+          this.daemon.tokens.recordResult(agent.id, {
+            costUsd: output.cost, durationMs: output.duration, turns: output.turns,
+          });
+          const resultUpdates = {};
+          if (output.cost) resultUpdates.costUsd = (registry.get(agent.id)?.costUsd || 0) + output.cost;
+          if (output.duration) resultUpdates.durationMs = output.duration;
+          if (output.turns) resultUpdates.turns = output.turns;
+          if (Object.keys(resultUpdates).length > 0) registry.update(agent.id, resultUpdates);
         }
         if (output.contextUsage !== undefined) {
           updates.contextUsage = output.contextUsage;
@@ -332,6 +363,16 @@ For normal file edits within your scope, proceed without review.
           : 'crashed';
 
       registry.update(agent.id, { status: finalStatus, pid: null });
+
+      // Record lifecycle event for timeline
+      if (this.daemon.timeline) {
+        const agentData = registry.get(agent.id);
+        this.daemon.timeline.recordEvent(finalStatus === 'completed' ? 'complete' : finalStatus === 'crashed' ? 'crash' : 'kill', {
+          agentId: agent.id, agentName: agent.name, role: agent.role,
+          finalTokens: agentData?.tokensUsed || 0, costUsd: agentData?.costUsd || 0,
+          exitCode: code,
+        });
+      }
 
       this.daemon.broadcast({
         type: 'agent:exit',
@@ -464,6 +505,7 @@ For normal file edits within your scope, proceed without review.
       permission: config.permission,
       workingDir: config.workingDir || this.daemon.config?.defaultWorkingDir || undefined,
       name: config.name,
+      teamId: config.teamId,
     });
 
     // Carry cumulative tokens
@@ -506,8 +548,26 @@ For normal file edits within your scope, proceed without review.
           const current = registry.get(newAgent.id);
           if (current) {
             updates.tokensUsed = current.tokensUsed + output.tokensUsed;
-            this.daemon.tokens.record(newAgent.id, output.tokensUsed);
+            this.daemon.tokens.record(newAgent.id, {
+              tokens: output.tokensUsed,
+              inputTokens: output.inputTokens,
+              outputTokens: output.outputTokens,
+              cacheReadTokens: output.cacheReadTokens,
+              cacheCreationTokens: output.cacheCreationTokens,
+              model: output.model,
+              estimatedCostUsd: output.estimatedCostUsd,
+            });
           }
+        }
+        if (output.type === 'result') {
+          this.daemon.tokens.recordResult(newAgent.id, {
+            costUsd: output.cost, durationMs: output.duration, turns: output.turns,
+          });
+          const resultUpdates = {};
+          if (output.cost) resultUpdates.costUsd = (registry.get(newAgent.id)?.costUsd || 0) + output.cost;
+          if (output.duration) resultUpdates.durationMs = output.duration;
+          if (output.turns) resultUpdates.turns = output.turns;
+          if (Object.keys(resultUpdates).length > 0) registry.update(newAgent.id, resultUpdates);
         }
         if (output.contextUsage !== undefined) updates.contextUsage = output.contextUsage;
         registry.update(newAgent.id, updates);

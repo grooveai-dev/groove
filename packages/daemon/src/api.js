@@ -5,7 +5,6 @@ import express from 'express';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream } from 'fs';
-import { spawn as cpSpawn } from 'child_process';
 import { lookup as mimeLookup } from './mimetypes.js';
 import { listProviders, getProvider } from './providers/index.js';
 import { validateAgentConfig } from './validate.js';
@@ -60,6 +59,7 @@ export function createApi(app, daemon) {
   app.post('/api/agents', async (req, res) => {
     try {
       const config = validateAgentConfig(req.body);
+      config.teamId = req.body.teamId || daemon.teams.getDefault()?.id || null;
       const agent = await daemon.processes.spawn(config);
       daemon.audit.log('agent.spawn', { id: agent.id, role: agent.role, provider: agent.provider });
       res.status(201).json(agent);
@@ -178,59 +178,40 @@ export function createApi(app, daemon) {
     });
   });
 
-  // --- Teams ---
+  // --- Teams (live agent groups) ---
 
   app.get('/api/teams', (req, res) => {
     res.json({
       teams: daemon.teams.list(),
-      activeTeam: daemon.teams.getActiveTeam(),
+      defaultTeamId: daemon.teams.getDefault()?.id || null,
     });
   });
 
   app.post('/api/teams', (req, res) => {
     try {
-      const team = daemon.teams.save(req.body.name);
-      daemon.audit.log('team.save', { name: req.body.name });
+      const team = daemon.teams.create(req.body.name);
+      daemon.audit.log('team.create', { id: team.id, name: team.name });
       res.status(201).json(team);
     } catch (err) {
       res.status(400).json({ error: err.message });
     }
   });
 
-  app.post('/api/teams/:name/load', async (req, res) => {
+  app.patch('/api/teams/:id', (req, res) => {
     try {
-      const result = await daemon.teams.load(req.params.name);
-      daemon.audit.log('team.load', { name: req.params.name });
-      res.json(result);
+      const team = daemon.teams.rename(req.params.id, req.body.name);
+      daemon.audit.log('team.rename', { id: team.id, name: team.name });
+      res.json(team);
     } catch (err) {
       res.status(400).json({ error: err.message });
     }
   });
 
-  app.delete('/api/teams/:name', (req, res) => {
+  app.delete('/api/teams/:id', (req, res) => {
     try {
-      daemon.teams.delete(req.params.name);
-      daemon.audit.log('team.delete', { name: req.params.name });
+      daemon.teams.delete(req.params.id);
+      daemon.audit.log('team.delete', { id: req.params.id });
       res.json({ ok: true });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.get('/api/teams/:name/export', (req, res) => {
-    try {
-      const json = daemon.teams.export(req.params.name);
-      res.type('application/json').send(json);
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/teams/import', (req, res) => {
-    try {
-      const team = daemon.teams.import(JSON.stringify(req.body));
-      daemon.audit.log('team.import', { name: team.name });
-      res.status(201).json(team);
     } catch (err) {
       res.status(400).json({ error: err.message });
     }
@@ -428,6 +409,116 @@ Keep responses concise. Help them think, don't lecture them about the system the
     res.json(daemon.adaptive.getAllProfiles());
   });
 
+  // --- Marketplace Auth ---
+
+  // Browser login callback — Studio redirects here with the JWT
+  app.get('/api/auth/callback', async (req, res) => {
+    const { token } = req.query;
+    if (!token) {
+      return res.status(400).send('<html><body><h2>Missing token</h2><p>Login failed. Close this tab and try again.</p></body></html>');
+    }
+
+    const user = await daemon.skills.setAuth(token);
+    if (!user) {
+      return res.send(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Groove — Login Failed</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#1a1e25;color:#bcc2cd;font-family:-apple-system,system-ui,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh}
+  .card{text-align:center;padding:48px;border-radius:8px;border:1px solid #2c313a;background:#20242b;max-width:380px;width:100%}
+  .icon{width:48px;height:48px;border-radius:12px;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;background:rgba(224,108,117,0.1);border:1px solid rgba(224,108,117,0.2)}
+  .icon svg{width:24px;height:24px;color:#e06c75}
+  h2{font-size:16px;font-weight:600;color:#e6e6e6;margin-bottom:8px}
+  p{font-size:13px;color:#505862;line-height:1.5}
+</style>
+</head><body>
+<div class="card">
+  <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+  <h2>Login failed</h2>
+  <p>Invalid or expired token. Close this tab and try again from the app.</p>
+</div>
+</body></html>`);
+    }
+
+    const displayName = user?.displayName || user?.id || '';
+    res.send(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Groove — Signed In</title>
+<link rel="icon" href="/favicon.png">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#1a1e25;color:#bcc2cd;font-family:-apple-system,system-ui,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden}
+  .card{text-align:center;padding:48px;border-radius:8px;border:1px solid #2c313a;background:#20242b;max-width:380px;width:100%}
+  .logo{width:48px;height:48px;border-radius:12px;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;background:rgba(51,175,188,0.1);border:1px solid rgba(51,175,188,0.2)}
+  .logo svg{width:24px;height:24px;color:#33afbc}
+  h2{font-size:16px;font-weight:600;color:#e6e6e6;margin-bottom:6px}
+  .user{font-size:13px;color:#33afbc;margin-bottom:16px}
+  p{font-size:13px;color:#505862;line-height:1.5}
+  .bar{width:120px;height:2px;background:#2c313a;border-radius:1px;margin:20px auto 0;overflow:hidden}
+  .bar span{display:block;height:100%;background:#33afbc;border-radius:1px;animation:close 3s linear forwards}
+  @keyframes close{from{width:100%}to{width:0%}}
+</style>
+</head><body>
+<div class="card">
+  <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+  <h2>Connected to Groove</h2>
+  ${displayName ? `<div class="user">${displayName}</div>` : ''}
+  <p>This tab will close automatically.</p>
+  <div class="bar"><span></span></div>
+</div>
+<script>setTimeout(()=>window.close(),3000)</script>
+</body></html>`);
+  });
+
+  // Auth status — returns current user or { authenticated: false }
+  app.get('/api/auth/status', async (req, res) => {
+    const user = daemon.skills.getUser();
+    const token = daemon.skills.getToken();
+    if (!user || !token) return res.json({ authenticated: false });
+    res.json({ authenticated: true, user });
+  });
+
+  // Validate stored token (hits remote API)
+  app.post('/api/auth/validate', async (req, res) => {
+    const user = await daemon.skills.validateAuth();
+    if (!user) return res.json({ authenticated: false });
+    res.json({ authenticated: true, user });
+  });
+
+  // Get login URL for browser redirect
+  app.get('/api/auth/login-url', (req, res) => {
+    res.json({ url: daemon.skills.getLoginUrl() });
+  });
+
+  // Logout — clear stored token
+  app.post('/api/auth/logout', async (req, res) => {
+    await daemon.skills.clearAuth();
+    res.json({ ok: true });
+  });
+
+  // User's purchases
+  app.get('/api/auth/purchases', async (req, res) => {
+    const purchases = await daemon.skills.getPurchases();
+    res.json({ purchases });
+  });
+
+  // Check single purchase
+  app.get('/api/auth/purchases/check/:skillId', async (req, res) => {
+    const purchased = await daemon.skills.checkPurchase(req.params.skillId);
+    res.json({ purchased });
+  });
+
+  // Start Stripe checkout for paid skill
+  app.post('/api/auth/checkout', async (req, res) => {
+    try {
+      const { skillId } = req.body;
+      if (!skillId) return res.status(400).json({ error: 'skillId required' });
+      const result = await daemon.skills.checkout(skillId);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // --- Skills Marketplace ---
 
   app.get('/api/skills/registry', async (req, res) => {
@@ -473,10 +564,29 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
-  app.get('/api/skills/:id/content', (req, res) => {
-    const content = daemon.skills.getContent(req.params.id);
-    if (!content) return res.status(404).json({ error: 'Skill not installed' });
-    res.json({ id: req.params.id, content });
+  // Import a local .md skill file
+  app.post('/api/skills/import', (req, res) => {
+    const { name, content } = req.body;
+    if (!content) return res.status(400).json({ error: 'content is required' });
+    if (!name) return res.status(400).json({ error: 'name is required' });
+
+    const id = name.toLowerCase().replace(/\.md$/i, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if (!id) return res.status(400).json({ error: 'Invalid skill name' });
+
+    const skillDir = resolve(daemon.skills.skillsDir, id);
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(resolve(skillDir, 'SKILL.md'), content);
+    daemon.audit.log('skill.import', { id, name });
+    res.json({ id, name, installed: true, source: 'local' });
+  });
+
+  app.get('/api/skills/:id/content', async (req, res) => {
+    try {
+      const result = await daemon.skills.getContentPreview(req.params.id);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // --- Agent Skills (attach/detach) ---
@@ -1293,28 +1403,70 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
     // Aggregate routing cost log by tier
     const routingByTier = { light: 0, medium: 0, heavy: 0 };
+    const costByTier = { light: 0, medium: 0, heavy: 0 };
     let autoRoutedCount = 0;
     for (const [, mode] of Object.entries(routingStatus.agentModes || {})) {
       if (mode.mode === 'auto') autoRoutedCount++;
     }
     for (const entry of daemon.router.costLog || []) {
       if (routingByTier[entry.tier] !== undefined) routingByTier[entry.tier]++;
+      if (entry.tokens && entry.tier) {
+        // Estimate cost by tier using median rates
+        const rates = { heavy: 0.045, medium: 0.009, light: 0.0024 };
+        costByTier[entry.tier] += (entry.tokens / 1000) * (rates[entry.tier] || 0.009);
+      }
     }
 
-    // Per-agent enriched data
-    const agentBreakdown = agents.map((a) => ({
-      id: a.id,
-      name: a.name,
-      role: a.role,
-      status: a.status,
-      provider: a.provider,
-      model: a.model || 'default',
-      routingMode: a.routingMode || 'fixed',
-      routingReason: a.routingReason || null,
-      tokens: a.tokensUsed || 0,
-      contextUsage: a.contextUsage || 0,
-      spawnedAt: a.spawnedAt,
-    }));
+    // Per-agent enriched data with quality signals
+    const agentBreakdown = agents.map((a) => {
+      const tokenData = daemon.tokens.getAgent(a.id);
+      const agentCacheTotal = (tokenData.cacheReadTokens || 0) + (tokenData.cacheCreationTokens || 0) + (tokenData.inputTokens || 0);
+
+      // Quality signals from classifier + adaptive
+      let quality = null;
+      try {
+        const signals = daemon.adaptive.extractSignals ? daemon.adaptive.extractSignals(a.id) : null;
+        const classification = daemon.classifier.classify(a.id);
+        if (signals || classification) {
+          quality = {
+            score: signals?.score || null,
+            errorCount: signals?.errorCount || 0,
+            toolCalls: signals?.toolCalls || 0,
+            toolFailures: signals?.toolFailures || 0,
+            toolSuccessRate: signals?.toolCalls > 0 ? 1 - (signals.toolFailures / signals.toolCalls) : 1,
+            filesWritten: signals?.filesWritten || 0,
+            fileChurn: signals?.fileChurn || 0,
+            repetitions: signals?.repetitions || 0,
+            tier: classification?.tier || 'medium',
+          };
+        }
+      } catch { /* classifier/adaptive may not have data for this agent */ }
+
+      return {
+        id: a.id,
+        name: a.name,
+        role: a.role,
+        status: a.status,
+        provider: a.provider,
+        model: a.model || 'default',
+        routingMode: a.routingMode || 'fixed',
+        routingReason: a.routingReason || null,
+        tokens: a.tokensUsed || 0,
+        costUsd: a.costUsd || tokenData.totalCostUsd || 0,
+        costSource: a.provider === 'claude-code' ? 'actual' : a.provider === 'ollama' ? 'local' : 'estimated',
+        inputTokens: tokenData.inputTokens || 0,
+        outputTokens: tokenData.outputTokens || 0,
+        cacheHitRate: agentCacheTotal > 0 ? Math.round(((tokenData.cacheReadTokens || 0) / agentCacheTotal) * 1000) / 1000 : 0,
+        contextUsage: a.contextUsage || 0,
+        durationMs: a.durationMs || tokenData.totalDurationMs || 0,
+        turns: a.turns || tokenData.totalTurns || 0,
+        modelDistribution: tokenData.modelDistribution || {},
+        teamId: a.teamId || null,
+        spawnedAt: a.spawnedAt,
+        lastActivity: a.lastActivity || null,
+        quality,
+      };
+    });
 
     // Adaptive profiles summary — include history for threshold drift charts
     const profiles = daemon.adaptive.getAllProfiles();
@@ -1332,6 +1484,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
     const lastSynthesis = daemon.journalist.getLastSynthesis();
     const journalistHistory = daemon.journalist.getHistory().slice(-10);
 
+    // Timeline data
+    const timelineData = daemon.timeline ? {
+      snapshots: daemon.timeline.getSnapshots(200),
+      events: daemon.timeline.getEvents(100),
+    } : { snapshots: [], events: [] };
+
     res.json({
       tokens: tokenSummary,
       agents: {
@@ -1344,6 +1502,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       routing: {
         autoRoutedCount,
         byTier: routingByTier,
+        costByTier,
         totalDecisions: daemon.router.costLog?.length || 0,
       },
       rotation: {
@@ -1356,6 +1515,8 @@ Keep responses concise. Help them think, don't lecture them about the system the
         lastSummary: lastSynthesis?.summary || '',
         recentHistory: journalistHistory,
       },
+      timeline: timelineData,
+      activeTeam: daemon.teams?.getActiveTeam?.() || null,
       uptime: process.uptime(),
     });
   });
@@ -1466,7 +1627,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   // Serve GUI static files (built GUI)
   const guiPath = resolve(__dirname, '../../gui/dist');
-  app.use(express.static(guiPath));
+  app.use(express.static(guiPath, { etag: false, maxAge: 0 }));
 
   // SPA fallback
   app.get('*', (req, res, next) => {

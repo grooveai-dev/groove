@@ -31,8 +31,4 @@ export class Provider {
   parseOutput(line) {
     return null;
   }
-
-  injectContext(agent, contextMarkdown) {
-    // Default: no-op
-  }
 }

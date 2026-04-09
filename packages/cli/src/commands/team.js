@@ -2,41 +2,32 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import chalk from 'chalk';
-import { readFileSync } from 'fs';
 import { apiCall } from '../client.js';
 
-export async function teamSave(name) {
+export async function teamCreate(name) {
   try {
     const team = await apiCall('POST', '/api/teams', { name });
-    console.log(chalk.green(`  Saved team "${team.name}"`) + ` (${team.agents.length} agents)`);
+    console.log(chalk.green(`  Created team "${team.name}"`) + ` (id: ${team.id})`);
   } catch (err) {
     console.error(chalk.red('  Failed:'), err.message);
     process.exit(1);
   }
 }
 
-export async function teamLoad(name) {
-  try {
-    console.log(chalk.yellow(`  Loading team "${name}"...`));
-    const result = await apiCall('POST', `/api/teams/${encodeURIComponent(name)}/load`);
-    console.log(chalk.green(`  Loaded "${name}"`), `— ${result.agents.length} agents spawned`);
-  } catch (err) {
-    console.error(chalk.red('  Failed:'), err.message);
-    process.exit(1);
-  }
-}
+// Backward compat alias
+export const teamSave = teamCreate;
 
 export async function teamList() {
   try {
-    const { teams, activeTeam } = await apiCall('GET', '/api/teams');
+    const { teams, defaultTeamId } = await apiCall('GET', '/api/teams');
     if (teams.length === 0) {
-      console.log(chalk.dim('  No saved teams. Use `groove team save "name"` to create one.'));
+      console.log(chalk.dim('  No teams. Use `groove team create "name"` to create one.'));
       return;
     }
-    console.log(chalk.bold(`\n  Saved Teams (${teams.length})\n`));
+    console.log(chalk.bold(`\n  Teams (${teams.length})\n`));
     for (const t of teams) {
-      const active = t.name === activeTeam ? chalk.green(' (active)') : '';
-      console.log(`  ${chalk.bold(t.name)}${active}  — ${t.agents} agents — saved ${new Date(t.updatedAt).toLocaleDateString()}`);
+      const isDefault = t.id === defaultTeamId ? chalk.green(' (default)') : '';
+      console.log(`  ${chalk.bold(t.name)}${isDefault}  — id: ${t.id} — created ${new Date(t.createdAt).toLocaleDateString()}`);
     }
     console.log('');
   } catch {
@@ -45,33 +36,36 @@ export async function teamList() {
   }
 }
 
-export async function teamDelete(name) {
+export async function teamDelete(id) {
   try {
-    await apiCall('DELETE', `/api/teams/${encodeURIComponent(name)}`);
-    console.log(chalk.green(`  Deleted team "${name}"`));
+    await apiCall('DELETE', `/api/teams/${encodeURIComponent(id)}`);
+    console.log(chalk.green(`  Deleted team "${id}"`));
   } catch (err) {
     console.error(chalk.red('  Failed:'), err.message);
     process.exit(1);
   }
 }
 
-export async function teamExport(name) {
+export async function teamRename(id, name) {
   try {
-    const data = await apiCall('GET', `/api/teams/${encodeURIComponent(name)}/export`);
-    console.log(JSON.stringify(data, null, 2));
+    const team = await apiCall('PATCH', `/api/teams/${encodeURIComponent(id)}`, { name });
+    console.log(chalk.green(`  Renamed to "${team.name}"`));
   } catch (err) {
     console.error(chalk.red('  Failed:'), err.message);
     process.exit(1);
   }
 }
 
-export async function teamImport(filePath) {
-  try {
-    const content = readFileSync(filePath, 'utf8');
-    const team = await apiCall('POST', '/api/teams/import', JSON.parse(content));
-    console.log(chalk.green(`  Imported team "${team.name}"`), `(${team.agents.length} agents)`);
-  } catch (err) {
-    console.error(chalk.red('  Failed:'), err.message);
-    process.exit(1);
-  }
+// Stubs for removed commands (old API)
+export async function teamLoad() {
+  console.log(chalk.yellow('  Teams are now live organizational groups. No need to "load" — agents persist in their teams.'));
+  console.log(chalk.dim('  Use `groove team list` to see your teams, `groove team create` to add one.'));
+}
+
+export async function teamExport() {
+  console.log(chalk.yellow('  Team export has been removed. Teams are now live groups, not saved configurations.'));
+}
+
+export async function teamImport() {
+  console.log(chalk.yellow('  Team import has been removed. Teams are now live groups, not saved configurations.'));
 }

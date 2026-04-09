@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const SKILLS_API = 'https://docs.groovedev.ai/api/v1';
+const STUDIO_URL = 'https://studio.groovedev.ai';
 
 // Normalize snake_case API fields to camelCase used by GUI
 function normalize(skill) {
@@ -38,9 +39,139 @@ export class SkillStore {
     this._refreshRegistry();
   }
 
+  // --- Auth ---
+
+  /** Get stored marketplace token from daemon config */
+  getToken() {
+    return this.daemon.config?.marketplace?.token || null;
+  }
+
+  /** Get stored marketplace user info */
+  getUser() {
+    return this.daemon.config?.marketplace?.user || null;
+  }
+
+  /** Store token + user info after browser login callback */
+  async setAuth(token) {
+    if (!token) return null;
+
+    // Validate token by calling /auth/me
+    let user = null;
+    try {
+      const res = await fetch(`${SKILLS_API}/auth/me`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) {
+        user = await res.json();
+      } else {
+        return null; // Invalid token
+      }
+    } catch {
+      // Can't validate — store anyway, will revalidate later
+      user = { id: 'unknown' };
+    }
+
+    this.daemon.config.marketplace = { token, user };
+    const { saveConfig } = await import('./firstrun.js');
+    saveConfig(this.daemon.grooveDir, this.daemon.config);
+    this.daemon.audit.log('marketplace.login', { userId: user?.id });
+    return user;
+  }
+
+  /** Clear stored auth */
+  async clearAuth() {
+    delete this.daemon.config.marketplace;
+    const { saveConfig } = await import('./firstrun.js');
+    saveConfig(this.daemon.grooveDir, this.daemon.config);
+    this.daemon.audit.log('marketplace.logout');
+  }
+
+  /** Validate stored token — returns user or null (clears if expired) */
+  async validateAuth() {
+    const token = this.getToken();
+    if (!token) return null;
+
+    try {
+      const res = await fetch(`${SKILLS_API}/auth/me`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) return await res.json();
+    } catch { /* offline — assume valid */ return this.getUser(); }
+
+    // 401 — token expired, clear it
+    await this.clearAuth();
+    return null;
+  }
+
+  /** Get login URL for browser redirect flow */
+  getLoginUrl() {
+    const port = this.daemon.port || 31415;
+    return `${STUDIO_URL}/#/login?return=groove-app&port=${port}`;
+  }
+
+  /** Build fetch headers, with auth if available */
+  _headers() {
+    const h = {};
+    const token = this.getToken();
+    if (token) h['Authorization'] = `Bearer ${token}`;
+    return h;
+  }
+
+  /** Fetch with auth headers + timeout */
+  _fetch(url, opts = {}) {
+    return fetch(url, {
+      ...opts,
+      headers: { ...this._headers(), ...(opts.headers || {}) },
+      signal: opts.signal || AbortSignal.timeout(opts.timeout || 8000),
+    });
+  }
+
+  /** Get user's purchases (auth required) */
+  async getPurchases() {
+    if (!this.getToken()) return [];
+    try {
+      const res = await this._fetch(`${SKILLS_API}/me/purchases`);
+      if (res.ok) {
+        const data = await res.json();
+        return data.purchases || [];
+      }
+    } catch { /* offline */ }
+    return [];
+  }
+
+  /** Check if user purchased a specific skill */
+  async checkPurchase(skillId) {
+    if (!this.getToken()) return false;
+    try {
+      const res = await this._fetch(`${SKILLS_API}/me/purchases/check/${skillId}`);
+      if (res.ok) {
+        const data = await res.json();
+        return data.purchased || false;
+      }
+    } catch { /* offline */ }
+    return false;
+  }
+
+  /** Start Stripe checkout for a paid skill — returns { url, sessionId } */
+  async checkout(skillId) {
+    if (!this.getToken()) throw new Error('Sign in to purchase skills');
+    const res = await this._fetch(`${SKILLS_API}/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skill_id: skillId }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Checkout failed');
+    }
+    return res.json();
+  }
+
   async _refreshRegistry() {
     try {
-      const res = await fetch(`${SKILLS_API}/skills?limit=200`, { signal: AbortSignal.timeout(5000) });
+      const res = await this._fetch(`${SKILLS_API}/skills?limit=200`, { timeout: 5000 });
       if (res.ok) {
         const data = await res.json();
         this.registry = (data.skills || data).map(normalize);
@@ -60,7 +191,7 @@ export class SkillStore {
       if (query?.category && query.category !== 'all') params.set('category', query.category);
       params.set('limit', '200');
 
-      const res = await fetch(`${SKILLS_API}/skills?${params}`, { signal: AbortSignal.timeout(5000) });
+      const res = await this._fetch(`${SKILLS_API}/skills?${params}`, { timeout: 5000 });
       if (res.ok) {
         const data = await res.json();
         const skills = (data.skills || data).map((s) => ({
@@ -140,7 +271,7 @@ export class SkillStore {
 
     // Try live API content endpoint first
     try {
-      const res = await fetch(`${SKILLS_API}/skills/${skillId}/content`, { signal: AbortSignal.timeout(10000) });
+      const res = await this._fetch(`${SKILLS_API}/skills/${skillId}/content`, { timeout: 10000 });
       if (res.ok) {
         const data = await res.json();
         content = data.content;
@@ -150,7 +281,7 @@ export class SkillStore {
     // Fall back to contentUrl from registry entry
     if (!content && entry.contentUrl) {
       try {
-        const res = await fetch(entry.contentUrl, { signal: AbortSignal.timeout(10000) });
+        const res = await this._fetch(entry.contentUrl, { timeout: 10000 });
         if (res.ok) content = await res.text();
       } catch { /* fall through */ }
     }
@@ -169,10 +300,9 @@ export class SkillStore {
     mkdirSync(skillDir, { recursive: true });
     writeFileSync(resolve(skillDir, 'SKILL.md'), content);
 
-    // Track install on server (fire-and-forget, no auth needed)
-    fetch(`${SKILLS_API}/skills/${skillId}/install`, {
-      method: 'POST',
-      signal: AbortSignal.timeout(5000),
+    // Track install on server (fire-and-forget)
+    this._fetch(`${SKILLS_API}/skills/${skillId}/install`, {
+      method: 'POST', timeout: 5000,
     }).catch(() => {});
 
     this.daemon.audit.log('skill.install', { id: skillId, name: entry.name });
@@ -200,11 +330,11 @@ export class SkillStore {
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
       throw new Error('Rating must be an integer from 1 to 5');
     }
-    const res = await fetch(`${SKILLS_API}/skills/${skillId}/rate`, {
+    const res = await this._fetch(`${SKILLS_API}/skills/${skillId}/rate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rating }),
-      signal: AbortSignal.timeout(10000),
+      timeout: 10000,
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -220,6 +350,39 @@ export class SkillStore {
     const skillPath = resolve(this.skillsDir, skillId, 'SKILL.md');
     if (!existsSync(skillPath)) return null;
     return readFileSync(skillPath, 'utf8');
+  }
+
+  /**
+   * Get content for preview — tries local first, falls back to remote API.
+   * For free skills the remote API returns content without auth.
+   * For paid skills it returns { content: null, requiresPurchase: true, price }.
+   */
+  async getContentPreview(skillId) {
+    // Try local first (already installed)
+    const local = this.getContent(skillId);
+    if (local) return { id: skillId, content: local };
+
+    // Try remote API (auth sent if available — unlocks paid skills)
+    try {
+      const res = await this._fetch(`${SKILLS_API}/skills/${skillId}/content`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch { /* offline */ }
+
+    // Try contentUrl from registry
+    const entry = this.registry.find((s) => s.id === skillId);
+    if (entry?.contentUrl) {
+      try {
+        const res = await this._fetch(entry.contentUrl);
+        if (res.ok) {
+          const content = await res.text();
+          return { id: skillId, content };
+        }
+      } catch { /* offline */ }
+    }
+
+    return { id: skillId, content: null };
   }
 
   /**

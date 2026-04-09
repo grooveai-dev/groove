@@ -28,6 +28,20 @@ export class TokenTracker {
         this.rotationSavings = data.rotationSavings || 0;
         this.conflictsPrevented = data.conflictsPrevented || 0;
         this.coldStartsSkipped = data.coldStartsSkipped || 0;
+        // Migrate old format entries (number-only totals)
+        for (const [id, entry] of Object.entries(this.usage)) {
+          if (typeof entry === 'number') {
+            this.usage[id] = { total: entry, sessions: [] };
+          }
+          if (!entry.totalCostUsd) entry.totalCostUsd = 0;
+          if (!entry.inputTokens) entry.inputTokens = 0;
+          if (!entry.outputTokens) entry.outputTokens = 0;
+          if (!entry.cacheReadTokens) entry.cacheReadTokens = 0;
+          if (!entry.cacheCreationTokens) entry.cacheCreationTokens = 0;
+          if (!entry.totalDurationMs) entry.totalDurationMs = 0;
+          if (!entry.totalTurns) entry.totalTurns = 0;
+          if (!entry.modelDistribution) entry.modelDistribution = {};
+        }
       } catch {
         this.usage = {};
       }
@@ -44,15 +58,71 @@ export class TokenTracker {
     }, null, 2));
   }
 
-  record(agentId, tokens) {
+  _initAgent(agentId) {
     if (!this.usage[agentId]) {
-      this.usage[agentId] = { total: 0, sessions: [] };
+      this.usage[agentId] = {
+        total: 0,
+        totalCostUsd: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        totalDurationMs: 0,
+        totalTurns: 0,
+        modelDistribution: {},
+        sessions: [],
+      };
     }
-    this.usage[agentId].total += tokens;
-    this.usage[agentId].sessions.push({
+  }
+
+  record(agentId, detail) {
+    this._initAgent(agentId);
+    const entry = this.usage[agentId];
+
+    // Backward compat: accept a plain number
+    if (typeof detail === 'number') {
+      entry.total += detail;
+      entry.sessions.push({ tokens: detail, timestamp: new Date().toISOString() });
+      this.save();
+      return;
+    }
+
+    const tokens = detail.tokens || 0;
+    entry.total += tokens;
+    entry.inputTokens += detail.inputTokens || 0;
+    entry.outputTokens += detail.outputTokens || 0;
+    entry.cacheReadTokens += detail.cacheReadTokens || 0;
+    entry.cacheCreationTokens += detail.cacheCreationTokens || 0;
+
+    if (detail.model) {
+      entry.modelDistribution[detail.model] = (entry.modelDistribution[detail.model] || 0) + tokens;
+    }
+
+    // Estimated cost from non-Claude providers
+    if (detail.estimatedCostUsd) {
+      entry.totalCostUsd += detail.estimatedCostUsd;
+    }
+
+    entry.sessions.push({
       tokens,
+      inputTokens: detail.inputTokens || 0,
+      outputTokens: detail.outputTokens || 0,
+      cacheReadTokens: detail.cacheReadTokens || 0,
+      cacheCreationTokens: detail.cacheCreationTokens || 0,
+      model: detail.model || null,
       timestamp: new Date().toISOString(),
     });
+
+    this.save();
+  }
+
+  // Record session-level result data (cost, duration, turns) — fires once per completion
+  recordResult(agentId, { costUsd, durationMs, turns }) {
+    this._initAgent(agentId);
+    const entry = this.usage[agentId];
+    if (costUsd) entry.totalCostUsd += costUsd;
+    if (durationMs) entry.totalDurationMs += durationMs;
+    if (turns) entry.totalTurns += turns;
     this.save();
   }
 
@@ -86,11 +156,42 @@ export class TokenTracker {
     return Object.values(this.usage).reduce((sum, a) => sum + a.total, 0);
   }
 
+  getTotalCost() {
+    return Object.values(this.usage).reduce((sum, a) => sum + (a.totalCostUsd || 0), 0);
+  }
+
+  getCacheHitRate() {
+    let totalRead = 0, totalCreation = 0, totalInput = 0;
+    for (const a of Object.values(this.usage)) {
+      totalRead += a.cacheReadTokens || 0;
+      totalCreation += a.cacheCreationTokens || 0;
+      totalInput += a.inputTokens || 0;
+    }
+    const total = totalRead + totalCreation + totalInput;
+    return total > 0 ? totalRead / total : 0;
+  }
+
   // Generate a savings summary
   getSummary() {
     const totalTokens = this.getTotal();
+    const totalCostUsd = this.getTotalCost();
     const agentCount = Object.keys(this.usage).length;
     const sessionDuration = Date.now() - this.sessionStart;
+
+    // Aggregate I/O and cache breakdown
+    let totalInputTokens = 0, totalOutputTokens = 0;
+    let totalCacheRead = 0, totalCacheCreation = 0;
+    let totalDurationMs = 0, totalTurns = 0;
+    let realCostUsd = 0, estimatedCostUsd = 0;
+
+    for (const a of Object.values(this.usage)) {
+      totalInputTokens += a.inputTokens || 0;
+      totalOutputTokens += a.outputTokens || 0;
+      totalCacheRead += a.cacheReadTokens || 0;
+      totalCacheCreation += a.cacheCreationTokens || 0;
+      totalDurationMs += a.totalDurationMs || 0;
+      totalTurns += a.totalTurns || 0;
+    }
 
     // Estimate what uncoordinated usage would have cost
     const coldStartWaste = this.coldStartsSkipped * COLD_START_OVERHEAD;
@@ -102,8 +203,19 @@ export class TokenTracker {
       ? Math.round((totalSavings / estimatedWithout) * 100)
       : 0;
 
+    const cacheTotal = totalCacheRead + totalCacheCreation + totalInputTokens;
+    const cacheHitRate = cacheTotal > 0 ? totalCacheRead / cacheTotal : 0;
+
     return {
       totalTokens,
+      totalCostUsd,
+      totalInputTokens,
+      totalOutputTokens,
+      cacheReadTokens: totalCacheRead,
+      cacheCreationTokens: totalCacheCreation,
+      cacheHitRate: Math.round(cacheHitRate * 1000) / 1000,
+      avgSessionDurationMs: agentCount > 0 ? Math.round(totalDurationMs / agentCount) : 0,
+      totalTurns,
       agentCount,
       sessionDurationMs: sessionDuration,
       savings: {
@@ -117,6 +229,14 @@ export class TokenTracker {
       perAgent: Object.entries(this.usage).map(([id, data]) => ({
         agentId: id,
         tokens: data.total,
+        costUsd: data.totalCostUsd || 0,
+        inputTokens: data.inputTokens || 0,
+        outputTokens: data.outputTokens || 0,
+        cacheReadTokens: data.cacheReadTokens || 0,
+        cacheCreationTokens: data.cacheCreationTokens || 0,
+        durationMs: data.totalDurationMs || 0,
+        turns: data.totalTurns || 0,
+        modelDistribution: data.modelDistribution || {},
         sessions: data.sessions.length,
       })),
     };

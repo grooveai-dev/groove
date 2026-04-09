@@ -1,0 +1,170 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* React Flow, CodeMirror, xterm must not be reset by Tailwind */
+@layer base {
+  @import "@xyflow/react/dist/style.css";
+  @import "@xterm/xterm/css/xterm.css";
+}
+
+/* ── Design Tokens ────────────────────────────────────────── */
+
+@theme {
+  /* Surface hierarchy (darkest → lightest) */
+  --color-surface-0: #1a1e25;
+  --color-surface-1: #1e2127;
+  --color-surface-2: #24282f;
+  --color-surface-3: #282c34;
+  --color-surface-4: #2c313a;
+  --color-surface-5: #333842;
+  --color-surface-6: #3a3f4b;
+
+  /* Text hierarchy */
+  --color-text-0: #e6e6e6;
+  --color-text-1: #bcc2cd;
+  --color-text-2: #8b929e;
+  --color-text-3: #6e7681;
+  --color-text-4: #505862;
+
+  /* Borders */
+  --color-border: #3e4451;
+  --color-border-subtle: #2c313a;
+
+  /* Semantic */
+  --color-accent: #33afbc;
+  --color-success: #4ae168;
+  --color-warning: #e5c07b;
+  --color-danger: #e06c75;
+  --color-info: #61afef;
+  --color-purple: #c678dd;
+  --color-orange: #d19a66;
+
+  /* Fonts */
+  --font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+
+  /* Type scale */
+  --text-2xs: 0.625rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.6875rem;
+  --text-xs--line-height: 1rem;
+}
+
+/* ── Global Resets ────────────────────────────────────────── */
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-surface-2);
+  color: var(--color-text-1);
+  font-size: 0.875rem;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  font-size: 15px; /* ~94% of 16px — slightly tighter than browser default */
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Custom Scrollbars ────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-surface-5); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-surface-6); }
+::selection { background: rgba(51, 175, 188, 0.25); }
+
+/* ── Animations ───────────────────────────────────────────── */
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes edge-flow {
+  0% { stroke-dashoffset: 20; }
+  100% { stroke-dashoffset: 0; }
+}
+
+/* ── Sharper corners globally ─────────────────────────────── */
+
+* {
+  --radius: 6px;
+}
+
+/* ── Agent Panel ─────────────────────────────────────────── */
+
+@keyframes gauge-pulse {
+  0%, 100% { filter: drop-shadow(0 0 3px currentColor); }
+  50% { filter: drop-shadow(0 0 8px currentColor); }
+}
+
+/* ── Agent Node ───────────────────────────────────────────── */
+
+@keyframes node-scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+@keyframes node-pulse-bar {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@keyframes tooltip-slide-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Edge pulse orb — travels along the edge path */
+@keyframes orb-travel {
+  0% { offset-distance: 0%; opacity: 0; }
+  5% { opacity: 1; }
+  95% { opacity: 1; }
+  100% { offset-distance: 100%; opacity: 0; }
+}
+
+/* ── Edge dash flow animation ─────────────────────────────── */
+
+@keyframes edge-dash-flow {
+  to { stroke-dashoffset: -20; }
+}
+
+@keyframes edge-pulse {
+  0%, 100% { stroke-opacity: 0.25; }
+  50% { stroke-opacity: 0.45; }
+}
+
+/* All edges — blue dashed baseline */
+.react-flow__edge path {
+  stroke: rgba(97, 175, 239, 0.35) !important;
+  stroke-width: 1px !important;
+  stroke-dasharray: 6 4 !important;
+  animation: edge-pulse 4s ease-in-out infinite !important;
+}
+
+/* Active (running) edges — brighter, flowing animation */
+.react-flow__edge.animated path {
+  stroke: rgba(97, 175, 239, 0.7) !important;
+  stroke-width: 1.5px !important;
+  stroke-dasharray: 8 4 !important;
+  animation: edge-dash-flow 1s linear infinite !important;
+  filter: drop-shadow(0 0 4px rgba(97, 175, 239, 0.4));
+}
+
+/* ── React Flow Overrides ─────────────────────────────────── */

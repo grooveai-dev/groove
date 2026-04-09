@@ -1,0 +1,477 @@
+// FSL-1.1-Apache-2.0 — see LICENSE
+import { useMemo, useCallback, useEffect, useState, useRef } from 'react';
+import {
+  ReactFlow, Background, useNodesState, useEdgesState,
+  useReactFlow, ReactFlowProvider,
+} from '@xyflow/react';
+import { useGrooveStore } from '../stores/groove';
+import { AgentNode } from '../components/agents/agent-node';
+import { RootNode } from '../components/agents/root-node';
+import { cn } from '../lib/cn';
+import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
+import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield } from 'lucide-react';
+
+const NODE_TYPES = { agentNode: AgentNode, rootNode: RootNode };
+const NODE_W = 220;
+const NODE_H = 82;
+const NODE_X_GAP = 260;
+const NODE_Y_GAP = 130;
+const MAX_PER_ROW = 4;
+const ROOT_ID = '__groove_root__';
+
+function loadPositions() {
+  try { return JSON.parse(localStorage.getItem('groove:nodePositions') || '{}'); } catch { return {}; }
+}
+
+function savePositions(positions) {
+  try { localStorage.setItem('groove:nodePositions', JSON.stringify(positions)); } catch {}
+}
+
+/* ── Team Tab Bar ──────────────────────────────────────────── */
+
+function TeamTabBar() {
+  const teams = useGrooveStore((s) => s.teams);
+  const activeTeamId = useGrooveStore((s) => s.activeTeamId);
+  const agents = useGrooveStore((s) => s.agents);
+  const switchTeam = useGrooveStore((s) => s.switchTeam);
+  const createTeam = useGrooveStore((s) => s.createTeam);
+  const deleteTeam = useGrooveStore((s) => s.deleteTeam);
+
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const submitting = useRef(false);
+
+  function handleCreate() {
+    const name = newName.trim();
+    if (!name || submitting.current) return;
+    submitting.current = true;
+    setNewName('');
+    setCreating(false);
+    createTeam(name).finally(() => { submitting.current = false; });
+  }
+
+  return (
+    <div className="flex items-center h-9 bg-surface-1 border-b border-border-subtle px-2 gap-0.5 flex-shrink-0">
+      {teams.map((team) => {
+        const count = agents.filter((a) => a.teamId === team.id).length;
+        const isActive = team.id === activeTeamId;
+        return (
+          <div
+            key={team.id}
+            className={cn(
+              'group flex items-center gap-1 pl-2.5 pr-1 h-7 rounded text-2xs font-sans cursor-pointer select-none transition-colors',
+              isActive
+                ? 'bg-surface-3 text-text-0 font-semibold'
+                : 'text-text-3 hover:text-text-1 hover:bg-surface-3/50',
+            )}
+          >
+            <button
+              onClick={() => switchTeam(team.id)}
+              className="flex items-center gap-1.5 cursor-pointer"
+            >
+              <Users size={10} />
+              <span className="truncate max-w-[80px]">{team.name}</span>
+              {count > 0 && <span className="text-text-4 font-mono">{count}</span>}
+            </button>
+            {!team.isDefault && (
+              <button
+                onClick={(e) => { e.stopPropagation(); deleteTeam(team.id); }}
+                className="ml-0.5 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-surface-5 text-text-4 hover:text-danger cursor-pointer transition-all"
+              >
+                <X size={9} />
+              </button>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Create new team */}
+      {creating ? (
+        <div className="flex items-center gap-1 ml-1">
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') { setCreating(false); setNewName(''); } }}
+            placeholder="Team name..."
+            className="h-6 w-24 px-2 text-2xs bg-surface-0 border border-border-subtle rounded text-text-0 font-sans placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+            autoFocus
+          />
+          <button
+            onClick={handleCreate}
+            disabled={!newName.trim()}
+            className="p-1 rounded text-accent hover:bg-accent/10 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <Check size={11} />
+          </button>
+          <button onClick={() => { setCreating(false); setNewName(''); }} className="p-1 rounded text-text-4 hover:text-text-1 cursor-pointer">
+            <X size={11} />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setCreating(true)}
+          className="flex items-center justify-center w-7 h-7 text-text-4 hover:text-text-1 hover:bg-surface-3/50 rounded cursor-pointer transition-colors ml-0.5"
+          title="New team"
+        >
+          <Plus size={12} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ── Agent Tree ────────────────────────────────────────────── */
+
+function AgentTreeInner() {
+  const allAgents = useGrooveStore((s) => s.agents);
+  const activeTeamId = useGrooveStore((s) => s.activeTeamId);
+  const tokenTimeline = useGrooveStore((s) => s.tokenTimeline);
+  const selectAgent = useGrooveStore((s) => s.selectAgent);
+  const closeDetail = useGrooveStore((s) => s.closeDetail);
+
+  const agents = useMemo(
+    () => allAgents.filter((a) => a.teamId === activeTeamId),
+    [allAgents, activeTeamId],
+  );
+
+  const { fitView } = useReactFlow();
+  const [prevCount, setPrevCount] = useState(0);
+
+  // Build nodes
+  const targetNodes = useMemo(() => {
+    const saved = loadPositions();
+    const runningCount = agents.filter((a) => a.status === 'running').length;
+
+    const nodes = [
+      {
+        id: ROOT_ID,
+        type: 'rootNode',
+        position: saved[ROOT_ID] || { x: 0, y: 0 },
+        data: { agentCount: agents.length, runningCount },
+        draggable: true,
+        selectable: false,
+      },
+    ];
+
+    agents.forEach((agent, i) => {
+      const key = agent.name || agent.id;
+      const row = Math.floor(i / MAX_PER_ROW);
+      const col = i % MAX_PER_ROW;
+      const totalInRow = Math.min(agents.length - row * MAX_PER_ROW, MAX_PER_ROW);
+      const offsetX = -((totalInRow - 1) * NODE_X_GAP) / 2;
+
+      nodes.push({
+        id: agent.id,
+        type: 'agentNode',
+        position: saved[key] || { x: offsetX + col * NODE_X_GAP, y: 140 + row * NODE_Y_GAP },
+        data: { agent, timeline: tokenTimeline[agent.id] || [] },
+        draggable: true,
+        selectable: true,
+      });
+    });
+
+    return nodes;
+  }, [agents, tokenTimeline]);
+
+  // Build edges
+  const targetEdges = useMemo(() => {
+    const saved = loadPositions();
+    const rootPos = saved[ROOT_ID] || { x: 0, y: 0 };
+
+    return agents.map((agent, i) => {
+      const key = agent.name || agent.id;
+      const row = Math.floor(i / MAX_PER_ROW);
+      const col = i % MAX_PER_ROW;
+      const totalInRow = Math.min(agents.length - row * MAX_PER_ROW, MAX_PER_ROW);
+      const offsetX = -((totalInRow - 1) * NODE_X_GAP) / 2;
+      const agentPos = saved[key] || { x: offsetX + col * NODE_X_GAP, y: 140 + row * NODE_Y_GAP };
+
+      const dx = agentPos.x + NODE_W / 2 - rootPos.x;
+      const dy = agentPos.y + NODE_H / 2 - rootPos.y;
+      let sourceHandle, targetHandle;
+      if (Math.abs(dy) > Math.abs(dx)) {
+        sourceHandle = dy > 0 ? 'bottom' : 'top';
+        targetHandle = dy > 0 ? 'top' : 'bottom';
+      } else {
+        sourceHandle = dx > 0 ? 'right' : 'left';
+        targetHandle = dx > 0 ? 'left' : 'right';
+      }
+
+      return {
+        id: `e-${ROOT_ID}-${agent.id}`,
+        source: ROOT_ID,
+        target: agent.id,
+        sourceHandle,
+        targetHandle,
+        type: 'default',
+        animated: agent.status === 'running',
+      };
+    });
+  }, [agents]);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(targetNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(targetEdges);
+
+  useEffect(() => { setNodes(targetNodes); }, [targetNodes, setNodes]);
+  useEffect(() => { setEdges(targetEdges); }, [targetEdges, setEdges]);
+
+  useEffect(() => {
+    if (prevCount === 0 && agents.length > 0) {
+      setTimeout(() => fitView({ padding: 0.3, maxZoom: 1.2, duration: 400 }), 100);
+    }
+    setPrevCount(agents.length);
+  }, [agents.length, prevCount, fitView]);
+
+  const onNodeClick = useCallback((_e, node) => {
+    if (node.id === ROOT_ID) return;
+    selectAgent(node.id);
+  }, [selectAgent]);
+
+  const onPaneClick = useCallback(() => {
+    closeDetail();
+  }, [closeDetail]);
+
+  const onNodeDrag = useCallback((_e, node) => {
+    const rootNode = nodes.find((n) => n.id === ROOT_ID);
+    if (!rootNode) return;
+    const rootPos = rootNode.position;
+
+    setEdges((eds) => eds.map((edge) => {
+      const isSource = edge.source === node.id;
+      const isTarget = edge.target === node.id;
+      if (!isSource && !isTarget) return edge;
+
+      const agentPos = node.position;
+      const dx = agentPos.x + NODE_W / 2 - rootPos.x;
+      const dy = agentPos.y + NODE_H / 2 - rootPos.y;
+      let sourceHandle, targetHandle;
+      if (Math.abs(dy) > Math.abs(dx)) {
+        sourceHandle = dy > 0 ? 'bottom' : 'top';
+        targetHandle = dy > 0 ? 'top' : 'bottom';
+      } else {
+        sourceHandle = dx > 0 ? 'right' : 'left';
+        targetHandle = dx > 0 ? 'left' : 'right';
+      }
+      return { ...edge, sourceHandle, targetHandle };
+    }));
+  }, [nodes, setEdges]);
+
+  const onNodeDragStop = useCallback((_e, node) => {
+    const agent = agents.find((a) => a.id === node.id);
+    const key = node.id === ROOT_ID ? ROOT_ID : (agent?.name || node.id);
+    const saved = loadPositions();
+    saved[key] = node.position;
+    savePositions(saved);
+  }, [agents]);
+
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={NODE_TYPES}
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
+      onNodeClick={onNodeClick}
+      onPaneClick={onPaneClick}
+      onNodeDrag={onNodeDrag}
+      onNodeDragStop={onNodeDragStop}
+      defaultViewport={{ x: 0, y: 0, zoom: 1.2 }}
+      proOptions={{ hideAttribution: true }}
+      minZoom={0.2}
+      maxZoom={1.5}
+      className="bg-surface-2"
+    >
+      <Background color="rgba(97,175,239,0.03)" gap={24} size={1} />
+    </ReactFlow>
+  );
+}
+
+/* ── Empty State ───────────────────────────────────────────── */
+
+function EmptyState({ onPlanner, onSpawn }) {
+  return (
+    <div className="w-full h-full flex items-center justify-center">
+      <div className="max-w-2xl w-full text-center space-y-10 px-8">
+        <div className="relative mx-auto w-20 h-20">
+          <div className="absolute inset-0 rounded-full bg-accent/8 animate-pulse" />
+          <div className="absolute inset-1 rounded-full bg-surface-3 border border-border-subtle flex items-center justify-center shadow-lg shadow-accent/5">
+            <img src="/favicon.png" alt="Groove" className="h-10 w-10 rounded-full" />
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <h1 className="text-3xl font-bold text-text-0 font-sans tracking-tight">Welcome to Groove</h1>
+          <p className="text-base text-text-2 font-sans max-w-md mx-auto leading-relaxed">
+            Your mission control for AI agents. Spawn, orchestrate, and ship faster than ever.
+          </p>
+        </div>
+
+        <div className="space-y-3 max-w-xl mx-auto">
+          <button
+            onClick={onPlanner}
+            className="w-full flex items-center gap-4 p-5 rounded-lg border border-accent/25 bg-gradient-to-r from-accent/8 to-accent/3 hover:from-accent/14 hover:to-accent/6 hover:border-accent/40 transition-all cursor-pointer group text-left"
+          >
+            <div className="w-12 h-12 rounded-lg bg-accent/20 flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
+              <Zap size={24} className="text-accent" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-base font-semibold text-text-0 font-sans">Start with a Planner</div>
+              <div className="text-sm text-text-2 font-sans mt-0.5">Describe what you want to build and let AI plan the perfect team</div>
+            </div>
+            <div className="text-accent text-xs font-semibold font-sans flex-shrink-0 opacity-60 group-hover:opacity-100 transition-opacity">
+              Recommended
+            </div>
+          </button>
+
+          <button
+            onClick={onSpawn}
+            className="w-full flex items-center gap-3 p-4 rounded-lg border border-border bg-surface-1 hover:bg-surface-2 hover:border-border transition-all cursor-pointer group text-left"
+          >
+            <div className="w-10 h-10 rounded-lg bg-surface-4 flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
+              <Plus size={20} className="text-text-1" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-text-0 font-sans">Spawn Agent</div>
+              <div className="text-xs text-text-3 font-sans mt-0.5">Choose a role and configure</div>
+            </div>
+          </button>
+        </div>
+
+        <p className="text-xs text-text-4 font-sans">
+          <kbd className="font-mono bg-surface-4 px-1.5 py-0.5 rounded text-text-3">Cmd+K</kbd>
+          <span className="mx-1.5">command palette</span>
+          <span className="text-text-4 mx-1">&middot;</span>
+          <kbd className="font-mono bg-surface-4 px-1.5 py-0.5 rounded text-text-3">Cmd+N</kbd>
+          <span className="mx-1.5">spawn</span>
+          <span className="text-text-4 mx-1">&middot;</span>
+          <kbd className="font-mono bg-surface-4 px-1.5 py-0.5 rounded text-text-3">Cmd+J</kbd>
+          <span className="mx-1.5">terminal</span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ── Recommended Team Launch Card ─────────────────────────── */
+
+const ROLE_ICONS = { backend: Server, frontend: Monitor, fullstack: Code2, testing: TestTube, security: Shield };
+
+function RecommendedTeamCard() {
+  const recommendedTeam = useGrooveStore((s) => s.recommendedTeam);
+  const launchRecommendedTeam = useGrooveStore((s) => s.launchRecommendedTeam);
+  const checkRecommendedTeam = useGrooveStore((s) => s.checkRecommendedTeam);
+  const [launching, setLaunching] = useState(false);
+
+  if (!recommendedTeam?.agents?.length) return null;
+
+  const agents = recommendedTeam.agents;
+  const phase1 = agents.filter((a) => !a.phase || a.phase === 1);
+  const phase2 = agents.filter((a) => a.phase === 2);
+
+  async function handleLaunch() {
+    setLaunching(true);
+    try {
+      await launchRecommendedTeam();
+    } catch { /* toast handles */ }
+    setLaunching(false);
+  }
+
+  function handleDismiss() {
+    useGrooveStore.setState({ recommendedTeam: null });
+  }
+
+  return (
+    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-lg">
+      <div className="mx-4 rounded-lg border border-accent/30 bg-surface-2/95 backdrop-blur-md shadow-xl shadow-accent/5 overflow-hidden">
+        <div className="px-4 py-3 border-b border-border-subtle flex items-center gap-2">
+          <Rocket size={16} className="text-accent" />
+          <span className="text-sm font-semibold text-text-0 font-sans flex-1">Planner Recommends a Team</span>
+          <button onClick={handleDismiss} className="text-text-4 hover:text-text-1 cursor-pointer"><X size={14} /></button>
+        </div>
+
+        <div className="px-4 py-3 space-y-2">
+          {/* Phase 1 agents */}
+          <div className="flex flex-wrap gap-2">
+            {phase1.map((a, i) => {
+              const Icon = ROLE_ICONS[a.role] || Code2;
+              return (
+                <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-surface-4 border border-border-subtle">
+                  <Icon size={12} className="text-text-2" />
+                  <span className="text-xs font-semibold text-text-0 font-sans capitalize">{a.name || a.role}</span>
+                  {a.scope?.length > 0 && (
+                    <span className="text-2xs text-text-4 font-mono">{a.scope[0]}{a.scope.length > 1 ? ` +${a.scope.length - 1}` : ''}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Phase 2 indicator */}
+          {phase2.length > 0 && (
+            <div className="flex items-center gap-1.5 text-2xs text-text-3 font-sans">
+              <Shield size={10} />
+              <span>{phase2.length} QC agent{phase2.length > 1 ? 's' : ''} will auto-spawn after builders complete</span>
+            </div>
+          )}
+        </div>
+
+        <div className="px-4 py-3 border-t border-border-subtle">
+          <Button variant="primary" size="md" onClick={handleLaunch} disabled={launching} className="w-full gap-2">
+            <Zap size={14} />
+            {launching ? 'Launching...' : `Launch ${phase1.length} Agent${phase1.length > 1 ? 's' : ''}`}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Agents View ───────────────────────────────────────────── */
+
+export default function AgentsView() {
+  const allAgents = useGrooveStore((s) => s.agents);
+  const activeTeamId = useGrooveStore((s) => s.activeTeamId);
+  const openDetail = useGrooveStore((s) => s.openDetail);
+  const spawnAgent = useGrooveStore((s) => s.spawnAgent);
+  const selectAgent = useGrooveStore((s) => s.selectAgent);
+  const recommendedTeam = useGrooveStore((s) => s.recommendedTeam);
+  const checkRecommendedTeam = useGrooveStore((s) => s.checkRecommendedTeam);
+
+  // Poll for recommended team while a planner is running
+  useEffect(() => {
+    const hasPlanner = allAgents.some((a) => a.role === 'planner' && (a.status === 'running' || a.status === 'starting'));
+    if (!hasPlanner) return;
+    const interval = setInterval(() => checkRecommendedTeam(), 5000);
+    return () => clearInterval(interval);
+  }, [allAgents, checkRecommendedTeam]);
+
+  async function launchPlanner() {
+    try {
+      const agent = await spawnAgent({ role: 'planner' });
+      if (agent?.id) {
+        const addChat = useGrooveStore.getState().addChatMessage;
+        addChat(agent.id, 'system', 'Planner is starting up...');
+        selectAgent(agent.id);
+      }
+    } catch { /* toast handles */ }
+  }
+
+  const teamAgents = allAgents.filter((a) => a.teamId === activeTeamId);
+
+  return (
+    <div className="flex flex-col h-full relative">
+      <TeamTabBar />
+      <div className="flex-1 min-h-0">
+        {teamAgents.length === 0 ? (
+          <EmptyState onPlanner={launchPlanner} onSpawn={() => openDetail({ type: 'spawn' })} />
+        ) : (
+          <ReactFlowProvider>
+            <AgentTreeInner />
+          </ReactFlowProvider>
+        )}
+      </div>
+      <RecommendedTeamCard />
+    </div>
+  );
+}

@@ -31,6 +31,7 @@ import { SkillStore } from './skills.js';
 import { IntegrationStore } from './integrations.js';
 import { Scheduler } from './scheduler.js';
 import { FileWatcher } from './filewatcher.js';
+import { TimelineTracker } from './timeline.js';
 import { TerminalManager } from './terminal-pty.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 
@@ -106,6 +107,7 @@ export class Daemon {
     this.registry = new Registry(this.state);
     this.locks = new LockManager(this.grooveDir);
     this.tokens = new TokenTracker(this.grooveDir);
+    this.timeline = new TimelineTracker(this);
     this.processes = new ProcessManager(this);
     this.introducer = new Introducer(this);
     this.supervisor = new Supervisor(this);
@@ -277,6 +279,9 @@ export class Daemon {
     this.state.load();
     this.registry.restore(this.state.get('agents') || []);
 
+    // Migrate old agents without teamId to default team
+    this.teams.migrateAgents();
+
     return new Promise((resolvePromise) => {
       this.server.listen(this.port, this.host, () => {
         writeFileSync(this.pidFile, String(process.pid));
@@ -290,6 +295,7 @@ export class Daemon {
         this.journalist.start();
         this.rotator.start();
         this.scheduler.start();
+        this.timeline.start();
         this._startGarbageCollector();
 
         // Scan codebase for workspace/structure awareness
@@ -365,6 +371,7 @@ export class Daemon {
     this.journalist.stop();
     this.rotator.stop();
     this.scheduler.stop();
+    this.timeline.stop();
     if (this._gcInterval) clearInterval(this._gcInterval);
 
     // Clean up file watchers and terminal sessions

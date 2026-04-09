@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [tailwindcss(), react()],
   server: {
     port: 3142,
     proxy: {
@@ -15,5 +16,15 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'codemirror': ['@codemirror/view', '@codemirror/state', '@codemirror/commands', '@codemirror/language', '@codemirror/search', '@codemirror/autocomplete', '@codemirror/theme-one-dark'],
+          'xterm': ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links'],
+          'reactflow': ['@xyflow/react'],
+          'vendor': ['react', 'react-dom', 'zustand', 'framer-motion'],
+        },
+      },
+    },
   },
 });

@@ -75,7 +75,7 @@ export class OllamaProvider extends Provider {
     };
   }
 
-  switchModel() {
+  switchModel(agent, newModel) {
     return false; // Needs rotation for model switch
   }
 

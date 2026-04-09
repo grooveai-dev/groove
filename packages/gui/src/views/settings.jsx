@@ -8,6 +8,7 @@ import { Skeleton } from '../components/ui/skeleton';
 import { StatusDot } from '../components/ui/status-dot';
 import { OllamaSetup } from '../components/agents/ollama-setup';
 import { FolderBrowser } from '../components/agents/folder-browser';
+import { Sheet, SheetContent } from '../components/ui/sheet';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { fmtUptime } from '../lib/format';
@@ -262,39 +263,266 @@ const GATEWAY_LABELS = { telegram: 'Telegram', discord: 'Discord', slack: 'Slack
 const GATEWAY_PLACEHOLDERS = { telegram: 'Bot token from @BotFather', discord: 'Bot token from Developer Portal', slack: 'Bot token (xoxb-...)' };
 const NOTIFICATION_PRESETS = ['critical', 'lifecycle', 'all'];
 
-const SETUP_GUIDES = {
-  telegram: {
-    title: 'Telegram Setup',
-    steps: [
-      { text: 'Open Telegram and message', link: 'https://t.me/BotFather', linkText: '@BotFather' },
-      { text: 'Send /newbot and name it GroovePilot (or anything you like)' },
-      { text: 'Copy the bot token and paste it below' },
-      { text: 'After connecting, send any message to your bot to link the chat' },
-    ],
-  },
-  discord: {
-    title: 'Discord Setup',
-    steps: [
-      { text: 'Go to the', link: 'https://discord.com/developers/applications', linkText: 'Discord Developer Portal' },
-      { text: 'Create an app, go to Bot tab, click Reset Token, copy it' },
-      { text: 'OAuth2 > URL Generator: select bot scope + Send Messages + Read Message History' },
-      { text: 'Open the generated URL to invite the bot to your server' },
-      { text: 'Paste the bot token below' },
-    ],
-  },
-  slack: {
-    title: 'Slack Setup',
-    steps: [
-      { text: 'Create a new app at', link: 'https://api.slack.com/apps', linkText: 'api.slack.com/apps' },
-      { text: 'Settings > Socket Mode: enable it' },
-      { text: 'Basic Information > App-Level Tokens: generate one with connections:write scope' },
-      { text: 'OAuth & Permissions > Bot Token Scopes: add chat:write, channels:read, groups:read, channels:history, app_mentions:read' },
-      { text: 'Event Subscriptions: enable, subscribe to message.channels and app_mention bot events' },
-      { text: 'Install to Workspace and copy the Bot Token (xoxb-...)' },
-      { text: 'Paste both tokens below, then invite the bot to a channel' },
-    ],
-  },
-};
+/* ── Gateway Setup Guide (Sheet Panel) ────────────────────── */
+
+function GatewaySetupGuide({ type, open, onOpenChange }) {
+  if (!type) return null;
+
+  const guides = {
+    telegram: {
+      title: 'Set Up Telegram',
+      icon: Send,
+      intro: 'Create a Telegram bot and connect it to Groove in under 2 minutes. No dependencies required.',
+      sections: [
+        {
+          title: 'Create Your Bot',
+          steps: [
+            { text: 'Open Telegram on any device and search for', link: 'https://t.me/BotFather', linkText: '@BotFather' },
+            { text: 'Send /newbot to start the setup' },
+            { text: 'Choose a display name — we suggest GroovePilot' },
+            { text: 'Choose a username (must end in "bot") — e.g. GroovePilot_bot' },
+            { text: 'BotFather will reply with your bot token — copy it' },
+          ],
+        },
+        {
+          title: 'Connect to Groove',
+          steps: [
+            { text: 'In Groove Settings > Gateways, click the Slack card\'s Set Token button' },
+            { text: 'Paste your bot token and click Save' },
+            { text: 'The gateway will connect automatically' },
+          ],
+        },
+        {
+          title: 'Link a Chat',
+          steps: [
+            { text: 'Open a chat with your new bot in Telegram' },
+            { text: 'Send any message (e.g. "hello") — Groove captures the chat ID automatically' },
+            { text: 'Click Test in the gateway card to verify' },
+          ],
+        },
+        {
+          title: 'Commands',
+          note: 'All commands use / prefix in Telegram:',
+          commands: ['/status', '/agents', '/spawn backend', '/kill <id>', '/approve <id>', '/help'],
+        },
+      ],
+    },
+    discord: {
+      title: 'Set Up Discord',
+      icon: MessageSquare,
+      intro: 'Create a Discord bot and add it to your server. Requires discord.js (installed automatically with Groove).',
+      sections: [
+        {
+          title: 'Create the Application',
+          steps: [
+            { text: 'Go to the', link: 'https://discord.com/developers/applications', linkText: 'Discord Developer Portal' },
+            { text: 'Click New Application and name it GroovePilot' },
+            { text: 'Go to the Bot tab in the left sidebar' },
+            { text: 'Click Reset Token and copy the bot token' },
+          ],
+        },
+        {
+          title: 'Set Permissions & Invite',
+          steps: [
+            { text: 'Go to OAuth2 > URL Generator' },
+            { text: 'Under Scopes, check bot' },
+            { text: 'Under Bot Permissions, check:' },
+          ],
+          scopes: ['Send Messages', 'Read Message History', 'Embed Links', 'Use External Emojis'],
+          after: [
+            { text: 'Copy the generated URL at the bottom and open it in your browser' },
+            { text: 'Select your server and click Authorize' },
+          ],
+        },
+        {
+          title: 'Enable Message Content Intent',
+          steps: [
+            { text: 'Go back to the Bot tab in the Developer Portal' },
+            { text: 'Scroll to Privileged Gateway Intents' },
+            { text: 'Enable Message Content Intent — required for the bot to read commands' },
+            { text: 'Click Save Changes' },
+          ],
+        },
+        {
+          title: 'Connect to Groove',
+          steps: [
+            { text: 'In Groove Settings > Gateways, click Set Token on the Discord card' },
+            { text: 'Paste your bot token and click Save' },
+            { text: 'Send a message in any channel where the bot is — Groove captures the channel automatically' },
+          ],
+        },
+        {
+          title: 'Commands',
+          note: 'All commands use / prefix in Discord:',
+          commands: ['/status', '/agents', '/spawn backend', '/kill <id>', '/approve <id>', '/help'],
+        },
+      ],
+    },
+    slack: {
+      title: 'Set Up Slack',
+      icon: MessageCircle,
+      intro: 'Create a Slack app with Socket Mode — no public URL needed. Requires @slack/bolt (installed automatically with Groove).',
+      sections: [
+        {
+          title: 'Create the App',
+          steps: [
+            { text: 'Go to', link: 'https://api.slack.com/apps', linkText: 'api.slack.com/apps' },
+            { text: 'Click Create New App > From scratch' },
+            { text: 'Name it GroovePilot and select your workspace' },
+          ],
+        },
+        {
+          title: 'Enable Socket Mode',
+          steps: [
+            { text: 'In the left sidebar, go to Settings > Socket Mode' },
+            { text: 'Toggle Enable Socket Mode to on' },
+            { text: 'It will ask you to create an App-Level Token' },
+            { text: 'Name it "groove", add the connections:write scope' },
+            { text: 'Click Generate — copy the xapp-... token (this is your App Token)' },
+          ],
+          important: 'Save this token now — you can\'t view it again after closing the dialog.',
+        },
+        {
+          title: 'Set Bot Token Scopes',
+          steps: [
+            { text: 'Go to Features > OAuth & Permissions' },
+            { text: 'Scroll to Bot Token Scopes and add all of these:' },
+          ],
+          scopes: ['chat:write', 'channels:read', 'groups:read', 'channels:history', 'app_mentions:read'],
+          after: [
+            { text: 'Scroll up and click Install to Workspace' },
+            { text: 'Click Allow to grant permissions' },
+            { text: 'Copy the Bot User OAuth Token (xoxb-...) — this is your Bot Token' },
+          ],
+        },
+        {
+          title: 'Enable Events',
+          steps: [
+            { text: 'Go to Features > Event Subscriptions' },
+            { text: 'Toggle Enable Events to on' },
+            { text: 'Under Subscribe to bot events, add:' },
+          ],
+          scopes: ['message.channels', 'message.im', 'app_mention'],
+          after: [
+            { text: 'Click Save Changes at the bottom' },
+          ],
+        },
+        {
+          title: 'Connect to Groove',
+          steps: [
+            { text: 'In Groove Settings > Gateways, click Set Token on the Slack card' },
+            { text: 'Paste your Bot Token (xoxb-...) in the first field' },
+            { text: 'Paste your App Token (xapp-...) in the second field' },
+            { text: 'Click Save — Groove will auto-connect' },
+          ],
+        },
+        {
+          title: 'Link a Channel',
+          steps: [
+            { text: 'Invite the bot to a channel: /invite @GroovePilot' },
+            { text: 'Select the channel from the dropdown in the gateway card' },
+            { text: 'Or @mention the bot — it will auto-capture the channel' },
+            { text: 'Click Test to verify' },
+          ],
+          important: 'For private channels, make sure you added the groups:read scope.',
+        },
+        {
+          title: 'Commands',
+          note: 'In Slack, use plain text commands (no / prefix) or @mention the bot:',
+          commands: ['status', 'agents', 'spawn backend', 'kill <id>', 'approve <id>', 'help', '@GroovePilot status'],
+        },
+      ],
+    },
+  };
+
+  const guide = guides[type];
+  if (!guide) return null;
+  const Icon = guide.icon;
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent title={guide.title} width={480}>
+        <div className="px-5 py-4 space-y-5">
+          {/* Intro */}
+          <div className="flex items-start gap-3 p-3 bg-accent/5 border border-accent/15 rounded-lg">
+            <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Icon size={16} className="text-accent" />
+            </div>
+            <p className="text-xs text-text-2 font-sans leading-relaxed">{guide.intro}</p>
+          </div>
+
+          {/* Sections */}
+          {guide.sections.map((section, si) => (
+            <div key={si}>
+              <h3 className="text-xs font-semibold text-text-0 font-sans mb-2.5 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-accent/10 flex items-center justify-center text-2xs font-bold text-accent">{si + 1}</span>
+                {section.title}
+              </h3>
+
+              {section.note && (
+                <p className="text-2xs text-text-3 font-sans mb-2">{section.note}</p>
+              )}
+
+              {section.steps && (
+                <ol className="space-y-2 mb-2">
+                  {section.steps.map((step, i) => (
+                    <li key={i} className="flex gap-2 text-2xs text-text-2 font-sans leading-relaxed">
+                      <span className="text-text-4 font-mono w-4 flex-shrink-0 pt-px">{i + 1}.</span>
+                      <span>
+                        {step.text}
+                        {step.link && (
+                          <>
+                            {' '}
+                            <a href={step.link} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline inline-flex items-center gap-0.5 font-medium">
+                              {step.linkText}<ExternalLink size={9} />
+                            </a>
+                          </>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+
+              {section.scopes && (
+                <div className="flex flex-wrap gap-1.5 mb-2 ml-6">
+                  {section.scopes.map((s) => (
+                    <code key={s} className="px-2 py-0.5 rounded bg-surface-4 text-2xs font-mono text-accent">{s}</code>
+                  ))}
+                </div>
+              )}
+
+              {section.after && (
+                <ol className="space-y-2 mb-2" start={(section.steps?.length || 0) + 1}>
+                  {section.after.map((step, i) => (
+                    <li key={i} className="flex gap-2 text-2xs text-text-2 font-sans leading-relaxed">
+                      <span className="text-text-4 font-mono w-4 flex-shrink-0 pt-px">{(section.steps?.length || 0) + i + 1}.</span>
+                      <span>{step.text}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+
+              {section.important && (
+                <div className="ml-6 p-2 bg-warning/8 border border-warning/20 rounded-md text-2xs text-warning font-sans">
+                  {section.important}
+                </div>
+              )}
+
+              {section.commands && (
+                <div className="ml-6 p-2.5 bg-surface-0 border border-border-subtle rounded-md space-y-1">
+                  {section.commands.map((cmd) => (
+                    <code key={cmd} className="block text-2xs font-mono text-text-1">{cmd}</code>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
 
 /* ── Gateway Card ─────────────────────────────────────────── */
 
@@ -537,7 +765,7 @@ function GatewayCard({ gateway, onRefresh }) {
           </>
         )}
 
-        {/* Not connected, not editing — show state + guide */}
+        {/* Not connected, not editing — show state */}
         {!gateway.connected && !settingToken && (
           <>
             <div className="text-xs text-text-3 font-sans mb-2">
@@ -545,57 +773,33 @@ function GatewayCard({ gateway, onRefresh }) {
             </div>
             {!gateway.hasCredentials && (
               <button
-                onClick={() => setShowGuide(!showGuide)}
+                onClick={() => setShowGuide(true)}
                 className="flex items-center gap-1.5 text-2xs text-accent hover:text-accent/80 font-sans font-medium cursor-pointer mb-2"
               >
                 <HelpCircle size={11} />
-                {showGuide ? 'Hide setup guide' : 'How to set up'}
-                <ChevronRight size={10} className={cn('transition-transform', showGuide && 'rotate-90')} />
+                How to set up
+                <ExternalLink size={9} />
               </button>
             )}
           </>
         )}
 
-        {/* Setup guide */}
-        {showGuide && SETUP_GUIDES[gateway.type] && (
-          <div className="mb-3 p-2.5 bg-accent/5 border border-accent/15 rounded-md">
-            <div className="text-2xs font-semibold text-accent font-sans mb-2">{SETUP_GUIDES[gateway.type].title}</div>
-            <ol className="space-y-1.5">
-              {SETUP_GUIDES[gateway.type].steps.map((step, i) => (
-                <li key={i} className="text-2xs text-text-3 font-sans flex gap-1.5">
-                  <span className="text-text-4 font-mono w-4 flex-shrink-0">{i + 1}.</span>
-                  <span>
-                    {step.text}
-                    {step.link && (
-                      <>
-                        {' '}
-                        <a href={step.link} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline inline-flex items-center gap-0.5">
-                          {step.linkText}<ExternalLink size={8} />
-                        </a>
-                      </>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </div>
-        )}
+        {/* Setup guide sheet */}
+        <GatewaySetupGuide type={gateway.type} open={showGuide} onOpenChange={setShowGuide} />
 
         <div className="flex-1" />
 
         {/* Token input form */}
         {settingToken && (
           <div className="space-y-2.5 pt-1">
-            {/* Inline guide toggle when editing tokens */}
-            {SETUP_GUIDES[gateway.type] && (
-              <button
-                onClick={() => setShowGuide(!showGuide)}
-                className="flex items-center gap-1.5 text-2xs text-accent hover:text-accent/80 font-sans font-medium cursor-pointer"
-              >
-                <HelpCircle size={11} />
-                {showGuide ? 'Hide guide' : 'Where do I get these?'}
-              </button>
-            )}
+            {/* Open setup guide */}
+            <button
+              onClick={() => setShowGuide(true)}
+              className="flex items-center gap-1.5 text-2xs text-accent hover:text-accent/80 font-sans font-medium cursor-pointer"
+            >
+              <HelpCircle size={11} />
+              Where do I get these?
+            </button>
             <div>
               <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">Bot Token</label>
               <div className="relative">

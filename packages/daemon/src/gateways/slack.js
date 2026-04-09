@@ -46,6 +46,7 @@ export class SlackGateway extends BaseGateway {
     // Handle @mentions of the bot — primary way to interact
     this.app.event('app_mention', async ({ event, say }) => {
       try {
+        console.log(`[Groove:Slack] Mention received:`, JSON.stringify({ text: event.text, user: event.user, channel: event.channel }));
         if (!event.text) return;
 
         // Auto-capture channelId
@@ -78,6 +79,7 @@ export class SlackGateway extends BaseGateway {
     // Handle direct messages to the bot
     this.app.message(async ({ message, say }) => {
       try {
+        console.log(`[Groove:Slack] Message received:`, JSON.stringify({ text: message.text, user: message.user, channel: message.channel, bot_id: message.bot_id, subtype: message.subtype }));
         if (!message.text || message.bot_id || message.subtype) return;
 
         // Auto-capture channelId from DMs or channels

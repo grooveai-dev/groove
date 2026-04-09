@@ -134,6 +134,61 @@ export function sanitizeForFilename(name) {
   return sanitized;
 }
 
+const VALID_GATEWAY_TYPES = ['telegram', 'discord', 'slack'];
+const VALID_NOTIFICATION_PRESETS = ['critical', 'lifecycle', 'all', 'custom'];
+
+export function validateGatewayConfig(config) {
+  if (!config || typeof config !== 'object') {
+    throw new Error('Invalid gateway config');
+  }
+
+  if (!config.type || !VALID_GATEWAY_TYPES.includes(config.type)) {
+    throw new Error(`Invalid gateway type. Must be one of: ${VALID_GATEWAY_TYPES.join(', ')}`);
+  }
+
+  if (config.chatId !== undefined && config.chatId !== null) {
+    if (typeof config.chatId !== 'string' || config.chatId.length > 100) {
+      throw new Error('Invalid chatId');
+    }
+  }
+
+  if (config.allowedUsers !== undefined && config.allowedUsers !== null) {
+    if (!Array.isArray(config.allowedUsers)) {
+      throw new Error('allowedUsers must be an array');
+    }
+    if (config.allowedUsers.length > 50) {
+      throw new Error('Too many allowed users (max 50)');
+    }
+    for (const u of config.allowedUsers) {
+      if (typeof u !== 'string' || u.length > 100) {
+        throw new Error('Invalid user ID in allowedUsers');
+      }
+    }
+  }
+
+  if (config.notifications !== undefined && config.notifications !== null) {
+    if (typeof config.notifications !== 'object') {
+      throw new Error('notifications must be an object');
+    }
+    if (config.notifications.preset && !VALID_NOTIFICATION_PRESETS.includes(config.notifications.preset)) {
+      throw new Error(`Invalid notification preset. Must be one of: ${VALID_NOTIFICATION_PRESETS.join(', ')}`);
+    }
+  }
+
+  if (config.commandPermission !== undefined && !['full', 'read-only'].includes(config.commandPermission)) {
+    throw new Error('Invalid commandPermission. Must be "full" or "read-only"');
+  }
+
+  return {
+    type: config.type,
+    enabled: config.enabled !== false,
+    chatId: config.chatId || null,
+    allowedUsers: (config.allowedUsers || []).map(String),
+    notifications: config.notifications || { preset: 'critical' },
+    commandPermission: config.commandPermission || 'full',
+  };
+}
+
 export function escapeMd(text) {
   if (!text) return '';
   // Escape markdown special chars that could break table rendering or inject formatting.

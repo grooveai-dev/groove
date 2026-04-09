@@ -33,6 +33,7 @@ import { Scheduler } from './scheduler.js';
 import { FileWatcher } from './filewatcher.js';
 import { TimelineTracker } from './timeline.js';
 import { TerminalManager } from './terminal-pty.js';
+import { GatewayManager } from './gateways/manager.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 
 const DEFAULT_PORT = 31415;
@@ -127,6 +128,7 @@ export class Daemon {
     this.scheduler = new Scheduler(this);
     this.fileWatcher = new FileWatcher(this);
     this.terminalManager = new TerminalManager(this);
+    this.gateways = new GatewayManager(this);
 
     // HTTP + WebSocket server
     this.app = express();
@@ -296,6 +298,7 @@ export class Daemon {
         this.rotator.start();
         this.scheduler.start();
         this.timeline.start();
+        this.gateways.start();
         this._startGarbageCollector();
 
         // Scan codebase for workspace/structure awareness
@@ -368,6 +371,7 @@ export class Daemon {
     this.state.save();
 
     // Stop background services
+    await this.gateways.stop();
     this.journalist.stop();
     this.rotator.stop();
     this.scheduler.stop();

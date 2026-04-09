@@ -30,6 +30,9 @@ export const useGrooveStore = create((set, get) => ({
   teams: [],
   activeTeamId: localStorage.getItem('groove:activeTeamId') || null,
 
+  // ── Gateways ──────────────────────────────────────────────
+  gateways: [],
+
   // ── Navigation ────────────────────────────────────────────
   activeView: 'agents',           // 'agents' | 'editor' | 'dashboard' | 'marketplace' | 'teams' | 'settings'
   detailPanel: null,              // null | { type: 'agent', agentId } | { type: 'spawn' } | { type: 'journalist' }
@@ -224,6 +227,10 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'schedule:execute':
           get().addToast('info', `Scheduled agent spawned: ${msg.name || msg.role || 'agent'}`);
+          break;
+
+        case 'gateway:status':
+          set({ gateways: msg.data || [] });
           break;
       }
     };

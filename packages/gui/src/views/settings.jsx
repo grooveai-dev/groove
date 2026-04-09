@@ -15,7 +15,8 @@ import {
   Key, Eye, EyeOff, Check, Cpu, ChevronDown,
   FolderOpen, FolderSearch, RotateCw, Users, Gauge, Zap,
   LogIn, LogOut, User, ShieldCheck, Settings,
-  Newspaper, Layers,
+  Newspaper, Layers, Radio, Send, MessageSquare, MessageCircle,
+  Plus, Trash2, Plug, PlugZap, TestTube, X,
 } from 'lucide-react';
 
 /* ── Toggle ────────────────────────────────────────────────── */
@@ -228,12 +229,330 @@ function ConfigCard({ icon: Icon, label, description, children }) {
   );
 }
 
+/* ── Gateway Icons ─────────────────────────────────────────── */
+
+const GATEWAY_ICONS = { telegram: Send, discord: MessageSquare, slack: MessageCircle };
+const GATEWAY_LABELS = { telegram: 'Telegram', discord: 'Discord', slack: 'Slack' };
+const GATEWAY_PLACEHOLDERS = { telegram: 'Bot token from @BotFather', discord: 'Bot token from Developer Portal', slack: 'Bot token (xoxb-...)' };
+const NOTIFICATION_PRESETS = ['critical', 'lifecycle', 'all'];
+
+/* ── Gateway Card ─────────────────────────────────────────── */
+
+function GatewayCard({ gateway, onRefresh }) {
+  const [settingToken, setSettingToken] = useState(false);
+  const [tokenInput, setTokenInput] = useState('');
+  const [appTokenInput, setAppTokenInput] = useState('');
+  const [showToken, setShowToken] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const addToast = useGrooveStore((s) => s.addToast);
+
+  const Icon = GATEWAY_ICONS[gateway.type] || Radio;
+  const isSlack = gateway.type === 'slack';
+
+  async function handleSaveToken() {
+    if (!tokenInput.trim()) return;
+    try {
+      await api.post(`/gateways/${gateway.id}/credentials`, { key: 'bot_token', value: tokenInput.trim() });
+      if (isSlack && appTokenInput.trim()) {
+        await api.post(`/gateways/${gateway.id}/credentials`, { key: 'app_token', value: appTokenInput.trim() });
+      }
+      addToast('success', `Token saved for ${GATEWAY_LABELS[gateway.type]}`);
+      setTokenInput('');
+      setAppTokenInput('');
+      setSettingToken(false);
+      onRefresh();
+    } catch (err) {
+      addToast('error', 'Failed to save token', err.message);
+    }
+  }
+
+  async function handleTest() {
+    setTesting(true);
+    try {
+      await api.post(`/gateways/${gateway.id}/test`);
+      addToast('success', 'Test message sent!');
+    } catch (err) {
+      addToast('error', 'Test failed', err.message);
+    }
+    setTesting(false);
+  }
+
+  async function handleToggleConnect() {
+    setConnecting(true);
+    try {
+      if (gateway.connected) {
+        await api.post(`/gateways/${gateway.id}/disconnect`);
+        addToast('info', `${GATEWAY_LABELS[gateway.type]} disconnected`);
+      } else {
+        await api.post(`/gateways/${gateway.id}/connect`);
+        addToast('success', `${GATEWAY_LABELS[gateway.type]} connected!`);
+      }
+      onRefresh();
+    } catch (err) {
+      addToast('error', gateway.connected ? 'Disconnect failed' : 'Connect failed', err.message);
+    }
+    setConnecting(false);
+  }
+
+  async function handleToggleEnabled(enabled) {
+    try {
+      await api.patch(`/gateways/${gateway.id}`, { enabled });
+      onRefresh();
+    } catch (err) {
+      addToast('error', 'Update failed', err.message);
+    }
+  }
+
+  async function handlePresetChange(preset) {
+    try {
+      await api.patch(`/gateways/${gateway.id}`, { notifications: { preset } });
+      onRefresh();
+    } catch (err) {
+      addToast('error', 'Update failed', err.message);
+    }
+  }
+
+  async function handlePermissionChange(perm) {
+    try {
+      await api.patch(`/gateways/${gateway.id}`, { commandPermission: perm });
+      onRefresh();
+    } catch (err) {
+      addToast('error', 'Update failed', err.message);
+    }
+  }
+
+  async function handleDelete() {
+    try {
+      await api.delete(`/gateways/${gateway.id}`);
+      addToast('info', `${GATEWAY_LABELS[gateway.type]} gateway removed`);
+      onRefresh();
+    } catch (err) {
+      addToast('error', 'Delete failed', err.message);
+    }
+  }
+
+  const currentPreset = gateway.notifications?.preset || 'critical';
+
+  return (
+    <div className="flex flex-col rounded-lg border border-border-subtle bg-surface-1 overflow-hidden min-w-[220px]">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border-subtle">
+        <StatusDot status={gateway.connected ? 'running' : 'crashed'} size="sm" />
+        <Icon size={13} className="text-text-2" />
+        <span className="text-[13px] font-semibold text-text-0 font-sans">{GATEWAY_LABELS[gateway.type]}</span>
+        <div className="flex-1" />
+        {gateway.connected ? (
+          <Badge variant="success" className="text-2xs gap-1"><PlugZap size={8} /> Connected</Badge>
+        ) : gateway.enabled ? (
+          <Badge variant="warning" className="text-2xs">Disconnected</Badge>
+        ) : (
+          <Badge variant="default" className="text-2xs">Disabled</Badge>
+        )}
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 flex flex-col px-4 py-3 min-h-[140px]">
+
+        {/* Connected state */}
+        {gateway.connected && !settingToken && (
+          <>
+            <div className="flex items-center gap-1.5 h-8 px-2.5 bg-success/8 border border-success/20 rounded-md text-2xs font-sans text-success mb-3">
+              <Check size={10} /> Gateway active
+              {gateway.botUsername && <span className="text-text-4 ml-1">@{gateway.botUsername}</span>}
+              {gateway.botTag && <span className="text-text-4 ml-1">{gateway.botTag}</span>}
+            </div>
+
+            {/* Notification preset */}
+            <div className="mb-3">
+              <label className="text-2xs font-semibold text-text-3 font-sans mb-1.5 block">Notifications</label>
+              <div className="flex bg-surface-0 rounded-md p-0.5 border border-border-subtle">
+                {NOTIFICATION_PRESETS.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => handlePresetChange(p)}
+                    className={cn(
+                      'flex-1 px-2 py-1.5 text-2xs font-semibold font-sans rounded transition-all cursor-pointer capitalize',
+                      currentPreset === p ? 'bg-accent/15 text-accent shadow-sm' : 'text-text-3 hover:text-text-1',
+                    )}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Command permissions */}
+            <div className="mb-3">
+              <label className="text-2xs font-semibold text-text-3 font-sans mb-1.5 block">Commands</label>
+              <div className="flex bg-surface-0 rounded-md p-0.5 border border-border-subtle">
+                {['full', 'read-only'].map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => handlePermissionChange(p)}
+                    className={cn(
+                      'flex-1 px-2 py-1.5 text-2xs font-semibold font-sans rounded transition-all cursor-pointer capitalize',
+                      (gateway.commandPermission || 'full') === p ? 'bg-accent/15 text-accent shadow-sm' : 'text-text-3 hover:text-text-1',
+                    )}
+                  >
+                    {p === 'full' ? 'Full Access' : 'Read Only'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Not connected, not editing — show action */}
+        {!gateway.connected && !settingToken && (
+          <div className="text-xs text-text-3 font-sans mb-3">
+            {gateway.enabled ? 'Configure bot token to connect.' : 'Gateway is disabled.'}
+          </div>
+        )}
+
+        <div className="flex-1" />
+
+        {/* Token input form */}
+        {settingToken && (
+          <div className="space-y-2.5 pt-1">
+            <div>
+              <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">Bot Token</label>
+              <div className="relative">
+                <input
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && !isSlack && handleSaveToken()}
+                  type={showToken ? 'text' : 'password'}
+                  placeholder={GATEWAY_PLACEHOLDERS[gateway.type]}
+                  className="w-full h-9 px-3 pr-9 text-xs bg-surface-0 border border-border rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+                  autoFocus
+                />
+                <button onClick={() => setShowToken(!showToken)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-4 hover:text-text-2 cursor-pointer">
+                  {showToken ? <EyeOff size={12} /> : <Eye size={12} />}
+                </button>
+              </div>
+            </div>
+            {isSlack && (
+              <div>
+                <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">App Token (Socket Mode)</label>
+                <input
+                  value={appTokenInput}
+                  onChange={(e) => setAppTokenInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveToken()}
+                  type={showToken ? 'text' : 'password'}
+                  placeholder="xapp-..."
+                  className="w-full h-9 px-3 text-xs bg-surface-0 border border-border rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+                />
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button variant="primary" size="sm" onClick={handleSaveToken} disabled={!tokenInput.trim()} className="flex-1 h-8 text-xs">
+                Save Token
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => { setSettingToken(false); setTokenInput(''); setAppTokenInput(''); }} className="h-8 text-xs px-3">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Bottom actions */}
+        {!settingToken && (
+          <div className="flex gap-2 mt-2">
+            {!gateway.connected && (
+              <Button variant="primary" size="sm" onClick={() => setSettingToken(true)} className="flex-1 h-7 text-2xs gap-1.5">
+                <Key size={11} />
+                {gateway.enabled ? 'Set Token' : 'Configure'}
+              </Button>
+            )}
+            {gateway.connected && (
+              <>
+                <Button variant="secondary" size="sm" onClick={handleTest} disabled={testing} className="flex-1 h-7 text-2xs gap-1.5">
+                  <TestTube size={11} />
+                  {testing ? 'Sending...' : 'Test'}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setSettingToken(true)} className="h-7 text-2xs px-2.5">
+                  <Key size={11} />
+                </Button>
+              </>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleToggleConnect}
+              disabled={connecting}
+              className="h-7 text-2xs px-2.5"
+              title={gateway.connected ? 'Disconnect' : 'Connect'}
+            >
+              {gateway.connected ? <Plug size={11} /> : <PlugZap size={11} />}
+            </Button>
+            <Toggle value={gateway.enabled} onChange={handleToggleEnabled} />
+            <button onClick={handleDelete} className="text-text-4 hover:text-danger cursor-pointer p-1" title="Remove gateway">
+              <Trash2 size={11} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Add Gateway Button ───────────────────────────────────── */
+
+function AddGatewayCard({ existingTypes, onAdd }) {
+  const [open, setOpen] = useState(false);
+  const available = ['telegram', 'discord', 'slack'].filter((t) => !existingTypes.includes(t));
+
+  if (available.length === 0) return null;
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border-subtle bg-surface-1/50 hover:bg-surface-1 hover:border-accent/30 min-h-[140px] min-w-[220px] cursor-pointer transition-all group"
+      >
+        <div className="w-8 h-8 rounded-full bg-accent/8 group-hover:bg-accent/15 flex items-center justify-center mb-2 transition-colors">
+          <Plus size={14} className="text-accent" />
+        </div>
+        <span className="text-2xs font-semibold text-text-3 group-hover:text-text-1 font-sans transition-colors">Add Gateway</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col rounded-lg border border-accent/30 bg-surface-1 overflow-hidden min-w-[220px]">
+      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border-subtle">
+        <Radio size={13} className="text-accent" />
+        <span className="text-[13px] font-semibold text-text-0 font-sans">Add Gateway</span>
+        <div className="flex-1" />
+        <button onClick={() => setOpen(false)} className="text-text-4 hover:text-text-1 cursor-pointer"><X size={12} /></button>
+      </div>
+      <div className="p-3 space-y-2">
+        {available.map((type) => {
+          const Icon = GATEWAY_ICONS[type];
+          return (
+            <button
+              key={type}
+              onClick={() => { onAdd(type); setOpen(false); }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md bg-surface-0 hover:bg-accent/8 border border-border-subtle hover:border-accent/20 cursor-pointer transition-all group"
+            >
+              <Icon size={14} className="text-text-3 group-hover:text-accent" />
+              <span className="text-xs font-medium text-text-1 group-hover:text-accent font-sans">{GATEWAY_LABELS[type]}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ── Main Settings View ────────────────────────────────────── */
 
 export default function SettingsView() {
   const [providers, setProviders] = useState([]);
   const [config, setConfig] = useState(null);
   const [daemonInfo, setDaemonInfo] = useState(null);
+  const [gwList, setGwList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [folderBrowserOpen, setFolderBrowserOpen] = useState(false);
   const addToast = useGrooveStore((s) => s.addToast);
@@ -246,11 +565,25 @@ export default function SettingsView() {
     api.get('/providers').then((d) => setProviders(Array.isArray(d) ? d : [])).catch(() => {});
   }
 
+  function loadGateways() {
+    api.get('/gateways').then((d) => setGwList(Array.isArray(d) ? d : [])).catch(() => {});
+  }
+
   useEffect(() => {
-    Promise.all([api.get('/providers'), api.get('/config'), api.get('/status')])
-      .then(([p, c, s]) => { setProviders(Array.isArray(p) ? p : []); setConfig(c); setDaemonInfo(s); setLoading(false); })
+    Promise.all([api.get('/providers'), api.get('/config'), api.get('/status'), api.get('/gateways')])
+      .then(([p, c, s, g]) => { setProviders(Array.isArray(p) ? p : []); setConfig(c); setDaemonInfo(s); setGwList(Array.isArray(g) ? g : []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+
+  async function addGateway(type) {
+    try {
+      await api.post('/gateways', { type });
+      addToast('success', `${GATEWAY_LABELS[type]} gateway added`);
+      loadGateways();
+    } catch (err) {
+      addToast('error', 'Failed to add gateway', err.message);
+    }
+  }
 
   async function updateConfig(key, value) {
     try {
@@ -337,6 +670,23 @@ export default function SettingsView() {
               {providers.map((p) => (
                 <ProviderCard key={p.id} provider={p} onKeyChange={loadProviders} />
               ))}
+            </div>
+          </div>
+
+          {/* ═══════ GATEWAYS ═══════ */}
+          <div>
+            <div className="flex items-center gap-2 mb-2.5 px-0.5">
+              <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Gateways</span>
+              <div className="flex-1 h-px bg-border-subtle" />
+              <span className="text-2xs text-text-4 font-sans">
+                {gwList.filter((g) => g.connected).length}/{gwList.length} connected
+              </span>
+            </div>
+            <div className="grid grid-cols-4 gap-3">
+              {gwList.map((gw) => (
+                <GatewayCard key={gw.id} gateway={gw} onRefresh={loadGateways} />
+              ))}
+              <AddGatewayCard existingTypes={gwList.map((g) => g.type)} onAdd={addGateway} />
             </div>
           </div>
 

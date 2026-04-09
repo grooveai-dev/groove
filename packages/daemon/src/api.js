@@ -838,6 +838,92 @@ Keep responses concise. Help them think, don't lecture them about the system the
     res.json({ id: agent.id, integrations });
   });
 
+  // --- Gateways (Telegram, Discord, Slack) ---
+
+  app.get('/api/gateways', (req, res) => {
+    res.json(daemon.gateways.list());
+  });
+
+  app.post('/api/gateways', async (req, res) => {
+    try {
+      const result = await daemon.gateways.create(req.body || {});
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/gateways/:id', (req, res) => {
+    const gw = daemon.gateways.get(req.params.id);
+    if (!gw) return res.status(404).json({ error: 'Gateway not found' });
+    res.json(gw);
+  });
+
+  app.patch('/api/gateways/:id', async (req, res) => {
+    try {
+      const result = await daemon.gateways.update(req.params.id, req.body || {});
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/gateways/:id', async (req, res) => {
+    try {
+      await daemon.gateways.delete(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/gateways/:id/test', async (req, res) => {
+    try {
+      const result = await daemon.gateways.test(req.params.id);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/gateways/:id/connect', async (req, res) => {
+    try {
+      const result = await daemon.gateways.connect(req.params.id);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/gateways/:id/disconnect', async (req, res) => {
+    try {
+      const result = await daemon.gateways.disconnect(req.params.id);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/gateways/:id/credentials', (req, res) => {
+    try {
+      const { key, value } = req.body || {};
+      if (!key || !value) return res.status(400).json({ error: 'key and value are required' });
+      daemon.gateways.setCredential(req.params.id, key, value);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/gateways/:id/credentials/:key', (req, res) => {
+    try {
+      daemon.gateways.deleteCredential(req.params.id, req.params.key);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // --- Schedules ---
 
   app.get('/api/schedules', (req, res) => {

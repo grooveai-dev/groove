@@ -156,11 +156,16 @@ export class SlackGateway extends BaseGateway {
       }
     });
 
+    // Bolt's auth.test can throw as unhandled rejection — catch it
+    const startPromise = this.app.start().catch((err) => {
+      throw new Error(`Slack connection failed: ${err.message}`);
+    });
+
     try {
-      await this.app.start();
+      await startPromise;
     } catch (err) {
       this.app = null;
-      throw new Error(`Slack connection failed: ${err.message}`);
+      throw err;
     }
 
     this.connected = true;

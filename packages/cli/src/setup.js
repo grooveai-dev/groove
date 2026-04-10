@@ -209,16 +209,14 @@ const PROVIDERS = [
 export async function runSetupWizard() {
   const version = getVersion();
 
-  const line = '──────────────────────────────────────';
-  const vPad = `    v${version}`;
   console.log('');
-  console.log(`  ┌${line}┐`);
-  console.log(`  │${' '.repeat(38)}│`);
-  console.log(`  │       ${chalk.bold.cyan('G R O O V E')}                │`);
-  console.log(`  │  Agent Orchestration Layer         │`);
-  console.log(`  │${' '.repeat(38)}│`);
-  console.log(`  │  ${chalk.dim(vPad)}${' '.repeat(Math.max(0, 34 - vPad.length))}│`);
-  console.log(`  └${line}┘`);
+  console.log('  ┌────────────────────────────────────────┐');
+  console.log('  │                                        │');
+  console.log('  │        ' + chalk.bold.cyan('G R O O V E') + '                     │');
+  console.log('  │   Agent Orchestration Layer            │');
+  console.log('  │                                        │');
+  console.log('  │   ' + chalk.dim(`v${version}`) + ' '.repeat(Math.max(1, 36 - version.length)) + '│');
+  console.log('  └────────────────────────────────────────┘');
   console.log('');
   console.log(chalk.dim('  First time? Let\'s get you set up in under a minute.'));
   console.log('');

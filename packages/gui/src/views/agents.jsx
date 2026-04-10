@@ -270,19 +270,40 @@ function AgentTreeInner() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState(targetNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(targetEdges);
-  const mountedRef = useRef(false);
+  const prevAgentIds = useRef(new Set());
 
-  useEffect(() => { setNodes(targetNodes); }, [targetNodes, setNodes]);
+  // Update node DATA without replacing positions (prevents fly-in)
+  useEffect(() => {
+    setNodes((current) => {
+      const currentMap = new Map(current.map((n) => [n.id, n]));
+      const newIds = new Set(targetNodes.map((n) => n.id));
+
+      return targetNodes.map((tn) => {
+        const existing = currentMap.get(tn.id);
+        if (existing) {
+          // Preserve existing position, update data only
+          return { ...existing, data: tn.data };
+        }
+        // New node — use calculated position
+        return tn;
+      });
+    });
+  }, [targetNodes, setNodes]);
+
   useEffect(() => { setEdges(targetEdges); }, [targetEdges, setEdges]);
 
   useEffect(() => {
-    if (agents.length > 0) {
-      const delay = mountedRef.current ? 200 : 50;
-      setTimeout(() => fitView({ padding: 0.3, maxZoom: 1.2, duration: mountedRef.current ? 400 : 0 }), delay);
-      mountedRef.current = true;
+    const currentIds = new Set(agents.map((a) => a.id));
+    const isNewAgent = agents.length > 0 && [...currentIds].some((id) => !prevAgentIds.current.has(id));
+    prevAgentIds.current = currentIds;
+
+    if (prevCount === 0 && agents.length > 0) {
+      setTimeout(() => fitView({ padding: 0.3, maxZoom: 1.2, duration: 0 }), 50);
+    } else if (isNewAgent) {
+      setTimeout(() => fitView({ padding: 0.3, maxZoom: 1.2, duration: 300 }), 100);
     }
     setPrevCount(agents.length);
-  }, [agents.length, prevCount, fitView]);
+  }, [agents.length, agents, prevCount, fitView]);
 
   const onNodeClick = useCallback((_e, node) => {
     if (node.id === ROOT_ID) return;

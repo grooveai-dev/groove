@@ -213,10 +213,10 @@ function UserMessage({ msg }) {
           </div>
         )}
         <div className={cn(
-          'px-3.5 py-2.5 rounded-2xl rounded-br-md',
+          'px-3.5 py-2.5 rounded-lg',
           isQuery
-            ? 'bg-info/10 border border-info/15'
-            : 'bg-accent/10 border border-accent/15',
+            ? 'bg-info/15 text-info'
+            : 'bg-accent/15 text-accent',
         )}>
           <div className="text-[12px] font-sans whitespace-pre-wrap break-words leading-relaxed text-text-0">
             <FormattedText text={msg.text} />
@@ -242,7 +242,7 @@ function AgentMessage({ msg, agent }) {
         <span className="text-2xs text-text-4 font-sans">{agent?.role}</span>
       </div>
       <div className={cn(
-        'ml-7 px-3.5 py-3 rounded-xl bg-accent/[0.06] border border-accent/10 overflow-hidden',
+        'ml-7 px-3.5 py-3 rounded-lg bg-accent/15 overflow-hidden',
         collapsed && 'max-h-[200px] relative',
       )}>
         <StructuredMessage text={collapsed ? msg.text.slice(0, 600) : msg.text} />

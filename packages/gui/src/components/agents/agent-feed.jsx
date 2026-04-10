@@ -233,21 +233,19 @@ function AgentMessage({ msg, agent }) {
   const isLong = msg.text?.length > 600;
 
   return (
-    <div className="pr-2">
-      <div className="flex items-center gap-2 mb-1.5">
-        <div className="w-5 h-5 rounded-md bg-accent/12 flex items-center justify-center flex-shrink-0">
-          <Code2 size={10} className="text-accent" />
-        </div>
+    <div>
+      <div className="flex items-center gap-2 mb-1">
         <span className="text-2xs font-semibold text-text-1 font-sans">{agent?.name || 'Agent'}</span>
         <span className="text-2xs text-text-4 font-sans">{agent?.role}</span>
+        <span className="text-[10px] text-text-4 font-sans ml-auto">{timeAgo(msg.timestamp)}</span>
       </div>
       <div className={cn(
-        'ml-7 px-3.5 py-3 rounded-lg bg-accent/10 border border-accent/25 overflow-hidden',
+        'border-l-[3px] border-info pl-3.5 py-1 overflow-hidden',
         collapsed && 'max-h-[200px] relative',
       )}>
         <StructuredMessage text={collapsed ? msg.text.slice(0, 600) : msg.text} />
         {collapsed && (
-          <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-[#1a2a2e] to-transparent flex items-end justify-center pb-3">
+          <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-surface-2 to-transparent flex items-end justify-center pb-2">
             <button
               onClick={() => setCollapsed(false)}
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-accent/15 border border-accent/25 text-xs text-accent font-sans font-medium hover:bg-accent/25 cursor-pointer transition-colors"
@@ -261,13 +259,12 @@ function AgentMessage({ msg, agent }) {
       {isLong && !collapsed && (
         <button
           onClick={() => setCollapsed(true)}
-          className="ml-7 mt-1.5 flex items-center gap-1 text-[11px] text-accent/60 hover:text-accent font-sans cursor-pointer"
+          className="ml-4 mt-1 flex items-center gap-1 text-[11px] text-accent/60 hover:text-accent font-sans cursor-pointer"
         >
           <ChevronDown size={10} className="rotate-180" />
           Collapse
         </button>
       )}
-      <div className="text-[10px] text-text-4 font-sans mt-1 ml-7">{timeAgo(msg.timestamp)}</div>
     </div>
   );
 }
@@ -407,7 +404,7 @@ function BootSequence({ agent }) {
   }, []);
 
   return (
-    <div className="flex flex-col items-center justify-start h-full px-4 pt-12">
+    <div className="flex flex-col items-center px-4 pt-6">
       {/* Agent identity */}
       <div className="flex flex-col items-center gap-3 mb-6">
         <div className="relative w-9 h-9">

@@ -451,8 +451,9 @@ export const useGrooveStore = create((set, get) => ({
 
   async launchRecommendedTeam() {
     try {
+      set({ recommendedTeam: null }); // Dismiss modal immediately
+      get().addToast('info', 'Launching team...');
       const result = await api.post('/recommended-team/launch');
-      set({ recommendedTeam: null });
       get().addToast('success', `Launched ${result.launched} agents`, result.phase2Pending ? `${result.phase2Pending} QC agents queued` : undefined);
       // Clean up stale files
       api.post('/cleanup').catch(() => {});
@@ -535,8 +536,22 @@ export const useGrooveStore = create((set, get) => ({
   async instructAgent(id, message) {
     const agent = get().agents.find((a) => a.id === id);
     const isAlive = agent && (agent.status === 'running' || agent.status === 'starting');
+
+    // Running agent: use query (non-destructive) instead of killing it
+    if (isAlive) {
+      get().addChatMessage(id, 'user', message, false);
+      try {
+        const data = await api.post(`/agents/${id}/query`, { message });
+        get().addChatMessage(id, 'agent', data.response);
+        return data;
+      } catch (err) {
+        get().addChatMessage(id, 'system', `failed: ${err.message}`);
+        throw err;
+      }
+    }
+
+    // Completed/stopped agent: resume with full context
     get().addChatMessage(id, 'user', message, false);
-    get().addChatMessage(id, 'system', isAlive ? 'sending instruction...' : 'continuing conversation...');
     try {
       const newAgent = await api.post(`/agents/${id}/instruct`, { message });
       // Carry history to new agent ID
@@ -549,7 +564,6 @@ export const useGrooveStore = create((set, get) => ({
       if (get().chatHistory[id]?.length) persistJSON('groove:chatHistory', get().chatHistory);
       if (get().activityLog[id]?.length) persistJSON('groove:activityLog', get().activityLog);
       get().selectAgent(newAgent.id);
-      get().addChatMessage(newAgent.id, 'system', 'agent resumed with context');
       return newAgent;
     } catch (err) {
       get().addChatMessage(id, 'system', `failed: ${err.message}`);

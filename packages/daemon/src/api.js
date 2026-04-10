@@ -1485,21 +1485,27 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
       // Spawn phase 1 agents immediately
       const spawned = [];
+      const failed = [];
       const phase1Ids = [];
       for (const config of phase1) {
-        const validated = validateAgentConfig({
-          role: config.role,
-          scope: config.scope || [],
-          prompt: config.prompt || '',
-          provider: config.provider || 'claude-code',
-          model: config.model || 'auto',
-          permission: config.permission || 'auto',
-          workingDir: config.workingDir || defaultDir,
-          name: config.name || undefined,
-        });
-        const agent = await daemon.processes.spawn(validated);
-        spawned.push({ id: agent.id, name: agent.name, role: agent.role });
-        phase1Ids.push(agent.id);
+        try {
+          const validated = validateAgentConfig({
+            role: config.role,
+            scope: config.scope || [],
+            prompt: config.prompt || '',
+            provider: config.provider || 'claude-code',
+            model: config.model || 'auto',
+            permission: config.permission || 'auto',
+            workingDir: config.workingDir || defaultDir,
+            name: config.name || undefined,
+          });
+          const agent = await daemon.processes.spawn(validated);
+          spawned.push({ id: agent.id, name: agent.name, role: agent.role });
+          phase1Ids.push(agent.id);
+        } catch (err) {
+          failed.push({ role: config.role, error: err.message });
+          console.log(`[Groove] Failed to spawn ${config.role}: ${err.message}`);
+        }
       }
 
       // If there are phase 2 agents, register them for auto-spawn on phase 1 completion
@@ -1518,10 +1524,10 @@ Keep responses concise. Help them think, don't lecture them about the system the
       }
 
       daemon.audit.log('team.launch', {
-        phase1: spawned.length, phase2Pending: phase2.length,
+        phase1: spawned.length, phase2Pending: phase2.length, failed: failed.length,
         agents: spawned.map((a) => a.role),
       });
-      res.json({ launched: spawned.length, phase2Pending: phase2.length, agents: spawned });
+      res.json({ launched: spawned.length, phase2Pending: phase2.length, agents: spawned, failed });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

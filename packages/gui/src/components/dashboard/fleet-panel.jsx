@@ -13,65 +13,67 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
   const sColor = isRotating ? '#c678dd' : statusColor(agent.status);
   const quality = agent.quality;
   const successRate = quality?.toolSuccessRate != null ? Math.round(quality.toolSuccessRate * 100) : null;
+  const thresholdPct = agent.rotationThreshold ? Math.round(agent.rotationThreshold * 100) : null;
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-3 transition-colors">
-      {/* Status square */}
-      <span className="relative flex-shrink-0 w-[6px] h-[6px]">
-        <span className="absolute inset-0 rounded-sm" style={{ background: sColor }} />
-        {isAlive && (
+    <div className="px-3 py-2 hover:bg-surface-3 transition-colors space-y-1.5">
+      {/* Top row: status + name + values */}
+      <div className="flex items-center gap-2">
+        {/* Status square */}
+        <span className="relative flex-shrink-0 w-[6px] h-[6px]">
+          <span className="absolute inset-0 rounded-sm" style={{ background: sColor }} />
+          {isAlive && (
+            <span
+              className="absolute inset-[-2px] rounded-sm"
+              style={{ background: sColor, opacity: 0.15, animation: 'node-pulse-bar 2s ease-in-out infinite' }}
+            />
+          )}
+        </span>
+
+        {/* Name */}
+        <div className="min-w-0">
+          <div className="text-xs font-semibold text-text-0 font-sans truncate leading-none">{agent.name}</div>
+          <div className="flex items-center gap-1 mt-0.5">
+            <span className="text-2xs font-mono text-text-3 uppercase tracking-wider">{agent.role}</span>
+            <span className="text-2xs text-text-4">/</span>
+            <span className="text-2xs font-mono text-text-3">{shortModel(agent.model)}</span>
+          </div>
+        </div>
+
+        <div className="flex-1" />
+
+        {/* Quality badge */}
+        {successRate != null && (
           <span
-            className="absolute inset-[-2px] rounded-sm"
-            style={{ background: sColor, opacity: 0.15, animation: 'node-pulse-bar 2s ease-in-out infinite' }}
-          />
+            className="text-2xs font-mono font-bold uppercase px-1 py-px rounded-sm flex-shrink-0"
+            style={{
+              color: successRate >= 90 ? '#4ae168' : successRate >= 70 ? '#e5c07b' : '#e06c75',
+              background: successRate >= 90 ? 'rgba(74,225,104,0.1)' : successRate >= 70 ? 'rgba(229,192,123,0.1)' : 'rgba(224,108,117,0.1)',
+            }}
+          >
+            {successRate}%
+          </span>
         )}
-      </span>
 
-      {/* Name + role/model */}
-      <div className="flex-1 min-w-0">
-        <div className="text-xs font-semibold text-text-0 font-sans truncate leading-none">{agent.name}</div>
-        <div className="flex items-center gap-1 mt-0.5">
-          <span className="text-2xs font-mono text-text-3 uppercase tracking-wider">{agent.role}</span>
-          <span className="text-2xs text-text-4">/</span>
-          <span className="text-2xs font-mono text-text-3">{shortModel(agent.model)}</span>
+        {/* Cost source badge */}
+        {agent.costSource && agent.costSource !== 'actual' && (
+          <span className="text-2xs font-mono text-text-4 uppercase tracking-wider flex-shrink-0">
+            {COST_SOURCE_LABEL[agent.costSource] || ''}
+          </span>
+        )}
+
+        {/* Tokens + cost */}
+        <div className="text-right flex-shrink-0">
+          <div className="text-xs font-mono text-text-1 tabular-nums leading-none">{fmtNum(agent.tokens || 0)}</div>
+          {(agent.costUsd || 0) > 0 && (
+            <div className="text-2xs font-mono text-text-3 mt-0.5">{fmtDollar(agent.costUsd)}</div>
+          )}
         </div>
       </div>
 
-      {/* Tokens + cost */}
-      <div className="text-right flex-shrink-0">
-        <div className="text-xs font-mono text-text-1 tabular-nums leading-none">{fmtNum(agent.tokens || 0)}</div>
-        {(agent.costUsd || 0) > 0 && (
-          <div className="text-2xs font-mono text-text-3 mt-0.5">{fmtDollar(agent.costUsd)}</div>
-        )}
-      </div>
-
-      {/* Quality / tool success */}
-      {successRate != null && (
-        <span
-          className="text-2xs font-mono font-bold uppercase px-1 py-px rounded-sm flex-shrink-0"
-          style={{
-            color: successRate >= 90 ? '#4ae168' : successRate >= 70 ? '#e5c07b' : '#e06c75',
-            background: successRate >= 90 ? 'rgba(74,225,104,0.1)' : successRate >= 70 ? 'rgba(229,192,123,0.1)' : 'rgba(224,108,117,0.1)',
-          }}
-        >
-          {successRate}%
-        </span>
-      )}
-
-      {/* Cost source badge */}
-      {agent.costSource && agent.costSource !== 'actual' && (
-        <span className="text-2xs font-mono text-text-4 uppercase tracking-wider flex-shrink-0">
-          {COST_SOURCE_LABEL[agent.costSource] || ''}
-        </span>
-      )}
-
-      {/* Context bar with rotation threshold marker */}
-      <div className="w-14 flex-shrink-0">
-        <div className="flex items-center justify-end gap-1 mb-0.5">
-          <span className="text-2xs font-mono text-text-2 tabular-nums">{contextPct}%</span>
-        </div>
-        <div className="relative h-[3px] bg-surface-0 rounded-full overflow-visible">
-          {/* Fill bar */}
+      {/* Full-width context bar with threshold marker */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 h-[3px] bg-surface-0 rounded-full overflow-visible">
           <div
             className="absolute inset-y-0 left-0 rounded-full transition-all duration-700"
             style={{
@@ -79,18 +81,15 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
               background: contextPct > 80 ? '#e06c75' : contextPct > 60 ? '#e5c07b' : isAlive ? '#61afef' : '#333842',
             }}
           />
-          {/* Rotation threshold marker */}
-          {agent.rotationThreshold && (
+          {thresholdPct && (
             <div
               className="absolute top-[-2px] w-px h-[7px]"
-              style={{
-                left: `${Math.round(agent.rotationThreshold * 100)}%`,
-                background: '#c678dd',
-              }}
-              title={`Rotation at ${Math.round(agent.rotationThreshold * 100)}%`}
+              style={{ left: `${thresholdPct}%`, background: '#c678dd' }}
+              title={`Rotation at ${thresholdPct}%`}
             />
           )}
         </div>
+        <span className="text-2xs font-mono text-text-2 tabular-nums flex-shrink-0 w-7 text-right">{contextPct}%</span>
       </div>
     </div>
   );

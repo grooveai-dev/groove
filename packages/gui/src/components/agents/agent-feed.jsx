@@ -240,7 +240,7 @@ function AgentMessage({ msg, agent }) {
         <span className="text-[10px] text-text-4 font-sans ml-auto">{timeAgo(msg.timestamp)}</span>
       </div>
       <div className={cn(
-        'border-l-[3px] border-info pl-3.5 py-1 overflow-hidden',
+        'border-l-2 border-[#4466cc] pl-3.5 py-1 overflow-hidden',
         collapsed && 'max-h-[200px] relative',
       )}>
         <StructuredMessage text={collapsed ? msg.text.slice(0, 600) : msg.text} />
@@ -404,15 +404,15 @@ function BootSequence({ agent }) {
   }, []);
 
   return (
-    <div className="flex flex-col items-center px-4 pt-6">
+    <div className="flex flex-col px-4 pt-6">
       {/* Agent identity */}
-      <div className="flex flex-col items-center gap-3 mb-6">
+      <div className="flex items-center gap-3 mb-5">
         <div className="relative w-9 h-9">
           <span className="absolute inset-0 rounded-full border-2 border-accent/20 animate-ping" style={{ animationDuration: '2s' }} />
           <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-accent animate-spin" style={{ animationDuration: '1s' }} />
           <span className="absolute inset-[5px] rounded-full bg-accent/8" />
         </div>
-        <div className="text-center">
+        <div>
           <p className="text-sm font-bold text-text-0 font-sans">{agent.name}</p>
           <p className="text-2xs text-accent font-mono">starting up</p>
         </div>

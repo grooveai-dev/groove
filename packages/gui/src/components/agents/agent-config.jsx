@@ -154,7 +154,7 @@ export function AgentConfig({ agent }) {
   const [settingKeyFor, setSettingKeyFor] = useState(null);
   const [showKey, setShowKey] = useState(false);
   const [expandedProvider, setExpandedProvider] = useState(null);
-  const [routingMode, setRoutingMode] = useState('fixed');
+  const [routingMode, setRoutingMode] = useState(agent.routingMode || 'auto');
   const [installedSkills, setInstalledSkills] = useState([]);
   const [scheduleUnit, setScheduleUnit] = useState('hr');
   const [scheduleCount, setScheduleCount] = useState('1');

@@ -9,7 +9,10 @@ export function useDashboard() {
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [kpiHistory, setKpiHistory] = useState({ tokens: [], cost: [], saved: [], efficiency: [], cache: [] });
+  const [kpiHistory, setKpiHistory] = useState({
+    tokens: [], cost: [], saved: [], efficiency: [],
+    cache: [], inputOutput: [], agents: [], turns: [],
+  });
   const lastFetch = useRef(0);
 
   useEffect(() => {
@@ -28,15 +31,20 @@ export function useDashboard() {
         setKpiHistory((prev) => {
           const now = Date.now();
           const add = (arr, val) => [...arr.slice(-59), { t: now, v: val || 0 }];
+          const totalUsed = d.tokens?.totalTokens || 0;
+          const totalSaved = d.tokens?.savings?.total || 0;
+          const hypothetical = totalUsed + totalSaved;
+          const input = d.tokens?.totalInputTokens || 0;
+          const output = d.tokens?.totalOutputTokens || 0;
           return {
-            tokens: add(prev.tokens, d.tokens?.totalUsed),
+            tokens: add(prev.tokens, totalUsed),
             cost: add(prev.cost, d.tokens?.totalCostUsd),
-            saved: add(prev.saved, d.tokens?.totalSaved),
-            efficiency: add(prev.efficiency, (() => {
-              const h = (d.tokens?.totalUsed || 0) + (d.tokens?.totalSaved || 0);
-              return h > 0 ? ((d.tokens?.totalSaved || 0) / h) * 100 : 0;
-            })()),
+            saved: add(prev.saved, totalSaved),
+            efficiency: add(prev.efficiency, hypothetical > 0 ? (totalSaved / hypothetical) * 100 : 0),
             cache: add(prev.cache, d.tokens?.cacheHitRate),
+            inputOutput: add(prev.inputOutput, output > 0 ? input / output : 0),
+            agents: add(prev.agents, d.agents?.running || 0),
+            turns: add(prev.turns, d.tokens?.totalTurns),
           };
         });
       } catch {
@@ -49,5 +57,17 @@ export function useDashboard() {
     return () => { alive = false; clearInterval(interval); };
   }, [connected]);
 
-  return { data, loading, agents, connected, kpiHistory, lastFetch: lastFetch.current };
+  // Derive enriched sub-objects from data
+  const agentBreakdown = data?.agents?.breakdown || [];
+  const routing = data?.routing || null;
+  const rotation = data?.rotation || null;
+  const adaptive = data?.adaptive || [];
+  const journalist = data?.journalist || null;
+  const rotating = rotation?.rotating || [];
+
+  return {
+    data, loading, agents, connected, kpiHistory,
+    lastFetch: lastFetch.current,
+    agentBreakdown, routing, rotation, adaptive, journalist, rotating,
+  };
 }

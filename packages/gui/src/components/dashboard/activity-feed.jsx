@@ -1,7 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
+import { memo } from 'react';
 import { RotateCw, Zap, AlertTriangle, CheckCircle, UserPlus } from 'lucide-react';
 import { timeAgo } from '../../lib/format';
-import { cn } from '../../lib/cn';
 
 const ICONS = {
   spawn: UserPlus,
@@ -12,17 +12,17 @@ const ICONS = {
 };
 
 const ICON_COLORS = {
-  spawn: 'text-accent',
-  rotation: 'text-purple',
-  completion: 'text-success',
-  error: 'text-danger',
-  default: 'text-text-3',
+  spawn: '#33afbc',
+  rotation: '#c678dd',
+  completion: '#4ae168',
+  error: '#e06c75',
+  default: '#505862',
 };
 
-export function ActivityFeed({ events = [] }) {
+const ActivityFeed = memo(function ActivityFeed({ events = [] }) {
   if (!events.length) {
     return (
-      <div className="text-xs text-text-4 font-sans py-3 text-center">
+      <div className="text-[9px] text-[#3a3f4b] font-mono py-2.5 text-center">
         No recent activity
       </div>
     );
@@ -30,17 +30,19 @@ export function ActivityFeed({ events = [] }) {
 
   return (
     <div className="flex items-center gap-3 overflow-x-auto py-2 px-3">
-      {events.slice(-10).reverse().map((event, i) => {
+      {events.slice(-15).reverse().map((event, i) => {
         const Icon = ICONS[event.type] || ICONS.default;
         const color = ICON_COLORS[event.type] || ICON_COLORS.default;
         return (
-          <div key={i} className="flex items-center gap-1.5 flex-shrink-0 text-2xs font-sans">
-            <Icon size={12} className={color} />
-            <span className="text-text-2 whitespace-nowrap">{event.text}</span>
-            <span className="text-text-4">{timeAgo(event.timestamp)}</span>
+          <div key={i} className="flex items-center gap-1.5 flex-shrink-0">
+            <Icon size={10} style={{ color }} />
+            <span className="text-[9px] font-sans text-[#6e7681] whitespace-nowrap">{event.text}</span>
+            <span className="text-[8px] font-mono text-[#3a3f4b]">{timeAgo(event.timestamp || event.t)}</span>
           </div>
         );
       })}
     </div>
   );
-}
+});
+
+export { ActivityFeed };

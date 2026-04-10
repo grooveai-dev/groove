@@ -11,11 +11,12 @@ export class CodexProvider extends Provider {
   static authType = 'api-key';
   static envKey = 'OPENAI_API_KEY';
   static models = [
-    { id: 'o5-deep', name: 'o5 Deep Reasoning', tier: 'heavy', pricing: { input: 0.015, output: 0.06 } },
-    { id: 'o5-mini', name: 'o5 Mini', tier: 'medium', pricing: { input: 0.002, output: 0.008 } },
-    { id: 'gpt-5.4-fast', name: 'GPT-5.4 Fast', tier: 'medium', pricing: { input: 0.001, output: 0.004 } },
-    { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', tier: 'light', pricing: { input: 0.0004, output: 0.0016 } },
-    { id: 'gpt-5.4-nano', name: 'GPT-5.4 Nano', tier: 'light', pricing: { input: 0.0001, output: 0.0004 } },
+    { id: 'gpt-5.4-pro', name: 'GPT-5.4 Pro', tier: 'heavy', pricing: { input: 0.015, output: 0.06 } },
+    { id: 'gpt-5.4', name: 'GPT-5.4', tier: 'heavy', pricing: { input: 0.005, output: 0.02 } },
+    { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', tier: 'medium', pricing: { input: 0.001, output: 0.004 } },
+    { id: 'gpt-5.4-nano', name: 'GPT-5.4 Nano', tier: 'light', pricing: { input: 0.0004, output: 0.0016 } },
+    { id: 'gpt-5-mini', name: 'GPT-5 Mini', tier: 'medium', pricing: { input: 0.0005, output: 0.002 } },
+    { id: 'gpt-5-nano', name: 'GPT-5 Nano', tier: 'light', pricing: { input: 0.0001, output: 0.0004 } },
   ];
 
   static isInstalled() {

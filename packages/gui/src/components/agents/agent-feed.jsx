@@ -240,7 +240,7 @@ function AgentMessage({ msg, agent }) {
         <span className="text-[10px] text-text-4 font-sans ml-auto">{timeAgo(msg.timestamp)}</span>
       </div>
       <div className={cn(
-        'border-l-2 border-[#4466cc] pl-3.5 py-1 overflow-hidden',
+        'border-l border-accent pl-3.5 py-1 overflow-hidden',
         collapsed && 'max-h-[200px] relative',
       )}>
         <StructuredMessage text={collapsed ? msg.text.slice(0, 600) : msg.text} />

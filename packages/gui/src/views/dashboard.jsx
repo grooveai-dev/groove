@@ -67,11 +67,25 @@ export default function DashboardView() {
     );
   }
 
-  const tokens = data.tokens || {};
+  const rawTokens = data.tokens || {};
+  // Normalize field names from API to what the dashboard expects
+  const tokens = {
+    totalUsed: rawTokens.totalTokens || 0,
+    totalCostUsd: rawTokens.totalCostUsd || 0,
+    totalSaved: rawTokens.savings?.total || 0,
+    cacheHitRate: rawTokens.cacheHitRate || 0,
+    totalInputTokens: rawTokens.totalInputTokens || 0,
+    totalOutputTokens: rawTokens.totalOutputTokens || 0,
+    cacheReadTokens: rawTokens.cacheReadTokens || 0,
+    cacheCreationTokens: rawTokens.cacheCreationTokens || 0,
+    totalTurns: rawTokens.totalTurns || 0,
+    agentCount: rawTokens.agentCount || 0,
+    savings: rawTokens.savings || {},
+    perAgent: rawTokens.perAgent || [],
+  };
   const timeline = data.timeline || [];
-  // Compute efficiency from savings data (tokens saved / total hypothetical)
-  const totalHypothetical = (tokens.totalUsed || 0) + (tokens.totalSaved || 0);
-  const efficiency = totalHypothetical > 0 ? ((tokens.totalSaved || 0) / totalHypothetical) * 100 : 0;
+  const totalHypothetical = tokens.totalUsed + tokens.totalSaved;
+  const efficiency = totalHypothetical > 0 ? (tokens.totalSaved / totalHypothetical) * 100 : 0;
 
   return (
     <div className="flex flex-col h-full">
@@ -98,7 +112,7 @@ export default function DashboardView() {
         {/* Left: Token chart */}
         <div ref={chartContainerRef} className="flex-[5] min-w-0 bg-surface-1 border-r border-border-subtle">
           {chartSize.width > 0 && (
-            <TokenChart data={timeline} width={chartSize.width} height={chartSize.height} />
+            <TokenChart data={timeline.snapshots || timeline} width={chartSize.width} height={chartSize.height} />
           )}
         </div>
 
@@ -121,7 +135,7 @@ export default function DashboardView() {
 
       {/* Activity feed */}
       <div className="flex-shrink-0 border-t border-border bg-surface-1">
-        <ActivityFeed events={data.events || []} />
+        <ActivityFeed events={timeline.events || data.events || []} />
       </div>
     </div>
   );

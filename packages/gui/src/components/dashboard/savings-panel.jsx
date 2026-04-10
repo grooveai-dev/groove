@@ -34,7 +34,12 @@ function StatRow({ label, value }) {
 export function SavingsPanel({ data, rotation, routing, adaptive }) {
   if (!data) return null;
 
-  const { totalSaved = 0, rotationSaved = 0, conflictSaved = 0, coldStartSaved = 0, totalUsed = 0 } = data;
+  const savings = data.savings || {};
+  const totalSaved = savings.total || data.totalSaved || 0;
+  const rotationSaved = savings.fromRotation || data.rotationSaved || 0;
+  const conflictSaved = savings.fromConflictPrevention || data.conflictSaved || 0;
+  const coldStartSaved = savings.fromColdStartSkip || data.coldStartSaved || 0;
+  const totalUsed = data.totalUsed || data.totalTokens || 0;
   const total = totalUsed + totalSaved;
 
   return (

@@ -242,6 +242,72 @@ function ModelRow({ model, isInstalled, isRecommended, canRun, onPull, onDelete,
   );
 }
 
+/* ── Server Status Bar ────────────────────────────────────────── */
+
+function ServerStatusBar({ onStopped }) {
+  const [action, setAction] = useState(null); // 'stopping' | 'restarting'
+  const addToast = useGrooveStore((s) => s.addToast);
+
+  async function handleStop() {
+    setAction('stopping');
+    try {
+      const result = await api.post('/providers/ollama/stop');
+      if (result.ok) {
+        addToast('info', 'Ollama server stopped');
+        if (onStopped) onStopped();
+      } else {
+        addToast('error', 'Could not stop server');
+      }
+    } catch (err) {
+      addToast('error', 'Stop failed', err.message);
+    }
+    setAction(null);
+  }
+
+  async function handleRestart() {
+    setAction('restarting');
+    try {
+      const result = await api.post('/providers/ollama/restart');
+      if (result.ok) {
+        addToast('success', 'Ollama server restarted');
+      } else {
+        addToast('error', 'Restart failed');
+      }
+    } catch (err) {
+      addToast('error', 'Restart failed', err.message);
+    }
+    setAction(null);
+  }
+
+  return (
+    <div className="flex items-center gap-2 bg-success/8 border border-success/20 rounded-lg px-3 py-2">
+      <span className="relative flex-shrink-0 w-[6px] h-[6px]">
+        <span className="absolute inset-0 rounded-full bg-success" />
+        <span className="absolute inset-[-2px] rounded-full bg-success opacity-20 animate-pulse" />
+      </span>
+      <span className="text-xs font-sans text-success font-semibold">Server Running</span>
+      <span className="text-2xs font-mono text-text-4">:11434</span>
+      <div className="flex-1" />
+      <button
+        onClick={handleRestart}
+        disabled={!!action}
+        className="flex items-center gap-1 text-2xs font-sans text-text-3 hover:text-accent cursor-pointer transition-colors disabled:opacity-40"
+      >
+        <RefreshCw size={10} className={action === 'restarting' ? 'animate-spin' : ''} />
+        {action === 'restarting' ? 'Restarting...' : 'Restart'}
+      </button>
+      <button
+        onClick={handleStop}
+        disabled={!!action}
+        className="flex items-center gap-1 text-2xs font-sans text-text-3 hover:text-danger cursor-pointer transition-colors disabled:opacity-40"
+      >
+        <AlertCircle size={10} />
+        {action === 'stopping' ? 'Stopping...' : 'Stop'}
+      </button>
+    </div>
+  );
+}
+
 /* ── Model Browser (installed) ─────────────────────────────── */
 
 function ModelBrowser({ onModelChange }) {
@@ -249,6 +315,7 @@ function ModelBrowser({ onModelChange }) {
   const [pulling, setPulling] = useState(null);
   const [category, setCategory] = useState('code');
   const [showAll, setShowAll] = useState(false);
+  const [serverStopped, setServerStopped] = useState(false);
   const addToast = useGrooveStore((s) => s.addToast);
 
   const retried = useRef(false);
@@ -256,7 +323,6 @@ function ModelBrowser({ onModelChange }) {
   function load() {
     api.get('/providers/ollama/models').then((result) => {
       setData(result);
-      // If no installed models on first load, retry once after 2s (server may still be warming up)
       if (!retried.current && result.installed?.length === 0) {
         retried.current = true;
         setTimeout(load, 2000);
@@ -300,8 +366,44 @@ function ModelBrowser({ onModelChange }) {
   const filtered = catalog.filter((m) => m.category === category);
   const visible = showAll ? filtered : filtered.filter((m) => m.ramGb <= maxRam);
 
+  if (serverStopped) {
+    return (
+      <div className="space-y-3 p-3">
+        <div className="flex items-center gap-2 bg-warning/8 border border-warning/20 rounded-lg px-3 py-2.5">
+          <AlertCircle size={14} className="text-warning flex-shrink-0" />
+          <span className="text-xs font-sans text-text-2">
+            <span className="text-warning font-semibold">Ollama server stopped.</span>
+            {' '}Start it again to pull and use models.
+          </span>
+        </div>
+        <Button
+          variant="primary"
+          size="md"
+          onClick={async () => {
+            try {
+              const result = await api.post('/providers/ollama/serve');
+              if (result.ok) {
+                addToast('success', 'Ollama server started!');
+                setServerStopped(false);
+                retried.current = false;
+                setTimeout(load, 2000);
+              }
+            } catch (err) {
+              addToast('error', 'Could not start server', err.message);
+            }
+          }}
+          className="w-full gap-1.5"
+        >
+          <Zap size={12} />
+          Start Ollama Server
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2 p-3">
+      <ServerStatusBar onStopped={() => setServerStopped(true)} />
       <HardwareBar hardware={hardware} />
 
       {/* Installed count */}

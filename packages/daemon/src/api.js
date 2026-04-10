@@ -199,6 +199,35 @@ export function createApi(app, daemon) {
     }
   });
 
+  app.post('/api/providers/ollama/stop', async (req, res) => {
+    if (!OllamaProvider.isInstalled()) return res.status(400).json({ error: 'Ollama is not installed' });
+    const running = await OllamaProvider.isServerRunning();
+    if (!running) return res.json({ ok: true, alreadyStopped: true });
+    const result = OllamaProvider.stopServer();
+    await new Promise((r) => setTimeout(r, 1000));
+    const stillRunning = await OllamaProvider.isServerRunning();
+    res.json({ ok: !stillRunning, method: result.method });
+  });
+
+  app.post('/api/providers/ollama/restart', async (req, res) => {
+    if (!OllamaProvider.isInstalled()) return res.status(400).json({ error: 'Ollama is not installed' });
+    // Stop
+    const running = await OllamaProvider.isServerRunning();
+    if (running) {
+      OllamaProvider.stopServer();
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    // Start
+    const result = OllamaProvider.startServer();
+    if (result.started) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const nowRunning = await OllamaProvider.isServerRunning();
+      res.json({ ok: nowRunning, method: result.method });
+    } else {
+      res.status(500).json({ error: 'Could not restart server' });
+    }
+  });
+
   // --- Credentials ---
 
   app.get('/api/credentials', (req, res) => {

@@ -107,6 +107,29 @@ export class OllamaProvider extends Provider {
     }
   }
 
+  static stopServer() {
+    const platform = process.platform;
+    if (platform === 'darwin') {
+      try {
+        execSync('brew services stop ollama', { stdio: 'ignore', timeout: 10000 });
+        return { stopped: true, method: 'brew services' };
+      } catch { /* fall through */ }
+    }
+    // Kill ollama serve process
+    try {
+      execSync('pkill -f "ollama serve"', { stdio: 'ignore', timeout: 5000 });
+      return { stopped: true, method: 'pkill' };
+    } catch {
+      // Also try killing by port
+      try {
+        execSync("lsof -ti:11434 | xargs kill", { stdio: 'ignore', timeout: 5000 });
+        return { stopped: true, method: 'port-kill' };
+      } catch {
+        return { stopped: false };
+      }
+    }
+  }
+
   static hardwareRequirements() {
     return {
       minRAM: 4,

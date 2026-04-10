@@ -115,56 +115,80 @@ function AdaptiveTab({ adaptive }) {
     );
   }
 
+  // Split provider:role into readable parts
+  function parseKey(key) {
+    const parts = key.split(':');
+    return { provider: parts[0] || key, role: parts[1] || '' };
+  }
+
   return (
     <ScrollArea className="flex-1">
-      <div className="p-3 space-y-3">
-        {adaptive.map((p) => (
-          <div key={p.key} className="bg-surface-0 rounded px-2.5 py-2 space-y-1.5">
-            {/* Profile header */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono text-text-1 flex-1 truncate">{p.key}</span>
-              <span className="text-xs font-mono font-semibold text-text-0 tabular-nums">
-                {fmtPct(p.threshold * 100)}
-              </span>
-              <span
-                className={cn(
-                  'text-2xs font-mono font-bold uppercase px-1 py-px rounded-sm',
-                  p.converged
-                    ? 'text-success bg-success/10'
-                    : 'text-text-3 bg-surface-3',
-                )}
-              >
-                {p.converged ? 'CONV' : `${p.adjustments} adj`}
-              </span>
+      <div className="p-3 space-y-1">
+        {/* Header */}
+        <div className="flex items-center gap-2 px-2 pb-1 text-2xs font-mono text-text-4 uppercase tracking-wider">
+          <span className="flex-1">Role</span>
+          <span className="w-12 text-right">Threshold</span>
+          <span className="w-12 text-right">Adj.</span>
+          <span className="w-14 text-right">Status</span>
+        </div>
+
+        {adaptive.map((p) => {
+          const { provider, role } = parseKey(p.key);
+          const hasHistory = p.thresholdHistory?.length > 1;
+          const hasScores = p.recentScores?.length > 1;
+
+          return (
+            <div key={p.key} className="bg-surface-0 rounded px-2 py-1.5">
+              {/* Main row */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-mono text-text-1 capitalize">{role || provider}</span>
+                  {role && <span className="text-2xs font-mono text-text-4 ml-1.5">{provider}</span>}
+                </div>
+                <span className="w-12 text-right text-xs font-mono font-semibold text-text-0 tabular-nums">
+                  {fmtPct(p.threshold * 100)}
+                </span>
+                <span className="w-12 text-right text-2xs font-mono text-text-3 tabular-nums">
+                  {p.adjustments}
+                </span>
+                <span className={cn(
+                  'w-14 text-right text-2xs font-mono font-bold uppercase',
+                  p.converged ? 'text-success' : 'text-text-4',
+                )}>
+                  {p.converged ? 'Converged' : 'Learning'}
+                </span>
+              </div>
+
+              {/* Sparklines row (if data exists) */}
+              {(hasHistory || hasScores) && (
+                <div className="flex items-center gap-3 mt-1.5 pl-1">
+                  {hasHistory && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-2xs font-mono text-text-4">Threshold</span>
+                      <TinySparkline
+                        data={p.thresholdHistory.map((h) => h.v)}
+                        color={p.converged ? HEX.success : HEX.accent}
+                        width={70}
+                        height={12}
+                      />
+                    </div>
+                  )}
+                  {hasScores && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-2xs font-mono text-text-4">Quality</span>
+                      <TinySparkline
+                        data={p.recentScores}
+                        color={HEX.warning}
+                        width={70}
+                        height={12}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-
-            {/* Threshold drift sparkline */}
-            {p.thresholdHistory?.length > 1 && (
-              <div className="flex items-center gap-2">
-                <span className="text-2xs font-mono text-text-3 uppercase tracking-wider">Drift</span>
-                <TinySparkline
-                  data={p.thresholdHistory.map((h) => h.v)}
-                  color={p.converged ? HEX.success : HEX.accent}
-                  width={80}
-                  height={14}
-                />
-              </div>
-            )}
-
-            {/* Quality scores sparkline */}
-            {p.recentScores?.length > 1 && (
-              <div className="flex items-center gap-2">
-                <span className="text-2xs font-mono text-text-3 uppercase tracking-wider">Quality</span>
-                <TinySparkline
-                  data={p.recentScores}
-                  color={HEX.warning}
-                  width={80}
-                  height={14}
-                />
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </ScrollArea>
   );
@@ -259,15 +283,15 @@ const IntelPanel = memo(function IntelPanel({ tokens, rotation, adaptive, journa
   return (
     <Tabs defaultValue="rotation" className="flex flex-col h-full">
       <TabsList className="flex-shrink-0 px-1">
-        <TabsTrigger value="rotation" className="text-xs px-2.5 py-1.5 gap-1">
+        <TabsTrigger value="rotation" className="text-xs px-2.5 py-1.5 inline-flex items-center gap-1.5">
           <RotateCw size={11} />
           Rotation
         </TabsTrigger>
-        <TabsTrigger value="adaptive" className="text-xs px-2.5 py-1.5 gap-1">
+        <TabsTrigger value="adaptive" className="text-xs px-2.5 py-1.5 inline-flex items-center gap-1.5">
           <Brain size={11} />
           Adaptive
         </TabsTrigger>
-        <TabsTrigger value="journalist" className="text-xs px-2.5 py-1.5 gap-1">
+        <TabsTrigger value="journalist" className="text-xs px-2.5 py-1.5 inline-flex items-center gap-1.5">
           <Radio size={11} />
           Journalist
         </TabsTrigger>

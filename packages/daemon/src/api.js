@@ -1718,6 +1718,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
         outputTokens: tokenData.outputTokens || 0,
         cacheHitRate: agentCacheTotal > 0 ? Math.round(((tokenData.cacheReadTokens || 0) / agentCacheTotal) * 1000) / 1000 : 0,
         contextUsage: a.contextUsage || 0,
+        rotationThreshold: daemon.adaptive.getThreshold(a.provider, a.role),
         durationMs: a.durationMs || tokenData.totalDurationMs || 0,
         turns: a.turns || tokenData.totalTurns || 0,
         modelDistribution: tokenData.modelDistribution || {},
@@ -1773,6 +1774,8 @@ Keep responses concise. Help them think, don't lecture them about the system the
       journalist: {
         ...journalistStatus,
         lastSummary: lastSynthesis?.summary || '',
+        projectMap: lastSynthesis?.projectMap || '',
+        decisions: lastSynthesis?.decisions || '',
         recentHistory: journalistHistory,
       },
       timeline: timelineData,

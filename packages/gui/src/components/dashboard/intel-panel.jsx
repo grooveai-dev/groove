@@ -204,12 +204,32 @@ function JournalistTab({ journalist }) {
           )}
         </div>
 
-        {/* Last summary */}
+        {/* Summary */}
         {journalist.lastSummary && (
           <div>
             <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1">Summary</div>
-            <div className="text-xs font-sans text-text-2 leading-relaxed bg-surface-0 rounded px-2.5 py-2 max-h-32 overflow-y-auto">
+            <div className="text-xs font-sans text-text-2 leading-relaxed bg-surface-0 rounded px-2.5 py-2 max-h-24 overflow-y-auto">
               {journalist.lastSummary}
+            </div>
+          </div>
+        )}
+
+        {/* Project Map */}
+        {journalist.projectMap && (
+          <div>
+            <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1">Project Map</div>
+            <div className="text-xs font-mono text-text-2 leading-relaxed bg-surface-0 rounded px-2.5 py-2 max-h-48 overflow-y-auto whitespace-pre-wrap">
+              {journalist.projectMap}
+            </div>
+          </div>
+        )}
+
+        {/* Decisions */}
+        {journalist.decisions && (
+          <div>
+            <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1">Decisions</div>
+            <div className="text-xs font-mono text-text-2 leading-relaxed bg-surface-0 rounded px-2.5 py-2 max-h-36 overflow-y-auto whitespace-pre-wrap">
+              {journalist.decisions}
             </div>
           </div>
         )}

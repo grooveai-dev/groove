@@ -65,19 +65,31 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
         </span>
       )}
 
-      {/* Context bar */}
-      <div className="w-12 flex-shrink-0">
+      {/* Context bar with rotation threshold marker */}
+      <div className="w-14 flex-shrink-0">
         <div className="flex items-center justify-end gap-1 mb-0.5">
           <span className="text-2xs font-mono text-text-2 tabular-nums">{contextPct}%</span>
         </div>
-        <div className="h-[2px] bg-surface-0 rounded-full overflow-hidden">
+        <div className="relative h-[3px] bg-surface-0 rounded-full overflow-visible">
+          {/* Fill bar */}
           <div
-            className="h-full rounded-full transition-all duration-700"
+            className="absolute inset-y-0 left-0 rounded-full transition-all duration-700"
             style={{
               width: `${Math.max(contextPct, 1)}%`,
               background: contextPct > 80 ? '#e06c75' : contextPct > 60 ? '#e5c07b' : isAlive ? '#61afef' : '#333842',
             }}
           />
+          {/* Rotation threshold marker */}
+          {agent.rotationThreshold && (
+            <div
+              className="absolute top-[-2px] w-px h-[7px]"
+              style={{
+                left: `${Math.round(agent.rotationThreshold * 100)}%`,
+                background: '#c678dd',
+              }}
+              title={`Rotation at ${Math.round(agent.rotationThreshold * 100)}%`}
+            />
+          )}
         </div>
       </div>
     </div>

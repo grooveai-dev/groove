@@ -317,6 +317,9 @@ For normal file edits within your scope, proceed without review.
               model: output.model,
               estimatedCostUsd: output.estimatedCostUsd,
             });
+            // Feed router cost log for tier tracking
+            const tier = this.daemon.classifier.classify(agent.id);
+            this.daemon.router.recordUsage(agent.id, output.model || current.model, output.tokensUsed, tier);
           }
         }
         // Record session result data (cost, duration, turns)

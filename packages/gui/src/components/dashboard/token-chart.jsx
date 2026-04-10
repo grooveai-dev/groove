@@ -4,8 +4,8 @@ import { HEX, hexAlpha } from '../../lib/theme-hex';
 import { fmtNum, fmtDollar, fmtPct } from '../../lib/format';
 
 /**
- * Self-sizing token chart — fills its parent via absolute positioning.
- * Parent must be `position: relative` (or a grid/flex cell).
+ * Modern token flow chart — edge-to-edge gradient fill, floating labels,
+ * hover tooltip for detail. Self-sizing via internal ResizeObserver.
  */
 const TokenChart = memo(function TokenChart({ data }) {
   const containerRef = useRef(null);
@@ -14,11 +14,12 @@ const TokenChart = memo(function TokenChart({ data }) {
   const [hover, setHover] = useState(null);
 
   const { width, height } = size;
-  const pad = { top: 16, right: 62, bottom: 30, left: 62 };
+  // Minimal padding — just enough for floating labels to breathe
+  const pad = { top: 28, right: 12, bottom: 8, left: 12 };
   const w = Math.max(width - pad.left - pad.right, 0);
   const h = Math.max(height - pad.top - pad.bottom, 0);
 
-  // Self-size: observe wrapper
+  // Self-size
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -45,7 +46,7 @@ const TokenChart = memo(function TokenChart({ data }) {
   // Draw
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !data?.length || width <= 0 || height <= 0) return;
+    if (!canvas || !data?.length || width <= 0 || height <= 0 || w <= 0 || h <= 0) return;
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
 
@@ -54,8 +55,6 @@ const TokenChart = memo(function TokenChart({ data }) {
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, width, height);
 
-    if (w <= 0 || h <= 0) return;
-
     const tokens = data.map((d) => d.tokens || 0);
     const costs = data.map((d) => d.costUsd || 0);
     const caches = data.map((d) => d.cacheHitRate ?? null);
@@ -63,23 +62,34 @@ const TokenChart = memo(function TokenChart({ data }) {
     const maxC = Math.max(...costs, 0.01);
     const hasCacheData = caches.some((c) => c !== null && c > 0);
 
-    // Grid lines
-    ctx.strokeStyle = HEX.surface5;
-    ctx.lineWidth = 0.5;
-    for (let i = 0; i <= 4; i++) {
+    const xAt = (i) => pad.left + (i / Math.max(data.length - 1, 1)) * w;
+    const yToken = (v) => pad.top + h - (v / maxT) * h;
+    const yCost = (v) => pad.top + h - (v / maxC) * h;
+    const yCache = (v) => pad.top + h - (v * h);
+
+    // ── Subtle horizontal guidelines (3 lines, dotted) ──────
+    ctx.setLineDash([2, 4]);
+    ctx.strokeStyle = hexAlpha(HEX.text4, 0.25);
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 3; i++) {
       const y = pad.top + (h / 4) * i;
       ctx.beginPath();
       ctx.moveTo(pad.left, y);
       ctx.lineTo(pad.left + w, y);
       ctx.stroke();
     }
+    ctx.setLineDash([]);
 
-    const xAt = (i) => pad.left + (i / (data.length - 1)) * w;
-    const yToken = (v) => pad.top + h - (v / maxT) * h;
-    const yCost = (v) => pad.top + h - (v / maxC) * h;
-    const yCache = (v) => pad.top + h - (v * h);
+    // ── Floating Y-axis labels (inside chart, top-left) ─────
+    ctx.font = "9px 'JetBrains Mono Variable', monospace";
+    ctx.textAlign = 'left';
+    ctx.fillStyle = hexAlpha(HEX.text3, 0.6);
+    // Top label (max)
+    ctx.fillText(fmtNum(maxT), pad.left + 4, pad.top + 10);
+    // Mid label
+    ctx.fillText(fmtNum(maxT / 2), pad.left + 4, pad.top + h / 2 + 4);
 
-    // Token area fill
+    // ── Token area fill (edge-to-edge gradient) ─────────────
     ctx.beginPath();
     ctx.moveTo(pad.left, pad.top + h);
     for (let i = 0; i < data.length; i++) {
@@ -88,15 +98,17 @@ const TokenChart = memo(function TokenChart({ data }) {
     ctx.lineTo(xAt(data.length - 1), pad.top + h);
     ctx.closePath();
     const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + h);
-    grad.addColorStop(0, hexAlpha(HEX.accent, 0.12));
-    grad.addColorStop(1, hexAlpha(HEX.accent, 0.01));
+    grad.addColorStop(0, hexAlpha(HEX.accent, 0.18));
+    grad.addColorStop(0.7, hexAlpha(HEX.accent, 0.04));
+    grad.addColorStop(1, hexAlpha(HEX.accent, 0));
     ctx.fillStyle = grad;
     ctx.fill();
 
-    // Token line
+    // ── Token line ──────────────────────────────────────────
     ctx.beginPath();
     ctx.strokeStyle = HEX.accent;
     ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round';
     for (let i = 0; i < data.length; i++) {
       const x = xAt(i);
       const y = yToken(tokens[i]);
@@ -104,11 +116,12 @@ const TokenChart = memo(function TokenChart({ data }) {
     }
     ctx.stroke();
 
-    // Cost line (dashed)
+    // ── Cost line (dashed, subtle) ──────────────────────────
     ctx.beginPath();
-    ctx.strokeStyle = HEX.warning;
+    ctx.strokeStyle = hexAlpha(HEX.warning, 0.6);
     ctx.lineWidth = 1;
-    ctx.setLineDash([4, 3]);
+    ctx.lineJoin = 'round';
+    ctx.setLineDash([5, 4]);
     for (let i = 0; i < data.length; i++) {
       const x = xAt(i);
       const y = yCost(costs[i]);
@@ -117,11 +130,12 @@ const TokenChart = memo(function TokenChart({ data }) {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Cache hit rate line (dotted)
+    // ── Cache hit rate line (dotted, subtle) ────────────────
     if (hasCacheData) {
       ctx.beginPath();
-      ctx.strokeStyle = hexAlpha(HEX.info, 0.5);
+      ctx.strokeStyle = hexAlpha(HEX.info, 0.45);
       ctx.lineWidth = 1;
+      ctx.lineJoin = 'round';
       ctx.setLineDash([2, 3]);
       let started = false;
       for (let i = 0; i < data.length; i++) {
@@ -136,101 +150,104 @@ const TokenChart = memo(function TokenChart({ data }) {
       ctx.setLineDash([]);
     }
 
-    // Left axis labels (tokens)
-    ctx.fillStyle = HEX.text2;
-    ctx.font = "10px 'JetBrains Mono Variable', monospace";
+    // ── Inline legend (top-right, pill-style) ───────────────
+    ctx.font = "9px 'Inter Variable', sans-serif";
     ctx.textAlign = 'right';
-    for (let i = 0; i <= 4; i++) {
-      const val = (maxT / 4) * (4 - i);
-      ctx.fillText(fmtNum(val), pad.left - 6, pad.top + (h / 4) * i + 4);
-    }
-
-    // Right axis labels (cost)
-    ctx.textAlign = 'left';
-    ctx.fillStyle = HEX.text3;
-    for (let i = 0; i <= 4; i++) {
-      const val = (maxC / 4) * (4 - i);
-      ctx.fillText(fmtDollar(val), pad.left + w + 6, pad.top + (h / 4) * i + 4);
-    }
-
-    // Legend
-    ctx.font = "10px 'Inter Variable', sans-serif";
-    ctx.textAlign = 'left';
-    const legendY = height - 8;
-    let lx = pad.left;
-
-    ctx.fillStyle = HEX.accent;
-    ctx.fillRect(lx, legendY - 3, 8, 1.5);
-    lx += 11;
-    ctx.fillStyle = HEX.text2;
-    ctx.fillText('Tokens', lx, legendY);
-    lx += 44;
-
-    ctx.fillStyle = HEX.warning;
-    ctx.setLineDash([3, 2]);
-    ctx.beginPath();
-    ctx.moveTo(lx, legendY - 2);
-    ctx.lineTo(lx + 8, legendY - 2);
-    ctx.strokeStyle = HEX.warning;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.setLineDash([]);
-    lx += 11;
-    ctx.fillStyle = HEX.text2;
-    ctx.fillText('Cost', lx, legendY);
+    let rx = width - pad.right - 4;
+    const ly = 14;
 
     if (hasCacheData) {
-      lx += 36;
-      ctx.setLineDash([2, 2]);
+      ctx.fillStyle = hexAlpha(HEX.info, 0.5);
+      ctx.fillText('Cache', rx, ly);
+      rx -= ctx.measureText('Cache').width + 4;
       ctx.beginPath();
-      ctx.moveTo(lx, legendY - 2);
-      ctx.lineTo(lx + 8, legendY - 2);
-      ctx.strokeStyle = hexAlpha(HEX.info, 0.5);
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.setLineDash([]);
-      lx += 11;
-      ctx.fillStyle = HEX.text2;
-      ctx.fillText('Cache', lx, legendY);
+      ctx.arc(rx, ly - 3, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = hexAlpha(HEX.info, 0.5);
+      ctx.fill();
+      rx -= 12;
     }
 
-    // Hover crosshair
+    ctx.fillStyle = hexAlpha(HEX.warning, 0.7);
+    ctx.fillText('Cost', rx, ly);
+    rx -= ctx.measureText('Cost').width + 4;
+    ctx.beginPath();
+    ctx.arc(rx, ly - 3, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = hexAlpha(HEX.warning, 0.7);
+    ctx.fill();
+    rx -= 12;
+
+    ctx.fillStyle = HEX.accent;
+    ctx.fillText('Tokens', rx, ly);
+    rx -= ctx.measureText('Tokens').width + 4;
+    ctx.beginPath();
+    ctx.arc(rx, ly - 3, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = HEX.accent;
+    ctx.fill();
+
+    // ── Hover crosshair + tooltip ───────────────────────────
     if (hover && hover.index >= 0 && hover.index < data.length) {
       const hx = hover.x;
+
+      // Vertical line
       ctx.beginPath();
       ctx.moveTo(hx, pad.top);
       ctx.lineTo(hx, pad.top + h);
-      ctx.strokeStyle = hexAlpha(HEX.text2, 0.3);
+      ctx.strokeStyle = hexAlpha(HEX.text1, 0.15);
       ctx.lineWidth = 1;
       ctx.setLineDash([]);
       ctx.stroke();
 
+      // Dot on token line
       const d = data[hover.index];
-      const lines = [
-        `${fmtNum(d.tokens || 0)} tok`,
-        `${fmtDollar(d.costUsd || 0)}`,
-      ];
-      if (d.cacheHitRate != null) lines.push(`${fmtPct(d.cacheHitRate * 100)} cache`);
-
-      const tooltipW = 80;
-      const tooltipH = lines.length * 14 + 8;
-      let tx = hx + 8;
-      if (tx + tooltipW > width - 4) tx = hx - tooltipW - 8;
-      const ty = pad.top + 8;
-
-      ctx.fillStyle = hexAlpha(HEX.surface1, 0.95);
-      ctx.strokeStyle = HEX.surface4;
-      ctx.lineWidth = 1;
+      const dotY = yToken(d.tokens || 0);
       ctx.beginPath();
-      ctx.roundRect(tx, ty, tooltipW, tooltipH, 3);
+      ctx.arc(hx, dotY, 3, 0, Math.PI * 2);
+      ctx.fillStyle = HEX.accent;
       ctx.fill();
+
+      // Tooltip
+      const lines = [
+        { label: 'Tokens', value: fmtNum(d.tokens || 0), color: HEX.accent },
+        { label: 'Cost', value: fmtDollar(d.costUsd || 0), color: HEX.warning },
+      ];
+      if (d.cacheHitRate != null) {
+        lines.push({ label: 'Cache', value: fmtPct(d.cacheHitRate * 100), color: HEX.info });
+      }
+
+      const tooltipW = 100;
+      const tooltipH = lines.length * 16 + 12;
+      let tx = hx + 12;
+      if (tx + tooltipW > width - 8) tx = hx - tooltipW - 12;
+      const ty = Math.max(pad.top, dotY - tooltipH / 2);
+
+      // Background
+      ctx.fillStyle = hexAlpha(HEX.surface0, 0.92);
+      ctx.beginPath();
+      ctx.roundRect(tx, ty, tooltipW, tooltipH, 4);
+      ctx.fill();
+      ctx.strokeStyle = hexAlpha(HEX.text4, 0.2);
+      ctx.lineWidth = 1;
       ctx.stroke();
 
-      ctx.font = "9px 'JetBrains Mono Variable', monospace";
-      ctx.fillStyle = HEX.text1;
+      // Rows
       ctx.textAlign = 'left';
       lines.forEach((line, i) => {
-        ctx.fillText(line, tx + 6, ty + 14 + i * 14);
+        const rowY = ty + 14 + i * 16;
+        // Dot
+        ctx.beginPath();
+        ctx.arc(tx + 8, rowY - 3, 2, 0, Math.PI * 2);
+        ctx.fillStyle = line.color;
+        ctx.fill();
+        // Label
+        ctx.font = "8px 'Inter Variable', sans-serif";
+        ctx.fillStyle = HEX.text3;
+        ctx.fillText(line.label, tx + 14, rowY);
+        // Value
+        ctx.font = "9px 'JetBrains Mono Variable', monospace";
+        ctx.fillStyle = HEX.text0;
+        ctx.textAlign = 'right';
+        ctx.fillText(line.value, tx + tooltipW - 8, rowY);
+        ctx.textAlign = 'left';
       });
     }
   }, [data, width, height, hover, w, h, pad]);

@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Download, Check, Cpu, HardDrive, RefreshCw, Copy,
   Trash2, ChevronDown, Star, Zap, AlertCircle, Monitor,
@@ -79,10 +79,18 @@ function InstallSection({ onRecheck }) {
       const result = await api.post('/providers/ollama/serve');
       if (result.ok) {
         addToast('success', 'Ollama server started!');
-        // Recheck to update state
-        const check = await api.post('/providers/ollama/check');
-        setData(check);
-        if (check.serverRunning) onRecheck();
+        // Poll until server is fully ready (ollama list works), max 10s
+        let ready = false;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const check = await api.post('/providers/ollama/check');
+          setData(check);
+          if (check.serverRunning) {
+            ready = true;
+            break;
+          }
+        }
+        if (ready) onRecheck();
       }
     } catch (err) {
       addToast('error', 'Could not start server', err.message);
@@ -243,8 +251,17 @@ function ModelBrowser({ onModelChange }) {
   const [showAll, setShowAll] = useState(false);
   const addToast = useGrooveStore((s) => s.addToast);
 
+  const retried = useRef(false);
+
   function load() {
-    api.get('/providers/ollama/models').then(setData).catch(() => {});
+    api.get('/providers/ollama/models').then((result) => {
+      setData(result);
+      // If no installed models on first load, retry once after 2s (server may still be warming up)
+      if (!retried.current && result.installed?.length === 0) {
+        retried.current = true;
+        setTimeout(load, 2000);
+      }
+    }).catch(() => {});
   }
 
   useEffect(() => { load(); }, []);

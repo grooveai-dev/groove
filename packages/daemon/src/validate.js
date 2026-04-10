@@ -84,6 +84,7 @@ export function validateAgentConfig(config) {
     provider: config.provider || 'claude-code',
     model: typeof config.model === 'string' ? config.model : null,
     workingDir: typeof config.workingDir === 'string' ? config.workingDir : undefined,
+    teamId: config.teamId || undefined,
     permission,
     skills,
     integrations,

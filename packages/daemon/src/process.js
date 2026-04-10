@@ -436,6 +436,7 @@ For normal file edits within your scope, proceed without review.
         for (const config of group.agents) {
           try {
             const validated = validateAgentConfig(config);
+            if (!validated.teamId) validated.teamId = this.daemon.teams.getDefault()?.id || null;
             this.spawn(validated).then((agent) => {
               this.daemon.broadcast({
                 type: 'phase2:spawned',

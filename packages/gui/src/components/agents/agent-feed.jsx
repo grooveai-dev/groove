@@ -239,29 +239,24 @@ function AgentMessage({ msg, agent }) {
         <span className="text-2xs text-text-4 font-sans">{agent?.role}</span>
         <span className="text-[10px] text-text-4 font-sans ml-auto">{timeAgo(msg.timestamp)}</span>
       </div>
-      <div className={cn(
-        'border-l border-accent pl-3.5 py-1 overflow-hidden',
-        collapsed && 'max-h-[200px] relative',
-      )}>
-        <StructuredMessage text={collapsed ? msg.text.slice(0, 600) : msg.text} />
-        {collapsed && (
-          <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-surface-2 to-transparent flex items-end justify-center pb-2">
-            <button
-              onClick={() => setCollapsed(false)}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-accent/15 border border-accent/25 text-xs text-accent font-sans font-medium hover:bg-accent/25 cursor-pointer transition-colors"
-            >
-              <ChevronDown size={12} />
-              Show full response
-            </button>
-          </div>
-        )}
+      <div className="border-l border-accent pl-3.5 py-1">
+        <StructuredMessage text={collapsed ? msg.text.slice(0, 600) + '...' : msg.text} />
       </div>
+      {collapsed && (
+        <button
+          onClick={() => setCollapsed(false)}
+          className="ml-3.5 mt-1.5 flex items-center gap-1.5 text-[11px] text-accent/70 hover:text-accent font-sans font-medium cursor-pointer transition-colors"
+        >
+          <ChevronDown size={11} />
+          Show full response
+        </button>
+      )}
       {isLong && !collapsed && (
         <button
           onClick={() => setCollapsed(true)}
-          className="ml-4 mt-1 flex items-center gap-1 text-[11px] text-accent/60 hover:text-accent font-sans cursor-pointer"
+          className="ml-3.5 mt-1.5 flex items-center gap-1.5 text-[11px] text-accent/70 hover:text-accent font-sans font-medium cursor-pointer transition-colors"
         >
-          <ChevronDown size={10} className="rotate-180" />
+          <ChevronDown size={11} className="rotate-180" />
           Collapse
         </button>
       )}

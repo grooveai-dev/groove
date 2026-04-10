@@ -407,7 +407,7 @@ function BootSequence({ agent }) {
   }, []);
 
   return (
-    <div className="flex flex-col items-center justify-center h-full px-4 py-6">
+    <div className="flex flex-col items-center justify-start h-full px-4 pt-12">
       {/* Agent identity */}
       <div className="flex flex-col items-center gap-3 mb-6">
         <div className="relative w-9 h-9">

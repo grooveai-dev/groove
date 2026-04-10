@@ -17,6 +17,14 @@ function persistJSON(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* quota */ }
 }
 
+// Clear stale persisted data on version change
+const STORE_VERSION = '0.22.27';
+if (loadJSON('groove:storeVersion') !== STORE_VERSION) {
+  localStorage.removeItem('groove:chatHistory');
+  localStorage.removeItem('groove:activityLog');
+  persistJSON('groove:storeVersion', STORE_VERSION);
+}
+
 export const useGrooveStore = create((set, get) => ({
   // ── Connection ────────────────────────────────────────────
   agents: [],

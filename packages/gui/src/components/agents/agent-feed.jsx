@@ -410,9 +410,10 @@ function BootSequence({ agent }) {
     <div className="flex flex-col justify-center h-full px-2 py-6">
       {/* Agent identity */}
       <div className="flex items-center gap-3 mb-6">
-        <div className="relative w-10 h-10">
-          <span className="absolute inset-0 rounded-lg border-2 border-transparent border-t-accent animate-spin" style={{ animationDuration: '1s' }} />
-          <span className="absolute inset-[3px] rounded-md bg-accent/8" />
+        <div className="relative w-9 h-9">
+          <span className="absolute inset-0 rounded-full border-2 border-accent/20 animate-ping" style={{ animationDuration: '2s' }} />
+          <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-accent animate-spin" style={{ animationDuration: '1s' }} />
+          <span className="absolute inset-[5px] rounded-full bg-accent/8" />
         </div>
         <div>
           <p className="text-sm font-bold text-text-0 font-sans">{agent.name}</p>

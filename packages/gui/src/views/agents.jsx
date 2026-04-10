@@ -540,12 +540,37 @@ export default function AgentsView() {
   }
 
   const teamAgents = allAgents.filter((a) => a.teamId === activeTeamId);
+  const hydrated = useGrooveStore((s) => s.hydrated);
+  const [showLoader, setShowLoader] = useState(true);
+
+  // Show loader for 1.2s on initial mount, then fade out
+  useEffect(() => {
+    const timer = setTimeout(() => setShowLoader(false), 1200);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const isLoading = showLoader || !hydrated;
 
   return (
     <div className="flex flex-col h-full relative">
       <TeamTabBar />
       <div className="flex-1 min-h-0">
-        {teamAgents.length === 0 ? (
+        {isLoading ? (
+          <div className={cn(
+            'flex flex-col items-center justify-center h-full transition-opacity duration-500',
+            !showLoader && hydrated ? 'opacity-0' : 'opacity-100',
+          )}>
+            <div className="relative w-12 h-12 mb-5">
+              <span className="absolute inset-0 rounded-full border-2 border-accent/20 animate-ping" style={{ animationDuration: '2s' }} />
+              <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-accent animate-spin" style={{ animationDuration: '1s' }} />
+              <span className="absolute inset-[6px] rounded-full bg-accent/8 flex items-center justify-center">
+                <Zap size={16} className="text-accent animate-pulse" />
+              </span>
+            </div>
+            <p className="text-sm font-medium text-text-1 font-sans animate-pulse">Connecting to agents</p>
+            <p className="text-xs text-text-3 font-sans mt-1">Syncing with daemon...</p>
+          </div>
+        ) : teamAgents.length === 0 ? (
           <EmptyState onPlanner={launchPlanner} onSpawn={() => openDetail({ type: 'spawn' })} />
         ) : (
           <ReactFlowProvider>

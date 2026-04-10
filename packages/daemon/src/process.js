@@ -445,8 +445,22 @@ For normal file edits within your scope, proceed without review.
                 role: agent.role,
               });
               this.daemon.audit.log('phase2.autoSpawn', { id: agent.id, name: agent.name, role: agent.role });
-            }).catch(() => {});
-          } catch { /* skip invalid configs */ }
+            }).catch((err) => {
+              console.error(`[Groove] Phase 2 spawn failed for ${config.role}: ${err.message}`);
+              this.daemon.broadcast({
+                type: 'phase2:failed',
+                role: config.role,
+                error: err.message,
+              });
+            });
+          } catch (err) {
+            console.error(`[Groove] Phase 2 config invalid for ${config.role}: ${err.message}`);
+            this.daemon.broadcast({
+              type: 'phase2:failed',
+              role: config.role,
+              error: err.message,
+            });
+          }
         }
       }
     }

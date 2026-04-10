@@ -207,6 +207,10 @@ export const useGrooveStore = create((set, get) => ({
           get().addToast('info', `QC agent ${msg.name} auto-spawned`, 'Auditing phase 1 work');
           break;
 
+        case 'phase2:failed':
+          get().addToast('error', `QC agent failed to spawn`, msg.error || 'Unknown error');
+          break;
+
         case 'rotation:start':
           get().addToast('info', `Rotating ${msg.agentName}...`);
           break;

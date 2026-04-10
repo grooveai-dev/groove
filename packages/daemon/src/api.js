@@ -1562,8 +1562,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
       // Safety net: if planner forgot the QC agent, auto-add one
       if (phase2.length === 0 && phase1.length >= 2) {
         phase2 = [{
+          name: 'qc-agent',
           role: 'fullstack', phase: 2, scope: [],
-          prompt: 'QC Senior Dev: All builder agents have completed. Audit their changes for correctness, fix any issues, run tests, build the project, commit all changes, and launch. Output the localhost URL where the app can be accessed.',
+          prompt: 'QC Senior Dev: All builder agents have completed. Audit their changes for correctness, fix any issues, run tests, build the project, commit all changes, and launch the dev server. Output the localhost URL where the app can be accessed.',
         }];
       }
 

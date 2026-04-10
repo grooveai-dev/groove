@@ -5,7 +5,8 @@ import { Badge } from '../ui/badge';
 import { AgentFeed } from './agent-feed';
 import { AgentConfig } from './agent-config';
 import { AgentTelemetry } from './agent-telemetry';
-import { MessageSquare, Settings, Activity, Pencil, Check, X } from 'lucide-react';
+import { AgentMdFiles } from './agent-mdfiles';
+import { MessageSquare, Settings, Activity, FileText, Pencil, Check, X } from 'lucide-react';
 import { fmtNum, fmtUptime } from '../../lib/format';
 import { cn } from '../../lib/cn';
 import { roleColor } from '../../lib/status';
@@ -24,6 +25,7 @@ const TABS = [
   { id: 'command',   label: 'Chat',      icon: MessageSquare },
   { id: 'config',    label: 'Config',    icon: Settings },
   { id: 'telemetry', label: 'Monitor',   icon: Activity },
+  { id: 'mdfiles',   label: 'Files',     icon: FileText },
 ];
 
 function InlineName({ agent }) {
@@ -154,6 +156,7 @@ export function AgentPanel() {
         {activeTab === 'command' && <AgentFeed agent={agent} />}
         {activeTab === 'config' && <AgentConfig agent={agent} />}
         {activeTab === 'telemetry' && <AgentTelemetry agent={agent} />}
+        {activeTab === 'mdfiles' && <AgentMdFiles agent={agent} />}
       </div>
     </div>
   );

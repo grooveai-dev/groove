@@ -61,6 +61,11 @@ export function createApi(app, daemon) {
     try {
       const config = validateAgentConfig(req.body);
       config.teamId = req.body.teamId || daemon.teams.getDefault()?.id || null;
+      // Inherit team working directory if agent doesn't specify one
+      if (!config.workingDir) {
+        const team = daemon.teams.get(config.teamId);
+        if (team?.workingDir) config.workingDir = team.workingDir;
+      }
       const agent = await daemon.processes.spawn(config);
       daemon.audit.log('agent.spawn', { id: agent.id, role: agent.role, provider: agent.provider });
       res.status(201).json(agent);
@@ -257,8 +262,8 @@ export function createApi(app, daemon) {
 
   app.post('/api/teams', (req, res) => {
     try {
-      const team = daemon.teams.create(req.body.name);
-      daemon.audit.log('team.create', { id: team.id, name: team.name });
+      const team = daemon.teams.create(req.body.name, req.body.workingDir);
+      daemon.audit.log('team.create', { id: team.id, name: team.name, workingDir: team.workingDir });
       res.status(201).json(team);
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -267,8 +272,10 @@ export function createApi(app, daemon) {
 
   app.patch('/api/teams/:id', (req, res) => {
     try {
-      const team = daemon.teams.rename(req.params.id, req.body.name);
-      daemon.audit.log('team.rename', { id: team.id, name: team.name });
+      if (req.body.name) daemon.teams.rename(req.params.id, req.body.name);
+      if (req.body.workingDir !== undefined) daemon.teams.setWorkingDir(req.params.id, req.body.workingDir);
+      const team = daemon.teams.get(req.params.id);
+      daemon.audit.log('team.update', { id: team.id, name: team.name, workingDir: team.workingDir });
       res.json(team);
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -381,6 +388,82 @@ export function createApi(app, daemon) {
       res.json({ response, agentId: agent.id, agentName: agent.name });
     } catch (err) {
       res.status(400).json({ error: err.message });
+    }
+  });
+
+  // List MD files for an agent (from its working directory + .groove)
+  app.get('/api/agents/:id/mdfiles', (req, res) => {
+    const agent = daemon.registry.get(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    const dir = agent.workingDir || daemon.projectDir;
+    const files = [];
+
+    // Scan working directory for .md files (top level + .groove/)
+    try {
+      for (const entry of readdirSync(dir)) {
+        if (entry.endsWith('.md') && !entry.startsWith('.')) {
+          const fullPath = resolve(dir, entry);
+          if (statSync(fullPath).isFile()) {
+            files.push({ name: entry, path: entry, size: statSync(fullPath).size });
+          }
+        }
+      }
+      const grooveDir = resolve(dir, '.groove');
+      if (existsSync(grooveDir)) {
+        for (const entry of readdirSync(grooveDir)) {
+          if (entry.endsWith('.md')) {
+            const fullPath = resolve(grooveDir, entry);
+            if (statSync(fullPath).isFile()) {
+              files.push({ name: entry, path: `.groove/${entry}`, size: statSync(fullPath).size });
+            }
+          }
+        }
+      }
+    } catch { /* dir might not exist */ }
+
+    res.json({ files, workingDir: dir });
+  });
+
+  // Read a specific MD file for an agent
+  app.get('/api/agents/:id/mdfiles/read', (req, res) => {
+    const agent = daemon.registry.get(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    const dir = agent.workingDir || daemon.projectDir;
+    const relPath = req.query.path;
+    if (!relPath || relPath.includes('..')) return res.status(400).json({ error: 'Invalid path' });
+
+    const fullPath = resolve(dir, relPath);
+    if (!fullPath.startsWith(dir)) return res.status(400).json({ error: 'Path traversal' });
+
+    try {
+      const content = readFileSync(fullPath, 'utf8');
+      res.json({ path: relPath, content });
+    } catch {
+      res.status(404).json({ error: 'File not found' });
+    }
+  });
+
+  // Save a MD file for an agent
+  app.put('/api/agents/:id/mdfiles/write', (req, res) => {
+    const agent = daemon.registry.get(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    const dir = agent.workingDir || daemon.projectDir;
+    const { path: relPath, content } = req.body;
+    if (!relPath || relPath.includes('..')) return res.status(400).json({ error: 'Invalid path' });
+    if (typeof content !== 'string') return res.status(400).json({ error: 'Content required' });
+
+    const fullPath = resolve(dir, relPath);
+    if (!fullPath.startsWith(dir)) return res.status(400).json({ error: 'Path traversal' });
+
+    try {
+      writeFileSync(fullPath, content, 'utf8');
+      daemon.audit.log('mdfile.write', { agentId: agent.id, path: relPath });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
   });
 

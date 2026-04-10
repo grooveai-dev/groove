@@ -39,13 +39,23 @@ export class Teams {
     }
   }
 
-  create(name) {
+  create(name, workingDir) {
     validateTeamName(name);
     const id = randomUUID().slice(0, 8);
     const team = { id, name, isDefault: false, createdAt: new Date().toISOString() };
+    if (workingDir && typeof workingDir === 'string') team.workingDir = workingDir;
     this.teams.set(id, team);
     this._save();
     this.daemon.broadcast({ type: 'team:created', team });
+    return team;
+  }
+
+  setWorkingDir(id, workingDir) {
+    const team = this.teams.get(id);
+    if (!team) throw new Error('Team not found');
+    team.workingDir = workingDir || undefined;
+    this._save();
+    this.daemon.broadcast({ type: 'team:updated', team });
     return team;
   }
 

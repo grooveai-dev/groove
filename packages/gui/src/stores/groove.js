@@ -310,9 +310,11 @@ export const useGrooveStore = create((set, get) => ({
     localStorage.setItem('groove:activeTeamId', id);
   },
 
-  async createTeam(name) {
+  async createTeam(name, workingDir) {
     try {
-      const team = await api.post('/teams', { name });
+      const body = { name };
+      if (workingDir) body.workingDir = workingDir;
+      const team = await api.post('/teams', body);
       // Only set activeTeamId — the WS team:created handler adds to the teams array
       set({ activeTeamId: team.id });
       localStorage.setItem('groove:activeTeamId', team.id);

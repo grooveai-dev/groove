@@ -135,7 +135,7 @@ export default function DashboardView() {
           <div className="px-3 pt-2.5 pb-1">
             <span className="text-2xs font-mono text-text-3 uppercase tracking-widest">Model Routing</span>
           </div>
-          <RoutingChart routing={routing} />
+          <RoutingChart routing={routing} agentBreakdown={agentBreakdown} />
         </div>
 
         {/* R4C1: Agent Fleet */}

@@ -1690,19 +1690,17 @@ Keep responses concise. Help them think, don't lecture them about the system the
     const routingStatus = daemon.router.getStatus();
     const journalistStatus = daemon.journalist.getStatus();
 
-    // Aggregate routing cost log by tier
+    // Aggregate routing cost log by tier (count + tokens, no fake cost estimates)
     const routingByTier = { light: 0, medium: 0, heavy: 0 };
-    const costByTier = { light: 0, medium: 0, heavy: 0 };
+    const tokensByTier = { light: 0, medium: 0, heavy: 0 };
     let autoRoutedCount = 0;
     for (const [, mode] of Object.entries(routingStatus.agentModes || {})) {
       if (mode.mode === 'auto') autoRoutedCount++;
     }
     for (const entry of daemon.router.costLog || []) {
       if (routingByTier[entry.tier] !== undefined) routingByTier[entry.tier]++;
-      if (entry.tokens && entry.tier) {
-        // Estimate cost by tier using median rates
-        const rates = { heavy: 0.045, medium: 0.009, light: 0.0024 };
-        costByTier[entry.tier] += (entry.tokens / 1000) * (rates[entry.tier] || 0.009);
+      if (entry.tokens && entry.tier && tokensByTier[entry.tier] !== undefined) {
+        tokensByTier[entry.tier] += entry.tokens;
       }
     }
 
@@ -1792,7 +1790,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       routing: {
         autoRoutedCount,
         byTier: routingByTier,
-        costByTier,
+        tokensByTier,
         totalDecisions: daemon.router.costLog?.length || 0,
       },
       rotation: {

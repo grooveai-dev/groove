@@ -26,7 +26,8 @@ const LANGS = {
 
 // Custom theme overrides to match our design tokens
 const grooveTheme = EditorView.theme({
-  '&': { backgroundColor: '#24282f', color: '#bcc2cd', fontFamily: 'var(--font-mono)', fontSize: '13px' },
+  '&': { backgroundColor: '#24282f', color: '#bcc2cd', fontFamily: 'var(--font-mono)', fontSize: '13px', height: '100%' },
+  '.cm-scroller': { overflow: 'auto' },
   '.cm-content': { caretColor: '#33afbc' },
   '.cm-cursor': { borderLeftColor: '#33afbc' },
   '.cm-gutters': { backgroundColor: '#24282f', borderRight: '1px solid #2c313a', color: '#505862' },
@@ -103,5 +104,5 @@ export function CodeEditor({ content, language, onChange, onSave }) {
     view.dispatch({ effects: langCompartment.current.reconfigure(langExt()) });
   }, [language]);
 
-  return <div ref={containerRef} className="w-full h-full" />;
+  return <div ref={containerRef} className="w-full h-full overflow-hidden" />;
 }

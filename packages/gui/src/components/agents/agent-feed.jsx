@@ -38,29 +38,162 @@ function activityMeta(text) {
   return { icon: Code2, color: 'text-text-3', label: 'Activity' };
 }
 
-// ── Markdown-lite rendering ──────────────────────────────────
+// ── Inline formatting (bold, code) ───────────────────────────
+function InlineFormat({ text }) {
+  if (!text) return null;
+  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**'))
+      return <strong key={i} className="font-semibold text-text-0">{part.slice(2, -2)}</strong>;
+    if (part.startsWith('`') && part.endsWith('`'))
+      return <code key={i} className="px-1 py-px rounded bg-accent/8 text-[11px] font-mono text-accent">{part.slice(1, -1)}</code>;
+    return <span key={i}>{part}</span>;
+  });
+}
+
+// ── Structured message renderer ──────────────────────────────
+// Parses agent output into sections: headers, bullets, code blocks, paragraphs
+function StructuredMessage({ text }) {
+  if (!text) return null;
+
+  const blocks = [];
+  const lines = text.split('\n');
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Code block
+    if (line.trimStart().startsWith('```')) {
+      const codeLines = [];
+      const lang = line.trim().slice(3);
+      i++;
+      while (i < lines.length && !lines[i].trimStart().startsWith('```')) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++; // skip closing ```
+      blocks.push({ type: 'code', content: codeLines.join('\n'), lang });
+      continue;
+    }
+
+    // Header (## or **Header:** at start of line)
+    if (/^#{1,3}\s/.test(line) || /^\*\*[^*]+:\*\*\s*$/.test(line.trim())) {
+      const heading = line.replace(/^#+\s*/, '').replace(/^\*\*/, '').replace(/:\*\*\s*$/, ':').trim();
+      blocks.push({ type: 'heading', content: heading });
+      i++;
+      continue;
+    }
+
+    // Bullet / dash list item
+    if (/^\s*[-*]\s/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*[-*]\s/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*[-*]\s+/, '').trim());
+        i++;
+      }
+      blocks.push({ type: 'list', items });
+      continue;
+    }
+
+    // Numbered list
+    if (/^\s*\d+[\.)]\s/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*\d+[\.)]\s/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*\d+[\.)]\s+/, '').trim());
+        i++;
+      }
+      blocks.push({ type: 'numbered', items });
+      continue;
+    }
+
+    // Empty line — skip
+    if (!line.trim()) { i++; continue; }
+
+    // Note/warning line
+    if (/^(Note|Warning|Important|IMPORTANT|TODO):/i.test(line.trim())) {
+      blocks.push({ type: 'note', content: line.trim() });
+      i++;
+      continue;
+    }
+
+    // Regular paragraph — collect consecutive non-empty lines
+    const paraLines = [];
+    while (i < lines.length && lines[i].trim() && !/^#{1,3}\s/.test(lines[i]) && !/^\s*[-*]\s/.test(lines[i]) && !/^\s*\d+[\.)]\s/.test(lines[i]) && !lines[i].trimStart().startsWith('```')) {
+      paraLines.push(lines[i].trim());
+      i++;
+    }
+    if (paraLines.length > 0) {
+      blocks.push({ type: 'para', content: paraLines.join(' ') });
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {blocks.map((block, idx) => {
+        switch (block.type) {
+          case 'heading':
+            return (
+              <div key={idx} className="flex items-center gap-1.5 pt-1.5 first:pt-0">
+                <div className="w-1 h-3.5 rounded-full bg-accent/40 flex-shrink-0" />
+                <span className="text-[12px] font-semibold text-text-0 font-sans"><InlineFormat text={block.content} /></span>
+              </div>
+            );
+          case 'list':
+            return (
+              <div key={idx} className="space-y-1 pl-2">
+                {block.items.map((item, j) => (
+                  <div key={j} className="flex gap-2 text-[12px] text-text-2 font-sans leading-relaxed">
+                    <span className="text-accent/50 mt-0.5 flex-shrink-0">-</span>
+                    <span className="min-w-0"><InlineFormat text={item} /></span>
+                  </div>
+                ))}
+              </div>
+            );
+          case 'numbered':
+            return (
+              <div key={idx} className="space-y-1 pl-2">
+                {block.items.map((item, j) => (
+                  <div key={j} className="flex gap-2 text-[12px] text-text-2 font-sans leading-relaxed">
+                    <span className="text-text-4 font-mono w-4 text-right flex-shrink-0">{j + 1}.</span>
+                    <span className="min-w-0"><InlineFormat text={item} /></span>
+                  </div>
+                ))}
+              </div>
+            );
+          case 'code':
+            return (
+              <pre key={idx} className="p-2.5 rounded-md bg-[#0d1117] text-[11px] font-mono text-[#c9d1d9] overflow-x-auto whitespace-pre-wrap border border-white/[0.06] leading-relaxed">
+                {block.content}
+              </pre>
+            );
+          case 'note':
+            return (
+              <div key={idx} className="flex items-start gap-1.5 px-2.5 py-1.5 rounded-md bg-warning/6 border border-warning/12">
+                <AlertCircle size={10} className="text-warning mt-0.5 flex-shrink-0" />
+                <span className="text-[11px] text-warning/80 font-sans"><InlineFormat text={block.content} /></span>
+              </div>
+            );
+          case 'para':
+          default:
+            return <p key={idx} className="text-[12px] text-text-2 font-sans leading-relaxed"><InlineFormat text={block.content} /></p>;
+        }
+      })}
+    </div>
+  );
+}
+
+// Simple inline formatting for user messages
 function FormattedText({ text }) {
   if (!text) return null;
-  const parts = text.split(/(```[\s\S]*?```|`[^`]+`)/g);
+  const parts = text.split(/(```[\s\S]*?```)/g);
   return (
     <span>
       {parts.map((part, i) => {
         if (part.startsWith('```') && part.endsWith('```')) {
           const code = part.slice(3, -3).replace(/^\w+\n/, '');
-          return (
-            <pre key={i} className="my-2.5 p-3.5 rounded-lg bg-[#0d1117] text-[12px] font-mono text-[#c9d1d9] overflow-x-auto whitespace-pre-wrap border border-white/[0.06] leading-relaxed">
-              {code}
-            </pre>
-          );
+          return <pre key={i} className="my-1.5 p-2 rounded-md bg-[#0d1117] text-[11px] font-mono text-[#c9d1d9] overflow-x-auto whitespace-pre-wrap border border-white/[0.06]">{code}</pre>;
         }
-        if (part.startsWith('`') && part.endsWith('`')) {
-          return <code key={i} className="px-1.5 py-0.5 rounded bg-accent/8 text-[12px] font-mono text-accent border border-accent/10">{part.slice(1, -1)}</code>;
-        }
-        return <span key={i}>{part.split(/(\*\*[^*]+\*\*)/g).map((s, j) =>
-          s.startsWith('**') && s.endsWith('**')
-            ? <strong key={j} className="font-semibold text-text-0">{s.slice(2, -2)}</strong>
-            : s
-        )}</span>;
+        return <span key={i}><InlineFormat text={part} /></span>;
       })}
     </span>
   );
@@ -71,8 +204,8 @@ function FormattedText({ text }) {
 function UserMessage({ msg }) {
   const isQuery = msg.isQuery;
   return (
-    <div className="flex justify-end pl-12">
-      <div className="max-w-[85%]">
+    <div className="flex justify-end pl-8">
+      <div className="max-w-[90%]">
         {isQuery && (
           <div className="flex items-center justify-end gap-1 mb-1">
             <HelpCircle size={9} className="text-info" />
@@ -80,24 +213,27 @@ function UserMessage({ msg }) {
           </div>
         )}
         <div className={cn(
-          'px-4 py-3 rounded-2xl rounded-br-md',
+          'px-3.5 py-2.5 rounded-2xl rounded-br-md',
           isQuery
             ? 'bg-info/10 border border-info/15'
             : 'bg-accent/10 border border-accent/15',
         )}>
-          <div className="text-[13px] font-sans whitespace-pre-wrap break-words leading-relaxed text-text-0">
+          <div className="text-[12px] font-sans whitespace-pre-wrap break-words leading-relaxed text-text-0">
             <FormattedText text={msg.text} />
           </div>
         </div>
-        <div className="text-[10px] text-text-4 font-sans mt-1.5 text-right">{timeAgo(msg.timestamp)}</div>
+        <div className="text-[10px] text-text-4 font-sans mt-1 text-right">{timeAgo(msg.timestamp)}</div>
       </div>
     </div>
   );
 }
 
 function AgentMessage({ msg, agent }) {
+  const [collapsed, setCollapsed] = useState(msg.text?.length > 600);
+  const isLong = msg.text?.length > 600;
+
   return (
-    <div className="pr-6">
+    <div className="pr-2">
       <div className="flex items-center gap-2 mb-1.5">
         <div className="w-5 h-5 rounded-md bg-accent/12 flex items-center justify-center flex-shrink-0">
           <Code2 size={10} className="text-accent" />
@@ -105,12 +241,32 @@ function AgentMessage({ msg, agent }) {
         <span className="text-2xs font-semibold text-text-1 font-sans">{agent?.name || 'Agent'}</span>
         <span className="text-2xs text-text-4 font-sans">{agent?.role}</span>
       </div>
-      <div className="ml-7 px-4 py-3 rounded-2xl rounded-tl-md bg-surface-2/60 border border-border-subtle">
-        <div className="text-[13px] text-text-1 font-sans whitespace-pre-wrap break-words leading-relaxed">
-          <FormattedText text={msg.text} />
-        </div>
+      <div className={cn(
+        'ml-7 px-3.5 py-3 rounded-xl bg-surface-2/40 border border-border-subtle/50 overflow-hidden',
+        collapsed && 'max-h-[200px] relative',
+      )}>
+        <StructuredMessage text={collapsed ? msg.text.slice(0, 600) : msg.text} />
+        {collapsed && (
+          <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-surface-2/90 to-transparent flex items-end justify-center pb-2">
+            <button
+              onClick={() => setCollapsed(false)}
+              className="flex items-center gap-1 px-3 py-1 rounded-full bg-surface-3 border border-border-subtle text-2xs text-text-2 font-sans hover:text-text-0 cursor-pointer transition-colors"
+            >
+              <ChevronDown size={10} />
+              Show full response
+            </button>
+          </div>
+        )}
       </div>
-      <div className="text-[10px] text-text-4 font-sans mt-1.5 ml-7">{timeAgo(msg.timestamp)}</div>
+      {isLong && !collapsed && (
+        <button
+          onClick={() => setCollapsed(true)}
+          className="ml-7 mt-1 text-[10px] text-text-4 hover:text-text-2 font-sans cursor-pointer"
+        >
+          Collapse
+        </button>
+      )}
+      <div className="text-[10px] text-text-4 font-sans mt-1 ml-7">{timeAgo(msg.timestamp)}</div>
     </div>
   );
 }

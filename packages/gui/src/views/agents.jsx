@@ -212,22 +212,47 @@ function AgentTreeInner() {
       },
     ];
 
+    // Track occupied positions so new nodes don't overlap existing ones
+    const occupied = new Set();
+    const posKey = (x, y) => `${Math.round(x / 100)},${Math.round(y / 100)}`;
+
+    // First pass: place agents with saved positions
+    const pending = [];
     agents.forEach((agent, i) => {
       const key = agent.name || agent.id;
-      const row = Math.floor(i / MAX_PER_ROW);
-      const col = i % MAX_PER_ROW;
+      if (saved[key]) {
+        const pos = saved[key];
+        occupied.add(posKey(pos.x, pos.y));
+        nodes.push({
+          id: agent.id, type: 'agentNode', position: pos,
+          data: { agent, timeline: tokenTimeline[agent.id] || [] },
+          draggable: true, selectable: true,
+        });
+      } else {
+        pending.push({ agent, index: i });
+      }
+    });
+
+    // Second pass: place new agents in non-overlapping positions
+    for (const { agent, index } of pending) {
+      const row = Math.floor(index / MAX_PER_ROW);
+      const col = index % MAX_PER_ROW;
       const totalInRow = Math.min(agents.length - row * MAX_PER_ROW, MAX_PER_ROW);
       const offsetX = -((totalInRow - 1) * NODE_X_GAP) / 2;
+      let pos = { x: offsetX + col * NODE_X_GAP, y: 140 + row * NODE_Y_GAP };
+
+      // If position is occupied, shift down until we find empty space
+      while (occupied.has(posKey(pos.x, pos.y))) {
+        pos = { x: pos.x, y: pos.y + NODE_Y_GAP };
+      }
+      occupied.add(posKey(pos.x, pos.y));
 
       nodes.push({
-        id: agent.id,
-        type: 'agentNode',
-        position: saved[key] || { x: offsetX + col * NODE_X_GAP, y: 140 + row * NODE_Y_GAP },
+        id: agent.id, type: 'agentNode', position: pos,
         data: { agent, timeline: tokenTimeline[agent.id] || [] },
-        draggable: true,
-        selectable: true,
+        draggable: true, selectable: true,
       });
-    });
+    }
 
     return nodes;
   }, [agents, tokenTimeline]);

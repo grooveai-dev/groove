@@ -20,11 +20,14 @@ import { connect } from '../src/commands/connect.js';
 import { disconnect } from '../src/commands/disconnect.js';
 import { audit } from '../src/commands/audit.js';
 import { federationPair, federationUnpair, federationList, federationStatus } from '../src/commands/federation.js';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { version } = require('../../../package.json');
 
 program
   .name('groove')
   .description('Agent orchestration layer for AI coding tools')
-  .version('0.22.20');
+  .version(version);
 
 program
   .command('start')

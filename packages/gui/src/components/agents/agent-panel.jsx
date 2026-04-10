@@ -85,7 +85,7 @@ export function AgentPanel() {
   if (!agent) return null;
 
   const isAlive = agent.status === 'running' || agent.status === 'starting';
-  const ctxPct = Math.round((agent.contextUsed || 0) * 100);
+  const ctxPct = Math.round((agent.contextUsage || 0) * 100);
   const spawned = agent.spawnedAt || agent.createdAt;
   const uptime = spawned ? Math.floor((Date.now() - new Date(spawned).getTime()) / 1000) : 0;
   const colors = roleColor(agent.role);

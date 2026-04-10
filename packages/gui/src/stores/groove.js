@@ -118,7 +118,19 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'agent:output': {
           const { agentId, data } = msg;
-          const text = typeof data.data === 'string' ? data.data : (Array.isArray(data.data) ? data.data.filter((b) => b.type === 'text').map((b) => b.text).join('\n') : JSON.stringify(data.data));
+          const text = typeof data.data === 'string' ? data.data : (Array.isArray(data.data) ? data.data.filter((b) => b.type === 'text').map((b) => b.text).join('\n') : '');
+
+          // Update agent metrics in real-time (contextUsage, tokensUsed)
+          if (data.contextUsage !== undefined || data.tokensUsed !== undefined) {
+            const agents = get().agents.map((a) => {
+              if (a.id !== agentId) return a;
+              const updates = {};
+              if (data.contextUsage !== undefined) updates.contextUsage = data.contextUsage;
+              if (data.tokensUsed !== undefined) updates.tokensUsed = data.tokensUsed;
+              return { ...a, ...updates };
+            });
+            set({ agents });
+          }
 
           // Promote assistant text and result responses to chat bubbles
           if ((data.subtype === 'assistant' || data.type === 'result') && text && text.trim()) {
@@ -127,14 +139,15 @@ export const useGrooveStore = create((set, get) => ({
             history[agentId] = [...history[agentId].slice(-100), { from: 'agent', text: text.trim(), timestamp: Date.now() }];
             set({ chatHistory: history });
             persistJSON('groove:chatHistory', history);
-          } else {
-            // Everything else goes to activity log
+          } else if (text && text.trim()) {
+            // Non-empty activity goes to activity log
             const log = { ...get().activityLog };
             if (!log[agentId]) log[agentId] = [];
             log[agentId] = [...log[agentId].slice(-200), {
               timestamp: Date.now(),
-              text: text || '',
+              text: text.trim(),
               type: data.type,
+              subtype: data.subtype || null,
             }];
             set({ activityLog: log });
             persistJSON('groove:activityLog', log);

@@ -153,7 +153,7 @@ export function AgentTelemetry({ agent }) {
 
   // Rough health score based on context usage and burn rate
   const healthScore = useMemo(() => {
-    const ctx = agent.contextUsed || 0;
+    const ctx = agent.contextUsage || 0;
     let score = 100;
     if (ctx > 90) score -= 50;
     else if (ctx > 70) score -= 25;
@@ -163,7 +163,7 @@ export function AgentTelemetry({ agent }) {
     if (agent.status === 'crashed') score = 10;
     if (agent.status === 'completed') score = 95;
     return Math.max(0, Math.min(100, score));
-  }, [agent.contextUsed, agent.status, burnRate]);
+  }, [agent.contextUsage, agent.status, burnRate]);
 
   return (
     <div className="px-5 py-5 space-y-5 overflow-y-auto h-full">

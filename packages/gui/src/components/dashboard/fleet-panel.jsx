@@ -48,8 +48,8 @@ export function FleetPanel({ agents }) {
                     <div
                       className="h-full rounded-full"
                       style={{
-                        width: `${Math.min(a.contextUsed || 0, 100)}%`,
-                        background: (a.contextUsed || 0) >= 80 ? 'var(--color-danger)' : (a.contextUsed || 0) >= 60 ? 'var(--color-warning)' : 'var(--color-success)',
+                        width: `${Math.min(a.contextUsage || 0, 100)}%`,
+                        background: (a.contextUsage || 0) >= 80 ? 'var(--color-danger)' : (a.contextUsage || 0) >= 60 ? 'var(--color-warning)' : 'var(--color-success)',
                       }}
                     />
                   </div>

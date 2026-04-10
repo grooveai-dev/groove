@@ -117,7 +117,7 @@ const STATUS_SHORT = {
 const AgentNode = memo(({ data, selected }) => {
   const { agent } = data;
   const isAlive = agent.status === 'running' || agent.status === 'starting';
-  const contextPct = Math.round((agent.contextUsed || 0) * 100);
+  const contextPct = Math.round((agent.contextUsage || 0) * 100);
   const sColor = statusColor(agent.status);
   const tokens = agent.tokensUsed || 0;
   const [hovered, setHovered] = useState(false);

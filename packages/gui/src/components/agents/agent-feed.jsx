@@ -142,7 +142,7 @@ function StructuredMessage({ text }) {
             return (
               <div key={idx} className="space-y-1 pl-2">
                 {block.items.map((item, j) => (
-                  <div key={j} className="flex gap-2 text-[12px] text-accent/80 font-sans leading-relaxed">
+                  <div key={j} className="flex gap-2 text-[12px] text-text-0 font-sans leading-relaxed">
                     <span className="text-accent/50 mt-0.5 flex-shrink-0">-</span>
                     <span className="min-w-0"><InlineFormat text={item} /></span>
                   </div>
@@ -153,7 +153,7 @@ function StructuredMessage({ text }) {
             return (
               <div key={idx} className="space-y-1 pl-2">
                 {block.items.map((item, j) => (
-                  <div key={j} className="flex gap-2 text-[12px] text-accent/80 font-sans leading-relaxed">
+                  <div key={j} className="flex gap-2 text-[12px] text-text-0 font-sans leading-relaxed">
                     <span className="text-text-4 font-mono w-4 text-right flex-shrink-0">{j + 1}.</span>
                     <span className="min-w-0"><InlineFormat text={item} /></span>
                   </div>
@@ -175,7 +175,7 @@ function StructuredMessage({ text }) {
             );
           case 'para':
           default:
-            return <p key={idx} className="text-[12px] text-accent/80 font-sans leading-relaxed"><InlineFormat text={block.content} /></p>;
+            return <p key={idx} className="text-[12px] text-text-0 font-sans leading-relaxed"><InlineFormat text={block.content} /></p>;
         }
       })}
     </div>
@@ -218,7 +218,7 @@ function UserMessage({ msg }) {
             ? 'bg-info/10 border-info/25'
             : 'bg-info/10 border-info/25',
         )}>
-          <div className="text-[12px] font-sans whitespace-pre-wrap break-words leading-relaxed text-info">
+          <div className="text-[12px] font-sans whitespace-pre-wrap break-words leading-relaxed text-text-0">
             <FormattedText text={msg.text} />
           </div>
         </div>
@@ -566,7 +566,7 @@ export function AgentFeed({ agent }) {
 
       {/* Messages area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-        {timeline.length === 0 && (
+        {!timeline.some((t) => t.from === 'agent' || t.kind === 'activity-group') && (
           isAlive ? (
             <BootSequence agent={agent} />
           ) : (

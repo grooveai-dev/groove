@@ -25,7 +25,7 @@
   --color-text-1: #bcc2cd;
   --color-text-2: #8b929e;
   --color-text-3: #6e7681;
-  --color-text-4: #505862;
+  --color-text-4: #6b7280;
 
   /* Borders */
   --color-border: #3e4451;
@@ -168,3 +168,12 @@ html {
 }
 
 /* ── React Flow Overrides ─────────────────────────────────── */
+
+/* Suppress node fly-in animation — nodes appear in position instantly */
+.react-flow__node {
+  transition: none !important;
+}
+/* Re-enable transitions only for drag interactions */
+.react-flow__node.dragging {
+  transition: none !important;
+}

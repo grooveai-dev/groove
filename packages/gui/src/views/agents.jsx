@@ -326,13 +326,6 @@ function AgentTreeInner() {
     savePositions(saved);
   }, [agents]);
 
-  // Suppress CSS transitions on initial render to prevent node fly-in
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    const timer = setTimeout(() => setReady(true), 300);
-    return () => clearTimeout(timer);
-  }, []);
-
   return (
     <ReactFlow
       nodes={nodes}
@@ -348,7 +341,7 @@ function AgentTreeInner() {
       proOptions={{ hideAttribution: true }}
       minZoom={0.2}
       maxZoom={1.5}
-      className={cn('bg-surface-2', !ready && '[&_.react-flow__node]:!transition-none')}
+      className="bg-surface-2"
     >
       <Background color="rgba(97,175,239,0.03)" gap={24} size={1} />
     </ReactFlow>

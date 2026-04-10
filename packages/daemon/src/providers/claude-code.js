@@ -183,9 +183,11 @@ export class ClaudeCodeProvider extends Provider {
 
     if (events.length === 0) return null;
 
-    // Merge events: accumulate tokens across all events in this chunk,
-    // but return the most significant event type (usage > result > activity)
-    const merged = events[events.length - 1];
+    // Merge events: prefer content-bearing events (activity/result) over usage/session.
+    // Accumulate token counts across all events in this chunk.
+    let content = events.find((e) => e.type === 'result') || events.find((e) => e.type === 'activity') || events[events.length - 1];
+    const merged = { ...content };
+
     let totalTokens = 0;
     let totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheCreation = 0;
     for (const e of events) {
@@ -194,6 +196,8 @@ export class ClaudeCodeProvider extends Provider {
       if (e.outputTokens > 0) totalOutput += e.outputTokens;
       if (e.cacheReadTokens > 0) totalCacheRead += e.cacheReadTokens;
       if (e.cacheCreationTokens > 0) totalCacheCreation += e.cacheCreationTokens;
+      if (e.sessionId) merged.sessionId = e.sessionId;
+      if (e.contextUsage !== undefined) merged.contextUsage = e.contextUsage;
     }
     if (totalTokens > 0) merged.tokensUsed = totalTokens;
     if (totalInput > 0) merged.inputTokens = totalInput;

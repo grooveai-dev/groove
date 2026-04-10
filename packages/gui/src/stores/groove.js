@@ -118,7 +118,15 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'agent:output': {
           const { agentId, data } = msg;
-          const text = typeof data.data === 'string' ? data.data : (Array.isArray(data.data) ? data.data.filter((b) => b.type === 'text').map((b) => b.text).join('\n') : '');
+          // Extract text from Claude Code content blocks or plain strings
+          let text = '';
+          if (typeof data.data === 'string') {
+            text = data.data;
+          } else if (Array.isArray(data.data)) {
+            const textParts = data.data.filter((b) => b.type === 'text').map((b) => b.text);
+            const toolParts = data.data.filter((b) => b.type === 'tool_use').map((b) => `[${b.name}] ${typeof b.input === 'string' ? b.input : JSON.stringify(b.input || '').slice(0, 100)}`);
+            text = [...textParts, ...toolParts].join('\n');
+          }
 
           // Update agent metrics in real-time (contextUsage, tokensUsed)
           if (data.contextUsage !== undefined || data.tokensUsed !== undefined) {

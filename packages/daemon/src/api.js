@@ -1801,9 +1801,16 @@ Keep responses concise. Help them think, don't lecture them about the system the
     res.json(daemon.config);
   });
 
-  // Serve GUI static files (built GUI)
+  // Serve GUI static files (built GUI) — no-cache headers to prevent stale bundles
   const guiPath = resolve(__dirname, '../../gui/dist');
-  app.use(express.static(guiPath, { etag: false, maxAge: 0 }));
+  app.use(express.static(guiPath, { etag: false, maxAge: 0, lastModified: false }));
+  app.use((req, res, next) => {
+    if (!req.path.startsWith('/api/')) {
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.set('Pragma', 'no-cache');
+    }
+    next();
+  });
 
   // SPA fallback
   app.get('*', (req, res, next) => {

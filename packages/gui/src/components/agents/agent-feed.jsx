@@ -242,7 +242,7 @@ function AgentMessage({ msg, agent }) {
         <span className="text-2xs text-text-4 font-sans">{agent?.role}</span>
       </div>
       <div className={cn(
-        'ml-7 px-3.5 py-3 rounded-xl bg-surface-2/40 border border-border-subtle/50 overflow-hidden',
+        'ml-7 px-3.5 py-3 rounded-xl bg-accent/[0.06] border border-accent/10 overflow-hidden',
         collapsed && 'max-h-[200px] relative',
       )}>
         <StructuredMessage text={collapsed ? msg.text.slice(0, 600) : msg.text} />

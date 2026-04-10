@@ -775,6 +775,7 @@ export class GatewayManager {
 
     const agents = plan.agents;
     const defaultDir = this.daemon.config?.defaultWorkingDir || undefined;
+    const defaultTeamId = this.daemon.teams.getDefault()?.id || null;
 
     // Separate phases
     const phase1 = agents.filter((a) => !a.phase || a.phase === 1);
@@ -804,6 +805,7 @@ export class GatewayManager {
             workingDir: config.workingDir || defaultDir,
             name: config.name || undefined,
           });
+          validated.teamId = defaultTeamId;
           const agent = await this.daemon.processes.spawn(validated);
           spawned.push(agent);
           phase1Ids.push(agent.id);
@@ -823,6 +825,7 @@ export class GatewayManager {
             permission: c.permission || 'auto',
             workingDir: c.workingDir || defaultDir,
             name: c.name || undefined,
+            teamId: defaultTeamId,
           })),
         });
       }

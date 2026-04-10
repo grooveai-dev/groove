@@ -270,13 +270,16 @@ function AgentTreeInner() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState(targetNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(targetEdges);
+  const mountedRef = useRef(false);
 
   useEffect(() => { setNodes(targetNodes); }, [targetNodes, setNodes]);
   useEffect(() => { setEdges(targetEdges); }, [targetEdges, setEdges]);
 
   useEffect(() => {
-    if (prevCount === 0 && agents.length > 0) {
-      setTimeout(() => fitView({ padding: 0.3, maxZoom: 1.2, duration: 400 }), 100);
+    if (agents.length > 0) {
+      const delay = mountedRef.current ? 200 : 50;
+      setTimeout(() => fitView({ padding: 0.3, maxZoom: 1.2, duration: mountedRef.current ? 400 : 0 }), delay);
+      mountedRef.current = true;
     }
     setPrevCount(agents.length);
   }, [agents.length, prevCount, fitView]);

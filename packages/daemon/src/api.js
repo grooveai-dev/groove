@@ -1470,6 +1470,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       }
 
       const defaultDir = daemon.config?.defaultWorkingDir || undefined;
+      const defaultTeamId = daemon.teams.getDefault()?.id || null;
 
       // Separate phase 1 (builders) and phase 2 (QC/finisher)
       const phase1 = agents.filter((a) => !a.phase || a.phase === 1);
@@ -1499,6 +1500,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
             workingDir: config.workingDir || defaultDir,
             name: config.name || undefined,
           });
+          validated.teamId = defaultTeamId;
           const agent = await daemon.processes.spawn(validated);
           spawned.push({ id: agent.id, name: agent.name, role: agent.role });
           phase1Ids.push(agent.id);
@@ -1519,6 +1521,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
             permission: c.permission || 'auto',
             workingDir: c.workingDir || defaultDir,
             name: c.name || undefined,
+            teamId: defaultTeamId,
           })),
         });
       }

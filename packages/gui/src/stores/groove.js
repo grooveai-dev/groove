@@ -118,14 +118,15 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'agent:output': {
           const { agentId, data } = msg;
-          // Extract text from Claude Code content blocks or plain strings
-          let text = '';
+
+          // Separate text content from tool calls
+          let chatText = '';
+          let activityText = '';
           if (typeof data.data === 'string') {
-            text = data.data;
+            chatText = data.data;
           } else if (Array.isArray(data.data)) {
-            const textParts = data.data.filter((b) => b.type === 'text').map((b) => b.text);
-            const toolParts = data.data.filter((b) => b.type === 'tool_use').map((b) => `[${b.name}] ${typeof b.input === 'string' ? b.input : JSON.stringify(b.input || '').slice(0, 100)}`);
-            text = [...textParts, ...toolParts].join('\n');
+            chatText = data.data.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+            activityText = data.data.filter((b) => b.type === 'tool_use').map((b) => `${b.name}: ${typeof b.input === 'string' ? b.input.slice(0, 80) : (b.input?.command || b.input?.path || b.input?.pattern || JSON.stringify(b.input || '').slice(0, 80))}`).join('\n');
           }
 
           // Update agent metrics in real-time (contextUsage, tokensUsed)
@@ -140,22 +141,24 @@ export const useGrooveStore = create((set, get) => ({
             set({ agents });
           }
 
-          // Promote assistant text and result responses to chat bubbles
-          if ((data.subtype === 'assistant' || data.type === 'result') && text && text.trim()) {
+          // Text responses → chat bubbles (only real text, not tool calls)
+          if ((data.subtype === 'assistant' || data.type === 'result') && chatText && chatText.trim()) {
             const history = { ...get().chatHistory };
             if (!history[agentId]) history[agentId] = [];
-            history[agentId] = [...history[agentId].slice(-100), { from: 'agent', text: text.trim(), timestamp: Date.now() }];
+            history[agentId] = [...history[agentId].slice(-100), { from: 'agent', text: chatText.trim(), timestamp: Date.now() }];
             set({ chatHistory: history });
             persistJSON('groove:chatHistory', history);
-          } else if (text && text.trim()) {
-            // Non-empty activity goes to activity log
+          }
+
+          // Tool calls → activity log (shown in streaming bar, not as chat bubbles)
+          if (activityText && activityText.trim()) {
             const log = { ...get().activityLog };
             if (!log[agentId]) log[agentId] = [];
             log[agentId] = [...log[agentId].slice(-200), {
               timestamp: Date.now(),
-              text: text.trim(),
+              text: activityText.trim(),
               type: data.type,
-              subtype: data.subtype || null,
+              subtype: 'tool',
             }];
             set({ activityLog: log });
             persistJSON('groove:activityLog', log);

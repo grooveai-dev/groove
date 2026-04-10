@@ -532,8 +532,6 @@ export default function AgentsView() {
     try {
       const agent = await spawnAgent({ role: 'planner' });
       if (agent?.id) {
-        const addChat = useGrooveStore.getState().addChatMessage;
-        addChat(agent.id, 'system', 'Planner is starting up...');
         selectAgent(agent.id);
       }
     } catch { /* toast handles */ }

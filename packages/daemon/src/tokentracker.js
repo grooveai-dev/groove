@@ -5,7 +5,8 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
 // Estimated tokens wasted per cold-start without GROOVE context
-const COLD_START_OVERHEAD = 2000;
+// (agent explores codebase, reads files, discovers structure, builds mental model)
+const COLD_START_OVERHEAD = 8000;
 // Estimated tokens wasted per file conflict (agent discovers, backs off, retries)
 const CONFLICT_OVERHEAD = 500;
 

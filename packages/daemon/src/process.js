@@ -183,6 +183,15 @@ export class ProcessManager {
     // Generate introduction context (team awareness + negotiation)
     const introContext = introducer.generateContext(agent, { taskNegotiation });
 
+    // Track cold-start savings — agent gets context from planner/journalist/team
+    // instead of exploring the codebase from scratch
+    const otherAgents = registry.getAll().filter((a) => a.id !== agent.id);
+    const hasTeamContext = otherAgents.length > 0;
+    const hasJournalistContext = this.daemon.journalist?.getLastSynthesis()?.projectMap;
+    if (hasTeamContext || hasJournalistContext) {
+      this.daemon.tokens.recordColdStartSkipped();
+    }
+
     // Update AGENTS_REGISTRY.md (other agents can see this new agent)
     introducer.writeRegistryFile(this.daemon.projectDir);
 

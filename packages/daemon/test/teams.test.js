@@ -22,7 +22,9 @@ function createMockDaemon() {
   const daemon = {
     registry,
     grooveDir,
+    projectDir: tmpDir,
     broadcast(msg) { broadcasts.push(msg); },
+    processes: { kill() {} },
   };
 
   return { daemon, tmpDir, grooveDir, broadcasts };
@@ -114,25 +116,23 @@ describe('Teams', () => {
     assert.equal(teams.get(team.id), null);
   });
 
-  it('should move agents to default on team delete', () => {
+  it('should remove agents on team delete', () => {
     const team = teams.create('Temp');
     const agent = daemon.registry.add({ role: 'backend', teamId: team.id });
     assert.equal(daemon.registry.get(agent.id).teamId, team.id);
 
     teams.delete(team.id);
 
-    const defaultTeam = teams.getDefault();
-    assert.equal(daemon.registry.get(agent.id).teamId, defaultTeam.id);
+    assert.equal(daemon.registry.get(agent.id), null);
   });
 
-  it('should broadcast on delete with movedTo', () => {
+  it('should broadcast on delete', () => {
     const team = teams.create('Temp');
     broadcasts.length = 0;
     teams.delete(team.id);
     const msg = broadcasts.find((b) => b.type === 'team:deleted');
     assert.ok(msg);
     assert.equal(msg.teamId, team.id);
-    assert.equal(msg.movedTo, teams.getDefault().id);
   });
 
   it('should throw when deleting the default team', () => {

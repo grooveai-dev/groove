@@ -11,11 +11,11 @@ export class CodexProvider extends Provider {
   static authType = 'api-key';
   static envKey = 'OPENAI_API_KEY';
   static models = [
-    { id: 'o3', name: 'o3', tier: 'heavy', pricing: { input: 0.01, output: 0.04 } },
-    { id: 'o4-mini', name: 'o4-mini', tier: 'medium', pricing: { input: 0.001, output: 0.004 } },
-    { id: 'gpt-4.1', name: 'GPT-4.1', tier: 'heavy', pricing: { input: 0.002, output: 0.008 } },
-    { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', tier: 'medium', pricing: { input: 0.0004, output: 0.0016 } },
-    { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', tier: 'light', pricing: { input: 0.0001, output: 0.0004 } },
+    { id: 'o5-deep', name: 'o5 Deep Reasoning', tier: 'heavy', pricing: { input: 0.015, output: 0.06 } },
+    { id: 'o5-mini', name: 'o5 Mini', tier: 'medium', pricing: { input: 0.002, output: 0.008 } },
+    { id: 'gpt-5.4-fast', name: 'GPT-5.4 Fast', tier: 'medium', pricing: { input: 0.001, output: 0.004 } },
+    { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', tier: 'light', pricing: { input: 0.0004, output: 0.0016 } },
+    { id: 'gpt-5.4-nano', name: 'GPT-5.4 Nano', tier: 'light', pricing: { input: 0.0001, output: 0.0004 } },
   ];
 
   static isInstalled() {

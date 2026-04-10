@@ -1,7 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useRef, useEffect, memo } from 'react';
-import { HEX, hexAlpha } from '../../lib/theme-hex';
-import { fmtNum, fmtPct } from '../../lib/format';
+import { HEX } from '../../lib/theme-hex';
+import { fmtNum } from '../../lib/format';
 
 const CacheRing = memo(function CacheRing({ cacheRead = 0, cacheCreation = 0, totalInput = 0, size = 140 }) {
   const canvasRef = useRef(null);
@@ -23,7 +23,6 @@ const CacheRing = memo(function CacheRing({ cacheRead = 0, cacheCreation = 0, to
     const radius = (size - 12) / 2;
     const strokeWidth = 5;
 
-    // Arc spans 270 degrees (135° to 405°)
     const startAngle = (135 * Math.PI) / 180;
     const endAngle = (405 * Math.PI) / 180;
     const sweep = endAngle - startAngle;
@@ -40,7 +39,6 @@ const CacheRing = memo(function CacheRing({ cacheRead = 0, cacheCreation = 0, to
       const readPct = cacheRead / total;
       const createPct = cacheCreation / total;
 
-      // Segment 1: Cache Read (accent)
       if (readPct > 0) {
         const segEnd = startAngle + sweep * readPct;
         ctx.beginPath();
@@ -51,7 +49,6 @@ const CacheRing = memo(function CacheRing({ cacheRead = 0, cacheCreation = 0, to
         ctx.stroke();
       }
 
-      // Segment 2: Cache Creation (purple)
       if (createPct > 0) {
         const segStart = startAngle + sweep * readPct;
         const segEnd = segStart + sweep * createPct;
@@ -64,16 +61,16 @@ const CacheRing = memo(function CacheRing({ cacheRead = 0, cacheCreation = 0, to
       }
     }
 
-    // Center text — hit rate
+    // Center text
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `600 ${size * 0.18}px 'JetBrains Mono Variable', monospace`;
+    ctx.font = `600 ${size * 0.2}px 'JetBrains Mono Variable', monospace`;
     ctx.fillStyle = HEX.text0;
     ctx.fillText(`${Math.round(hitRate)}%`, cx, cy - 3);
 
-    ctx.font = `500 ${size * 0.07}px 'JetBrains Mono Variable', monospace`;
-    ctx.fillStyle = HEX.text4;
-    ctx.fillText('CACHE', cx, cy + size * 0.12);
+    ctx.font = `500 ${size * 0.08}px 'JetBrains Mono Variable', monospace`;
+    ctx.fillStyle = HEX.text3;
+    ctx.fillText('CACHE', cx, cy + size * 0.13);
   }, [cacheRead, cacheCreation, totalInput, size, total, hitRate]);
 
   return (
@@ -94,10 +91,10 @@ const CacheRing = memo(function CacheRing({ cacheRead = 0, cacheCreation = 0, to
 
 function StatRow({ color, label, value }) {
   return (
-    <div className="flex items-center gap-2 text-[9px] font-mono">
+    <div className="flex items-center gap-2 text-xs font-mono">
       <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
-      <span className="text-[#505862] uppercase tracking-wider flex-1">{label}</span>
-      <span className="text-[#8b929e] tabular-nums">{value}</span>
+      <span className="text-text-3 uppercase tracking-wider flex-1">{label}</span>
+      <span className="text-text-1 tabular-nums">{value}</span>
     </div>
   );
 }

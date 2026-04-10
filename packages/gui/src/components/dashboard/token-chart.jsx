@@ -42,7 +42,7 @@ const TokenChart = memo(function TokenChart({ data, width, height }) {
     const hasCacheData = caches.some((c) => c !== null && c > 0);
 
     // Grid lines
-    ctx.strokeStyle = HEX.surface3;
+    ctx.strokeStyle = HEX.surface5;
     ctx.lineWidth = 0.5;
     for (let i = 0; i <= 4; i++) {
       const y = pad.top + (h / 4) * i;
@@ -116,7 +116,7 @@ const TokenChart = memo(function TokenChart({ data, width, height }) {
     }
 
     // Left axis labels (tokens)
-    ctx.fillStyle = HEX.text3;
+    ctx.fillStyle = HEX.text2;
     ctx.font = "10px 'JetBrains Mono Variable', monospace";
     ctx.textAlign = 'right';
     for (let i = 0; i <= 4; i++) {
@@ -126,14 +126,14 @@ const TokenChart = memo(function TokenChart({ data, width, height }) {
 
     // Right axis labels (cost)
     ctx.textAlign = 'left';
-    ctx.fillStyle = HEX.text4;
+    ctx.fillStyle = HEX.text3;
     for (let i = 0; i <= 4; i++) {
       const val = (maxC / 4) * (4 - i);
       ctx.fillText(fmtDollar(val), pad.left + w + 6, pad.top + (h / 4) * i + 4);
     }
 
     // Legend
-    ctx.font = "9px 'Inter Variable', sans-serif";
+    ctx.font = "10px 'Inter Variable', sans-serif";
     ctx.textAlign = 'left';
     const legendY = height - 8;
     let lx = pad.left;
@@ -141,7 +141,7 @@ const TokenChart = memo(function TokenChart({ data, width, height }) {
     ctx.fillStyle = HEX.accent;
     ctx.fillRect(lx, legendY - 3, 8, 1.5);
     lx += 11;
-    ctx.fillStyle = HEX.text3;
+    ctx.fillStyle = HEX.text2;
     ctx.fillText('Tokens', lx, legendY);
     lx += 44;
 
@@ -155,7 +155,7 @@ const TokenChart = memo(function TokenChart({ data, width, height }) {
     ctx.stroke();
     ctx.setLineDash([]);
     lx += 11;
-    ctx.fillStyle = HEX.text3;
+    ctx.fillStyle = HEX.text2;
     ctx.fillText('Cost', lx, legendY);
 
     if (hasCacheData) {
@@ -170,7 +170,7 @@ const TokenChart = memo(function TokenChart({ data, width, height }) {
       ctx.stroke();
       ctx.setLineDash([]);
       lx += 11;
-      ctx.fillStyle = HEX.text3;
+      ctx.fillStyle = HEX.text2;
       ctx.fillText('Cache', lx, legendY);
     }
 

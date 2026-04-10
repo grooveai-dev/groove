@@ -15,7 +15,7 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
   const successRate = quality?.toolSuccessRate != null ? Math.round(quality.toolSuccessRate * 100) : null;
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#24282f] transition-colors">
+    <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-3 transition-colors">
       {/* Status square */}
       <span className="relative flex-shrink-0 w-[6px] h-[6px]">
         <span className="absolute inset-0 rounded-sm" style={{ background: sColor }} />
@@ -29,26 +29,26 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
 
       {/* Name + role/model */}
       <div className="flex-1 min-w-0">
-        <div className="text-[11px] font-semibold text-[#e6e6e6] font-sans truncate leading-none">{agent.name}</div>
+        <div className="text-xs font-semibold text-text-0 font-sans truncate leading-none">{agent.name}</div>
         <div className="flex items-center gap-1 mt-0.5">
-          <span className="text-[8px] font-mono text-[#505862] uppercase tracking-wider">{agent.role}</span>
-          <span className="text-[8px] text-[#2a2e36]">/</span>
-          <span className="text-[8px] font-mono text-[#3a3f4b]">{shortModel(agent.model)}</span>
+          <span className="text-2xs font-mono text-text-3 uppercase tracking-wider">{agent.role}</span>
+          <span className="text-2xs text-text-4">/</span>
+          <span className="text-2xs font-mono text-text-3">{shortModel(agent.model)}</span>
         </div>
       </div>
 
       {/* Tokens + cost */}
       <div className="text-right flex-shrink-0">
-        <div className="text-[11px] font-mono text-[#bcc2cd] tabular-nums leading-none">{fmtNum(agent.tokens || 0)}</div>
+        <div className="text-xs font-mono text-text-1 tabular-nums leading-none">{fmtNum(agent.tokens || 0)}</div>
         {(agent.costUsd || 0) > 0 && (
-          <div className="text-[8px] font-mono text-[#3a3f4b] mt-0.5">{fmtDollar(agent.costUsd)}</div>
+          <div className="text-2xs font-mono text-text-3 mt-0.5">{fmtDollar(agent.costUsd)}</div>
         )}
       </div>
 
       {/* Quality / tool success */}
       {successRate != null && (
         <span
-          className="text-[7px] font-mono font-bold uppercase px-1 py-px rounded-sm flex-shrink-0"
+          className="text-2xs font-mono font-bold uppercase px-1 py-px rounded-sm flex-shrink-0"
           style={{
             color: successRate >= 90 ? '#4ae168' : successRate >= 70 ? '#e5c07b' : '#e06c75',
             background: successRate >= 90 ? 'rgba(74,225,104,0.1)' : successRate >= 70 ? 'rgba(229,192,123,0.1)' : 'rgba(224,108,117,0.1)',
@@ -60,7 +60,7 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
 
       {/* Cost source badge */}
       {agent.costSource && agent.costSource !== 'actual' && (
-        <span className="text-[7px] font-mono text-[#3a3f4b] uppercase tracking-wider flex-shrink-0">
+        <span className="text-2xs font-mono text-text-4 uppercase tracking-wider flex-shrink-0">
           {COST_SOURCE_LABEL[agent.costSource] || ''}
         </span>
       )}
@@ -68,9 +68,9 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
       {/* Context bar */}
       <div className="w-12 flex-shrink-0">
         <div className="flex items-center justify-end gap-1 mb-0.5">
-          <span className="text-[8px] font-mono text-[#505862] tabular-nums">{contextPct}%</span>
+          <span className="text-2xs font-mono text-text-2 tabular-nums">{contextPct}%</span>
         </div>
-        <div className="h-[2px] bg-[#1a1e25] rounded-full overflow-hidden">
+        <div className="h-[2px] bg-surface-0 rounded-full overflow-hidden">
           <div
             className="h-full rounded-full transition-all duration-700"
             style={{
@@ -95,13 +95,12 @@ function shortModel(id) {
 const FleetPanel = memo(function FleetPanel({ agentBreakdown, rotating = [] }) {
   if (!agentBreakdown?.length) {
     return (
-      <div className="flex-1 flex items-center justify-center text-[9px] text-[#3a3f4b] font-mono p-4">
+      <div className="flex-1 flex items-center justify-center text-xs text-text-3 font-mono p-4">
         No agents
       </div>
     );
   }
 
-  // Group by team
   const teams = {};
   for (const a of agentBreakdown) {
     const team = a.teamId || 'ungrouped';
@@ -117,7 +116,7 @@ const FleetPanel = memo(function FleetPanel({ agentBreakdown, rotating = [] }) {
         {Object.entries(teams).map(([team, members]) => (
           <div key={team}>
             <div className="px-3 pt-2 pb-1">
-              <span className="text-[8px] font-mono text-[#3a3f4b] uppercase tracking-widest">{team}</span>
+              <span className="text-2xs font-mono text-text-3 uppercase tracking-widest">{team}</span>
             </div>
             {members.map((a) => (
               <AgentRow key={a.id} agent={a} isRotating={rotatingSet.has(a.id)} />

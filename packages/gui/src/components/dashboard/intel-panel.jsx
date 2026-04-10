@@ -23,7 +23,7 @@ function TinySparkline({ data, color = HEX.accent, width = 60, height = 16 }) {
 
   return (
     <svg width={width} height={height} className="flex-shrink-0">
-      <polyline points={points} fill="none" stroke={color} strokeWidth="1" strokeLinejoin="round" strokeOpacity="0.6" />
+      <polyline points={points} fill="none" stroke={color} strokeWidth="1" strokeLinejoin="round" strokeOpacity="0.7" />
     </svg>
   );
 }
@@ -33,11 +33,11 @@ function SavingsBar({ label, value, total, color }) {
   const pct = total > 0 ? (value / total) * 100 : 0;
   return (
     <div className="space-y-0.5">
-      <div className="flex items-center justify-between text-[9px] font-mono">
-        <span className="text-[#6e7681]">{label}</span>
-        <span className="text-[#8b929e] tabular-nums">{fmtNum(value)}</span>
+      <div className="flex items-center justify-between text-xs font-mono">
+        <span className="text-text-2">{label}</span>
+        <span className="text-text-1 tabular-nums">{fmtNum(value)}</span>
       </div>
-      <div className="h-[2px] bg-[#1a1e25] rounded-full overflow-hidden">
+      <div className="h-[2px] bg-surface-0 rounded-full overflow-hidden">
         <div
           className="h-full rounded-full transition-all duration-500"
           style={{ width: `${Math.min(pct, 100)}%`, background: color }}
@@ -60,18 +60,18 @@ function RotationTab({ tokens, rotation }) {
         {/* Big numbers */}
         <div className="flex gap-4">
           <div>
-            <div className="text-[8px] font-mono text-[#3a3f4b] uppercase tracking-widest mb-0.5">Rotations</div>
-            <div className="text-[18px] font-mono font-semibold text-[#bcc2cd] tabular-nums leading-none">
+            <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Rotations</div>
+            <div className="text-xl font-mono font-semibold text-text-0 tabular-nums leading-none">
               {rotation?.totalRotations || 0}
             </div>
           </div>
           <div>
-            <div className="text-[8px] font-mono text-[#3a3f4b] uppercase tracking-widest mb-0.5">Saved</div>
-            <div className="text-[18px] font-mono font-semibold text-[#4ae168] tabular-nums leading-none">
+            <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Saved</div>
+            <div className="text-xl font-mono font-semibold text-success tabular-nums leading-none">
               {fmtNum(totalSaved)}
             </div>
             {hypothetical > 0 && (
-              <div className="text-[8px] font-mono text-[#505862] mt-0.5">
+              <div className="text-2xs font-mono text-text-3 mt-0.5">
                 {fmtPct((totalSaved / hypothetical) * 100)} of total
               </div>
             )}
@@ -88,13 +88,13 @@ function RotationTab({ tokens, rotation }) {
         {/* Rotation history */}
         {rotation?.history?.length > 0 && (
           <div>
-            <div className="text-[8px] font-mono text-[#3a3f4b] uppercase tracking-widest mb-1.5">Recent</div>
+            <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1.5">Recent</div>
             <div className="space-y-1">
               {rotation.history.slice(-8).reverse().map((r, i) => (
-                <div key={i} className="flex items-center gap-2 text-[9px] font-mono px-2 py-1 bg-[#1a1e25] rounded">
-                  <span className="text-[#8b929e] font-medium capitalize truncate flex-1">{r.agentName || r.role}</span>
-                  <span className="text-[#505862] tabular-nums">{fmtPct((r.contextUsage || 0) * 100)}</span>
-                  <span className="text-[#3a3f4b]">{timeAgo(r.timestamp)}</span>
+                <div key={i} className="flex items-center gap-2 text-xs font-mono px-2 py-1 bg-surface-0 rounded">
+                  <span className="text-text-1 font-medium capitalize truncate flex-1">{r.agentName || r.role}</span>
+                  <span className="text-text-3 tabular-nums">{fmtPct((r.contextUsage || 0) * 100)}</span>
+                  <span className="text-text-4">{timeAgo(r.timestamp)}</span>
                 </div>
               ))}
             </div>
@@ -109,7 +109,7 @@ function RotationTab({ tokens, rotation }) {
 function AdaptiveTab({ adaptive }) {
   if (!adaptive?.length) {
     return (
-      <div className="flex-1 flex items-center justify-center text-[9px] text-[#3a3f4b] font-mono p-4">
+      <div className="flex-1 flex items-center justify-center text-xs text-text-3 font-mono p-4">
         No adaptive profiles
       </div>
     );
@@ -119,19 +119,19 @@ function AdaptiveTab({ adaptive }) {
     <ScrollArea className="flex-1">
       <div className="p-3 space-y-3">
         {adaptive.map((p) => (
-          <div key={p.key} className="bg-[#1a1e25] rounded px-2.5 py-2 space-y-1.5">
+          <div key={p.key} className="bg-surface-0 rounded px-2.5 py-2 space-y-1.5">
             {/* Profile header */}
             <div className="flex items-center gap-2">
-              <span className="text-[9px] font-mono text-[#8b929e] flex-1 truncate">{p.key}</span>
-              <span className="text-[10px] font-mono font-semibold text-[#bcc2cd] tabular-nums">
+              <span className="text-xs font-mono text-text-1 flex-1 truncate">{p.key}</span>
+              <span className="text-xs font-mono font-semibold text-text-0 tabular-nums">
                 {fmtPct(p.threshold * 100)}
               </span>
               <span
                 className={cn(
-                  'text-[7px] font-mono font-bold uppercase px-1 py-px rounded-sm',
+                  'text-2xs font-mono font-bold uppercase px-1 py-px rounded-sm',
                   p.converged
-                    ? 'text-[#4ae168] bg-[rgba(74,225,104,0.1)]'
-                    : 'text-[#505862] bg-[rgba(80,88,98,0.1)]',
+                    ? 'text-success bg-success/10'
+                    : 'text-text-3 bg-surface-3',
                 )}
               >
                 {p.converged ? 'CONV' : `${p.adjustments} adj`}
@@ -141,7 +141,7 @@ function AdaptiveTab({ adaptive }) {
             {/* Threshold drift sparkline */}
             {p.thresholdHistory?.length > 1 && (
               <div className="flex items-center gap-2">
-                <span className="text-[7px] font-mono text-[#3a3f4b] uppercase tracking-wider">Drift</span>
+                <span className="text-2xs font-mono text-text-3 uppercase tracking-wider">Drift</span>
                 <TinySparkline
                   data={p.thresholdHistory.map((h) => h.v)}
                   color={p.converged ? HEX.success : HEX.accent}
@@ -154,7 +154,7 @@ function AdaptiveTab({ adaptive }) {
             {/* Quality scores sparkline */}
             {p.recentScores?.length > 1 && (
               <div className="flex items-center gap-2">
-                <span className="text-[7px] font-mono text-[#3a3f4b] uppercase tracking-wider">Quality</span>
+                <span className="text-2xs font-mono text-text-3 uppercase tracking-wider">Quality</span>
                 <TinySparkline
                   data={p.recentScores}
                   color={HEX.warning}
@@ -174,7 +174,7 @@ function AdaptiveTab({ adaptive }) {
 function JournalistTab({ journalist }) {
   if (!journalist) {
     return (
-      <div className="flex-1 flex items-center justify-center text-[9px] text-[#3a3f4b] font-mono p-4">
+      <div className="flex-1 flex items-center justify-center text-xs text-text-3 font-mono p-4">
         Journalist inactive
       </div>
     );
@@ -186,19 +186,19 @@ function JournalistTab({ journalist }) {
         {/* Status row */}
         <div className="flex items-center gap-3">
           <div>
-            <div className="text-[8px] font-mono text-[#3a3f4b] uppercase tracking-widest mb-0.5">Cycles</div>
-            <div className="text-[16px] font-mono font-semibold text-[#bcc2cd] tabular-nums leading-none">
+            <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Cycles</div>
+            <div className="text-lg font-mono font-semibold text-text-0 tabular-nums leading-none">
               {journalist.cycleCount || 0}
             </div>
           </div>
           {journalist.lastCycleAt && (
             <div>
-              <div className="text-[8px] font-mono text-[#3a3f4b] uppercase tracking-widest mb-0.5">Last</div>
-              <div className="text-[10px] font-mono text-[#6e7681]">{timeAgo(journalist.lastCycleAt)}</div>
+              <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Last</div>
+              <div className="text-xs font-mono text-text-2">{timeAgo(journalist.lastCycleAt)}</div>
             </div>
           )}
           {journalist.synthesizing && (
-            <span className="text-[7px] font-mono font-bold text-[#33afbc] uppercase tracking-wider animate-pulse">
+            <span className="text-2xs font-mono font-bold text-accent uppercase tracking-wider animate-pulse">
               Synthesizing
             </span>
           )}
@@ -207,8 +207,8 @@ function JournalistTab({ journalist }) {
         {/* Last summary */}
         {journalist.lastSummary && (
           <div>
-            <div className="text-[8px] font-mono text-[#3a3f4b] uppercase tracking-widest mb-1">Summary</div>
-            <div className="text-[9px] font-sans text-[#6e7681] leading-relaxed bg-[#1a1e25] rounded px-2.5 py-2 max-h-32 overflow-y-auto">
+            <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1">Summary</div>
+            <div className="text-xs font-sans text-text-2 leading-relaxed bg-surface-0 rounded px-2.5 py-2 max-h-32 overflow-y-auto">
               {journalist.lastSummary}
             </div>
           </div>
@@ -217,13 +217,13 @@ function JournalistTab({ journalist }) {
         {/* Recent history */}
         {journalist.recentHistory?.length > 0 && (
           <div>
-            <div className="text-[8px] font-mono text-[#3a3f4b] uppercase tracking-widest mb-1.5">History</div>
+            <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1.5">History</div>
             <div className="space-y-1">
               {journalist.recentHistory.slice().reverse().map((h, i) => (
-                <div key={i} className="flex items-center gap-2 text-[9px] font-mono px-2 py-1 bg-[#1a1e25] rounded">
-                  <span className="text-[#505862]">#{h.cycle}</span>
-                  <span className="text-[#6e7681] flex-1 truncate">{h.agentCount} agents</span>
-                  <span className="text-[#3a3f4b]">{timeAgo(h.timestamp)}</span>
+                <div key={i} className="flex items-center gap-2 text-xs font-mono px-2 py-1 bg-surface-0 rounded">
+                  <span className="text-text-3">#{h.cycle}</span>
+                  <span className="text-text-2 flex-1 truncate">{h.agentCount} agents</span>
+                  <span className="text-text-4">{timeAgo(h.timestamp)}</span>
                 </div>
               ))}
             </div>
@@ -238,17 +238,17 @@ function JournalistTab({ journalist }) {
 const IntelPanel = memo(function IntelPanel({ tokens, rotation, adaptive, journalist }) {
   return (
     <Tabs defaultValue="rotation" className="flex flex-col h-full">
-      <TabsList className="flex-shrink-0 px-1 border-b border-[#262a32]">
-        <TabsTrigger value="rotation" className="text-[9px] px-2.5 py-1.5 gap-1">
-          <RotateCw size={10} />
+      <TabsList className="flex-shrink-0 px-1">
+        <TabsTrigger value="rotation" className="text-xs px-2.5 py-1.5 gap-1">
+          <RotateCw size={11} />
           Rotation
         </TabsTrigger>
-        <TabsTrigger value="adaptive" className="text-[9px] px-2.5 py-1.5 gap-1">
-          <Brain size={10} />
+        <TabsTrigger value="adaptive" className="text-xs px-2.5 py-1.5 gap-1">
+          <Brain size={11} />
           Adaptive
         </TabsTrigger>
-        <TabsTrigger value="journalist" className="text-[9px] px-2.5 py-1.5 gap-1">
-          <Radio size={10} />
+        <TabsTrigger value="journalist" className="text-xs px-2.5 py-1.5 gap-1">
+          <Radio size={11} />
           Journalist
         </TabsTrigger>
       </TabsList>

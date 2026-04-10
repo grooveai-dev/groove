@@ -6,31 +6,31 @@ import { RefreshCw } from 'lucide-react';
 
 const DashboardHeader = memo(function DashboardHeader({ connected, runningCount, totalCount, uptime, lastFetch, activeTeam }) {
   return (
-    <div className="flex items-center gap-4 px-4 py-2 bg-surface-1 border-b border-[#262a32]">
-      <h2 className="text-[12px] font-semibold text-[#e6e6e6] font-sans tracking-wide uppercase">Command Center</h2>
+    <div className="flex items-center gap-4 px-4 py-2 bg-surface-1 border-b border-border">
+      <h2 className="text-xs font-semibold text-text-0 font-sans tracking-wide uppercase">Command Center</h2>
 
       {activeTeam && (
         <>
-          <span className="text-[#2a2e36]">/</span>
-          <span className="text-[9px] font-mono text-[#505862]">{activeTeam.name}</span>
+          <span className="text-text-4">/</span>
+          <span className="text-xs font-mono text-text-2">{activeTeam.name}</span>
         </>
       )}
 
       <div className="flex-1" />
 
       {connected && (
-        <div className="flex items-center gap-3.5 text-[9px] font-mono text-[#505862]">
+        <div className="flex items-center gap-3.5 text-xs font-mono text-text-2">
           <span>
-            <span className="text-[#8b929e]">{runningCount}</span>
-            <span className="text-[#3a3f4b]">/{totalCount}</span>
-            <span className="ml-1">agents</span>
+            <span className="text-text-1">{runningCount}</span>
+            <span className="text-text-3">/{totalCount}</span>
+            <span className="ml-1 text-text-3">agents</span>
           </span>
           {uptime > 0 && (
-            <span>Up {fmtUptime(uptime)}</span>
+            <span className="text-text-3">Up {fmtUptime(uptime)}</span>
           )}
           {lastFetch > 0 && (
-            <span className="flex items-center gap-1 text-[#3a3f4b]">
-              <RefreshCw size={8} />
+            <span className="flex items-center gap-1 text-text-4">
+              <RefreshCw size={9} />
               <span>{timeAgo(lastFetch)}</span>
             </span>
           )}

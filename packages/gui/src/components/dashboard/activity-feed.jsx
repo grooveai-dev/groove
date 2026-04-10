@@ -12,17 +12,17 @@ const ICONS = {
 };
 
 const ICON_COLORS = {
-  spawn: '#33afbc',
-  rotation: '#c678dd',
-  completion: '#4ae168',
-  error: '#e06c75',
-  default: '#505862',
+  spawn: 'text-accent',
+  rotation: 'text-purple',
+  completion: 'text-success',
+  error: 'text-danger',
+  default: 'text-text-3',
 };
 
 const ActivityFeed = memo(function ActivityFeed({ events = [] }) {
   if (!events.length) {
     return (
-      <div className="text-[9px] text-[#3a3f4b] font-mono py-2.5 text-center">
+      <div className="text-xs text-text-3 font-mono py-2.5 text-center">
         No recent activity
       </div>
     );
@@ -35,9 +35,9 @@ const ActivityFeed = memo(function ActivityFeed({ events = [] }) {
         const color = ICON_COLORS[event.type] || ICON_COLORS.default;
         return (
           <div key={i} className="flex items-center gap-1.5 flex-shrink-0">
-            <Icon size={10} style={{ color }} />
-            <span className="text-[9px] font-sans text-[#6e7681] whitespace-nowrap">{event.text}</span>
-            <span className="text-[8px] font-mono text-[#3a3f4b]">{timeAgo(event.timestamp || event.t)}</span>
+            <Icon size={11} className={color} />
+            <span className="text-xs font-sans text-text-2 whitespace-nowrap">{event.text}</span>
+            <span className="text-2xs font-mono text-text-4">{timeAgo(event.timestamp || event.t)}</span>
           </div>
         );
       })}

@@ -22,12 +22,12 @@ function MiniSparkline({ data, color = HEX.accent, width = 72, height = 22 }) {
     <svg width={width} height={height} className="flex-shrink-0">
       <defs>
         <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.15" />
+          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
       <polygon points={`0,${height} ${points} ${width},${height}`} fill={`url(#${gradId})`} />
-      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeOpacity="0.7" />
+      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeOpacity="0.8" />
     </svg>
   );
 }
@@ -40,8 +40,8 @@ const KpiCard = memo(function KpiCard({ label, value, sparkData, color = HEX.acc
       className,
     )}>
       <div className="flex-1 min-w-0">
-        <div className="text-[8px] font-mono text-[#3a3f4b] uppercase tracking-widest mb-0.5 truncate">{label}</div>
-        <div className="text-[15px] font-semibold font-mono text-[#bcc2cd] tabular-nums leading-none">{value}</div>
+        <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5 truncate">{label}</div>
+        <div className="text-base font-semibold font-mono text-text-0 tabular-nums leading-none">{value}</div>
       </div>
       <MiniSparkline data={sparkData} color={color} />
     </div>
@@ -50,8 +50,8 @@ const KpiCard = memo(function KpiCard({ label, value, sparkData, color = HEX.acc
 
 export function KpiStrip({ kpis }) {
   return (
-    <div className="flex flex-wrap" style={{ background: '#1a1e25' }}>
-      {kpis.map((kpi, i) => (
+    <div className="flex flex-wrap border-b border-border" style={{ background: 'var(--color-surface-0)' }}>
+      {kpis.map((kpi) => (
         <KpiCard
           key={kpi.label}
           label={kpi.label}
@@ -60,7 +60,7 @@ export function KpiStrip({ kpis }) {
           color={kpi.color}
           className={cn(
             'flex-1 basis-[12.5%] min-w-[140px]',
-            'border-b border-r border-[#262a32]',
+            'border-b border-r border-border',
           )}
         />
       ))}

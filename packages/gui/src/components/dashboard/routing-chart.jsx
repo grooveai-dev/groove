@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useRef, useEffect, memo } from 'react';
-import { HEX, hexAlpha } from '../../lib/theme-hex';
+import { HEX } from '../../lib/theme-hex';
 import { fmtNum, fmtDollar } from '../../lib/format';
 
 const TIER_COLORS = {
@@ -38,16 +38,14 @@ const RoutingChart = memo(function RoutingChart({ routing, size = 120 }) {
     const radius = (size - 12) / 2;
     const strokeWidth = 5;
 
-    // Full 360-degree donut
     if (total === 0) {
-      // Empty state — full gray ring
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
       ctx.strokeStyle = HEX.surface4;
       ctx.lineWidth = strokeWidth;
       ctx.stroke();
     } else {
-      let angle = -Math.PI / 2; // Start at top
+      let angle = -Math.PI / 2;
       for (const tier of tiers) {
         const count = byTier[tier] || 0;
         if (count === 0) continue;
@@ -65,13 +63,13 @@ const RoutingChart = memo(function RoutingChart({ routing, size = 120 }) {
     // Center text
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `600 ${size * 0.17}px 'JetBrains Mono Variable', monospace`;
+    ctx.font = `600 ${size * 0.19}px 'JetBrains Mono Variable', monospace`;
     ctx.fillStyle = HEX.text0;
     ctx.fillText(fmtNum(totalDecisions), cx, cy - 3);
 
-    ctx.font = `500 ${size * 0.08}px 'JetBrains Mono Variable', monospace`;
-    ctx.fillStyle = HEX.text4;
-    ctx.fillText('ROUTES', cx, cy + size * 0.12);
+    ctx.font = `500 ${size * 0.09}px 'JetBrains Mono Variable', monospace`;
+    ctx.fillStyle = HEX.text3;
+    ctx.fillText('ROUTES', cx, cy + size * 0.13);
   }, [routing, size, total, totalDecisions]);
 
   return (
@@ -82,7 +80,6 @@ const RoutingChart = memo(function RoutingChart({ routing, size = 120 }) {
         style={{ width: size, height: size }}
       />
 
-      {/* Tier breakdown */}
       <div className="w-full mt-3 space-y-2 max-w-[180px]">
         {tiers.map((tier) => {
           const count = byTier[tier] || 0;
@@ -90,14 +87,14 @@ const RoutingChart = memo(function RoutingChart({ routing, size = 120 }) {
           const pct = total > 0 ? (count / total) * 100 : 0;
           return (
             <div key={tier} className="space-y-0.5">
-              <div className="flex items-center gap-2 text-[9px] font-mono">
+              <div className="flex items-center gap-2 text-xs font-mono">
                 <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: TIER_COLORS[tier] }} />
-                <span className="text-[#505862] uppercase tracking-wider flex-1">{TIER_LABELS[tier]}</span>
-                <span className="text-[#8b929e] tabular-nums">{count}</span>
-                <span className="text-[#3a3f4b]">/</span>
-                <span className="text-[#6e7681] tabular-nums">{fmtDollar(cost)}</span>
+                <span className="text-text-3 uppercase tracking-wider flex-1">{TIER_LABELS[tier]}</span>
+                <span className="text-text-1 tabular-nums">{count}</span>
+                <span className="text-text-4">/</span>
+                <span className="text-text-2 tabular-nums">{fmtDollar(cost)}</span>
               </div>
-              <div className="h-[2px] bg-[#1a1e25] rounded-full overflow-hidden ml-3.5">
+              <div className="h-[2px] bg-surface-0 rounded-full overflow-hidden ml-3.5">
                 <div
                   className="h-full rounded-full transition-all duration-500"
                   style={{ width: `${Math.min(pct, 100)}%`, background: TIER_COLORS[tier] }}
@@ -108,9 +105,8 @@ const RoutingChart = memo(function RoutingChart({ routing, size = 120 }) {
         })}
       </div>
 
-      {/* Auto-routed badge */}
       {autoRoutedCount > 0 && (
-        <div className="mt-2.5 text-[8px] font-mono text-[#505862] uppercase tracking-wider">
+        <div className="mt-2.5 text-2xs font-mono text-text-3 uppercase tracking-wider">
           {autoRoutedCount} auto-routed
         </div>
       )}

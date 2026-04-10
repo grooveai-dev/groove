@@ -19,15 +19,12 @@ function DashboardSkeleton() {
     <div className="flex-1 grid gap-px p-0" style={{
       gridTemplateRows: 'auto minmax(0, 1fr) minmax(0, 1fr)',
       gridTemplateColumns: '3fr 1.5fr 1.5fr',
-      background: '#1a1e25',
+      background: '#282c34',
     }}>
-      {/* KPI row */}
       <div className="col-span-3"><Skeleton className="h-[72px] rounded-none" /></div>
-      {/* Chart row */}
       <Skeleton className="rounded-none" />
       <Skeleton className="rounded-none" />
       <Skeleton className="rounded-none" />
-      {/* Intel row */}
       <Skeleton className="rounded-none" />
       <div className="col-span-2"><Skeleton className="h-full rounded-none" /></div>
     </div>
@@ -50,7 +47,9 @@ export default function DashboardView() {
     if (!chartRef.current) return;
     const observer = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect;
-      setChartSize({ width: Math.floor(width), height: Math.floor(height) });
+      if (width > 0 && height > 0) {
+        setChartSize({ width: Math.floor(width), height: Math.floor(height) });
+      }
     });
     observer.observe(chartRef.current);
     return () => observer.disconnect();
@@ -59,9 +58,9 @@ export default function DashboardView() {
   if (!connected) {
     return (
       <div className="w-full h-full flex items-center justify-center">
-        <div className="text-center space-y-2 text-[#3a3f4b] font-mono">
+        <div className="text-center space-y-2 text-text-3 font-mono">
           <BarChart3 size={28} className="mx-auto" />
-          <p className="text-[10px]">Connecting to daemon...</p>
+          <p className="text-xs">Connecting to daemon...</p>
         </div>
       </div>
     );
@@ -98,7 +97,6 @@ export default function DashboardView() {
   const snapshots = timeline.snapshots || [];
   const events = timeline.events || data.events || [];
 
-  // Build KPI definitions
   const kpis = [
     { label: 'Tokens Used',  value: fmtNum(tokens.totalTokens),        sparkData: kpiHistory.tokens,      color: HEX.accent },
     { label: 'Total Cost',   value: fmtDollar(tokens.totalCostUsd),    sparkData: kpiHistory.cost,        color: HEX.warning },
@@ -129,20 +127,20 @@ export default function DashboardView() {
       <div className="flex-1 min-h-0 grid" style={{
         gridTemplateRows: 'minmax(0, 1fr) minmax(0, 1fr)',
         gridTemplateColumns: '3fr 1.5fr 1.5fr',
-        background: '#1a1e25',
+        background: '#282c34',
         gap: '1px',
       }}>
-        {/* R3C1: Token Flow Chart */}
-        <div ref={chartRef} className="min-w-0 min-h-0 bg-[#1e2127]">
-          {chartSize.width > 0 && (
+        {/* R3C1: Token Flow Chart — must fill entire cell */}
+        <div ref={chartRef} className="min-w-0 min-h-0 overflow-hidden bg-surface-1 relative">
+          {chartSize.width > 0 && chartSize.height > 0 && (
             <TokenChart data={snapshots} width={chartSize.width} height={chartSize.height} />
           )}
         </div>
 
         {/* R3C2: Cache Ring */}
-        <div className="min-w-0 min-h-0 bg-[#1e2127] flex flex-col">
-          <div className="px-3 pt-2 pb-1">
-            <span className="text-[8px] font-mono text-[#3a3f4b] uppercase tracking-widest">Cache Performance</span>
+        <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-l border-border">
+          <div className="px-3 pt-2.5 pb-1">
+            <span className="text-2xs font-mono text-text-3 uppercase tracking-widest">Cache Performance</span>
           </div>
           <CacheRing
             cacheRead={tokens.cacheReadTokens}
@@ -152,23 +150,23 @@ export default function DashboardView() {
         </div>
 
         {/* R3C3: Routing Chart */}
-        <div className="min-w-0 min-h-0 bg-[#1e2127] flex flex-col">
-          <div className="px-3 pt-2 pb-1">
-            <span className="text-[8px] font-mono text-[#3a3f4b] uppercase tracking-widest">Model Routing</span>
+        <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-l border-border">
+          <div className="px-3 pt-2.5 pb-1">
+            <span className="text-2xs font-mono text-text-3 uppercase tracking-widest">Model Routing</span>
           </div>
           <RoutingChart routing={routing} />
         </div>
 
         {/* R4C1: Agent Fleet */}
-        <div className="min-w-0 min-h-0 bg-[#1e2127] flex flex-col">
-          <div className="px-3 pt-2 pb-1 flex-shrink-0">
-            <span className="text-[8px] font-mono text-[#3a3f4b] uppercase tracking-widest">Agent Fleet</span>
+        <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-t border-border">
+          <div className="px-3 pt-2.5 pb-1 flex-shrink-0">
+            <span className="text-2xs font-mono text-text-3 uppercase tracking-widest">Agent Fleet</span>
           </div>
           <FleetPanel agentBreakdown={agentBreakdown} rotating={rotating} />
         </div>
 
         {/* R4C2-3: Intel Panel (spans 2 cols) */}
-        <div className="col-span-2 min-w-0 min-h-0 bg-[#1e2127] flex flex-col">
+        <div className="col-span-2 min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-t border-l border-border">
           <IntelPanel
             tokens={tokens}
             rotation={rotation}
@@ -179,7 +177,7 @@ export default function DashboardView() {
       </div>
 
       {/* Activity feed */}
-      <div className="flex-shrink-0 bg-[#1e2127] border-t border-[#262a32]">
+      <div className="flex-shrink-0 bg-surface-1 border-t border-border">
         <ActivityFeed events={events} />
       </div>
     </div>

@@ -391,12 +391,12 @@ function fmtTokens(n) {
 function BootSequence({ agent }) {
   const [lines, setLines] = useState([]);
   const bootLines = [
-    { text: `Initializing ${agent.name}`, icon: Zap, delay: 0 },
-    { text: `Role: ${agent.role}`, icon: Code2, delay: 400 },
-    { text: `Provider: ${agent.provider || 'claude-code'}`, icon: Terminal, delay: 700 },
-    { text: 'Loading workspace context', icon: Search, delay: 1000 },
-    { text: 'Scanning project structure', icon: Eye, delay: 1400 },
-    { text: 'Session active — waiting for output', icon: CheckCircle2, delay: 1900 },
+    { text: `Initializing ${agent.name}`, delay: 0 },
+    { text: `Role: ${agent.role}`, delay: 400 },
+    { text: `Provider: ${agent.provider || 'claude-code'}`, delay: 700 },
+    { text: 'Loading workspace context', delay: 1000 },
+    { text: 'Scanning project structure', delay: 1400 },
+    { text: 'Session active', delay: 1900 },
   ];
 
   useEffect(() => {
@@ -411,10 +411,8 @@ function BootSequence({ agent }) {
       {/* Agent identity */}
       <div className="flex items-center gap-3 mb-6">
         <div className="relative w-10 h-10">
-          <span className="absolute inset-0 rounded-lg border border-accent/20 animate-ping" style={{ animationDuration: '2s' }} />
-          <span className="absolute inset-0 rounded-lg bg-accent/10 flex items-center justify-center">
-            <Zap size={18} className="text-accent" />
-          </span>
+          <span className="absolute inset-0 rounded-lg border-2 border-transparent border-t-accent animate-spin" style={{ animationDuration: '1s' }} />
+          <span className="absolute inset-[3px] rounded-md bg-accent/8" />
         </div>
         <div>
           <p className="text-sm font-bold text-text-0 font-sans">{agent.name}</p>
@@ -423,11 +421,10 @@ function BootSequence({ agent }) {
       </div>
 
       {/* Boot lines */}
-      <div className="space-y-2.5 pl-2 border-l border-accent/15 ml-5">
+      <div className="space-y-2 pl-3 border-l border-accent/15 ml-5">
         {bootLines.map((line, i) => {
           const visible = lines.includes(i);
           const isLast = i === bootLines.length - 1;
-          const Icon = line.icon;
           return (
             <div
               key={i}
@@ -436,15 +433,13 @@ function BootSequence({ agent }) {
                 visible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2',
               )}
             >
-              <div className={cn(
-                'w-5 h-5 rounded flex items-center justify-center flex-shrink-0',
-                isLast && visible ? 'bg-accent/15' : 'bg-surface-4',
-              )}>
-                <Icon size={10} className={isLast && visible ? 'text-accent' : 'text-text-3'} />
-              </div>
+              <span className={cn(
+                'w-1 h-1 rounded-full flex-shrink-0',
+                isLast && visible ? 'bg-accent' : visible ? 'bg-text-3' : 'bg-transparent',
+              )} />
               <span className={cn(
                 'text-[11px] font-mono',
-                isLast && visible ? 'text-accent' : 'text-text-2',
+                isLast && visible ? 'text-accent' : 'text-text-3',
               )}>
                 {line.text}
               </span>

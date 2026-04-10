@@ -1,5 +1,4 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useRef, useState, useEffect } from 'react';
 import { useDashboard } from '../lib/hooks/use-dashboard';
 import { DashboardHeader } from '../components/dashboard/header-bar';
 import { KpiStrip } from '../components/dashboard/kpi-card';
@@ -37,23 +36,7 @@ export default function DashboardView() {
     agentBreakdown, routing, rotation, adaptive, journalist, rotating,
   } = useDashboard();
 
-  const chartRef = useRef(null);
-  const [chartSize, setChartSize] = useState({ width: 400, height: 200 });
-
   const runningCount = agents.filter((a) => a.status === 'running').length;
-
-  // Measure token chart container
-  useEffect(() => {
-    if (!chartRef.current) return;
-    const observer = new ResizeObserver((entries) => {
-      const { width, height } = entries[0].contentRect;
-      if (width > 0 && height > 0) {
-        setChartSize({ width: Math.floor(width), height: Math.floor(height) });
-      }
-    });
-    observer.observe(chartRef.current);
-    return () => observer.disconnect();
-  }, []);
 
   if (!connected) {
     return (
@@ -130,11 +113,9 @@ export default function DashboardView() {
         background: '#282c34',
         gap: '1px',
       }}>
-        {/* R3C1: Token Flow Chart — must fill entire cell */}
-        <div ref={chartRef} className="min-w-0 min-h-0 overflow-hidden bg-surface-1 relative">
-          {chartSize.width > 0 && chartSize.height > 0 && (
-            <TokenChart data={snapshots} width={chartSize.width} height={chartSize.height} />
-          )}
+        {/* R3C1: Token Flow Chart — self-sizing via absolute inset-0 */}
+        <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 relative">
+          <TokenChart data={snapshots} />
         </div>
 
         {/* R3C2: Cache Ring */}

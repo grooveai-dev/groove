@@ -3,17 +3,36 @@ import { useRef, useEffect, useState, useCallback, memo } from 'react';
 import { HEX, hexAlpha } from '../../lib/theme-hex';
 import { fmtNum, fmtDollar, fmtPct } from '../../lib/format';
 
-const TokenChart = memo(function TokenChart({ data, width, height }) {
+/**
+ * Self-sizing token chart — fills its parent via absolute positioning.
+ * Parent must be `position: relative` (or a grid/flex cell).
+ */
+const TokenChart = memo(function TokenChart({ data }) {
+  const containerRef = useRef(null);
   const canvasRef = useRef(null);
-  const [hover, setHover] = useState(null); // { x, index }
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const [hover, setHover] = useState(null);
 
+  const { width, height } = size;
   const pad = { top: 16, right: 62, bottom: 30, left: 62 };
-  const w = width - pad.left - pad.right;
-  const h = height - pad.top - pad.bottom;
+  const w = Math.max(width - pad.left - pad.right, 0);
+  const h = Math.max(height - pad.top - pad.bottom, 0);
+
+  // Self-size: observe wrapper
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const { width: cw, height: ch } = entries[0].contentRect;
+      if (cw > 0 && ch > 0) setSize({ width: Math.floor(cw), height: Math.floor(ch) });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const onMouseMove = useCallback((e) => {
     const canvas = canvasRef.current;
-    if (!canvas || !data?.length) return;
+    if (!canvas || !data?.length || w <= 0) return;
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left - pad.left;
     if (x < 0 || x > w) { setHover(null); return; }
@@ -23,9 +42,10 @@ const TokenChart = memo(function TokenChart({ data, width, height }) {
 
   const onMouseLeave = useCallback(() => setHover(null), []);
 
+  // Draw
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !data?.length) return;
+    if (!canvas || !data?.length || width <= 0 || height <= 0) return;
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
 
@@ -33,6 +53,8 @@ const TokenChart = memo(function TokenChart({ data, width, height }) {
     canvas.height = height * dpr;
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, width, height);
+
+    if (w <= 0 || h <= 0) return;
 
     const tokens = data.map((d) => d.tokens || 0);
     const costs = data.map((d) => d.costUsd || 0);
@@ -52,7 +74,6 @@ const TokenChart = memo(function TokenChart({ data, width, height }) {
       ctx.stroke();
     }
 
-    // Helper: map data index to x
     const xAt = (i) => pad.left + (i / (data.length - 1)) * w;
     const yToken = (v) => pad.top + h - (v / maxT) * h;
     const yCost = (v) => pad.top + h - (v / maxC) * h;
@@ -96,7 +117,7 @@ const TokenChart = memo(function TokenChart({ data, width, height }) {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Cache hit rate line (dotted, if data available)
+    // Cache hit rate line (dotted)
     if (hasCacheData) {
       ctx.beginPath();
       ctx.strokeStyle = hexAlpha(HEX.info, 0.5);
@@ -160,7 +181,6 @@ const TokenChart = memo(function TokenChart({ data, width, height }) {
 
     if (hasCacheData) {
       lx += 36;
-      ctx.fillStyle = hexAlpha(HEX.info, 0.5);
       ctx.setLineDash([2, 2]);
       ctx.beginPath();
       ctx.moveTo(lx, legendY - 2);
@@ -185,7 +205,6 @@ const TokenChart = memo(function TokenChart({ data, width, height }) {
       ctx.setLineDash([]);
       ctx.stroke();
 
-      // Tooltip background
       const d = data[hover.index];
       const lines = [
         `${fmtNum(d.tokens || 0)} tok`,
@@ -214,16 +233,20 @@ const TokenChart = memo(function TokenChart({ data, width, height }) {
         ctx.fillText(line, tx + 6, ty + 14 + i * 14);
       });
     }
-  }, [data, width, height, hover, w, h, pad.left, pad.top, pad.right, pad.bottom]);
+  }, [data, width, height, hover, w, h, pad]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{ width, height }}
-      className="block cursor-crosshair"
-      onMouseMove={onMouseMove}
-      onMouseLeave={onMouseLeave}
-    />
+    <div ref={containerRef} className="absolute inset-0">
+      {width > 0 && height > 0 && (
+        <canvas
+          ref={canvasRef}
+          style={{ width, height }}
+          className="block cursor-crosshair"
+          onMouseMove={onMouseMove}
+          onMouseLeave={onMouseLeave}
+        />
+      )}
+    </div>
   );
 });
 

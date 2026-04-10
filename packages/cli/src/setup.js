@@ -11,10 +11,19 @@ import chalk from 'chalk';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function getVersion() {
-  try {
-    const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf8'));
-    return pkg.version || '0.0.0';
-  } catch { return '0.0.0'; }
+  // Try multiple paths — works in both source and global install
+  const paths = [
+    resolve(__dirname, '../../package.json'),       // source: cli/src/ → root
+    resolve(__dirname, '../../../package.json'),     // global install variant
+    resolve(__dirname, '../package.json'),           // cli root
+  ];
+  for (const p of paths) {
+    try {
+      const pkg = JSON.parse(readFileSync(p, 'utf8'));
+      if (pkg.name === 'groove-dev' && pkg.version) return pkg.version;
+    } catch { /* try next */ }
+  }
+  return '0.0.0';
 }
 
 const rl = () => createInterface({ input: process.stdin, output: process.stdout });
@@ -200,14 +209,16 @@ const PROVIDERS = [
 export async function runSetupWizard() {
   const version = getVersion();
 
+  const line = '──────────────────────────────────────';
+  const vPad = `    v${version}`;
   console.log('');
-  console.log(chalk.bold('  ┌──────────────────────────────────────────┐'));
-  console.log(chalk.bold('  │') + '                                            ' + chalk.bold('│'));
-  console.log(chalk.bold('  │') + '           ' + chalk.bold.cyan('G R O O V E') + '                   ' + chalk.bold('│'));
-  console.log(chalk.bold('  │') + '    Agent Orchestration Layer          ' + chalk.bold('│'));
-  console.log(chalk.bold('  │') + '                                            ' + chalk.bold('│'));
-  console.log(chalk.bold('  │') + chalk.dim(`    v${version}`) + ' '.repeat(Math.max(0, 37 - version.length)) + chalk.bold('│'));
-  console.log(chalk.bold('  └──────────────────────────────────────────┘'));
+  console.log(`  ┌${line}┐`);
+  console.log(`  │${' '.repeat(38)}│`);
+  console.log(`  │       ${chalk.bold.cyan('G R O O V E')}                │`);
+  console.log(`  │  Agent Orchestration Layer         │`);
+  console.log(`  │${' '.repeat(38)}│`);
+  console.log(`  │  ${chalk.dim(vPad)}${' '.repeat(Math.max(0, 34 - vPad.length))}│`);
+  console.log(`  └${line}┘`);
   console.log('');
   console.log(chalk.dim('  First time? Let\'s get you set up in under a minute.'));
   console.log('');

@@ -247,12 +247,12 @@ function AgentMessage({ msg, agent }) {
       )}>
         <StructuredMessage text={collapsed ? msg.text.slice(0, 600) : msg.text} />
         {collapsed && (
-          <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-surface-2/90 to-transparent flex items-end justify-center pb-2">
+          <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-[#1a2a2e] to-transparent flex items-end justify-center pb-3">
             <button
               onClick={() => setCollapsed(false)}
-              className="flex items-center gap-1 px-3 py-1 rounded-full bg-surface-3 border border-border-subtle text-2xs text-text-2 font-sans hover:text-text-0 cursor-pointer transition-colors"
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-accent/15 border border-accent/25 text-xs text-accent font-sans font-medium hover:bg-accent/25 cursor-pointer transition-colors"
             >
-              <ChevronDown size={10} />
+              <ChevronDown size={12} />
               Show full response
             </button>
           </div>
@@ -261,8 +261,9 @@ function AgentMessage({ msg, agent }) {
       {isLong && !collapsed && (
         <button
           onClick={() => setCollapsed(true)}
-          className="ml-7 mt-1 text-[10px] text-text-4 hover:text-text-2 font-sans cursor-pointer"
+          className="ml-7 mt-1.5 flex items-center gap-1 text-[11px] text-accent/60 hover:text-accent font-sans cursor-pointer"
         >
+          <ChevronDown size={10} className="rotate-180" />
           Collapse
         </button>
       )}
@@ -302,28 +303,27 @@ function ActivityLine({ entry }) {
 }
 
 function ActivityGroup({ entries }) {
-  const [expanded, setExpanded] = useState(false);
+  const [cycleIdx, setCycleIdx] = useState(0);
 
-  if (entries.length === 1) {
-    return <div className="ml-7"><ActivityLine entry={entries[0]} /></div>;
-  }
+  // Cycle through entries every 1.5s
+  useEffect(() => {
+    if (entries.length <= 1) return;
+    const timer = setInterval(() => setCycleIdx((i) => (i + 1) % entries.length), 1500);
+    return () => clearInterval(timer);
+  }, [entries.length]);
 
-  const visible = expanded ? entries : entries.slice(0, 2);
-  const hiddenCount = entries.length - 2;
+  const current = entries[Math.min(cycleIdx, entries.length - 1)];
+  const meta = activityMeta(current.text);
+  const display = current.text?.length > 60 ? current.text.slice(0, 60) + '...' : current.text;
 
   return (
-    <div className="ml-7 py-1 pl-3 border-l border-border-subtle/50 space-y-px">
-      {visible.map((entry, i) => (
-        <ActivityLine key={i} entry={entry} />
-      ))}
-      {!expanded && hiddenCount > 0 && (
-        <button
-          onClick={() => setExpanded(true)}
-          className="flex items-center gap-1.5 text-[11px] text-text-4 hover:text-text-2 font-sans cursor-pointer py-0.5 ml-6"
-        >
-          <ChevronDown size={9} />
-          <span>{hiddenCount} more</span>
-        </button>
+    <div className="ml-7 flex items-center gap-2 px-3 py-2 rounded-md bg-surface-3/50 border border-border-subtle/30">
+      <Loader2 size={11} className="text-accent animate-spin flex-shrink-0" />
+      <span className="text-[11px] text-text-2 font-mono truncate flex-1 min-w-0 transition-opacity duration-300">
+        {display}
+      </span>
+      {entries.length > 1 && (
+        <span className="text-[10px] text-text-4 font-mono flex-shrink-0">{entries.length}</span>
       )}
     </div>
   );

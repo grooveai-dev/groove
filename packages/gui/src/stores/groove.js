@@ -149,11 +149,23 @@ export const useGrooveStore = create((set, get) => ({
             set({ agents });
           }
 
-          // Text responses → chat bubbles (only real text, not tool calls)
+          // Text responses → chat bubbles (stream: append to recent agent message)
           if ((data.subtype === 'assistant' || data.type === 'result') && chatText && chatText.trim()) {
             const history = { ...get().chatHistory };
             if (!history[agentId]) history[agentId] = [];
-            history[agentId] = [...history[agentId].slice(-100), { from: 'agent', text: chatText.trim(), timestamp: Date.now() }];
+            const arr = [...history[agentId]];
+            const last = arr[arr.length - 1];
+            const isRecent = last && last.from === 'agent' && (Date.now() - last.timestamp) < 8000;
+
+            if (isRecent && data.subtype === 'assistant') {
+              // Stream: append to the last agent message
+              arr[arr.length - 1] = { ...last, text: last.text + '\n\n' + chatText.trim(), timestamp: Date.now() };
+            } else {
+              // New message bubble
+              arr.push({ from: 'agent', text: chatText.trim(), timestamp: Date.now() });
+            }
+
+            history[agentId] = arr.slice(-100);
             set({ chatHistory: history });
             persistJSON('groove:chatHistory', history);
           }

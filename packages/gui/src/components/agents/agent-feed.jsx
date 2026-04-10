@@ -142,7 +142,7 @@ function StructuredMessage({ text }) {
             return (
               <div key={idx} className="space-y-1 pl-2">
                 {block.items.map((item, j) => (
-                  <div key={j} className="flex gap-2 text-[12px] text-text-2 font-sans leading-relaxed">
+                  <div key={j} className="flex gap-2 text-[12px] text-accent/80 font-sans leading-relaxed">
                     <span className="text-accent/50 mt-0.5 flex-shrink-0">-</span>
                     <span className="min-w-0"><InlineFormat text={item} /></span>
                   </div>
@@ -153,7 +153,7 @@ function StructuredMessage({ text }) {
             return (
               <div key={idx} className="space-y-1 pl-2">
                 {block.items.map((item, j) => (
-                  <div key={j} className="flex gap-2 text-[12px] text-text-2 font-sans leading-relaxed">
+                  <div key={j} className="flex gap-2 text-[12px] text-accent/80 font-sans leading-relaxed">
                     <span className="text-text-4 font-mono w-4 text-right flex-shrink-0">{j + 1}.</span>
                     <span className="min-w-0"><InlineFormat text={item} /></span>
                   </div>
@@ -175,7 +175,7 @@ function StructuredMessage({ text }) {
             );
           case 'para':
           default:
-            return <p key={idx} className="text-[12px] text-text-2 font-sans leading-relaxed"><InlineFormat text={block.content} /></p>;
+            return <p key={idx} className="text-[12px] text-accent/80 font-sans leading-relaxed"><InlineFormat text={block.content} /></p>;
         }
       })}
     </div>
@@ -213,12 +213,12 @@ function UserMessage({ msg }) {
           </div>
         )}
         <div className={cn(
-          'px-3.5 py-2.5 rounded-lg',
+          'px-3.5 py-2.5 rounded-lg border',
           isQuery
-            ? 'bg-info/15 text-info'
-            : 'bg-accent/15 text-accent',
+            ? 'bg-info/10 border-info/25'
+            : 'bg-info/10 border-info/25',
         )}>
-          <div className="text-[12px] font-sans whitespace-pre-wrap break-words leading-relaxed text-text-0">
+          <div className="text-[12px] font-sans whitespace-pre-wrap break-words leading-relaxed text-info">
             <FormattedText text={msg.text} />
           </div>
         </div>
@@ -242,7 +242,7 @@ function AgentMessage({ msg, agent }) {
         <span className="text-2xs text-text-4 font-sans">{agent?.role}</span>
       </div>
       <div className={cn(
-        'ml-7 px-3.5 py-3 rounded-lg bg-accent/15 overflow-hidden',
+        'ml-7 px-3.5 py-3 rounded-lg bg-accent/10 border border-accent/25 overflow-hidden',
         collapsed && 'max-h-[200px] relative',
       )}>
         <StructuredMessage text={collapsed ? msg.text.slice(0, 600) : msg.text} />
@@ -386,6 +386,83 @@ function fmtTokens(n) {
   return String(n);
 }
 
+// ── Boot Sequence Animation ──────────────────────────────────
+
+function BootSequence({ agent }) {
+  const [lines, setLines] = useState([]);
+  const bootLines = [
+    { text: `Initializing ${agent.name}`, icon: Zap, delay: 0 },
+    { text: `Role: ${agent.role}`, icon: Code2, delay: 400 },
+    { text: `Provider: ${agent.provider || 'claude-code'}`, icon: Terminal, delay: 700 },
+    { text: 'Loading workspace context', icon: Search, delay: 1000 },
+    { text: 'Scanning project structure', icon: Eye, delay: 1400 },
+    { text: 'Session active — waiting for output', icon: CheckCircle2, delay: 1900 },
+  ];
+
+  useEffect(() => {
+    const timers = bootLines.map((line, i) =>
+      setTimeout(() => setLines((prev) => [...prev, i]), line.delay)
+    );
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  return (
+    <div className="flex flex-col justify-center h-full px-2 py-6">
+      {/* Agent identity */}
+      <div className="flex items-center gap-3 mb-6">
+        <div className="relative w-10 h-10">
+          <span className="absolute inset-0 rounded-lg border border-accent/20 animate-ping" style={{ animationDuration: '2s' }} />
+          <span className="absolute inset-0 rounded-lg bg-accent/10 flex items-center justify-center">
+            <Zap size={18} className="text-accent" />
+          </span>
+        </div>
+        <div>
+          <p className="text-sm font-bold text-text-0 font-sans">{agent.name}</p>
+          <p className="text-2xs text-accent font-mono">starting up</p>
+        </div>
+      </div>
+
+      {/* Boot lines */}
+      <div className="space-y-2.5 pl-2 border-l border-accent/15 ml-5">
+        {bootLines.map((line, i) => {
+          const visible = lines.includes(i);
+          const isLast = i === bootLines.length - 1;
+          const Icon = line.icon;
+          return (
+            <div
+              key={i}
+              className={cn(
+                'flex items-center gap-2.5 transition-all duration-300',
+                visible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2',
+              )}
+            >
+              <div className={cn(
+                'w-5 h-5 rounded flex items-center justify-center flex-shrink-0',
+                isLast && visible ? 'bg-accent/15' : 'bg-surface-4',
+              )}>
+                <Icon size={10} className={isLast && visible ? 'text-accent' : 'text-text-3'} />
+              </div>
+              <span className={cn(
+                'text-[11px] font-mono',
+                isLast && visible ? 'text-accent' : 'text-text-2',
+              )}>
+                {line.text}
+              </span>
+              {isLast && visible && (
+                <span className="flex gap-0.5 ml-1">
+                  <span className="w-1 h-1 rounded-full bg-accent animate-pulse" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1 h-1 rounded-full bg-accent animate-pulse" style={{ animationDelay: '200ms' }} />
+                  <span className="w-1 h-1 rounded-full bg-accent animate-pulse" style={{ animationDelay: '400ms' }} />
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Main Feed ────────────────────────────────────────────────
 
 export function AgentFeed({ agent }) {
@@ -402,11 +479,18 @@ export function AgentFeed({ agent }) {
 
   const timeline = useMemo(() => {
     const items = [];
-    const chatTexts = new Set(chatHistory.map((m) => m.text));
+    const seen = new Set();
 
+    // Deduplicate chat messages (same text within 5s = duplicate)
     for (const msg of chatHistory) {
+      const key = `${msg.from}:${msg.text?.slice(0, 100)}`;
+      const dupeWindow = items.find((i) => i.kind === 'chat' && `${i.from}:${i.text?.slice(0, 100)}` === key && Math.abs(i.ts - msg.timestamp) < 5000);
+      if (dupeWindow) continue;
       items.push({ ...msg, kind: 'chat', ts: msg.timestamp });
+      seen.add(msg.text);
     }
+
+    const chatTexts = seen;
 
     const recentActivity = activityLog.slice(-30);
     for (const entry of recentActivity) {
@@ -488,28 +572,17 @@ export function AgentFeed({ agent }) {
       {/* Messages area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {timeline.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center py-8">
-            {isAlive ? (
-              <>
-                <div className="relative w-12 h-12 mb-4">
-                  <span className="absolute inset-0 rounded-full border border-accent/20 animate-ping" style={{ animationDuration: '2.5s' }} />
-                  <span className="absolute inset-0 rounded-full bg-accent/6 flex items-center justify-center">
-                    <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-                  </span>
-                </div>
-                <p className="text-sm font-semibold text-text-0 font-sans">{agent.name}</p>
-                <p className="text-xs text-text-3 font-sans mt-1">Initializing session...</p>
-              </>
-            ) : (
-              <>
-                <div className="w-10 h-10 rounded-xl bg-surface-3 flex items-center justify-center mb-3">
-                  <MessageSquare size={18} className="text-text-4" />
-                </div>
-                <p className="text-sm font-semibold text-text-0 font-sans">{agent.name}</p>
-                <p className="text-xs text-text-3 font-sans mt-1">Session complete — send a message to continue</p>
-              </>
-            )}
-          </div>
+          isAlive ? (
+            <BootSequence agent={agent} />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center py-8">
+              <div className="w-10 h-10 rounded-xl bg-surface-3 flex items-center justify-center mb-3">
+                <MessageSquare size={18} className="text-text-4" />
+              </div>
+              <p className="text-sm font-semibold text-text-0 font-sans">{agent.name}</p>
+              <p className="text-xs text-text-3 font-sans mt-1">Session complete — send a message to continue</p>
+            </div>
+          )
         )}
         {timeline.map((item, i) => {
           if (item.kind === 'activity-group') {

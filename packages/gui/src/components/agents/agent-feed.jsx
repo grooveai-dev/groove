@@ -407,22 +407,22 @@ function BootSequence({ agent }) {
   }, []);
 
   return (
-    <div className="flex flex-col justify-center h-full px-2 py-6">
+    <div className="flex flex-col items-center justify-center h-full px-4 py-6">
       {/* Agent identity */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex flex-col items-center gap-3 mb-6">
         <div className="relative w-9 h-9">
           <span className="absolute inset-0 rounded-full border-2 border-accent/20 animate-ping" style={{ animationDuration: '2s' }} />
           <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-accent animate-spin" style={{ animationDuration: '1s' }} />
           <span className="absolute inset-[5px] rounded-full bg-accent/8" />
         </div>
-        <div>
+        <div className="text-center">
           <p className="text-sm font-bold text-text-0 font-sans">{agent.name}</p>
           <p className="text-2xs text-accent font-mono">starting up</p>
         </div>
       </div>
 
       {/* Boot lines */}
-      <div className="space-y-2 pl-3 border-l border-accent/15 ml-5">
+      <div className="space-y-2 pl-3 border-l border-accent/15">
         {bootLines.map((line, i) => {
           const visible = lines.includes(i);
           const isLast = i === bootLines.length - 1;

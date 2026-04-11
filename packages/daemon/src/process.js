@@ -4,7 +4,7 @@
 import { spawn as cpSpawn } from 'child_process';
 import { createWriteStream, mkdirSync, chmodSync, existsSync, readFileSync, unlinkSync } from 'fs';
 import { resolve } from 'path';
-import { getProvider } from './providers/index.js';
+import { getProvider, getInstalledProviders } from './providers/index.js';
 import { validateAgentConfig } from './validate.js';
 
 // Role-specific prompt prefixes — applied during spawn regardless of entry point
@@ -168,7 +168,6 @@ export class ProcessManager {
     // Resolve provider — auto-detect best installed if not specified
     let providerName = config.provider;
     if (!providerName) {
-      const { getInstalledProviders } = await import('./providers/index.js');
       const installed = getInstalledProviders();
       if (installed.length === 0) {
         throw new Error('No AI providers installed. Install Claude Code, Gemini CLI, Codex, or Ollama first.');
@@ -184,8 +183,6 @@ export class ProcessManager {
       throw new Error(`Unknown provider: ${providerName}`);
     }
     if (!provider.constructor.isInstalled()) {
-      // Try to find any installed provider as fallback
-      const { getInstalledProviders } = await import('./providers/index.js');
       const installed = getInstalledProviders();
       if (installed.length > 0) {
         throw new Error(

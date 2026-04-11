@@ -81,7 +81,7 @@ export function validateAgentConfig(config) {
     name: config.name || undefined,
     scope: config.scope || [],
     prompt: config.prompt || '',
-    provider: config.provider || 'claude-code',
+    provider: config.provider || undefined,
     model: typeof config.model === 'string' ? config.model : null,
     workingDir: typeof config.workingDir === 'string' ? config.workingDir : undefined,
     teamId: config.teamId || undefined,

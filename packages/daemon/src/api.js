@@ -1637,7 +1637,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
             role: config.role,
             scope: config.scope || [],
             prompt: config.prompt || '',
-            provider: config.provider || 'claude-code',
+            provider: config.provider || undefined,
             model: config.model || 'auto',
             permission: config.permission || 'auto',
             workingDir: config.workingDir || projectWorkingDir,
@@ -1660,7 +1660,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
           waitFor: phase1Ids,
           agents: phase2.map((c) => ({
             role: c.role, scope: c.scope || [], prompt: c.prompt || '',
-            provider: c.provider || 'claude-code', model: c.model || 'auto',
+            provider: c.provider || undefined, model: c.model || 'auto',
             permission: c.permission || 'auto',
             workingDir: c.workingDir || projectWorkingDir,
             name: c.name || undefined,

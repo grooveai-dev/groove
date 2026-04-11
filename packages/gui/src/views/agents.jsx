@@ -216,6 +216,10 @@ function AgentTreeInner() {
     const occupied = new Set();
     const posKey = (x, y) => `${Math.round(x / 100)},${Math.round(y / 100)}`;
 
+    // Mark root node position as occupied
+    const rootPos = saved[ROOT_ID] || { x: 0, y: 0 };
+    occupied.add(posKey(rootPos.x, rootPos.y));
+
     // First pass: place agents with saved positions
     const pending = [];
     agents.forEach((agent, i) => {
@@ -239,7 +243,7 @@ function AgentTreeInner() {
       const col = index % MAX_PER_ROW;
       const totalInRow = Math.min(agents.length - row * MAX_PER_ROW, MAX_PER_ROW);
       const offsetX = -((totalInRow - 1) * NODE_X_GAP) / 2;
-      let pos = { x: offsetX + col * NODE_X_GAP, y: 140 + row * NODE_Y_GAP };
+      let pos = { x: offsetX + col * NODE_X_GAP, y: NODE_Y_GAP + row * NODE_Y_GAP };
 
       // If position is occupied, shift down until we find empty space
       while (occupied.has(posKey(pos.x, pos.y))) {

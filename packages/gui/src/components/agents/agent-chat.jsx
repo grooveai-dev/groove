@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, MessageSquare, HelpCircle, ArrowRight } from 'lucide-react';
+import { Send, Loader2, MessageSquare, HelpCircle, ArrowRight, Paperclip } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { Avatar } from '../ui/avatar';
@@ -108,8 +108,10 @@ export function AgentChat({ agent }) {
 
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [attachedFiles, setAttachedFiles] = useState([]);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -117,10 +119,23 @@ export function AgentChat({ agent }) {
     }
   }, [chatHistory.length, activityLog.length]);
 
+  function handleFileSelect(e) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    // Use webkitRelativePath or name — files from input have path info
+    const paths = files.map((f) => f.name);
+    setAttachedFiles((prev) => [...prev, ...paths]);
+    // Also add file paths to the prompt so the agent knows about them
+    const pathList = files.map((f) => f.name).join(', ');
+    setInput((prev) => prev + (prev ? '\n' : '') + `[Attached files: ${pathList}]`);
+    e.target.value = '';
+  }
+
   async function handleSend() {
     const text = input.trim();
     if (!text || sending) return;
     setInput('');
+    setAttachedFiles([]);
     setSending(true);
     try {
       if (text.startsWith('?')) {
@@ -192,6 +207,22 @@ export function AgentChat({ agent }) {
         </div>
 
         <div className="flex items-end gap-2">
+          {/* File import */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".pdf,.png,.jpg,.jpeg,.gif,.svg,.csv,.txt,.md,.json,.yaml,.yml,.docx,.pptx,.xlsx"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="w-10 h-10 flex items-center justify-center rounded-xl text-text-4 hover:text-text-1 hover:bg-surface-3 transition-colors cursor-pointer"
+            title="Attach file"
+          >
+            <Paperclip size={16} />
+          </button>
           <textarea
             ref={inputRef}
             value={input}

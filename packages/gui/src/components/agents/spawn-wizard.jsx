@@ -11,7 +11,9 @@ import {
   Server, Monitor, Code2, TestTube, Cloud, FileText,
   Shield, Database, Megaphone, Calculator, UserCheck,
   Headphones, BarChart3, Rocket, ChevronDown, Pen, Presentation,
+  Sparkles,
 } from 'lucide-react';
+import { api } from '../../lib/api';
 
 const ROLE_PRESETS = [
   { id: 'planner',   label: 'Planner',    desc: 'Plans the team and tasks',       icon: Rocket,     tier: 'Heavy' },
@@ -46,15 +48,20 @@ export function SpawnWizard() {
   const [model, setModel] = useState('');
   const [prompt, setPrompt] = useState('');
   const [providers, setProviders] = useState([]);
+  const [installedSkills, setInstalledSkills] = useState([]);
+  const [selectedSkills, setSelectedSkills] = useState([]);
   const [spawning, setSpawning] = useState(false);
 
   useEffect(() => {
     if (open) {
       fetchProviders().then((data) => {
-        // API returns array directly
         setProviders(Array.isArray(data) ? data : data.providers || []);
       }).catch(() => {});
+      api.get('/skills/installed').then((data) => {
+        setInstalledSkills(Array.isArray(data) ? data : []);
+      }).catch(() => {});
       setRole(''); setCustomRole(''); setName(''); setProvider(''); setModel(''); setPrompt('');
+      setSelectedSkills([]);
     }
   }, [open, fetchProviders]);
 
@@ -69,10 +76,11 @@ export function SpawnWizard() {
     try {
       const config = {
         role: selectedRole,
-        ...(name && { name: name.replace(/\s+/g, '-') }), // auto-slugify spaces
+        ...(name && { name: name.replace(/\s+/g, '-') }),
         ...(provider && { provider }),
         ...(model && { model }),
         ...(prompt && { prompt }),
+        ...(selectedSkills.length > 0 && { skills: selectedSkills }),
       };
       await spawnAgent(config);
       closeDetail();
@@ -199,6 +207,35 @@ export function SpawnWizard() {
                     ) : (
                       <Badge variant="warning">No API key — set with: groove set-key {provider} YOUR_KEY</Badge>
                     )}
+                  </div>
+                )}
+
+                {/* Skills */}
+                {installedSkills.length > 0 && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-text-2 font-sans">Skills</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {installedSkills.map((skill) => {
+                        const active = selectedSkills.includes(skill.id);
+                        return (
+                          <button
+                            key={skill.id}
+                            onClick={() => setSelectedSkills((prev) =>
+                              active ? prev.filter((s) => s !== skill.id) : [...prev, skill.id]
+                            )}
+                            className={cn(
+                              'inline-flex items-center gap-1 px-2 py-1 rounded text-2xs font-sans transition-colors cursor-pointer',
+                              active
+                                ? 'bg-accent/15 text-accent border border-accent/30'
+                                : 'bg-surface-0 text-text-2 border border-border-subtle hover:border-border',
+                            )}
+                          >
+                            <Sparkles size={10} />
+                            {skill.name || skill.id}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 

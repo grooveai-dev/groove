@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { execFile } from 'child_process';
-import { getProvider } from './providers/index.js';
+import { getProvider, getInstalledProviders } from './providers/index.js';
 
 const DEFAULT_INTERVAL = 120_000; // 2 minutes
 const MAX_LOG_CHARS = 40_000; // ~10k tokens budget for synthesis input
@@ -309,13 +309,23 @@ export class Journalist {
   }
 
   async callHeadless(prompt) {
-    const provider = getProvider('claude-code');
-    if (!provider || !provider.constructor.isInstalled()) {
+    // Find the best available provider for headless synthesis
+    // Priority: claude-code (cheapest via Haiku) > gemini > codex > ollama
+    const priority = ['claude-code', 'gemini', 'codex', 'ollama'];
+    const installed = getInstalledProviders();
+    const providerId = priority.find((p) => installed.some((i) => i.id === p));
+    if (!providerId) {
       throw new Error('No provider available for synthesis');
     }
+    const provider = getProvider(providerId);
 
-    // Use headless mode with Haiku — cheapest model, good enough for synthesis
-    const { command, args, env } = provider.buildHeadlessCommand(prompt, 'claude-haiku-4-5-20251001');
+    // Pick the lightest model for synthesis (cheapest/fastest)
+    const lightModel = provider.constructor.models?.find((m) => m.tier === 'light')
+      || provider.constructor.models?.find((m) => m.tier === 'medium')
+      || provider.constructor.models?.[0];
+    const modelId = lightModel?.id || null;
+
+    const { command, args, env } = provider.buildHeadlessCommand(prompt, modelId);
 
     return new Promise((resolve, reject) => {
       const proc = execFile(command, args, {

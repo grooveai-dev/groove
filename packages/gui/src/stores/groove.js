@@ -157,11 +157,13 @@ export const useGrooveStore = create((set, get) => ({
             set({ agents });
           }
 
-          // Text responses → chat bubbles (stream: append to recent agent message)
-          // Claude Code: subtype='assistant' or type='result' with structured data
-          // Gemini/Codex/Ollama/Local: type='activity' with plain string data (no subtype)
-          const showAsChat = chatText && chatText.trim() && (
-            data.subtype === 'assistant' || data.type === 'result' ||
+          // Text responses → chat bubbles
+          // Skip pure token-level stream chunks (subtype='stream') — too granular
+          // Show: subtype='assistant' (Claude Code), subtype='text' (agent loop), type='result',
+          //        and plain activity events with string data (Gemini/Codex/Ollama CLI)
+          const isTokenStream = data.subtype === 'stream';
+          const showAsChat = chatText && chatText.trim() && !isTokenStream && (
+            data.subtype === 'assistant' || data.subtype === 'text' || data.type === 'result' ||
             (data.type === 'activity' && typeof data.data === 'string')
           );
           if (showAsChat) {
@@ -171,9 +173,11 @@ export const useGrooveStore = create((set, get) => ({
             const last = arr[arr.length - 1];
             const isRecent = last && last.from === 'agent' && (Date.now() - last.timestamp) < 8000;
 
-            if (isRecent && data.subtype === 'assistant') {
-              // Stream: append to the last agent message
-              arr[arr.length - 1] = { ...last, text: last.text + '\n\n' + chatText.trim(), timestamp: Date.now() };
+            if (isRecent) {
+              // Append to the last agent message (streaming from any provider)
+              // Claude Code blocks use \n\n separator; plain text uses space
+              const sep = data.subtype === 'assistant' ? '\n\n' : ' ';
+              arr[arr.length - 1] = { ...last, text: last.text + sep + chatText.trim(), timestamp: Date.now() };
             } else {
               // New message bubble
               arr.push({ from: 'agent', text: chatText.trim(), timestamp: Date.now() });

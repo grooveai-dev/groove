@@ -126,16 +126,19 @@ export class AgentLoop extends EventEmitter {
       }
       this.messages.push(assistantMsg);
 
-      // Broadcast text output to GUI
+      // No tool calls → turn complete, broadcast final text and go idle
+      if (!toolCalls || toolCalls.length === 0) {
+        if (content) {
+          this._writeLog({ type: 'assistant', content: content.slice(0, 2000) });
+        }
+        this.emit('output', { type: 'result', data: content || 'Turn complete', turns: this.turns });
+        break;
+      }
+
+      // Has tool calls — broadcast text before executing tools (if model sent text + tools)
       if (content) {
         this._writeLog({ type: 'assistant', content: content.slice(0, 2000) });
         this.emit('output', { type: 'activity', subtype: 'text', data: content });
-      }
-
-      // No tool calls → turn complete, go idle
-      if (!toolCalls || toolCalls.length === 0) {
-        this.emit('output', { type: 'result', data: content || 'Turn complete', turns: this.turns });
-        break;
       }
 
       // Execute each tool call

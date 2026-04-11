@@ -127,6 +127,16 @@ export class Introducer {
       lines.push(`4. Clear your entry from \`.groove/coordination.md\` when done`);
     }
 
+    // File safety — prevent agents from deleting files they didn't create
+    lines.push('');
+    lines.push(`## File Safety`);
+    lines.push('');
+    lines.push(`CRITICAL: NEVER delete files you did not create in this session. Do NOT remove files from other projects, previous work, or unrelated directories.`);
+    if (newAgent.workingDir) {
+      lines.push(`Your working directory is \`${newAgent.workingDir}\`. Stay inside it. Do NOT modify or delete files outside this directory.`);
+    }
+    lines.push(`If you see files that seem unrelated to your task, leave them alone — they belong to another project or agent.`);
+
     // Memory containment — prevent agents from reading/writing auto-memory
     // which can contain stale context from unrelated sessions in the same dir
     lines.push('');

@@ -1563,8 +1563,15 @@ Keep responses concise. Help them think, don't lecture them about the system the
       return res.json({ exists: false, agents: [] });
     }
     try {
-      const agents = JSON.parse(readFileSync(teamPath, 'utf8'));
-      res.json({ exists: true, agents: Array.isArray(agents) ? agents : [] });
+      const raw = JSON.parse(readFileSync(teamPath, 'utf8'));
+      // Support both old format (bare array) and new format ({ projectDir, agents })
+      if (Array.isArray(raw)) {
+        res.json({ exists: true, agents: raw });
+      } else if (raw && Array.isArray(raw.agents)) {
+        res.json({ exists: true, agents: raw.agents, projectDir: raw.projectDir || null });
+      } else {
+        res.json({ exists: false, agents: [] });
+      }
     } catch {
       res.json({ exists: false, agents: [] });
     }
@@ -1576,28 +1583,51 @@ Keep responses concise. Help them think, don't lecture them about the system the
       return res.status(404).json({ error: 'No recommended team found. Run a planner first.' });
     }
     try {
-      const agents = JSON.parse(readFileSync(teamPath, 'utf8'));
-      if (!Array.isArray(agents) || agents.length === 0) {
+      const raw = JSON.parse(readFileSync(teamPath, 'utf8'));
+
+      // Support both old format (bare array) and new format ({ projectDir, agents })
+      let agentConfigs;
+      let projectDir = null;
+      if (Array.isArray(raw)) {
+        agentConfigs = raw;
+      } else if (raw && Array.isArray(raw.agents)) {
+        agentConfigs = raw.agents;
+        projectDir = raw.projectDir || null;
+      } else {
+        return res.status(400).json({ error: 'Invalid recommended team format' });
+      }
+
+      if (agentConfigs.length === 0) {
         return res.status(400).json({ error: 'Recommended team is empty' });
       }
 
-      const defaultDir = daemon.config?.defaultWorkingDir || undefined;
+      const baseDir = daemon.config?.defaultWorkingDir || daemon.projectDir;
       const defaultTeamId = daemon.teams.getDefault()?.id || null;
 
+      // If planner specified a project directory, create it and use it as workingDir
+      let projectWorkingDir = baseDir;
+      if (projectDir) {
+        // Sanitize: kebab-case, no path traversal
+        const safeName = String(projectDir).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64);
+        projectWorkingDir = resolve(baseDir, safeName);
+        mkdirSync(projectWorkingDir, { recursive: true });
+        console.log(`[Groove] Project directory: ${projectWorkingDir}`);
+      }
+
       // Separate phase 1 (builders) and phase 2 (QC/finisher)
-      const phase1 = agents.filter((a) => !a.phase || a.phase === 1);
-      let phase2 = agents.filter((a) => a.phase === 2);
+      const phase1 = agentConfigs.filter((a) => !a.phase || a.phase === 1);
+      let phase2 = agentConfigs.filter((a) => a.phase === 2);
 
       // Safety net: if planner forgot the QC agent, auto-add one
       if (phase2.length === 0 && phase1.length >= 2) {
         phase2 = [{
           name: 'qc-agent',
           role: 'fullstack', phase: 2, scope: [],
-          prompt: 'QC Senior Dev: All builder agents have completed. Audit their changes for correctness, fix any issues, run tests, build the project, commit all changes, and launch the dev server. Output the localhost URL where the app can be accessed.',
+          prompt: 'QC Senior Dev: All builder agents have completed. Audit their changes for correctness, fix any issues, run tests, build the project, commit all changes, and launch the dev server. Output the localhost URL where the app can be accessed. IMPORTANT: Do NOT delete files from other projects or directories outside this project.',
         }];
       }
 
-      // Spawn phase 1 agents immediately
+      // Spawn phase 1 agents immediately — all scoped to projectWorkingDir
       const spawned = [];
       const failed = [];
       const phase1Ids = [];
@@ -1610,7 +1640,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
             provider: config.provider || 'claude-code',
             model: config.model || 'auto',
             permission: config.permission || 'auto',
-            workingDir: config.workingDir || defaultDir,
+            workingDir: config.workingDir || projectWorkingDir,
             name: config.name || undefined,
           });
           validated.teamId = defaultTeamId;
@@ -1623,7 +1653,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
         }
       }
 
-      // If there are phase 2 agents, register them for auto-spawn on phase 1 completion
+      // Phase 2 agents also scoped to projectWorkingDir
       if (phase2.length > 0 && phase1Ids.length > 0) {
         daemon._pendingPhase2 = daemon._pendingPhase2 || [];
         daemon._pendingPhase2.push({
@@ -1632,7 +1662,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
             role: c.role, scope: c.scope || [], prompt: c.prompt || '',
             provider: c.provider || 'claude-code', model: c.model || 'auto',
             permission: c.permission || 'auto',
-            workingDir: c.workingDir || defaultDir,
+            workingDir: c.workingDir || projectWorkingDir,
             name: c.name || undefined,
             teamId: defaultTeamId,
           })),
@@ -1641,9 +1671,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
       daemon.audit.log('team.launch', {
         phase1: spawned.length, phase2Pending: phase2.length, failed: failed.length,
-        agents: spawned.map((a) => a.role),
+        agents: spawned.map((a) => a.role), projectDir: projectDir || null,
       });
-      res.json({ launched: spawned.length, phase2Pending: phase2.length, agents: spawned, failed });
+      res.json({ launched: spawned.length, phase2Pending: phase2.length, agents: spawned, failed, projectDir: projectDir || null });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

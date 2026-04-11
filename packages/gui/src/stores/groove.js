@@ -491,7 +491,11 @@ export const useGrooveStore = create((set, get) => ({
       set({ recommendedTeam: null }); // Dismiss modal immediately
       get().addToast('info', 'Launching team...');
       const result = await api.post('/recommended-team/launch');
-      get().addToast('success', `Launched ${result.launched} agents`, result.phase2Pending ? `${result.phase2Pending} QC agents queued` : undefined);
+      const sub = [
+        result.phase2Pending ? `${result.phase2Pending} QC queued` : '',
+        result.projectDir ? `→ ${result.projectDir}/` : '',
+      ].filter(Boolean).join(' · ');
+      get().addToast('success', `Launched ${result.launched} agents`, sub || undefined);
       // Clean up stale files
       api.post('/cleanup').catch(() => {});
       return result;

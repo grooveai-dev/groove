@@ -74,15 +74,33 @@ After completing your plan, you MUST do two things:
 1. Write your team recommendation as a clear summary in your output so the user can review it.
 
 2. Save a machine-readable team config to .groove/recommended-team.json using this EXACT format:
-[
-  { "role": "frontend", "phase": 1, "scope": ["src/components/**", "src/views/**"], "prompt": "Build the frontend: [specific tasks]" },
-  { "role": "backend", "phase": 1, "scope": ["src/api/**", "src/server/**"], "prompt": "Build the backend: [specific tasks]" },
-  { "role": "fullstack", "phase": 2, "scope": [], "prompt": "QC Senior Dev: Audit all changes from phase 1 agents. Verify correctness, fix issues, run tests, build the project, commit, and launch. Output the localhost URL." }
-]
+
+For NEW projects (building something from scratch):
+{
+  "projectDir": "my-project-name",
+  "agents": [
+    { "role": "frontend", "phase": 1, "scope": ["src/components/**", "src/views/**"], "prompt": "Build the frontend: [specific tasks]" },
+    { "role": "backend", "phase": 1, "scope": ["src/api/**", "src/server/**"], "prompt": "Build the backend: [specific tasks]" },
+    { "role": "fullstack", "phase": 2, "scope": [], "prompt": "QC Senior Dev: Audit all changes from phase 1 agents. Verify correctness, fix issues, run tests, build the project, commit, and launch. Output the localhost URL." }
+  ]
+}
+
+For EXISTING codebases (modifying/extending an existing project):
+{
+  "agents": [
+    { "role": "frontend", "phase": 1, "scope": ["src/components/**"], "prompt": "Update the frontend: [specific tasks]" },
+    { "role": "fullstack", "phase": 2, "scope": [], "prompt": "QC Senior Dev: Audit all changes, fix issues, run tests, build, commit, and launch." }
+  ]
+}
+
+PROJECT DIRECTORY RULES:
+- For NEW projects: ALWAYS include "projectDir" with a short, clean directory name (kebab-case, e.g. "cat-website", "landing-page", "api-service"). All agents will be spawned inside this directory so each project stays isolated.
+- For EXISTING codebases: Do NOT include "projectDir". Agents work in the current repo root. You can tell an existing codebase by the presence of package.json, .git, or established source directories.
+- NEVER mix projects. Each new project gets its own directory.
 
 MANDATORY RULES — NEVER SKIP THESE:
 
-1. The LAST entry in the array MUST be: { "role": "fullstack", "phase": 2, ... }
+1. The LAST entry in the agents array MUST be: { "role": "fullstack", "phase": 2, ... }
    This is the QC Senior Dev. It auto-spawns after all other agents finish.
    Its prompt: audit changes, fix issues, run tests, build, commit, launch.
    NEVER omit this agent. Every team needs a QC.
@@ -93,7 +111,7 @@ MANDATORY RULES — NEVER SKIP THESE:
 
 4. Set appropriate scopes. Write detailed prompts so each agent knows exactly what to build.
 
-5. If the project is a monorepo, set "workingDir" for agents that need specific subdirectories.
+5. NEVER instruct any agent to delete files from other projects or clean up unrelated code. Each agent must ONLY create and modify files relevant to its assigned tasks.
 
 IMPORTANT: Do not use markdown formatting like ** or ### in your output. Write in plain text with clean formatting. Use line breaks, dashes, and indentation for structure.
 

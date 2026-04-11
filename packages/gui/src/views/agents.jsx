@@ -514,6 +514,14 @@ function RecommendedTeamCard() {
             })}
           </div>
 
+          {/* Project dir indicator */}
+          {recommendedTeam.projectDir && (
+            <div className="flex items-center gap-1.5 text-2xs text-text-2 font-mono">
+              <span className="text-text-4">Project:</span>
+              <span className="text-accent">{recommendedTeam.projectDir}/</span>
+            </div>
+          )}
+
           {/* Phase 2 indicator */}
           {phase2.length > 0 && (
             <div className="flex items-center gap-1.5 text-2xs text-text-3 font-sans">

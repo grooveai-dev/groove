@@ -259,9 +259,11 @@ export const useGrooveStore = create((set, get) => ({
             set((s) => {
               const chatHistory = { ...s.chatHistory };
               const tokenTimeline = { ...s.tokenTimeline };
+              const activityLog = { ...s.activityLog };
               if (chatHistory[msg.oldAgentId]?.length) chatHistory[msg.newAgentId] = [...chatHistory[msg.oldAgentId]];
               if (tokenTimeline[msg.oldAgentId]?.length) tokenTimeline[msg.newAgentId] = [...tokenTimeline[msg.oldAgentId]];
-              return { chatHistory, tokenTimeline, detailPanel: { type: 'agent', agentId: msg.newAgentId } };
+              if (activityLog[msg.oldAgentId]?.length) activityLog[msg.newAgentId] = [...activityLog[msg.oldAgentId]];
+              return { chatHistory, tokenTimeline, activityLog, detailPanel: { type: 'agent', agentId: msg.newAgentId } };
             });
           }
           break;

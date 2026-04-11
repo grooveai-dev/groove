@@ -304,6 +304,18 @@ export class Daemon {
         // Scan codebase for workspace/structure awareness
         this.indexer.scan();
 
+        // Generate init map if none exists — baseline for all agents and journalist
+        const initMapCreated = this.indexer.generateInitMap();
+        if (initMapCreated) {
+          console.log('[Groove] Init map generated — GROOVE_PROJECT_MAP.md');
+          // Seed journalist with the init map so it maintains it from here
+          this.journalist.seedFromInitMap();
+          // Record the init scan as a cold-start skip — the first planner
+          // will read the map instead of spending 8K+ tokens scanning
+          this.tokens.recordColdStartSkipped();
+          this.audit.log('init.map', { stats: this.indexer.getStatus().stats });
+        }
+
         resolvePromise(this);
       });
     });

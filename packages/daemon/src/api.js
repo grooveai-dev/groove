@@ -298,6 +298,18 @@ export function createApi(app, daemon) {
     res.json({ recommendedQuantization: quant, ramGb });
   });
 
+  app.get('/api/models/recommended', (req, res) => {
+    const hardware = OllamaProvider.getSystemHardware();
+    const catalog = OllamaProvider.catalog;
+    // Filter to models that fit in RAM (with 15% headroom) and sort by quality
+    const maxRam = hardware.totalRamGb * 0.85;
+    const recommended = catalog
+      .filter((m) => m.ramGb <= maxRam)
+      .sort((a, b) => b.ramGb - a.ramGb) // Biggest that fits = best quality
+      .slice(0, 12);
+    res.json({ models: recommended, hardware });
+  });
+
   app.get('/api/llama/status', (req, res) => {
     res.json(daemon.llamaServer.getStatus());
   });

@@ -199,16 +199,53 @@ function FilePicker({ repoId, onDownload, systemRamGb }) {
   );
 }
 
+// ---- Recommended Model Card ----
+function RecommendedModel({ model, systemRamGb, onPull, pulling }) {
+  const tierColors = { light: 'text-green-400', medium: 'text-blue-400', heavy: 'text-orange-400' };
+  const categoryIcons = { code: '{}', general: 'AI' };
+  const headroom = systemRamGb ? Math.round((1 - model.ramGb / systemRamGb) * 100) : null;
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 bg-surface-1 border border-border-subtle rounded-lg hover:border-accent/20 transition-colors">
+      <div className="w-9 h-9 rounded-lg bg-surface-3 flex items-center justify-center text-xs font-mono text-text-2 flex-shrink-0">
+        {categoryIcons[model.category] || 'AI'}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-mono font-bold text-text-0 truncate">{model.name}</span>
+          <span className={cn('text-2xs font-semibold capitalize', tierColors[model.tier])}>{model.tier}</span>
+        </div>
+        <div className="text-2xs text-text-3 font-sans mt-0.5">{model.description}</div>
+        <div className="flex items-center gap-3 mt-1 text-2xs font-sans">
+          <span className="text-text-2">{model.sizeGb} GB download</span>
+          <span className="text-green-400 font-medium">{model.ramGb} GB RAM</span>
+          {headroom !== null && <span className="text-text-4">{headroom}% headroom</span>}
+        </div>
+      </div>
+      <button
+        onClick={() => onPull(model.id)}
+        disabled={pulling === model.id}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-sans font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer disabled:opacity-40"
+      >
+        {pulling === model.id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+        Pull
+      </button>
+    </div>
+  );
+}
+
 // ---- Main View ----
 export default function ModelsView() {
-  const [tab, setTab] = useState('installed'); // installed | search
+  const [tab, setTab] = useState('recommended'); // recommended | installed | search
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [installed, setInstalled] = useState([]);
+  const [recommended, setRecommended] = useState([]);
   const [downloads, setDownloads] = useState([]);
   const [hardware, setHardware] = useState(null);
   const [expandedResult, setExpandedResult] = useState(null);
+  const [pulling, setPulling] = useState(null);
   const toast = useToast();
 
   // Fetch installed models
@@ -218,11 +255,27 @@ export default function ModelsView() {
     }).catch(() => {});
   }, []);
 
-  // Fetch hardware info
+  // Fetch hardware info + recommended models
   useEffect(() => {
     api.get('/providers/ollama/hardware').then(setHardware).catch(() => {});
+    api.get('/models/recommended').then((data) => {
+      setRecommended(data.models || []);
+      if (!hardware && data.hardware) setHardware(data.hardware);
+    }).catch(() => {});
     fetchInstalled();
   }, [fetchInstalled]);
+
+  async function handlePull(modelId) {
+    setPulling(modelId);
+    try {
+      await api.post('/providers/ollama/pull', { model: modelId });
+      toast.success(`${modelId} pulled successfully`);
+      fetchInstalled();
+    } catch (err) {
+      toast.error(`Pull failed: ${err.message}`);
+    }
+    setPulling(null);
+  }
 
   // Listen for download progress via WebSocket
   useEffect(() => {
@@ -323,16 +376,20 @@ export default function ModelsView() {
 
         {/* Tabs */}
         <div className="flex gap-1">
-          {['installed', 'search'].map((t) => (
+          {[
+            { id: 'recommended', label: `Recommended (${recommended.length})` },
+            { id: 'installed', label: `Installed (${installed.length})` },
+            { id: 'search', label: `Search (${searchResults.length})` },
+          ].map((t) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
+              key={t.id}
+              onClick={() => setTab(t.id)}
               className={cn(
-                'px-3 py-1 rounded-md text-xs font-sans font-medium transition-colors cursor-pointer capitalize',
-                tab === t ? 'bg-accent/12 text-accent' : 'text-text-3 hover:text-text-1 hover:bg-surface-3',
+                'px-3 py-1 rounded-md text-xs font-sans font-medium transition-colors cursor-pointer',
+                tab === t.id ? 'bg-accent/12 text-accent' : 'text-text-3 hover:text-text-1 hover:bg-surface-3',
               )}
             >
-              {t === 'installed' ? `Installed (${installed.length})` : `Search Results (${searchResults.length})`}
+              {t.label}
             </button>
           ))}
         </div>
@@ -349,6 +406,33 @@ export default function ModelsView() {
       {/* Content */}
       <ScrollArea className="flex-1">
         <div className="px-5 py-4 space-y-2">
+          {tab === 'recommended' && (
+            <>
+              {recommended.length === 0 ? (
+                <div className="text-center py-12">
+                  <Cpu size={40} className="mx-auto text-text-4 mb-3" />
+                  <p className="text-sm text-text-2 font-sans font-medium">Detecting hardware...</p>
+                  <p className="text-xs text-text-3 font-sans mt-1">Make sure Ollama is installed so we can check your system.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="text-xs text-text-3 font-sans mb-2">
+                    Top models for your system ({hardware?.totalRamGb || '?'} GB RAM). Click Pull to download via Ollama.
+                  </div>
+                  {recommended.map((m) => (
+                    <RecommendedModel
+                      key={m.id}
+                      model={m}
+                      systemRamGb={hardware?.totalRamGb}
+                      onPull={handlePull}
+                      pulling={pulling}
+                    />
+                  ))}
+                </>
+              )}
+            </>
+          )}
+
           {tab === 'installed' && (
             <>
               {installed.length === 0 ? (

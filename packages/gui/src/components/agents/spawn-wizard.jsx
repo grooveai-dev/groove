@@ -10,7 +10,7 @@ import { roleColor } from '../../lib/status';
 import {
   Server, Monitor, Code2, TestTube, Cloud, FileText,
   Shield, Database, Megaphone, Calculator, UserCheck,
-  Headphones, BarChart3, Rocket, ChevronDown,
+  Headphones, BarChart3, Rocket, ChevronDown, Pen, Presentation,
 } from 'lucide-react';
 
 const ROLE_PRESETS = [
@@ -28,6 +28,8 @@ const ROLE_PRESETS = [
   { id: 'ea',        label: 'EA',         desc: 'Executive assistant, scheduling', icon: UserCheck,  tier: 'Light' },
   { id: 'support',   label: 'Support',    desc: 'Customer support, FAQs',          icon: Headphones, tier: 'Medium' },
   { id: 'analyst',   label: 'Analyst',    desc: 'Data analysis, insights',         icon: BarChart3,  tier: 'Medium' },
+  { id: 'creative',  label: 'Writer',     desc: 'Copy, articles, proposals',       icon: Pen,        tier: 'Heavy',  skillHint: true },
+  { id: 'slides',    label: 'Slides',     desc: 'Pitch decks, presentations',      icon: Presentation, tier: 'Heavy', skillHint: true },
 ];
 
 export function SpawnWizard() {
@@ -111,7 +113,12 @@ export function SpawnWizard() {
                         <preset.icon size={16} style={{ color: colors.text }} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-xs font-semibold text-text-0 font-sans">{preset.label}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-semibold text-text-0 font-sans">{preset.label}</span>
+                          {preset.skillHint && (
+                            <span className="text-2xs font-mono text-warning/70 bg-warning/8 px-1 py-px rounded">skill</span>
+                          )}
+                        </div>
                         <div className="text-2xs text-text-3 font-sans truncate">{preset.desc}</div>
                       </div>
                     </button>

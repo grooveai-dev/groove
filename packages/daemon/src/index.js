@@ -5,7 +5,7 @@ import { createServer as createHttpServer } from 'http';
 import { createServer as createNetServer } from 'net';
 import { execFileSync } from 'child_process';
 import { resolve } from 'path';
-import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, readdirSync, statSync } from 'fs';
+import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, readdirSync, rmdirSync, statSync } from 'fs';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { Registry } from './registry.js';
@@ -342,12 +342,17 @@ export class Daemon {
     let cleaned = 0;
 
     try {
-      // 1. Clean old log files (>7 days, agent no longer exists)
+      // Build set of agent names still in the registry — never remove their logs
+      const activeNames = new Set(this.registry.getAll().map((a) => a.name));
+
+      // 1. Clean old raw log files (>7 days, agent no longer in registry)
       const logsDir = resolve(grooveDir, 'logs');
       if (existsSync(logsDir)) {
         const now = Date.now();
         const sevenDays = 7 * 24 * 60 * 60 * 1000;
         for (const file of readdirSync(logsDir)) {
+          const agentName = file.replace(/\.log$/, '');
+          if (activeNames.has(agentName)) continue; // agent still exists
           const p = resolve(logsDir, file);
           try {
             const age = now - statSync(p).mtimeMs;
@@ -356,7 +361,32 @@ export class Daemon {
         }
       }
 
-      // 2. Clean stale recommended-team.json from daemon dir (not working dirs — those are user-managed)
+      // 2. Clean old GROOVE_AGENT_LOGS/ session logs (>3 days, agent no longer in registry)
+      const agentLogsDir = resolve(this.projectDir, 'GROOVE_AGENT_LOGS');
+      if (existsSync(agentLogsDir)) {
+        const threeDays = 3 * 24 * 60 * 60 * 1000;
+        const now2 = Date.now();
+        for (const dir of readdirSync(agentLogsDir, { withFileTypes: true })) {
+          if (!dir.isDirectory()) continue;
+          if (activeNames.has(dir.name)) continue; // agent still exists
+          const agentDir = resolve(agentLogsDir, dir.name);
+          try {
+            const files = readdirSync(agentDir);
+            for (const f of files) {
+              const fp = resolve(agentDir, f);
+              try {
+                if (now2 - statSync(fp).mtimeMs > threeDays) { unlinkSync(fp); cleaned++; }
+              } catch { /* skip */ }
+            }
+            // Remove empty agent directories
+            if (readdirSync(agentDir).length === 0) { rmdirSync(agentDir); cleaned++; }
+          } catch { /* skip */ }
+        }
+        // Remove GROOVE_AGENT_LOGS/ itself if empty
+        try { if (readdirSync(agentLogsDir).length === 0) rmdirSync(agentLogsDir); } catch { /* skip */ }
+      }
+
+      // 3. Clean stale recommended-team.json from daemon dir (not working dirs — those are user-managed)
       //    Only clean if no planner agent is currently running
       const hasPlanner = this.registry.getAll().some((a) => a.role === 'planner' && (a.status === 'running' || a.status === 'starting'));
       if (!hasPlanner) {
@@ -369,7 +399,7 @@ export class Daemon {
         }
       }
 
-      // 3. Prune audit log (keep last 1000 lines)
+      // 4. Prune audit log (keep last 1000 lines)
       const auditFile = resolve(grooveDir, 'audit.log');
       if (existsSync(auditFile)) {
         try {

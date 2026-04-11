@@ -10,6 +10,7 @@ import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
 import { api } from '../../lib/api';
+import { ThinkingIndicator } from '../ui/thinking-indicator';
 
 const EMPTY = [];
 
@@ -627,18 +628,7 @@ export function AgentFeed({ agent }) {
           if (item.from === 'system') return <SystemMessage key={`msg-${i}`} msg={item} />;
           return <AgentMessage key={`msg-${i}`} msg={item} agent={agent} />;
         })}
-        {(sending || isThinking) && (
-          <div className="flex items-center gap-2 ml-7 py-2">
-            <div className="w-5 h-5 rounded-md bg-accent/12 flex items-center justify-center">
-              <Code2 size={10} className="text-accent" />
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-surface-2/60 border border-border-subtle">
-              <span className="w-1.5 h-1.5 rounded-full bg-accent/60 animate-pulse" style={{ animationDelay: '0ms' }} />
-              <span className="w-1.5 h-1.5 rounded-full bg-accent/60 animate-pulse" style={{ animationDelay: '200ms' }} />
-              <span className="w-1.5 h-1.5 rounded-full bg-accent/60 animate-pulse" style={{ animationDelay: '400ms' }} />
-            </div>
-          </div>
-        )}
+        {(sending || isThinking) && <ThinkingIndicator className="ml-7 py-2" />}
       </div>
 
       {/* Input area */}

@@ -176,25 +176,31 @@ export const useGrooveStore = create((set, get) => ({
             (data.type === 'activity' && typeof data.data === 'string')
           );
           if (showAsChat) {
+            const trimmed = chatText.trim();
             const history = { ...get().chatHistory };
             if (!history[agentId]) history[agentId] = [];
             const arr = [...history[agentId]];
             const last = arr[arr.length - 1];
             const isRecent = last && last.from === 'agent' && (Date.now() - last.timestamp) < 8000;
 
-            if (isRecent) {
-              // Append to the last agent message (streaming from any provider)
-              // Claude Code blocks use \n\n separator; plain text uses space
-              const sep = data.subtype === 'assistant' ? '\n\n' : ' ';
-              arr[arr.length - 1] = { ...last, text: last.text + sep + chatText.trim(), timestamp: Date.now() };
-            } else {
-              // New message bubble
-              arr.push({ from: 'agent', text: chatText.trim(), timestamp: Date.now() });
-            }
+            // Skip duplicate text — Claude Code sends 'assistant' then 'result' with same content
+            const isDupe = isRecent && (last.text === trimmed || last.text.endsWith(trimmed));
 
-            history[agentId] = arr.slice(-100);
-            set({ chatHistory: history });
-            persistJSON('groove:chatHistory', history);
+            if (!isDupe) {
+              if (isRecent) {
+                // Append to the last agent message (streaming from any provider)
+                // Claude Code blocks use \n\n separator; plain text uses space
+                const sep = data.subtype === 'assistant' ? '\n\n' : ' ';
+                arr[arr.length - 1] = { ...last, text: last.text + sep + trimmed, timestamp: Date.now() };
+              } else {
+                // New message bubble
+                arr.push({ from: 'agent', text: trimmed, timestamp: Date.now() });
+              }
+
+              history[agentId] = arr.slice(-100);
+              set({ chatHistory: history });
+              persistJSON('groove:chatHistory', history);
+            }
           }
 
           // Tool calls → activity log (shown in streaming bar, not as chat bubbles)
@@ -632,20 +638,35 @@ export const useGrooveStore = create((set, get) => ({
 
     // Completed/stopped agent: resume with full context
     get().addChatMessage(id, 'user', message, false);
+    // Show thinking indicator immediately — stays until first WebSocket output
+    set((s) => ({ thinkingAgents: new Set([...s.thinkingAgents, id]) }));
     try {
       const newAgent = await api.post(`/agents/${id}/instruct`, { message });
-      // Carry history to new agent ID
+      // Carry history + thinking state to new agent ID
       for (const key of ['chatHistory', 'activityLog', 'tokenTimeline']) {
         const old = get()[key][id];
         if (old?.length) {
           set((s) => ({ [key]: { ...s[key], [newAgent.id]: [...old] } }));
         }
       }
+      // Transfer thinking indicator to the new agent
+      set((s) => {
+        const next = new Set(s.thinkingAgents);
+        next.delete(id);
+        next.add(newAgent.id);
+        return { thinkingAgents: next };
+      });
       if (get().chatHistory[id]?.length) persistJSON('groove:chatHistory', get().chatHistory);
       if (get().activityLog[id]?.length) persistJSON('groove:activityLog', get().activityLog);
       get().selectAgent(newAgent.id);
       return newAgent;
     } catch (err) {
+      // Clear thinking indicator on failure
+      set((s) => {
+        const next = new Set(s.thinkingAgents);
+        next.delete(id);
+        return { thinkingAgents: next };
+      });
       get().addChatMessage(id, 'system', `failed: ${err.message}`);
       throw err;
     }

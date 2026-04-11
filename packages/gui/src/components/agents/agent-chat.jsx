@@ -4,6 +4,7 @@ import { Send, Loader2, MessageSquare, HelpCircle, ArrowRight, Paperclip } from 
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { Avatar } from '../ui/avatar';
+import { ThinkingIndicator } from '../ui/thinking-indicator';
 import { timeAgo } from '../../lib/format';
 
 const EMPTY = [];
@@ -189,7 +190,7 @@ export function AgentChat({ agent }) {
           if (msg.from === 'system') return <SystemMessage key={msg.key || i} msg={msg} />;
           return <AgentMessage key={msg.key || i} msg={msg} agent={agent} />;
         })}
-        {(sending || isThinking) && <TypingIndicator name={agent.name} />}
+        {(sending || isThinking) && <ThinkingIndicator className="ml-8 py-1" />}
       </div>
 
       {/* ── Input area ──────────────────────────────────── */}

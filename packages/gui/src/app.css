@@ -92,6 +92,22 @@ html {
   100% { background-position: 200% 0; }
 }
 
+/* Thinking indicator — shimmer sweep + animated ellipsis */
+.animate-shimmer {
+  background-size: 200% 100%;
+  animation: shimmer 2.5s ease-in-out infinite;
+}
+.animate-ellipsis::after {
+  content: '';
+  animation: ellipsis 1.5s steps(4, end) infinite;
+}
+@keyframes ellipsis {
+  0%  { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+}
+
 @keyframes spin-slow {
   to { transform: rotate(360deg); }
 }

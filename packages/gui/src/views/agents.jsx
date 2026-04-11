@@ -196,7 +196,7 @@ function AgentTreeInner() {
   const { fitView } = useReactFlow();
   const [prevCount, setPrevCount] = useState(0);
 
-  // Build nodes
+  // Build nodes — positions are stable, data updates flow to node components
   const targetNodes = useMemo(() => {
     const saved = loadPositions();
     const runningCount = agents.filter((a) => a.status === 'running').length;
@@ -321,6 +321,8 @@ function AgentTreeInner() {
 
   useEffect(() => { setEdges(targetEdges); }, [targetEdges, setEdges]);
 
+  // Only fitView when agents are added — not on metric/token/chat updates
+  const agentIdStr = agents.map((a) => a.id).join(',');
   useEffect(() => {
     const currentIds = new Set(agents.map((a) => a.id));
     const isNewAgent = agents.length > 0 && [...currentIds].some((id) => !prevAgentIds.current.has(id));
@@ -332,7 +334,7 @@ function AgentTreeInner() {
       setTimeout(() => fitView({ padding: 0.3, maxZoom: 1.2, duration: 300 }), 100);
     }
     setPrevCount(agents.length);
-  }, [agents.length, agents, prevCount, fitView]);
+  }, [agentIdStr, prevCount, fitView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onNodeClick = useCallback((_e, node) => {
     if (node.id === ROOT_ID) return;

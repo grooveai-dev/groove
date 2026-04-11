@@ -158,7 +158,13 @@ export const useGrooveStore = create((set, get) => ({
           }
 
           // Text responses → chat bubbles (stream: append to recent agent message)
-          if ((data.subtype === 'assistant' || data.type === 'result') && chatText && chatText.trim()) {
+          // Claude Code: subtype='assistant' or type='result' with structured data
+          // Gemini/Codex/Ollama/Local: type='activity' with plain string data (no subtype)
+          const showAsChat = chatText && chatText.trim() && (
+            data.subtype === 'assistant' || data.type === 'result' ||
+            (data.type === 'activity' && typeof data.data === 'string')
+          );
+          if (showAsChat) {
             const history = { ...get().chatHistory };
             if (!history[agentId]) history[agentId] = [];
             const arr = [...history[agentId]];

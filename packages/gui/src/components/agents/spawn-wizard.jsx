@@ -11,7 +11,7 @@ import {
   Server, Monitor, Code2, TestTube, Cloud, FileText,
   Shield, Database, Megaphone, Calculator, UserCheck,
   Headphones, BarChart3, Rocket, ChevronDown, Pen, Presentation,
-  Sparkles, X, Search,
+  Sparkles, X, Search, AlertTriangle,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Dialog, DialogContent } from '../ui/dialog';
@@ -67,7 +67,15 @@ export function SpawnWizard() {
   useEffect(() => {
     if (open) {
       fetchProviders().then((data) => {
-        setProviders(Array.isArray(data) ? data : data.providers || []);
+        const list = Array.isArray(data) ? data : data.providers || [];
+        setProviders(list);
+        // Auto-select first installed provider
+        const installed = list.filter((p) => p.installed);
+        if (installed.length > 0 && !provider) {
+          const priority = ['claude-code', 'gemini', 'codex', 'ollama'];
+          const best = priority.find((pid) => installed.some((p) => p.id === pid)) || installed[0].id;
+          setProvider(best);
+        }
       }).catch(() => {});
       api.get('/skills/installed').then((data) => {
         setInstalledSkills(Array.isArray(data) ? data : []);
@@ -329,7 +337,13 @@ export function SpawnWizard() {
 
           {/* Sticky footer */}
           <div className="border-t border-border-subtle px-5 py-4 bg-surface-1">
-            {selectedRole && (
+            {installedProviders.length === 0 && providers.length > 0 && (
+              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-md bg-warning/8 border border-warning/20">
+                <AlertTriangle size={13} className="text-warning flex-shrink-0" />
+                <span className="text-2xs font-sans text-text-2">No AI providers installed. Install Claude Code, Gemini CLI, Codex, or Ollama to spawn agents.</span>
+              </div>
+            )}
+            {selectedRole && installedProviders.length > 0 && (
               <div className="flex items-center gap-2 mb-3 text-xs text-text-3 font-sans">
                 <span>Spawning</span>
                 <Badge variant="accent">{selectedRole}</Badge>
@@ -341,7 +355,7 @@ export function SpawnWizard() {
               variant="primary"
               size="lg"
               onClick={handleSpawn}
-              disabled={!selectedRole || spawning}
+              disabled={!selectedRole || spawning || installedProviders.length === 0}
               className="w-full"
             >
               {spawning ? 'Spawning...' : 'Spawn Agent'}

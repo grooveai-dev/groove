@@ -165,12 +165,33 @@ export class ProcessManager {
       }
     }
 
-    // Validate provider exists and is installed
-    const provider = getProvider(config.provider || 'claude-code');
+    // Resolve provider — auto-detect best installed if not specified
+    let providerName = config.provider;
+    if (!providerName) {
+      const { getInstalledProviders } = await import('./providers/index.js');
+      const installed = getInstalledProviders();
+      if (installed.length === 0) {
+        throw new Error('No AI providers installed. Install Claude Code, Gemini CLI, Codex, or Ollama first.');
+      }
+      // Priority: claude-code > gemini > codex > ollama
+      const priority = ['claude-code', 'gemini', 'codex', 'ollama'];
+      const best = priority.find((p) => installed.some((i) => i.id === p)) || installed[0].id;
+      providerName = best;
+    }
+
+    const provider = getProvider(providerName);
     if (!provider) {
-      throw new Error(`Unknown provider: ${config.provider}`);
+      throw new Error(`Unknown provider: ${providerName}`);
     }
     if (!provider.constructor.isInstalled()) {
+      // Try to find any installed provider as fallback
+      const { getInstalledProviders } = await import('./providers/index.js');
+      const installed = getInstalledProviders();
+      if (installed.length > 0) {
+        throw new Error(
+          `${provider.constructor.displayName} is not installed. Available providers: ${installed.map((p) => p.name).join(', ')}`
+        );
+      }
       throw new Error(
         `${provider.constructor.displayName} is not installed. Run: ${provider.constructor.installCommand()}`
       );
@@ -183,7 +204,7 @@ export class ProcessManager {
     // Register the agent in the registry
     const agent = registry.add({
       ...config,
-      provider: config.provider || 'claude-code',
+      provider: providerName,
       model: isAutoRouted ? null : config.model, // Set after routing
     });
 

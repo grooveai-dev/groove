@@ -6,6 +6,7 @@ import {
   RotateCw, Zap, Wrench, Eye, Code2, Bug,
   ChevronDown, HelpCircle, Pencil, Paperclip,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
@@ -628,7 +629,19 @@ export function AgentFeed({ agent }) {
           if (item.from === 'system') return <SystemMessage key={`msg-${i}`} msg={item} />;
           return <AgentMessage key={`msg-${i}`} msg={item} agent={agent} />;
         })}
-        {(sending || isThinking) && <ThinkingIndicator className="ml-7 py-2" />}
+        <AnimatePresence>
+          {(sending || isThinking) && (
+            <motion.div
+              key="thinking"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+            >
+              <ThinkingIndicator agent={agent} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Input area */}

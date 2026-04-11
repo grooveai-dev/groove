@@ -200,13 +200,16 @@ function FilePicker({ repoId, onDownload, systemRamGb }) {
 }
 
 // ---- Recommended Model Card ----
-function RecommendedModel({ model, systemRamGb, onPull, pulling }) {
+function RecommendedModel({ model, systemRamGb, onPull, pulling, isInstalled }) {
   const tierColors = { light: 'text-green-400', medium: 'text-blue-400', heavy: 'text-orange-400' };
   const categoryIcons = { code: '{}', general: 'AI' };
   const headroom = systemRamGb ? Math.round((1 - model.ramGb / systemRamGb) * 100) : null;
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 bg-surface-1 border border-border-subtle rounded-lg hover:border-accent/20 transition-colors">
+    <div className={cn(
+      'flex items-center gap-3 px-4 py-3 border rounded-lg transition-colors',
+      isInstalled ? 'bg-success/5 border-success/20' : 'bg-surface-1 border-border-subtle hover:border-accent/20',
+    )}>
       <div className="w-9 h-9 rounded-lg bg-surface-3 flex items-center justify-center text-xs font-mono text-text-2 flex-shrink-0">
         {categoryIcons[model.category] || 'AI'}
       </div>
@@ -214,6 +217,7 @@ function RecommendedModel({ model, systemRamGb, onPull, pulling }) {
         <div className="flex items-center gap-2">
           <span className="text-sm font-mono font-bold text-text-0 truncate">{model.name}</span>
           <span className={cn('text-2xs font-semibold capitalize', tierColors[model.tier])}>{model.tier}</span>
+          {isInstalled && <Badge variant="success" className="text-2xs gap-1"><Check size={8} /> Installed</Badge>}
         </div>
         <div className="text-2xs text-text-3 font-sans mt-0.5">{model.description}</div>
         <div className="flex items-center gap-3 mt-1 text-2xs font-sans">
@@ -222,14 +226,18 @@ function RecommendedModel({ model, systemRamGb, onPull, pulling }) {
           {headroom !== null && <span className="text-text-4">{headroom}% headroom</span>}
         </div>
       </div>
-      <button
-        onClick={() => onPull(model.id)}
-        disabled={pulling === model.id}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-sans font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer disabled:opacity-40"
-      >
-        {pulling === model.id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-        Pull
-      </button>
+      {isInstalled ? (
+        <span className="text-xs text-success font-sans font-medium px-3 py-1.5">Ready</span>
+      ) : (
+        <button
+          onClick={() => onPull(model.id)}
+          disabled={pulling === model.id}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-sans font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer disabled:opacity-40"
+        >
+          {pulling === model.id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+          Pull
+        </button>
+      )}
     </div>
   );
 }
@@ -246,6 +254,7 @@ export default function ModelsView() {
   const [hardware, setHardware] = useState(null);
   const [expandedResult, setExpandedResult] = useState(null);
   const [pulling, setPulling] = useState(null);
+  const [ollamaModels, setOllamaModels] = useState([]);
   const toast = useToast();
 
   // Fetch installed models
@@ -255,7 +264,13 @@ export default function ModelsView() {
     }).catch(() => {});
   }, []);
 
-  // Fetch hardware info + recommended models
+  const fetchOllamaModels = useCallback(() => {
+    api.get('/providers/ollama/models').then((data) => {
+      setOllamaModels((data.installed || []).map((m) => m.id));
+    }).catch(() => {});
+  }, []);
+
+  // Fetch hardware info + recommended models + Ollama installed
   useEffect(() => {
     api.get('/providers/ollama/hardware').then(setHardware).catch(() => {});
     api.get('/models/recommended').then((data) => {
@@ -263,14 +278,16 @@ export default function ModelsView() {
       if (!hardware && data.hardware) setHardware(data.hardware);
     }).catch(() => {});
     fetchInstalled();
-  }, [fetchInstalled]);
+    fetchOllamaModels();
+  }, [fetchInstalled, fetchOllamaModels]);
 
   async function handlePull(modelId) {
     setPulling(modelId);
     try {
       await api.post('/providers/ollama/pull', { model: modelId });
-      toast.success(`${modelId} pulled successfully`);
+      toast.success(`${modelId} ready to use`);
       fetchInstalled();
+      fetchOllamaModels();
     } catch (err) {
       toast.error(`Pull failed: ${err.message}`);
     }
@@ -419,15 +436,21 @@ export default function ModelsView() {
                   <div className="text-xs text-text-3 font-sans mb-2">
                     Top models for your system ({hardware?.totalRamGb || '?'} GB RAM). Click Pull to download via Ollama.
                   </div>
-                  {recommended.map((m) => (
-                    <RecommendedModel
-                      key={m.id}
-                      model={m}
-                      systemRamGb={hardware?.totalRamGb}
-                      onPull={handlePull}
-                      pulling={pulling}
-                    />
-                  ))}
+                  {recommended.map((m) => {
+                    // Check if this model (or a variant) is already installed in Ollama
+                    const baseId = m.id.split(':')[0];
+                    const isInstalled = ollamaModels.some((id) => id === m.id || id.startsWith(baseId + ':') || id === baseId);
+                    return (
+                      <RecommendedModel
+                        key={m.id}
+                        model={m}
+                        systemRamGb={hardware?.totalRamGb}
+                        onPull={handlePull}
+                        pulling={pulling}
+                        isInstalled={isInstalled}
+                      />
+                    );
+                  })}
                 </>
               )}
             </>

@@ -368,6 +368,11 @@ For normal file edits within your scope, proceed without review.
         if (this.daemon.integrations) this.daemon.integrations.refreshMcpJson();
         if (status === 'completed' && this.daemon.journalist) this.daemon.journalist.cycle().catch(() => {});
         this._checkPhase2(agent.id);
+
+        // Auto-trigger idle QC in the same team
+        if (status === 'completed' && (agent.tokensUsed || 0) > 2000) {
+          this._triggerIdleQC(agent);
+        }
       });
 
       // Wire errors — broadcast to GUI for display
@@ -561,6 +566,12 @@ For normal file edits within your scope, proceed without review.
 
       // Phase 2 auto-spawn: check if all phase 1 agents for a team are done
       this._checkPhase2(agent.id);
+
+      // Auto-trigger idle QC: if this agent did real work and there's an idle QC
+      // in the same team, activate it to verify the changes
+      if (finalStatus === 'completed' && (agent.tokensUsed || 0) > 2000) {
+        this._triggerIdleQC(agent);
+      }
     });
 
     proc.on('error', (err) => {
@@ -660,8 +671,17 @@ For normal file edits within your scope, proceed without review.
         // Remove from pending
         pending.splice(i, 1);
 
-        // Auto-spawn phase 2 agents
+        // Check if phase 1 agents did any real work.
+        // Low token usage means they just introduced themselves and waited.
+        const phase1Idle = group.waitFor.every((id) => {
+          const a = registry.get(id);
+          return !a || (a.tokensUsed || 0) < 2000;
+        });
+
+        // Auto-spawn phase 2 agents — if phase 1 was idle, clear the prompt
+        // so QC also waits for instructions instead of auditing nothing
         for (const config of group.agents) {
+          if (phase1Idle) config.prompt = '';
           try {
             const validated = validateAgentConfig(config);
             if (!validated.teamId) validated.teamId = this.daemon.teams.getDefault()?.id || null;
@@ -692,6 +712,47 @@ For normal file edits within your scope, proceed without review.
         }
       }
     }
+  }
+
+  /**
+   * Auto-trigger an idle QC agent in the same team when a teammate completes real work.
+   * "Idle" = running with low token usage (just an intro message, awaiting instructions).
+   */
+  _triggerIdleQC(completedAgent) {
+    const registry = this.daemon.registry;
+    if (!completedAgent.teamId) return;
+
+    // Find a running fullstack/QC agent in the same team that's idle
+    const qc = registry.getAll().find((a) =>
+      a.id !== completedAgent.id &&
+      a.teamId === completedAgent.teamId &&
+      a.role === 'fullstack' &&
+      a.status === 'running' &&
+      (a.tokensUsed || 0) < 2000
+    );
+    if (!qc) return;
+
+    // Gather context about what the completed agent did
+    const files = this.daemon.journalist?.getAgentFiles(completedAgent) || [];
+    const result = this.daemon.journalist?.getAgentResult(completedAgent) || '';
+    const fileList = files.length > 0 ? `\nFiles modified: ${files.slice(0, 20).join(', ')}` : '';
+
+    const message = `Your teammate ${completedAgent.name} (${completedAgent.role}) just finished their work.${fileList}${result ? `\n\nTheir summary:\n${result.slice(0, 2000)}` : ''}\n\nPlease audit their changes: verify correctness, check for bugs, run tests if available, and report any issues.`;
+
+    // Send message to the QC agent via the instruct flow
+    this.sendMessage(qc.id, message).catch((err) => {
+      console.error(`[Groove] QC auto-trigger failed: ${err.message}`);
+    });
+
+    this.daemon.audit.log('qc.autoTrigger', {
+      qcId: qc.id, qcName: qc.name,
+      triggeredBy: completedAgent.name, role: completedAgent.role,
+    });
+    this.daemon.broadcast({
+      type: 'qc:triggered',
+      qcId: qc.id, qcName: qc.name,
+      triggeredBy: completedAgent.name,
+    });
   }
 
   /**

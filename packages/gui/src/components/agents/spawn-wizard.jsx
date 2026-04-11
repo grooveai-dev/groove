@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { Sheet, SheetContent } from '../ui/sheet';
 import { Button } from '../ui/button';
-import { Input, Textarea } from '../ui/input';
+import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { cn } from '../../lib/cn';
 import { roleColor } from '../../lib/status';
@@ -190,8 +190,10 @@ export function SpawnWizard() {
                         className="w-full h-8 px-3 pr-8 text-sm rounded-md bg-surface-1 border border-border text-text-0 font-sans appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
                       >
                         <option value="">Auto</option>
-                        {installedProviders.map((p) => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
+                        {providers.map((p) => (
+                          <option key={p.id} value={p.id} disabled={!p.installed}>
+                            {p.name}{!p.installed ? ' (not installed)' : ''}
+                          </option>
                         ))}
                       </select>
                       <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none" />
@@ -220,10 +222,12 @@ export function SpawnWizard() {
                 {/* Provider status hints */}
                 {provider && selectedProvider && (
                   <div className="text-2xs text-text-3 font-sans flex items-center gap-2">
-                    {selectedProvider.hasKey ? (
-                      <Badge variant="success">API key set</Badge>
+                    {selectedProvider.authType === 'local' ? (
+                      <Badge variant="success">Local</Badge>
                     ) : selectedProvider.authType === 'subscription' ? (
                       <Badge variant="accent">Subscription</Badge>
+                    ) : selectedProvider.hasKey ? (
+                      <Badge variant="success">API key set</Badge>
                     ) : (
                       <Badge variant="warning">No API key — set with: groove set-key {provider} YOUR_KEY</Badge>
                     )}
@@ -324,13 +328,6 @@ export function SpawnWizard() {
                   </DialogContent>
                 </Dialog>
 
-                <Textarea
-                  label="Prompt (optional)"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="What should this agent work on?"
-                  rows={3}
-                />
               </div>
             )}
           </div>

@@ -120,7 +120,15 @@ export const useGrooveStore = create((set, get) => ({
               if (arr.length > 200) timeline[agent.id] = arr.slice(-200);
             }
           }
-          set({ agents: msg.data, tokenTimeline: timeline, hydrated: true });
+          // Only replace agents array if something meaningful changed
+          // (prevents React Flow tree flicker on every lastActivity update)
+          const prev = get().agents;
+          const changed = msg.data.length !== prev.length || msg.data.some((a, i) => {
+            const p = prev[i];
+            return !p || p.id !== a.id || p.status !== a.status || p.tokensUsed !== a.tokensUsed
+              || p.contextUsage !== a.contextUsage || p.name !== a.name || p.model !== a.model;
+          });
+          set({ agents: changed ? msg.data : prev, tokenTimeline: timeline, hydrated: true });
           break;
         }
 

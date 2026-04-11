@@ -4,9 +4,12 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
-// Estimated tokens wasted per cold-start without GROOVE context
-// (agent explores codebase, reads files, discovers structure, builds mental model)
-const COLD_START_OVERHEAD = 8000;
+// Base tokens wasted per cold-start (minimum overhead for any project)
+const COLD_START_BASE = 3000;
+// Additional tokens per file the agent would scan during cold discovery
+const COLD_START_PER_FILE = 15;
+// Additional tokens per directory traversed
+const COLD_START_PER_DIR = 40;
 // Estimated tokens wasted per file conflict (agent discovers, backs off, retries)
 const CONFLICT_OVERHEAD = 500;
 
@@ -15,9 +18,11 @@ export class TokenTracker {
     this.path = resolve(grooveDir, 'tokens.json');
     this.usage = {};
     this.sessionStart = Date.now();
-    this.rotationSavings = 0; // Tokens saved by rotation (context that would have degraded)
+    this.rotationSavings = 0;
     this.conflictsPrevented = 0;
     this.coldStartsSkipped = 0;
+    this.projectFiles = 0;   // Set from indexer stats
+    this.projectDirs = 0;
     this.load();
   }
 
@@ -145,6 +150,19 @@ export class TokenTracker {
     this.save();
   }
 
+  // Set project size from indexer for dynamic cold-start estimation
+  setProjectStats(totalFiles, totalDirs) {
+    this.projectFiles = totalFiles || 0;
+    this.projectDirs = totalDirs || 0;
+  }
+
+  // Calculate cold-start overhead based on project size
+  getColdStartOverhead() {
+    return COLD_START_BASE
+      + (this.projectFiles * COLD_START_PER_FILE)
+      + (this.projectDirs * COLD_START_PER_DIR);
+  }
+
   getAgent(agentId) {
     return this.usage[agentId] || { total: 0, sessions: [] };
   }
@@ -195,7 +213,8 @@ export class TokenTracker {
     }
 
     // Estimate what uncoordinated usage would have cost
-    const coldStartWaste = this.coldStartsSkipped * COLD_START_OVERHEAD;
+    const coldStartOverhead = this.getColdStartOverhead();
+    const coldStartWaste = this.coldStartsSkipped * coldStartOverhead;
     const conflictWaste = this.conflictsPrevented * CONFLICT_OVERHEAD;
     const totalSavings = this.rotationSavings + coldStartWaste + conflictWaste;
 

@@ -316,6 +316,12 @@ export class Daemon {
         // returns data on every startup (not just first run)
         this.journalist.seedFromInitMap();
 
+        // Feed project size to token tracker for dynamic cold-start estimation
+        const stats = this.indexer.getStatus().stats;
+        if (stats) {
+          this.tokens.setProjectStats(stats.totalFiles, stats.totalDirs);
+        }
+
         resolvePromise(this);
       });
     });

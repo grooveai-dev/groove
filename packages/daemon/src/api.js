@@ -1768,7 +1768,17 @@ Keep responses concise. Help them think, don't lecture them about the system the
       }
 
       const baseDir = daemon.config?.defaultWorkingDir || daemon.projectDir;
-      const defaultTeamId = daemon.teams.getDefault()?.id || null;
+
+      // Use the planner's teamId so launched agents join the correct team.
+      // Accept explicit teamId from request body, or find the most recent planner agent.
+      let launchTeamId = req.body?.teamId || null;
+      if (!launchTeamId) {
+        const planners = daemon.registry.getAll()
+          .filter((a) => a.role === 'planner')
+          .sort((a, b) => (b.lastActivity || '').localeCompare(a.lastActivity || ''));
+        launchTeamId = planners[0]?.teamId || null;
+      }
+      const defaultTeamId = launchTeamId || daemon.teams.getDefault()?.id || null;
 
       // If planner specified a project directory, create it and use it as workingDir
       let projectWorkingDir = baseDir;

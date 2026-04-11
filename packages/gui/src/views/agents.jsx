@@ -321,17 +321,21 @@ function AgentTreeInner() {
 
   useEffect(() => { setEdges(targetEdges); }, [targetEdges, setEdges]);
 
-  // Only fitView when agents are added — not on metric/token/chat updates
+  // Only fitView when agents are added — debounced so team launches (multiple spawns)
+  // don't cause repeated zoom/pan jitter
   const agentIdStr = agents.map((a) => a.id).join(',');
+  const fitTimer = useRef(null);
   useEffect(() => {
     const currentIds = new Set(agents.map((a) => a.id));
     const isNewAgent = agents.length > 0 && [...currentIds].some((id) => !prevAgentIds.current.has(id));
     prevAgentIds.current = currentIds;
 
     if (prevCount === 0 && agents.length > 0) {
-      setTimeout(() => fitView({ padding: 0.3, maxZoom: 1.2, duration: 0 }), 50);
+      fitView({ padding: 0.3, maxZoom: 1.2, duration: 0 });
     } else if (isNewAgent) {
-      setTimeout(() => fitView({ padding: 0.3, maxZoom: 1.2, duration: 300 }), 100);
+      // Debounce: wait 500ms for batch spawns to settle before fitting
+      clearTimeout(fitTimer.current);
+      fitTimer.current = setTimeout(() => fitView({ padding: 0.3, maxZoom: 1.2, duration: 300 }), 500);
     }
     setPrevCount(agents.length);
   }, [agentIdStr, prevCount, fitView]); // eslint-disable-line react-hooks/exhaustive-deps

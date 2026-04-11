@@ -370,8 +370,9 @@ For normal file edits within your scope, proceed without review.
         this._checkPhase2(agent.id);
 
         // Auto-trigger idle QC in the same team
-        if (status === 'completed' && (agent.tokensUsed || 0) > 2000) {
-          this._triggerIdleQC(agent);
+        if (status === 'completed') {
+          const files = this.daemon.journalist?.getAgentFiles(agent) || [];
+          if (files.length > 0) this._triggerIdleQC(agent);
         }
       });
 
@@ -567,10 +568,11 @@ For normal file edits within your scope, proceed without review.
       // Phase 2 auto-spawn: check if all phase 1 agents for a team are done
       this._checkPhase2(agent.id);
 
-      // Auto-trigger idle QC: if this agent did real work and there's an idle QC
+      // Auto-trigger idle QC: if this agent modified files and there's an idle QC
       // in the same team, activate it to verify the changes
-      if (finalStatus === 'completed' && (agent.tokensUsed || 0) > 2000) {
-        this._triggerIdleQC(agent);
+      if (finalStatus === 'completed') {
+        const files = this.daemon.journalist?.getAgentFiles(agent) || [];
+        if (files.length > 0) this._triggerIdleQC(agent);
       }
     });
 
@@ -671,11 +673,14 @@ For normal file edits within your scope, proceed without review.
         // Remove from pending
         pending.splice(i, 1);
 
-        // Check if phase 1 agents did any real work.
-        // Low token usage means they just introduced themselves and waited.
+        // Check if phase 1 agents did any real work by looking at file modifications.
+        // If no agent modified any files, there's nothing to QC.
+        const journalist = this.daemon.journalist;
         const phase1Idle = group.waitFor.every((id) => {
           const a = registry.get(id);
-          return !a || (a.tokensUsed || 0) < 2000;
+          if (!a) return true;
+          const files = journalist?.getAgentFiles(a) || [];
+          return files.length === 0;
         });
 
         // Auto-spawn phase 2 agents — if phase 1 was idle, clear the prompt
@@ -716,19 +721,20 @@ For normal file edits within your scope, proceed without review.
 
   /**
    * Auto-trigger an idle QC agent in the same team when a teammate completes real work.
-   * "Idle" = running with low token usage (just an intro message, awaiting instructions).
+   * "Idle" = running fullstack agent that hasn't modified any files yet.
    */
   _triggerIdleQC(completedAgent) {
     const registry = this.daemon.registry;
     if (!completedAgent.teamId) return;
 
-    // Find a running fullstack/QC agent in the same team that's idle
+    // Find a running fullstack/QC agent in the same team that's idle (no files modified)
+    const journalist = this.daemon.journalist;
     const qc = registry.getAll().find((a) =>
       a.id !== completedAgent.id &&
       a.teamId === completedAgent.teamId &&
       a.role === 'fullstack' &&
       a.status === 'running' &&
-      (a.tokensUsed || 0) < 2000
+      (journalist?.getAgentFiles(a) || []).length === 0
     );
     if (!qc) return;
 

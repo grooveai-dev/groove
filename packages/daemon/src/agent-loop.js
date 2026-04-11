@@ -28,7 +28,6 @@ export class AgentLoop extends EventEmitter {
     this.turns = 0;
     this.toolCallCount = 0;
     this.startedAt = Date.now();
-    this.lastContextUsage = 0;
 
     // Tool executor — sandboxed to agent's working directory
     this.executor = new ToolExecutor(
@@ -190,8 +189,9 @@ export class AgentLoop extends EventEmitter {
         });
       }
 
-      // Context window management
-      this._checkContext();
+      // Context rotation is handled by the Rotator's 15s polling loop
+      // which checks registry.contextUsage against the adaptive threshold.
+      // The journalist has full logs — no need for in-loop compaction.
     }
   }
 
@@ -356,7 +356,6 @@ export class AgentLoop extends EventEmitter {
     // Context usage = how full the context window is
     const contextWindow = this.config.contextWindow || 32768;
     const contextUsage = contextWindow > 0 ? Math.min(inputTokens / contextWindow, 1) : 0;
-    this.lastContextUsage = contextUsage;
 
     // Emit token event — ProcessManager handles registry updates + subsystem feeding
     this.emit('output', {
@@ -367,40 +366,6 @@ export class AgentLoop extends EventEmitter {
       model: this.config.model,
       contextUsage,
     });
-  }
-
-  // --- Context Management ---
-
-  _checkContext() {
-    // Compact old messages to buy time before rotation kicks in
-    // (Uses internal tracker — registry.contextUsage is set by PM handler)
-    if (this.lastContextUsage > 0.7 && this.messages.length > 20) {
-      this._compactHistory();
-    }
-    // Rotation itself is handled by the Rotator's 15s polling loop
-    // which checks registry.contextUsage against adaptive threshold
-  }
-
-  _compactHistory() {
-    const systemPrompt = this.messages[0];
-    const keepRecent = 14;
-
-    if (this.messages.length <= keepRecent + 2) return;
-
-    // Truncate tool results in old messages to save tokens
-    const old = this.messages.slice(1, -(keepRecent));
-    const compacted = old.map((msg) => {
-      if (msg.role === 'tool' && msg.content && msg.content.length > 200) {
-        return { ...msg, content: msg.content.slice(0, 150) + '\n[... truncated to save context]' };
-      }
-      if (msg.role === 'assistant' && msg.content && msg.content.length > 500) {
-        return { ...msg, content: msg.content.slice(0, 400) + '\n[... truncated]' };
-      }
-      return msg;
-    });
-
-    const recent = this.messages.slice(-(keepRecent));
-    this.messages = [systemPrompt, ...compacted, ...recent];
   }
 
   // --- System Prompt ---

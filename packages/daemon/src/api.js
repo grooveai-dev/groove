@@ -420,6 +420,37 @@ export function createApi(app, daemon) {
     }
   });
 
+  // Upload file to agent's working directory
+  app.post('/api/agents/:id/upload', (req, res) => {
+    const agent = daemon.registry.get(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    const { filename, content } = req.body;
+    if (!filename || !content) return res.status(400).json({ error: 'filename and content required' });
+
+    // Sanitize filename — no path traversal
+    const safeName = String(filename).replace(/[/\\]/g, '_').replace(/\.\./g, '');
+    if (!safeName) return res.status(400).json({ error: 'Invalid filename' });
+
+    const dir = agent.workingDir || daemon.projectDir;
+    const filePath = resolve(dir, safeName);
+
+    // Ensure file stays within working directory
+    if (!filePath.startsWith(dir)) {
+      return res.status(400).json({ error: 'Path traversal detected' });
+    }
+
+    try {
+      mkdirSync(dir, { recursive: true });
+      const buffer = Buffer.from(content, 'base64');
+      writeFileSync(filePath, buffer);
+      daemon.audit.log('file.upload', { agentId: agent.id, filename: safeName, size: buffer.length });
+      res.json({ ok: true, path: safeName, size: buffer.length });
+    } catch (err) {
+      res.status(500).json({ error: `Upload failed: ${err.message}` });
+    }
+  });
+
   // List MD files for an agent (from its working directory + .groove)
   app.get('/api/agents/:id/mdfiles', (req, res) => {
     const agent = daemon.registry.get(req.params.id);

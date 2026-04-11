@@ -9,6 +9,7 @@ import {
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
+import { api } from '../../lib/api';
 
 const EMPTY = [];
 
@@ -532,11 +533,33 @@ export function AgentFeed({ agent }) {
     }
   }, [timeline.length]);
 
-  function handleFileSelect(e) {
+  async function handleFileSelect(e) {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-    const names = files.map((f) => f.name).join(', ');
-    setInput((prev) => (prev ? prev + '\n' : '') + `[Attached: ${names}] — Read these files from the working directory.`);
+    const addToast = useGrooveStore.getState().addToast;
+
+    const uploaded = [];
+    for (const file of files) {
+      try {
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result.split(',')[1]); // strip data:...;base64,
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        await api.post(`/agents/${agent.id}/upload`, { filename: file.name, content: base64 });
+        uploaded.push(file.name);
+      } catch (err) {
+        addToast('error', `Upload failed: ${file.name}`, err.message);
+      }
+    }
+
+    if (uploaded.length > 0) {
+      const names = uploaded.join(', ');
+      setInput((prev) => (prev ? prev + '\n' : '') + `[Uploaded: ${names}] — I've uploaded these files to your working directory. Read them and use their content.`);
+      addToast('success', `Uploaded ${uploaded.length} file${uploaded.length > 1 ? 's' : ''}`);
+    }
+
     e.target.value = '';
     inputRef.current?.focus();
   }

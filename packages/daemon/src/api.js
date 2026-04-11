@@ -891,6 +891,15 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
+  app.post('/api/skills/:id/update', async (req, res) => {
+    try {
+      const result = await daemon.skills.update(req.params.id);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   app.post('/api/skills/:id/rate', async (req, res) => {
     try {
       const rating = parseInt(req.body?.rating, 10);

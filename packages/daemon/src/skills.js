@@ -64,7 +64,7 @@ export class SkillStore {
       });
       if (res.ok) {
         user = await res.json();
-        console.log('[Groove:Auth] User object from API:', JSON.stringify(user));
+        console.log(`[Groove:Auth] Authenticated: ${user.username || user.id}`);
       } else {
         return null; // Invalid token
       }
@@ -327,6 +327,51 @@ export class SkillStore {
     this.daemon.audit.log('skill.uninstall', { id: skillId });
 
     return { id: skillId, installed: false };
+  }
+
+  /**
+   * Update an installed skill — re-downloads latest content from the API.
+   */
+  async update(skillId) {
+    if (!this._isInstalled(skillId)) throw new Error(`Skill not installed: ${skillId}`);
+
+    let entry = this.registry.find((s) => s.id === skillId);
+    if (!entry) {
+      await this._refreshRegistry();
+      entry = this.registry.find((s) => s.id === skillId);
+    }
+
+    let content = null;
+
+    // Try live API content endpoint
+    try {
+      const res = await this._fetch(`${SKILLS_API}/skills/${skillId}/content`, { timeout: 10000 });
+      if (res.ok) {
+        const data = await res.json();
+        content = data.content;
+      }
+    } catch { /* fall through */ }
+
+    // Fall back to contentUrl
+    if (!content && entry?.contentUrl) {
+      try {
+        const res = await this._fetch(entry.contentUrl, { timeout: 10000 });
+        if (res.ok) content = await res.text();
+      } catch { /* fall through */ }
+    }
+
+    if (!content) {
+      throw new Error('Could not download latest version. Check your internet connection.');
+    }
+
+    // Overwrite local content
+    const skillDir = resolve(this.skillsDir, skillId);
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(resolve(skillDir, 'SKILL.md'), content);
+
+    this.daemon.audit.log('skill.update', { id: skillId, name: entry?.name || skillId });
+
+    return { id: skillId, name: entry?.name || skillId, installed: true, updated: true };
   }
 
   /**

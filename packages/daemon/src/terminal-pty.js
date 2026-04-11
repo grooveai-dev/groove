@@ -2,6 +2,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { spawn, execFileSync } from 'child_process';
+import { randomUUID } from 'crypto';
 import { existsSync } from 'fs';
 
 // Python helper that creates a real PTY and relays I/O through stdin/stdout pipes.
@@ -81,12 +82,11 @@ export class TerminalManager {
   constructor(daemon) {
     this.daemon = daemon;
     this.sessions = new Map();
-    this.counter = 0;
     this._python = this._findPython();
   }
 
   spawn(ws, options = {}) {
-    const id = `term-${++this.counter}`;
+    const id = `term-${randomUUID()}`;
     const shell = this._detectShell();
     const cwd = options.cwd || this.daemon.projectDir;
     const cols = options.cols || 120;

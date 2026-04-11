@@ -296,8 +296,10 @@ IMPORTANT: No task has been assigned yet. You MUST wait for the user to tell you
 
     // Apply PM review instructions for Auto permission mode
     // Agents call the PM endpoint before risky operations for AI review
+    // Skip for sandboxed providers (Codex) — localhost is unreachable from their sandbox
     const permission = config.permission || 'full';
-    if (permission === 'auto' || permission === 'supervised') {
+    const sandboxedProviders = ['codex'];
+    if ((permission === 'auto' || permission === 'supervised') && !sandboxedProviders.includes(providerName)) {
       const port = this.daemon.port || 31415;
       const pmPrompt = `## PM Review (Auto Mode)
 

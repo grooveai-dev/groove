@@ -19,7 +19,7 @@ import { fmtNum, timeAgo } from '../lib/format';
 import { useGrooveStore } from '../stores/groove';
 import {
   ChevronLeft, ChevronDown, Sparkles, Plug, LogIn, LogOut,
-  User, Upload, Package, Download, ShoppingBag,
+  User, Upload, Package, Download, ShoppingBag, RefreshCw, Trash2,
 } from 'lucide-react';
 
 // ── Skill Detail ─────────────────────────────────────────
@@ -28,6 +28,8 @@ function SkillDetail({ skill, onBack }) {
   const [content, setContent] = useState('');
   const [requiresPurchase, setRequiresPurchase] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [uninstalling, setUninstalling] = useState(false);
   const [installed, setInstalled] = useState(skill.installed);
   const [loadingContent, setLoadingContent] = useState(true);
 
@@ -50,6 +52,28 @@ function SkillDetail({ skill, onBack }) {
       toast.success(`${skill.name} installed`);
     } catch (err) { toast.error('Install failed', err.message); }
     setInstalling(false);
+  }
+
+  async function handleUpdate() {
+    setUpdating(true);
+    try {
+      await api.post(`/skills/${skill.id}/update`);
+      toast.success(`${skill.name} updated to latest`);
+      // Refresh content preview
+      const d = await api.get(`/skills/${skill.id}/content`);
+      if (d.content) setContent(d.content);
+    } catch (err) { toast.error('Update failed', err.message); }
+    setUpdating(false);
+  }
+
+  async function handleUninstall() {
+    setUninstalling(true);
+    try {
+      await api.delete(`/skills/${skill.id}`);
+      setInstalled(false);
+      toast.success(`${skill.name} uninstalled`);
+    } catch (err) { toast.error('Uninstall failed', err.message); }
+    setUninstalling(false);
   }
 
   async function handleBuy() {
@@ -133,13 +157,32 @@ function SkillDetail({ skill, onBack }) {
                 >
                   Buy ${(skill.price || 0).toFixed(2)}
                 </button>
+              ) : installed ? (
+                <div className="mt-3 flex flex-col gap-1.5">
+                  <button
+                    onClick={handleUpdate}
+                    disabled={updating}
+                    className="w-full py-2 px-3 text-xs font-sans font-semibold rounded cursor-pointer transition-all hover:opacity-85 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 border bg-accent/15 text-accent border-accent/20 hover:bg-accent/25"
+                  >
+                    <RefreshCw size={12} className={updating ? 'animate-spin' : ''} />
+                    {updating ? 'Updating...' : 'Pull Latest'}
+                  </button>
+                  <button
+                    onClick={handleUninstall}
+                    disabled={uninstalling}
+                    className="w-full py-2 px-3 text-xs font-sans font-semibold rounded cursor-pointer transition-all hover:opacity-85 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 border bg-error/10 text-error border-error/20 hover:bg-error/15"
+                  >
+                    <Trash2 size={12} />
+                    {uninstalling ? 'Removing...' : 'Uninstall'}
+                  </button>
+                </div>
               ) : (
                 <button
                   onClick={handleInstall}
-                  disabled={installing || installed}
-                  className={`w-full mt-3 py-2 px-3 text-xs font-sans font-semibold rounded cursor-pointer transition-all hover:opacity-85 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 border ${installed ? 'bg-success/15 text-success border-success/20' : 'bg-accent/15 text-accent border-accent/20 hover:bg-accent/25'}`}
+                  disabled={installing}
+                  className="w-full mt-3 py-2 px-3 text-xs font-sans font-semibold rounded cursor-pointer transition-all hover:opacity-85 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 border bg-accent/15 text-accent border-accent/20 hover:bg-accent/25"
                 >
-                  {installing ? 'Installing...' : installed ? '\u2713 Installed' : 'Install'}
+                  {installing ? 'Installing...' : 'Install'}
                 </button>
               )}
 
@@ -278,8 +321,14 @@ function MyLibrary() {
   const [purchases, setPurchases] = useState([]);
   const [installed, setInstalled] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState(null);
   const toast = useToast();
   const fileRef = useRef(null);
+
+  const refreshInstalled = async () => {
+    const data = await api.get('/skills/installed');
+    setInstalled(Array.isArray(data) ? data : data.skills || []);
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -292,6 +341,26 @@ function MyLibrary() {
     }).finally(() => setLoading(false));
   }, [authenticated]);
 
+  async function handleUpdate(s) {
+    setBusyId(s.id);
+    try {
+      await api.post(`/skills/${s.id}/update`);
+      toast.success(`${s.name || s.id} updated`);
+      await refreshInstalled();
+    } catch (err) { toast.error('Update failed', err.message); }
+    setBusyId(null);
+  }
+
+  async function handleUninstall(s) {
+    setBusyId(s.id);
+    try {
+      await api.delete(`/skills/${s.id}`);
+      toast.success(`${s.name || s.id} uninstalled`);
+      await refreshInstalled();
+    } catch (err) { toast.error('Uninstall failed', err.message); }
+    setBusyId(null);
+  }
+
   async function handleImport(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -300,9 +369,7 @@ function MyLibrary() {
       const name = file.name.replace(/\.md$/i, '');
       await api.post('/skills/import', { name, content });
       toast.success(`Imported "${name}"`);
-      // Refresh installed list
-      const data = await api.get('/skills/installed');
-      setInstalled(Array.isArray(data) ? data : data.skills || []);
+      await refreshInstalled();
     } catch (err) {
       toast.error('Import failed', err.message);
     }
@@ -397,6 +464,24 @@ function MyLibrary() {
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-semibold text-text-0 font-sans truncate">{s.name || s.id}</div>
                     <div className="text-2xs text-text-3 font-sans truncate">{s.description || s.category || 'local skill'}</div>
+                  </div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => handleUpdate(s)}
+                      disabled={busyId === s.id}
+                      title="Pull latest version"
+                      className="p-1.5 rounded text-text-3 hover:text-accent hover:bg-accent/10 cursor-pointer transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw size={12} className={busyId === s.id ? 'animate-spin' : ''} />
+                    </button>
+                    <button
+                      onClick={() => handleUninstall(s)}
+                      disabled={busyId === s.id}
+                      title="Uninstall"
+                      className="p-1.5 rounded text-text-3 hover:text-error hover:bg-error/10 cursor-pointer transition-colors disabled:opacity-50"
+                    >
+                      <Trash2 size={12} />
+                    </button>
                   </div>
                   <Badge variant="accent" className="text-2xs flex-shrink-0">Installed</Badge>
                 </div>

@@ -324,7 +324,8 @@ For normal file edits within your scope, proceed without review.
       integrationEnv = this.daemon.integrations.getSpawnEnv(config.integrations);
     }
 
-    const { command, args, env } = provider.buildSpawnCommand(spawnConfig);
+    const spawnCmd = provider.buildSpawnCommand(spawnConfig);
+    const { command, args, env, stdin: stdinData } = spawnCmd;
 
     // Set up log capture
     const logDir = resolve(this.daemon.grooveDir, 'logs');
@@ -347,14 +348,19 @@ For normal file edits within your scope, proceed without review.
       }
     }
 
-    // Spawn the process
+    // Spawn the process (use pipe for stdin if provider needs to send prompt via stdin)
     const proc = cpSpawn(command, args, {
       cwd: agent.workingDir || this.daemon.projectDir,
       env: { ...process.env, ...env, ...integrationEnv, GROOVE_AGENT_ID: agent.id, GROOVE_AGENT_NAME: agent.name },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      // Don't let agent process prevent daemon from exiting
+      stdio: [stdinData ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       detached: false,
     });
+
+    // Write prompt via stdin if provider requested it (e.g., Ollama avoids arg length limits)
+    if (stdinData && proc.stdin) {
+      proc.stdin.write(stdinData);
+      proc.stdin.end();
+    }
 
     if (!proc.pid) {
       registry.remove(agent.id);

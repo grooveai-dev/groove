@@ -3,7 +3,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'fs';
 import { resolve } from 'path';
-import { execFile } from 'child_process';
+import { execFile, spawn as cpSpawn } from 'child_process';
 import { getProvider, getInstalledProviders } from './providers/index.js';
 
 const DEFAULT_INTERVAL = 120_000; // 2 minutes
@@ -325,9 +325,39 @@ export class Journalist {
       || provider.constructor.models?.[0];
     const modelId = lightModel?.id || null;
 
-    const { command, args, env } = provider.buildHeadlessCommand(prompt, modelId);
+    const headlessCmd = provider.buildHeadlessCommand(prompt, modelId);
+    const { command, args, env, stdin: stdinData } = headlessCmd;
 
     return new Promise((resolve, reject) => {
+      // Use spawn with stdin pipe if provider needs it (e.g., Ollama)
+      if (stdinData) {
+        let stdout = '';
+        const proc = cpSpawn(command, args, {
+          env: { ...process.env, ...env },
+          cwd: this.daemon.projectDir,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        proc.stdin.write(stdinData);
+        proc.stdin.end();
+        proc.stdout.on('data', (d) => { stdout += d.toString(); });
+        const timer = setTimeout(() => { proc.kill(); reject(new Error('Headless timeout')); }, 60_000);
+        proc.on('exit', (code) => {
+          clearTimeout(timer);
+          if (code !== 0) return reject(new Error(`Headless exited with code ${code}`));
+          // Process stdout same as execFile path below
+          const lines = stdout.split('\n');
+          for (const line of lines) {
+            try {
+              const json = JSON.parse(line);
+              if (json.result) return resolve(json.result);
+              if (json.content?.[0]?.text) return resolve(json.content[0].text);
+            } catch { /* not json */ }
+          }
+          resolve(stdout.trim());
+        });
+        return;
+      }
+
       const proc = execFile(command, args, {
         env: { ...process.env, ...env },
         cwd: this.daemon.projectDir,

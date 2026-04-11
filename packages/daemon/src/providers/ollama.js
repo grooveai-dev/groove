@@ -226,13 +226,17 @@ export class OllamaProvider extends Provider {
   buildSpawnCommand(agent) {
     const model = agent.model || 'qwen2.5-coder:7b';
     const args = ['run', model];
-    if (agent.prompt) args.push(agent.prompt);
-    return { command: 'ollama', args, env: { OLLAMA_API_BASE: 'http://localhost:11434' } };
+    // Pass prompt via stdin to avoid OS arg length limits on long prompts
+    return {
+      command: 'ollama', args,
+      env: { OLLAMA_API_BASE: 'http://localhost:11434' },
+      stdin: agent.prompt || undefined,
+    };
   }
 
   buildHeadlessCommand(prompt, model) {
     const m = model || 'qwen2.5-coder:7b';
-    return { command: 'ollama', args: ['run', m, prompt], env: {} };
+    return { command: 'ollama', args: ['run', m], env: {}, stdin: prompt };
   }
 
   switchModel(agent, newModel) {

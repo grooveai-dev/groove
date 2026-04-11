@@ -403,11 +403,12 @@ export function createApi(app, daemon) {
       const activity = daemon.classifier?.agentWindows?.[agent.id] || [];
       const recentActivity = activity.slice(-20).map((e) => e.data || e.text || '').join('\n');
 
+      // Truncate the agent's original prompt to avoid massive payloads
+      const taskSummary = agent.prompt ? agent.prompt.slice(0, 500) : '';
       const prompt = [
         `You are answering a question about agent "${agent.name}" (role: ${agent.role}).`,
-        `This agent's file scope: ${(agent.scope || []).join(', ') || 'unrestricted'}`,
         `Provider: ${agent.provider}, Tokens used: ${agent.tokensUsed || 0}`,
-        agent.prompt ? `Original task: ${agent.prompt}` : '',
+        taskSummary ? `Task summary: ${taskSummary}` : '',
         recentActivity ? `\nRecent activity:\n${recentActivity}` : '',
         `\nUser question: ${message.trim()}`,
         '\nAnswer concisely based on the agent context above.',

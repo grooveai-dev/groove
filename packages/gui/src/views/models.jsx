@@ -286,8 +286,11 @@ export default function ModelsView() {
     try {
       await api.post('/providers/ollama/pull', { model: modelId });
       toast.success(`${modelId} ready to use`);
+      // Refresh all model lists so UI reflects the new install
       fetchInstalled();
       fetchOllamaModels();
+      // Also optimistically mark it installed immediately
+      setOllamaModels((prev) => [...prev, modelId]);
     } catch (err) {
       toast.error(`Pull failed: ${err.message}`);
     }

@@ -157,9 +157,9 @@ export function SpawnWizard() {
               {/* Custom role */}
               <div className="mt-3">
                 <Input
-                  placeholder="or type a custom role..."
+                  placeholder="or type a custom role (e.g. chat-agent)..."
                   value={customRole}
-                  onChange={(e) => { setCustomRole(e.target.value); setRole(''); }}
+                  onChange={(e) => { setCustomRole(e.target.value.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 50)); setRole(''); }}
                   className="text-xs"
                 />
               </div>

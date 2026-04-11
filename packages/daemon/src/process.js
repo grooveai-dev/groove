@@ -437,9 +437,14 @@ For normal file edits within your scope, proceed without review.
       }
     });
 
-    // Capture stderr
+    // Capture stderr — collect for crash reporting
+    const stderrBuf = [];
     proc.stderr.on('data', (chunk) => {
-      logStream.write(`[stderr] ${chunk}`);
+      const text = chunk.toString();
+      logStream.write(`[stderr] ${text}`);
+      stderrBuf.push(text);
+      // Keep last 2KB of stderr for crash reporting
+      while (stderrBuf.join('').length > 2048) stderrBuf.shift();
     });
 
     // Handle process exit
@@ -455,6 +460,9 @@ For normal file edits within your scope, proceed without review.
         : code === 0
           ? 'completed'
           : 'crashed';
+
+      // Capture crash error from stderr for UI display
+      const crashError = finalStatus === 'crashed' ? stderrBuf.join('').trim().slice(-500) : null;
 
       registry.update(agent.id, { status: finalStatus, pid: null });
 
@@ -474,6 +482,7 @@ For normal file edits within your scope, proceed without review.
         code,
         signal,
         status: finalStatus,
+        error: crashError || undefined,
       });
 
       // Refresh MCP config — remove integrations no longer needed by running agents
@@ -497,6 +506,14 @@ For normal file edits within your scope, proceed without review.
 
       this.handles.delete(agent.id);
       registry.update(agent.id, { status: 'crashed', pid: null });
+      this.daemon.broadcast({
+        type: 'agent:exit',
+        agentId: agent.id,
+        code: null,
+        signal: null,
+        status: 'crashed',
+        error: err.message,
+      });
     });
 
     return agent;

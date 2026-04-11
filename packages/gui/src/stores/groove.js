@@ -197,13 +197,17 @@ export const useGrooveStore = create((set, get) => ({
         case 'agent:exit': {
           const agent = get().agents.find((a) => a.id === msg.agentId);
           const name = agent?.name || msg.agentId;
-          // Exit 143 = SIGTERM (kill), exit 137 = SIGKILL — treat as intentional kill
           const isKill = msg.status === 'killed' || msg.code === 143 || msg.code === 137;
           const text = msg.status === 'completed' ? `${name} completed`
             : isKill ? `${name} stopped`
             : `${name} crashed (exit ${msg.code})`;
           const type = msg.status === 'completed' ? 'success' : isKill ? 'info' : 'warning';
-          get().addToast(type, text);
+          get().addToast(type, text, msg.error ? msg.error.slice(0, 200) : undefined);
+
+          // Log crash error to agent chat so user can see what happened
+          if (msg.error && msg.agentId) {
+            get().addChatMessage(msg.agentId, 'system', `Crashed: ${msg.error}`);
+          }
           // Check for recommended team when planner completes
           if (agent?.role === 'planner' && msg.status === 'completed') {
             setTimeout(() => get().checkRecommendedTeam(), 1000);

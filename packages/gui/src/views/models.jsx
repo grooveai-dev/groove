@@ -162,8 +162,8 @@ function FilePicker({ repoId, onDownload, systemRamGb }) {
   return (
     <div className="pl-6 pr-4 pb-2 space-y-1.5">
       {files.map((f) => {
-        const canRun = !f.estimatedRamGb || !systemRamGb || f.estimatedRamGb <= systemRamGb * 0.85;
-        const tight = f.estimatedRamGb && systemRamGb && f.estimatedRamGb > systemRamGb * 0.7 && canRun;
+        const canRun = !f.estimatedRamGb || !systemRamGb || f.estimatedRamGb <= systemRamGb;
+        const tight = f.estimatedRamGb && systemRamGb && f.estimatedRamGb > systemRamGb * 0.8 && canRun;
         return (
           <div key={f.filename} className={cn(
             'flex items-center gap-2 py-1.5 px-3 rounded-md text-xs font-sans',

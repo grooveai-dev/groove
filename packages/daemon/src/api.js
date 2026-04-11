@@ -301,10 +301,10 @@ export function createApi(app, daemon) {
   app.get('/api/models/recommended', (req, res) => {
     const hardware = OllamaProvider.getSystemHardware();
     const catalog = OllamaProvider.catalog;
-    // Filter to models that fit in RAM (with 15% headroom) and sort by quality
-    const maxRam = hardware.totalRamGb * 0.85;
+    // Filter to models that fit in RAM — same threshold as hardware recommendation
+    // Apple Silicon unified memory handles these well, no aggressive headroom needed
     const recommended = catalog
-      .filter((m) => m.ramGb <= maxRam)
+      .filter((m) => m.ramGb <= hardware.totalRamGb)
       .sort((a, b) => b.ramGb - a.ramGb) // Biggest that fits = best quality
       .slice(0, 12);
     res.json({ models: recommended, hardware });

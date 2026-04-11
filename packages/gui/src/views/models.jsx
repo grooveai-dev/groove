@@ -125,7 +125,7 @@ function SearchResult({ result, onExpand, expanded }) {
 }
 
 // ---- File Picker (quantization variants) ----
-function FilePicker({ repoId, onDownload }) {
+function FilePicker({ repoId, onDownload, systemRamGb }) {
   const [files, setFiles] = useState(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(null);
@@ -161,21 +161,40 @@ function FilePicker({ repoId, onDownload }) {
 
   return (
     <div className="pl-6 pr-4 pb-2 space-y-1.5">
-      {files.map((f) => (
-        <div key={f.filename} className="flex items-center gap-2 py-1.5 px-3 rounded-md bg-surface-2 text-xs font-sans">
-          <span className="font-mono text-text-1 truncate flex-1">{f.filename}</span>
-          {f.quantization && <Badge variant="subtle" className="text-2xs">{f.quantization}</Badge>}
-          <span className="text-text-3 text-2xs w-16 text-right">{formatBytes(f.size)}</span>
-          {f.estimatedRamGb && <span className="text-text-4 text-2xs w-14 text-right">~{f.estimatedRamGb}GB</span>}
-          <button
-            onClick={() => handleDownload(f)}
-            disabled={downloading === f.filename}
-            className="p-1 rounded text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
-          >
-            {downloading === f.filename ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-          </button>
-        </div>
-      ))}
+      {files.map((f) => {
+        const canRun = !f.estimatedRamGb || !systemRamGb || f.estimatedRamGb <= systemRamGb * 0.85;
+        const tight = f.estimatedRamGb && systemRamGb && f.estimatedRamGb > systemRamGb * 0.7 && canRun;
+        return (
+          <div key={f.filename} className={cn(
+            'flex items-center gap-2 py-1.5 px-3 rounded-md text-xs font-sans',
+            canRun ? 'bg-surface-2' : 'bg-red-500/5 border border-red-500/15',
+          )}>
+            <span className="font-mono text-text-1 truncate flex-1">{f.filename}</span>
+            {f.quantization && <Badge variant="subtle" className="text-2xs">{f.quantization}</Badge>}
+            <span className="text-text-2 text-2xs w-16 text-right">{formatBytes(f.size)}</span>
+            {f.estimatedRamGb && (
+              <span className={cn(
+                'text-2xs w-20 text-right font-medium',
+                !canRun ? 'text-red-400' : tight ? 'text-yellow-400' : 'text-green-400',
+              )}>
+                ~{f.estimatedRamGb} GB RAM
+              </span>
+            )}
+            {!canRun && <span className="text-2xs text-red-400 font-medium">too large</span>}
+            <button
+              onClick={() => handleDownload(f)}
+              disabled={downloading === f.filename || !canRun}
+              className={cn(
+                'p-1 rounded transition-colors',
+                canRun ? 'text-accent hover:bg-accent/10' : 'text-text-4 cursor-not-allowed',
+                'disabled:opacity-40',
+              )}
+            >
+              {downloading === f.filename ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -366,7 +385,7 @@ export default function ModelsView() {
                       onExpand={setExpandedResult}
                     />
                     {expandedResult === r.id && (
-                      <FilePicker repoId={r.id} onDownload={() => fetchInstalled()} />
+                      <FilePicker repoId={r.id} onDownload={() => fetchInstalled()} systemRamGb={hardware?.totalRamGb} />
                     )}
                   </div>
                 ))

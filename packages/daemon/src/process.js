@@ -5,6 +5,7 @@ import { spawn as cpSpawn } from 'child_process';
 import { createWriteStream, mkdirSync, chmodSync, existsSync, readFileSync, unlinkSync } from 'fs';
 import { resolve } from 'path';
 import { getProvider, getInstalledProviders } from './providers/index.js';
+import { AgentLoop } from './agent-loop.js';
 import { validateAgentConfig } from './validate.js';
 
 // Role-specific prompt prefixes — applied during spawn regardless of entry point
@@ -195,8 +196,9 @@ export class ProcessManager {
     }
 
     // Resolve auto model routing before registering
+    // Treat missing/null/empty model as 'auto' — GUI sends empty string for "Auto" option
     let resolvedModel = config.model;
-    const isAutoRouted = config.model === 'auto';
+    const isAutoRouted = !config.model || config.model === 'auto';
 
     // Register the agent in the registry
     const agent = registry.add({
@@ -210,7 +212,7 @@ export class ProcessManager {
       const { router } = this.daemon;
       router.setMode(agent.id, 'auto');
       const rec = router.recommend(agent.id);
-      if (rec) {
+      if (rec?.model?.id) {
         resolvedModel = rec.model.id;
         registry.update(agent.id, { model: resolvedModel, routingMode: 'auto', routingReason: rec.reason });
       }
@@ -316,6 +318,71 @@ For normal file edits within your scope, proceed without review.
       }
     }
 
+    // Set up log capture (shared between CLI and agent loop paths)
+    const logDir = resolve(this.daemon.grooveDir, 'logs');
+    mkdirSync(logDir, { recursive: true });
+    const logPath = resolve(logDir, `${sanitizeFilename(agent.name)}.log`);
+    const logStream = createWriteStream(logPath, { flags: 'a', mode: 0o600 });
+
+    // ─── Agent Loop path (local models with built-in agentic runtime) ───
+    if (provider.constructor.useAgentLoop) {
+      const loopConfig = provider.getLoopConfig(spawnConfig);
+      logStream.write(`[${new Date().toISOString()}] GROOVE agent-loop: model=${loopConfig.model} api=${loopConfig.apiBase}\n`);
+
+      const loop = new AgentLoop({ daemon: this.daemon, agent, loopConfig, logStream });
+      this.handles.set(agent.id, { loop, logStream });
+      registry.update(agent.id, { status: 'running' });
+
+      // Record spawn lifecycle event
+      if (this.daemon.timeline) {
+        this.daemon.timeline.recordEvent('spawn', {
+          agentId: agent.id, agentName: agent.name, role: agent.role,
+          provider: agent.provider, model: loopConfig.model,
+        });
+      }
+
+      // Wire output events — ProcessManager handles subsystem feeding + GUI broadcast
+      loop.on('output', (output) => {
+        this._handleAgentOutput(agent.id, output);
+      });
+
+      // Wire exit — same lifecycle as CLI agents (timeline, broadcast, journalist, phase2)
+      loop.on('exit', ({ code, signal, status }) => {
+        logStream.write(`[${new Date().toISOString()}] Agent loop exited: status=${status}\n`);
+        logStream.end();
+        this.handles.delete(agent.id);
+        registry.update(agent.id, { status, pid: null });
+
+        if (this.daemon.timeline) {
+          const agentData = registry.get(agent.id);
+          const evtType = status === 'completed' ? 'complete' : status === 'crashed' ? 'crash' : 'kill';
+          this.daemon.timeline.recordEvent(evtType, {
+            agentId: agent.id, agentName: agent.name, role: agent.role,
+            finalTokens: agentData?.tokensUsed || 0, costUsd: agentData?.costUsd || 0,
+          });
+        }
+
+        this.daemon.broadcast({ type: 'agent:exit', agentId: agent.id, code: code || 0, signal, status });
+        if (this.daemon.integrations) this.daemon.integrations.refreshMcpJson();
+        if (status === 'completed' && this.daemon.journalist) this.daemon.journalist.cycle().catch(() => {});
+        this._checkPhase2(agent.id);
+      });
+
+      // Wire errors — broadcast to GUI for display
+      loop.on('error', ({ message }) => {
+        this.daemon.broadcast({
+          type: 'agent:output', agentId: agent.id,
+          data: { type: 'activity', subtype: 'error', data: message },
+        });
+      });
+
+      // Start the agent loop with the fully assembled prompt
+      loop.start(spawnConfig.prompt);
+      return agent;
+    }
+
+    // ─── CLI Spawn path (Claude Code, Codex, Gemini, Ollama CLI) ────────
+
     // Write MCP config for agent integrations (command/args only, no secrets)
     // Credentials are injected via process environment below
     let integrationEnv = {};
@@ -326,12 +393,6 @@ For normal file edits within your scope, proceed without review.
 
     const spawnCmd = provider.buildSpawnCommand(spawnConfig);
     const { command, args, env, stdin: stdinData } = spawnCmd;
-
-    // Set up log capture
-    const logDir = resolve(this.daemon.grooveDir, 'logs');
-    mkdirSync(logDir, { recursive: true });
-    const logPath = resolve(logDir, `${sanitizeFilename(agent.name)}.log`);
-    const logStream = createWriteStream(logPath, { flags: 'a', mode: 0o600 });
 
     // Log the spawn command (mask anything that looks like an API key)
     const maskArg = (a) => /^(sk-|AIza|key-|token-)/.test(a) ? '***' : a;
@@ -517,6 +578,60 @@ For normal file edits within your scope, proceed without review.
     });
 
     return agent;
+  }
+
+  /**
+   * Shared output handler for agent loop events.
+   * Feeds registry, token tracker, classifier, router, and broadcasts to GUI.
+   */
+  _handleAgentOutput(agentId, output) {
+    const { registry, tokens, classifier, router } = this.daemon;
+    const agent = registry.get(agentId);
+    if (!agent) return;
+
+    // Feed classifier for complexity tracking (informs model routing)
+    classifier.addEvent(agentId, output);
+
+    const updates = { lastActivity: new Date().toISOString() };
+
+    // Token tracking — feed subsystems with full breakdown
+    if (output.tokensUsed !== undefined && output.tokensUsed > 0) {
+      updates.tokensUsed = agent.tokensUsed + output.tokensUsed;
+      tokens.record(agentId, {
+        tokens: output.tokensUsed,
+        inputTokens: output.inputTokens,
+        outputTokens: output.outputTokens,
+        cacheReadTokens: output.cacheReadTokens,
+        cacheCreationTokens: output.cacheCreationTokens,
+        model: output.model,
+        estimatedCostUsd: output.estimatedCostUsd,
+      });
+      const tier = classifier.classify(agentId);
+      router.recordUsage(agentId, output.model || agent.model, output.tokensUsed, tier);
+    }
+
+    // Session result data (cost, duration, turns)
+    if (output.type === 'result') {
+      tokens.recordResult(agentId, {
+        costUsd: output.cost, durationMs: output.duration, turns: output.turns,
+      });
+      if (output.cost) updates.costUsd = (agent.costUsd || 0) + output.cost;
+      if (output.duration) updates.durationMs = output.duration;
+      if (output.turns) updates.turns = output.turns;
+    }
+
+    // Context window usage (0-1 scale) — drives rotation threshold
+    if (output.contextUsage !== undefined) {
+      updates.contextUsage = output.contextUsage;
+    }
+
+    // Session ID for resume support
+    if (output.sessionId) {
+      updates.sessionId = output.sessionId;
+    }
+
+    registry.update(agentId, updates);
+    this.daemon.broadcast({ type: 'agent:output', agentId, data: output });
   }
 
   /**
@@ -735,8 +850,19 @@ For normal file edits within your scope, proceed without review.
       return;
     }
 
-    const { proc, logStream } = handle;
+    const { proc, loop, logStream } = handle;
 
+    // Agent loop path — clean async stop
+    if (loop) {
+      await loop.stop();
+      // Exit handler already fired; finish cleanup
+      this.handles.delete(agentId);
+      this.daemon.registry.remove(agentId);
+      this.daemon.locks.release(agentId);
+      return;
+    }
+
+    // CLI process path
     return new Promise((resolveKill) => {
       // Give the process 5s to exit gracefully
       const forceTimer = setTimeout(() => {
@@ -762,6 +888,31 @@ For normal file edits within your scope, proceed without review.
         resolveKill();
       }
     });
+  }
+
+  /**
+   * Send a message to a running agent loop.
+   * Returns true if the message was sent, false if the agent doesn't have an active loop.
+   */
+  async sendMessage(agentId, message) {
+    const handle = this.handles.get(agentId);
+    if (!handle?.loop) return false;
+
+    const { loop } = handle;
+    if (!loop.running) return false;
+
+    // Fire and forget — the loop processes the message asynchronously
+    // and emits output events that flow through the normal handler
+    loop.sendMessage(message).catch(() => {});
+    return true;
+  }
+
+  /**
+   * Check if an agent is using the agent loop runtime (vs CLI process).
+   */
+  hasAgentLoop(agentId) {
+    const handle = this.handles.get(agentId);
+    return !!(handle?.loop);
   }
 
   async killAll() {

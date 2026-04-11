@@ -40,12 +40,13 @@ export class GeminiProvider extends Provider {
     // Without this, Gemini in headless mode can only output text
     args.push('--yolo');
 
-    if (agent.prompt) args.push(agent.prompt);
-
+    // Pass prompt via stdin to avoid OS arg length limits
+    // (intro context + role prompt + skill content can be very long)
     return {
       command: 'gemini',
       args,
       env: agent.apiKey ? { GEMINI_API_KEY: agent.apiKey } : {},
+      stdin: agent.prompt || undefined,
     };
   }
 

@@ -51,7 +51,7 @@ export class Registry extends EventEmitter {
     if (!agent) return null;
 
     // Only allow known fields to prevent prototype pollution
-    const SAFE_FIELDS = ['status', 'pid', 'tokensUsed', 'contextUsage', 'lastActivity', 'model', 'name', 'routingMode', 'routingReason', 'sessionId', 'skills', 'integrations', 'workingDir', 'effort', 'costUsd', 'durationMs', 'turns', 'inputTokens', 'outputTokens', 'teamId'];
+    const SAFE_FIELDS = ['status', 'pid', 'tokensUsed', 'contextUsage', 'lastActivity', 'model', 'provider', 'name', 'routingMode', 'routingReason', 'sessionId', 'skills', 'integrations', 'workingDir', 'effort', 'costUsd', 'durationMs', 'turns', 'inputTokens', 'outputTokens', 'teamId'];
     for (const key of Object.keys(updates)) {
       if (SAFE_FIELDS.includes(key)) {
         agent[key] = updates[key];

@@ -5,12 +5,14 @@ import { ClaudeCodeProvider } from './claude-code.js';
 import { CodexProvider } from './codex.js';
 import { GeminiProvider } from './gemini.js';
 import { OllamaProvider } from './ollama.js';
+import { LocalProvider } from './local.js';
 
 const providers = {
   'claude-code': new ClaudeCodeProvider(),
   'codex': new CodexProvider(),
   'gemini': new GeminiProvider(),
   'ollama': new OllamaProvider(),
+  'local': new LocalProvider(),
 };
 
 export function getProvider(name) {
@@ -24,6 +26,8 @@ export function listProviders() {
     installed: p.constructor.isInstalled(),
     authType: p.constructor.authType,
     envKey: p.constructor.envKey || null,
+    authHint: p.constructor.authHint || null,
+    authStatus: p.constructor.isAuthenticated?.() || null,
     models: p.constructor.models,
     installCommand: p.constructor.installCommand(),
     canHotSwap: p.switchModel ? p.switchModel() : false,

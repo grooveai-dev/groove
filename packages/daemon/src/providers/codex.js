@@ -1,7 +1,10 @@
 // GROOVE — Codex Provider (OpenAI)
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
+import { existsSync, readFileSync } from 'fs';
+import { resolve } from 'path';
+import { homedir } from 'os';
 import { Provider } from './base.js';
 
 export class CodexProvider extends Provider {
@@ -10,6 +13,8 @@ export class CodexProvider extends Provider {
   static command = 'codex';
   static authType = 'api-key';
   static envKey = 'OPENAI_API_KEY';
+  // Auth hint — Codex uses its own auth system, not just env vars
+  static authHint = 'Codex requires `codex login` — run: echo "YOUR_KEY" | codex login --with-api-key';
   static models = [
     { id: 'gpt-5.4-pro', name: 'GPT-5.4 Pro', tier: 'heavy', pricing: { input: 0.015, output: 0.06 } },
     { id: 'gpt-5.4', name: 'GPT-5.4', tier: 'heavy', pricing: { input: 0.005, output: 0.02 } },
@@ -30,6 +35,51 @@ export class CodexProvider extends Provider {
 
   static installCommand() {
     return 'npm i -g @openai/codex';
+  }
+
+  /**
+   * Check if Codex has valid authentication.
+   * Codex uses its own auth at ~/.codex/auth.json (NOT just OPENAI_API_KEY env var).
+   * Users must run: codex login (ChatGPT) or: echo "key" | codex login --with-api-key
+   */
+  /**
+   * Auto-login to Codex CLI when user saves an API key in GROOVE.
+   * Pipes the key to `codex login --with-api-key` so users don't need
+   * to know about Codex's separate auth system.
+   */
+  static async onKeySet(key) {
+    if (!CodexProvider.isInstalled()) return { ok: false, error: 'Codex not installed' };
+    return new Promise((res) => {
+      const proc = spawn('codex', ['login', '--with-api-key'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 15000,
+      });
+      let stderr = '';
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.stdin.write(key);
+      proc.stdin.end();
+      proc.on('exit', (code) => {
+        res(code === 0
+          ? { ok: true, message: 'Codex authenticated via API key' }
+          : { ok: false, error: stderr.slice(-200) || `codex login failed (exit ${code})` });
+      });
+      proc.on('error', (err) => res({ ok: false, error: err.message }));
+      setTimeout(() => { try { proc.kill(); } catch {} res({ ok: false, error: 'Timeout' }); }, 15000);
+    });
+  }
+
+  static isAuthenticated() {
+    const authPath = resolve(homedir(), '.codex', 'auth.json');
+    if (!existsSync(authPath)) return { authenticated: false, reason: 'No auth found. Run: codex login' };
+    try {
+      const auth = JSON.parse(readFileSync(authPath, 'utf8'));
+      if (auth.auth_mode === 'chatgpt' && auth.tokens?.id_token) return { authenticated: true, method: 'chatgpt' };
+      if (auth.auth_mode === 'api-key' && auth.OPENAI_API_KEY) return { authenticated: true, method: 'api-key' };
+      if (auth.OPENAI_API_KEY) return { authenticated: true, method: 'api-key' };
+      return { authenticated: false, reason: 'Auth expired or missing. Run: codex login' };
+    } catch {
+      return { authenticated: false, reason: 'Auth file corrupted. Run: codex login' };
+    }
   }
 
   buildSpawnCommand(agent) {

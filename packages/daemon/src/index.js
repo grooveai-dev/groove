@@ -34,6 +34,8 @@ import { FileWatcher } from './filewatcher.js';
 import { TimelineTracker } from './timeline.js';
 import { TerminalManager } from './terminal-pty.js';
 import { GatewayManager } from './gateways/manager.js';
+import { ModelManager } from './model-manager.js';
+import { LlamaServerManager } from './llama-server.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 
 const DEFAULT_PORT = 31415;
@@ -129,6 +131,8 @@ export class Daemon {
     this.fileWatcher = new FileWatcher(this);
     this.terminalManager = new TerminalManager(this);
     this.gateways = new GatewayManager(this);
+    this.modelManager = new ModelManager(this);
+    this.llamaServer = new LlamaServerManager(this);
 
     // HTTP + WebSocket server
     this.app = express();
@@ -400,8 +404,9 @@ export class Daemon {
     this.fileWatcher.unwatchAll();
     this.terminalManager.killAll();
 
-    // Kill all agent processes
+    // Kill all agent processes and stop inference servers
     await this.processes.killAll();
+    await this.llamaServer.stopAll();
 
     // Clean up PID and host files
     if (existsSync(this.pidFile)) {

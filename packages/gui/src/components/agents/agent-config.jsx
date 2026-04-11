@@ -186,8 +186,13 @@ export function AgentConfig({ agent }) {
   async function handleModelSwap(providerId, modelId) {
     setSelectedModel(modelId);
     try {
-      await api.patch(`/agents/${agent.id}`, { model: modelId });
-      addToast('success', `Model → ${modelId}`);
+      const updates = { model: modelId };
+      // Switch provider if selecting a model from a different provider
+      if (providerId && providerId !== agent.provider) {
+        updates.provider = providerId;
+      }
+      await api.patch(`/agents/${agent.id}`, updates);
+      addToast('success', `Model → ${modelId}${updates.provider ? ` (${providerId})` : ''}`);
     } catch (err) {
       addToast('error', 'Model swap failed', err.message);
     }

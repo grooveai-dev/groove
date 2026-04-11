@@ -228,17 +228,99 @@ export function createApi(app, daemon) {
     }
   });
 
+  // --- Local Models (GGUF via HuggingFace) ---
+
+  app.get('/api/models/installed', (req, res) => {
+    const installed = daemon.modelManager.getInstalled();
+    const llamaStatus = daemon.llamaServer.getStatus();
+    res.json({ models: installed, llamaServer: llamaStatus });
+  });
+
+  app.get('/api/models/search', async (req, res) => {
+    try {
+      const query = req.query.q || req.query.query || '';
+      if (!query) return res.status(400).json({ error: 'query parameter (q) is required' });
+      const results = await daemon.modelManager.search(query, {
+        limit: parseInt(req.query.limit) || 20,
+      });
+      res.json(results);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/models/:repoId(*)/files', async (req, res) => {
+    try {
+      const files = await daemon.modelManager.getModelFiles(req.params.repoId);
+      res.json(files);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/models/download', async (req, res) => {
+    try {
+      const { repoId, filename } = req.body;
+      if (!repoId || !filename) return res.status(400).json({ error: 'repoId and filename are required' });
+      // Start download in background — progress via WebSocket
+      daemon.modelManager.download(repoId, filename).catch(() => {});
+      daemon.audit.log('model.download', { repoId, filename });
+      res.json({ started: true, filename, repoId });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/models/download/cancel', (req, res) => {
+    const { filename } = req.body;
+    if (!filename) return res.status(400).json({ error: 'filename is required' });
+    const cancelled = daemon.modelManager.cancelDownload(filename);
+    res.json({ cancelled });
+  });
+
+  app.get('/api/models/downloads', (req, res) => {
+    res.json(daemon.modelManager.getActiveDownloads());
+  });
+
+  app.delete('/api/models/:id', (req, res) => {
+    const deleted = daemon.modelManager.deleteModel(req.params.id);
+    if (deleted) {
+      daemon.audit.log('model.delete', { id: req.params.id });
+      res.json({ ok: true });
+    } else {
+      res.status(404).json({ error: 'Model not found' });
+    }
+  });
+
+  app.get('/api/models/recommend', (req, res) => {
+    const ramGb = parseInt(req.query.ram) || 16;
+    const quant = daemon.modelManager.recommendQuantization('7B', ramGb);
+    res.json({ recommendedQuantization: quant, ramGb });
+  });
+
+  app.get('/api/llama/status', (req, res) => {
+    res.json(daemon.llamaServer.getStatus());
+  });
+
   // --- Credentials ---
 
   app.get('/api/credentials', (req, res) => {
     res.json(daemon.credentials.listProviders());
   });
 
-  app.post('/api/credentials/:provider', (req, res) => {
+  app.post('/api/credentials/:provider', async (req, res) => {
     if (!req.body.key) return res.status(400).json({ error: 'key is required' });
     daemon.credentials.setKey(req.params.provider, req.body.key);
     daemon.audit.log('credential.set', { provider: req.params.provider });
-    res.json({ ok: true, masked: daemon.credentials.mask(req.body.key) });
+
+    // Provider-specific auth setup (e.g., Codex auto-login)
+    const provider = getProvider(req.params.provider);
+    let authResult = null;
+    if (provider?.constructor?.onKeySet) {
+      try { authResult = await provider.constructor.onKeySet(req.body.key); } catch { /* best effort */ }
+    }
+
+    res.json({ ok: true, masked: daemon.credentials.mask(req.body.key), auth: authResult });
   });
 
   app.delete('/api/credentials/:provider', (req, res) => {
@@ -363,7 +445,8 @@ export function createApi(app, daemon) {
     }
   });
 
-  // Instruct an agent — resumes session if possible, falls back to rotation
+  // Instruct an agent — send message to agent loop, resume session, or rotate
+  // Agent loop = direct message to running loop (local models)
   // Resume = zero cold-start (uses --resume SESSION_ID)
   // Rotation = full handoff brief (only for degradation or no session)
   app.post('/api/agents/:id/instruct', async (req, res) => {
@@ -375,8 +458,17 @@ export function createApi(app, daemon) {
       const agent = daemon.registry.get(req.params.id);
       if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-      // Try session resume first (zero cold-start)
-      // Falls back to rotation if no session ID or provider doesn't support resume
+      // Agent loop path — send message directly to the running loop
+      if (daemon.processes.hasAgentLoop(req.params.id)) {
+        const sent = await daemon.processes.sendMessage(req.params.id, message.trim());
+        if (sent) {
+          daemon.audit.log('agent.chat', { id: req.params.id });
+          return res.json({ id: agent.id, status: 'message_sent' });
+        }
+        // Loop exists but not running — fall through to resume/rotate
+      }
+
+      // CLI agent path — session resume or rotation
       const resumed = !!agent.sessionId;
       const newAgent = resumed
         ? await daemon.processes.resume(req.params.id, message.trim())
@@ -390,6 +482,7 @@ export function createApi(app, daemon) {
   });
 
   // Query an agent (headless one-shot, agent keeps running)
+  // For agent loop agents: sends message directly to the loop
   app.post('/api/agents/:id/query', async (req, res) => {
     try {
       const { message } = req.body;
@@ -398,6 +491,12 @@ export function createApi(app, daemon) {
       }
       const agent = daemon.registry.get(req.params.id);
       if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+      // Agent loop agents: send message directly (they're interactive)
+      if (daemon.processes.hasAgentLoop(req.params.id)) {
+        const sent = await daemon.processes.sendMessage(req.params.id, message.trim());
+        return res.json({ response: sent ? 'Message sent to agent' : 'Agent not running', agentId: agent.id, agentName: agent.name });
+      }
 
       // Build context about the agent's work
       const activity = daemon.classifier?.agentWindows?.[agent.id] || [];

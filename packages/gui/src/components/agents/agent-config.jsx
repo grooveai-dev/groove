@@ -271,9 +271,9 @@ export function AgentConfig({ agent }) {
           {/* Quick model switch for current provider */}
           {currentProvider?.models?.length > 1 && (
             <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-border-subtle">
-              {currentProvider.models.map((m) => {
+              {currentProvider.models.filter(m => !m.disabled).map((m) => {
                 const isCurrent = m.id === agent.model;
-                const canSelect = !isAlive || currentProvider.canHotSwap;
+                const canSelect = true;
                 return (
                   <button
                     key={m.id}
@@ -370,9 +370,9 @@ export function AgentConfig({ agent }) {
                     )}
 
                     {/* Models */}
-                    {available && models.length > 0 && models.map((m) => {
+                    {available && models.filter(m => !m.disabled).length > 0 && models.filter(m => !m.disabled).map((m) => {
                       const isCurrent = p.id === agent.provider && m.id === agent.model;
-                      const canSelect = !isAlive;
+                      const canSelect = true;
                       return (
                         <button
                           key={m.id}
@@ -400,7 +400,7 @@ export function AgentConfig({ agent }) {
         {isAlive && (
           <div className="flex items-center gap-1.5 text-2xs text-text-3 font-sans mt-1.5">
             <AlertCircle size={10} />
-            <span>Stop agent to switch providers.</span>
+            <span>Model changes apply on next rotation or respawn.</span>
           </div>
         )}
       </ConfigSection>

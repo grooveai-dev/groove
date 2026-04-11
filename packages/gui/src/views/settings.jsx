@@ -102,18 +102,22 @@ function ProviderCard({ provider, onKeyChange }) {
     }
   }
 
-  // Ollama card
+  // Local models card
   if (isLocal) {
+    const installedCount = provider.models?.filter(m => !m.disabled)?.length || 0;
+    const goToModels = () => useGrooveStore.getState().setActiveView('models');
     return (
       <div className="flex flex-col rounded-lg border border-border-subtle bg-surface-1 overflow-hidden min-w-[220px]">
         <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border-subtle">
           <StatusDot status={isReady ? 'running' : 'crashed'} size="sm" />
           <span className="text-[13px] font-semibold text-text-0 font-sans">{provider.name}</span>
           <div className="flex-1" />
-          {isReady ? (
-            <Badge variant="success" className="text-2xs gap-1"><Check size={8} /> Ready</Badge>
+          {isReady && installedCount > 0 ? (
+            <Badge variant="success" className="text-2xs gap-1"><Check size={8} /> {installedCount} models</Badge>
+          ) : isReady ? (
+            <Badge variant="warning" className="text-2xs">No models pulled</Badge>
           ) : (
-            <Badge variant="default" className="text-2xs">Not installed</Badge>
+            <Badge variant="default" className="text-2xs">Ollama not installed</Badge>
           )}
         </div>
         <div className="flex-1">
@@ -122,17 +126,40 @@ function ProviderCard({ provider, onKeyChange }) {
           ) : (
             <div className="px-4 py-3 flex flex-col h-full">
               <div className="text-xs text-text-3 font-sans flex-1">
-                {isReady ? `${provider.models?.length || 0} models available` : 'Local AI models — free, private, no API key'}
+                {isReady && installedCount > 0
+                  ? 'Full agentic runtime — tool calling, context rotation, zero cloud cost'
+                  : isReady
+                    ? 'Ollama is running but no models pulled yet. Pull a model or browse the Models tab.'
+                    : 'Run any open-source model on your machine — free, private, fully offline'}
               </div>
-              <Button
-                variant={isReady ? 'secondary' : 'primary'}
-                size="sm"
-                onClick={() => setOllamaOpen(true)}
-                className="w-full h-7 text-2xs gap-1.5 mt-3"
-              >
-                <Cpu size={11} />
-                {isReady ? 'Manage Models' : 'Set Up Ollama'}
-              </Button>
+              {!isReady ? (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setOllamaOpen(true)}
+                  className="w-full h-7 text-2xs gap-1.5 mt-3"
+                >
+                  <Cpu size={11} /> Set Up Ollama
+                </Button>
+              ) : installedCount === 0 ? (
+                <div className="flex gap-2 mt-3">
+                  <Button variant="primary" size="sm" onClick={() => setOllamaOpen(true)} className="flex-1 h-7 text-2xs gap-1.5">
+                    <Cpu size={11} /> Pull Models
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={goToModels} className="flex-1 h-7 text-2xs gap-1.5">
+                    Browse HuggingFace
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2 mt-3">
+                  <Button variant="secondary" size="sm" onClick={() => setOllamaOpen(true)} className="flex-1 h-7 text-2xs gap-1.5">
+                    <Cpu size={11} /> Manage
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={goToModels} className="flex-1 h-7 text-2xs gap-1.5">
+                    Browse Models
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>

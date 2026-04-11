@@ -52,15 +52,37 @@ const TOOL_CALLING_MODELS = new Set([
 
 export class LocalProvider extends Provider {
   static name = 'local';
-  static displayName = 'Local Models (Agent Loop)';
+  static displayName = 'Local Models';
   static command = 'ollama';
   static authType = 'local';
   static useAgentLoop = true;
 
+  // Only return models that are actually installed and ready to use
   static get models() {
-    return OllamaProvider.models;
+    const installed = [];
+
+    // Ollama installed models
+    if (LocalProvider._hasOllama()) {
+      try {
+        const ollamaModels = OllamaProvider.getInstalledModels();
+        for (const m of ollamaModels) {
+          installed.push({
+            id: m.id, name: m.name || m.id,
+            tier: m.tier || 'medium', category: m.category || 'general',
+          });
+        }
+      } catch { /* Ollama not running */ }
+    }
+
+    // If nothing installed, show a hint instead of a blank list
+    if (installed.length === 0) {
+      return [{ id: '_none', name: 'No models installed — pull one with: ollama pull qwen2.5-coder:7b', tier: 'medium', disabled: true }];
+    }
+
+    return installed;
   }
 
+  // Full catalog for the Models browser (includes uninstalled)
   static get catalog() {
     return OllamaProvider.catalog;
   }

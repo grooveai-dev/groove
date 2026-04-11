@@ -173,8 +173,8 @@ export class ProcessManager {
       if (installed.length === 0) {
         throw new Error('No AI providers installed. Install Claude Code, Gemini CLI, Codex, or Ollama first.');
       }
-      // Priority: claude-code > gemini > codex > ollama
-      const priority = ['claude-code', 'gemini', 'codex', 'ollama'];
+      // Priority: claude-code > gemini > codex > local (local replaces ollama in UI)
+      const priority = ['claude-code', 'gemini', 'codex', 'local', 'ollama'];
       const best = priority.find((p) => installed.some((i) => i.id === p)) || installed[0].id;
       providerName = best;
     }

@@ -1,7 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { memo } from 'react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
-import { ScrollArea } from '../ui/scroll-area';
 import { fmtNum, fmtPct, timeAgo } from '../../lib/format';
 import { cn } from '../../lib/cn';
 import { HEX } from '../../lib/theme-hex';
@@ -55,53 +54,40 @@ function RotationTab({ tokens, rotation }) {
   const hypothetical = totalUsed + totalSaved;
 
   return (
-    <ScrollArea className="flex-1">
-      <div className="p-3 space-y-4">
-        {/* Big numbers */}
-        <div className="flex gap-4">
-          <div>
-            <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Rotations</div>
-            <div className="text-xl font-mono font-semibold text-text-0 tabular-nums leading-none">
-              {rotation?.totalRotations || 0}
-            </div>
-          </div>
-          <div>
-            <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Saved</div>
-            <div className="text-xl font-mono font-semibold text-success tabular-nums leading-none">
-              {fmtNum(totalSaved)}
-            </div>
-            {hypothetical > 0 && (
-              <div className="text-2xs font-mono text-text-3 mt-0.5">
-                {fmtPct((totalSaved / hypothetical) * 100)} of total
-              </div>
-            )}
-          </div>
+    <div className="p-3 space-y-4">
+      <div className="flex gap-4">
+        <div>
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Rotations</div>
+          <div className="text-xl font-mono font-semibold text-text-0 tabular-nums leading-none">{rotation?.totalRotations || 0}</div>
         </div>
-
-        {/* Savings breakdown */}
-        <div className="space-y-2">
-          <SavingsBar label="Rotation" value={savings.fromRotation || 0} total={hypothetical} color={HEX.accent} />
-          <SavingsBar label="Conflict prevention" value={savings.fromConflictPrevention || 0} total={hypothetical} color={HEX.purple} />
-          <SavingsBar label="Cold-start skip" value={savings.fromColdStartSkip || 0} total={hypothetical} color={HEX.info} />
+        <div>
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Saved</div>
+          <div className="text-xl font-mono font-semibold text-success tabular-nums leading-none">{fmtNum(totalSaved)}</div>
+          {hypothetical > 0 && (
+            <div className="text-2xs font-mono text-text-3 mt-0.5">{fmtPct((totalSaved / hypothetical) * 100)} of total</div>
+          )}
         </div>
-
-        {/* Rotation history */}
-        {rotation?.history?.length > 0 && (
-          <div>
-            <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1.5">Recent</div>
-            <div className="space-y-1">
-              {rotation.history.slice(-8).reverse().map((r, i) => (
-                <div key={i} className="flex items-center gap-2 text-xs font-mono px-2 py-1 bg-surface-0 rounded">
-                  <span className="text-text-1 font-medium capitalize truncate flex-1">{r.agentName || r.role}</span>
-                  <span className="text-text-3 tabular-nums">{fmtPct((r.contextUsage || 0) * 100)}</span>
-                  <span className="text-text-4">{timeAgo(r.timestamp)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
-    </ScrollArea>
+      <div className="space-y-2">
+        <SavingsBar label="Rotation" value={savings.fromRotation || 0} total={hypothetical} color={HEX.accent} />
+        <SavingsBar label="Conflict prevention" value={savings.fromConflictPrevention || 0} total={hypothetical} color={HEX.purple} />
+        <SavingsBar label="Cold-start skip" value={savings.fromColdStartSkip || 0} total={hypothetical} color={HEX.info} />
+      </div>
+      {rotation?.history?.length > 0 && (
+        <div>
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1.5">Recent</div>
+          <div className="space-y-1">
+            {rotation.history.slice(-8).reverse().map((r, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs font-mono px-2 py-1 bg-surface-0 rounded">
+                <span className="text-text-1 font-medium capitalize truncate flex-1">{r.agentName || r.role}</span>
+                <span className="text-text-3 tabular-nums">{fmtPct((r.contextUsage || 0) * 100)}</span>
+                <span className="text-text-4">{timeAgo(r.timestamp)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -122,7 +108,7 @@ function AdaptiveTab({ adaptive }) {
   }
 
   return (
-    <ScrollArea className="flex-1">
+    <div>
       <div className="p-3 space-y-1">
         {/* Header */}
         <div className="flex items-center gap-2 px-2 pb-1 text-2xs font-mono text-text-4 uppercase tracking-wider">
@@ -190,7 +176,7 @@ function AdaptiveTab({ adaptive }) {
           );
         })}
       </div>
-    </ScrollArea>
+    </div>
   );
 }
 
@@ -205,7 +191,7 @@ function JournalistTab({ journalist }) {
   }
 
   return (
-    <ScrollArea className="flex-1">
+    <div>
       <div className="p-3 space-y-3">
         {/* Status row */}
         <div className="flex items-center gap-3">
@@ -274,7 +260,7 @@ function JournalistTab({ journalist }) {
           </div>
         )}
       </div>
-    </ScrollArea>
+    </div>
   );
 }
 
@@ -297,14 +283,20 @@ const IntelPanel = memo(function IntelPanel({ tokens, rotation, adaptive, journa
         </TabsTrigger>
       </TabsList>
 
-      <TabsContent value="rotation" className="flex-1 min-h-0 overflow-hidden">
-        <RotationTab tokens={tokens} rotation={rotation} />
+      <TabsContent value="rotation" className="flex-1 min-h-0 relative">
+        <div className="absolute inset-0 overflow-y-auto">
+          <RotationTab tokens={tokens} rotation={rotation} />
+        </div>
       </TabsContent>
-      <TabsContent value="adaptive" className="flex-1 min-h-0 overflow-hidden">
-        <AdaptiveTab adaptive={adaptive} />
+      <TabsContent value="adaptive" className="flex-1 min-h-0 relative">
+        <div className="absolute inset-0 overflow-y-auto">
+          <AdaptiveTab adaptive={adaptive} />
+        </div>
       </TabsContent>
-      <TabsContent value="journalist" className="flex-1 min-h-0 overflow-hidden">
-        <JournalistTab journalist={journalist} />
+      <TabsContent value="journalist" className="flex-1 min-h-0 relative">
+        <div className="absolute inset-0 overflow-y-auto">
+          <JournalistTab journalist={journalist} />
+        </div>
       </TabsContent>
     </Tabs>
   );

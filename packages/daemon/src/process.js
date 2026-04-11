@@ -258,14 +258,24 @@ export class ProcessManager {
     const rolePrompt = ROLE_PROMPTS[agent.role];
     if (rolePrompt) {
       if (!spawnConfig.prompt) {
-        spawnConfig.prompt = rolePrompt + 'No task has been assigned yet. Introduce yourself briefly and ask the user what they would like you to work on. Stay focused — do not analyze the codebase until given a task.';
+        spawnConfig.prompt = rolePrompt + `IMPORTANT: No task has been assigned yet. You MUST wait for the user to tell you what to do.
+
+Do NOT:
+- Start building, coding, or creating anything
+- Continue or improve previous agents' work
+- Treat the project map or existing files as your task
+- Analyze the codebase proactively
+
+DO: Introduce yourself in one sentence and ask the user what they would like you to work on. Then wait.`;
       } else if (spawnConfig.prompt.startsWith('# Agent Handoff Brief')) {
         spawnConfig.prompt += '\n\n## Role Constraints\n\n' + rolePrompt.trim();
       } else {
         spawnConfig.prompt = rolePrompt + 'Task: ' + spawnConfig.prompt;
       }
     } else if (!spawnConfig.prompt) {
-      spawnConfig.prompt = `You are a ${agent.role} agent. No task has been assigned yet. Introduce yourself briefly and ask the user what they would like you to work on. Stay focused — do not analyze the codebase until given a task.`;
+      spawnConfig.prompt = `You are a ${agent.role} agent.
+
+IMPORTANT: No task has been assigned yet. You MUST wait for the user to tell you what to do. Do NOT start building, coding, or continuing previous work. Do NOT treat existing files or the project map as your task. Introduce yourself in one sentence and ask the user what they would like you to work on. Then wait.`;
     }
 
     // Inject skill content into the prompt

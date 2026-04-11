@@ -16,9 +16,10 @@ export class Introducer {
   generateContext(newAgent, options = {}) {
     const { taskNegotiation } = options;
     const agents = this.daemon.registry.getAll();
-    // Include ALL agents (running + completed) so new agents know what the team did
+    // Only include ACTIVE agents — not completed/killed ones from previous sessions
+    // Completed agents' work is captured in the journalist's project map, not here
     const others = agents.filter((a) => a.id !== newAgent.id &&
-      (a.status === 'running' || a.status === 'starting' || a.status === 'completed'));
+      (a.status === 'running' || a.status === 'starting'));
 
     const lines = [
       `# GROOVE Agent Context`,
@@ -150,7 +151,9 @@ export class Introducer {
     const mapPath = resolve(this.daemon.projectDir, 'GROOVE_PROJECT_MAP.md');
     if (existsSync(mapPath)) {
       lines.push('');
-      lines.push(`Read GROOVE_PROJECT_MAP.md for current project context from The Journalist.`);
+      lines.push(`## Background Context`);
+      lines.push('');
+      lines.push(`GROOVE_PROJECT_MAP.md contains a structural overview of this project. This is BACKGROUND INFORMATION ONLY — it is NOT your task. Do not treat existing files or previous work as something you should continue or improve unless the user explicitly asks you to.`);
     }
 
     // Codebase structure injection — give agents instant orientation

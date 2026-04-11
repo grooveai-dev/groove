@@ -135,6 +135,15 @@ export const useGrooveStore = create((set, get) => ({
         case 'agent:output': {
           const { agentId, data } = msg;
 
+          // Clear thinking indicator when agent responds
+          if (get().thinkingAgents.has(agentId)) {
+            set((s) => {
+              const next = new Set(s.thinkingAgents);
+              next.delete(agentId);
+              return { thinkingAgents: next };
+            });
+          }
+
           // Separate text content from tool calls
           let chatText = '';
           let activityText = '';
@@ -596,6 +605,9 @@ export const useGrooveStore = create((set, get) => ({
     });
   },
 
+  // Track which agents are thinking (sent a message, waiting for response)
+  thinkingAgents: new Set(),
+
   async instructAgent(id, message) {
     const agent = get().agents.find((a) => a.id === id);
     const isAlive = agent && (agent.status === 'running' || agent.status === 'starting');
@@ -605,6 +617,11 @@ export const useGrooveStore = create((set, get) => ({
       get().addChatMessage(id, 'user', message, false);
       try {
         const data = await api.post(`/agents/${id}/query`, { message });
+        // Agent loop agents: response comes via WebSocket, show thinking indicator
+        if (data.status === 'pending' || data.response === 'Message sent to agent') {
+          set((s) => ({ thinkingAgents: new Set([...s.thinkingAgents, id]) }));
+          return data;
+        }
         get().addChatMessage(id, 'agent', data.response);
         return data;
       } catch (err) {

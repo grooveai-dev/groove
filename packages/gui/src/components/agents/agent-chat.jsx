@@ -105,6 +105,7 @@ export function AgentChat({ agent }) {
   const activityLog = useGrooveStore((s) => s.activityLog[agent.id]) || EMPTY;
   const instructAgent = useGrooveStore((s) => s.instructAgent);
   const queryAgent = useGrooveStore((s) => s.queryAgent);
+  const isThinking = useGrooveStore((s) => s.thinkingAgents?.has(agent.id));
 
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -188,7 +189,7 @@ export function AgentChat({ agent }) {
           if (msg.from === 'system') return <SystemMessage key={msg.key || i} msg={msg} />;
           return <AgentMessage key={msg.key || i} msg={msg} agent={agent} />;
         })}
-        {sending && <TypingIndicator name={agent.name} />}
+        {(sending || isThinking) && <TypingIndicator name={agent.name} />}
       </div>
 
       {/* ── Input area ──────────────────────────────────── */}

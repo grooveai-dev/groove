@@ -470,6 +470,7 @@ export function AgentFeed({ agent }) {
   const activityLog = useGrooveStore((s) => s.activityLog[agent.id]) || EMPTY;
   const instructAgent = useGrooveStore((s) => s.instructAgent);
   const queryAgent = useGrooveStore((s) => s.queryAgent);
+  const isThinking = useGrooveStore((s) => s.thinkingAgents?.has(agent.id));
 
   const [input, setInput] = useState('');
   const [mode, setMode] = useState('instruct'); // instruct | query
@@ -626,7 +627,7 @@ export function AgentFeed({ agent }) {
           if (item.from === 'system') return <SystemMessage key={`msg-${i}`} msg={item} />;
           return <AgentMessage key={`msg-${i}`} msg={item} agent={agent} />;
         })}
-        {sending && (
+        {(sending || isThinking) && (
           <div className="flex items-center gap-2 ml-7 py-2">
             <div className="w-5 h-5 rounded-md bg-accent/12 flex items-center justify-center">
               <Code2 size={10} className="text-accent" />

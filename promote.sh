@@ -106,7 +106,16 @@ echo -e "  Version: ${GREEN}v${VERSION}${RESET}"
 # ── Commit + tag ──────────────────────────────────────────
 
 step "Commit"
-git add -A
+
+# Stage tracked files + new source files (not runtime state)
+# The whitelist .gitignore protects us, but explicit staging is safer
+git add -u                          # updated tracked files
+git add packages/ promote.sh        # new files in source dirs
+git add .gitignore .npmignore package.json package-lock.json CLAUDE.md README.md CHANGELOG.md LICENSE 2>/dev/null
+
+git diff --cached --stat
+echo ""
+
 git commit -m "v${VERSION}"
 git tag "v${VERSION}"
 echo -e "  Tagged: ${DIM}v${VERSION}${RESET}"

@@ -250,6 +250,20 @@ export class ProcessManager {
       spawnConfig.prompt = `You are a ${agent.role} agent. No task has been assigned yet. Introduce yourself briefly and ask the user what they would like you to work on. Stay focused — do not analyze the codebase until given a task.`;
     }
 
+    // Inject skill content into the prompt
+    if (config.skills?.length > 0 && this.daemon.skills) {
+      const skillSections = [];
+      for (const skillId of config.skills) {
+        const content = this.daemon.skills.getContent(skillId);
+        if (content) {
+          skillSections.push(`## Skill: ${skillId}\n\n${content}`);
+        }
+      }
+      if (skillSections.length > 0) {
+        spawnConfig.prompt += '\n\n' + skillSections.join('\n\n');
+      }
+    }
+
     // Apply PM review instructions for Auto permission mode
     // Agents call the PM endpoint before risky operations for AI review
     const permission = config.permission || 'full';

@@ -148,9 +148,23 @@ export function createApi(app, daemon) {
   app.post('/api/providers/ollama/pull', async (req, res) => {
     const { model } = req.body;
     if (!model) return res.status(400).json({ error: 'model is required' });
-    if (!OllamaProvider.isInstalled()) return res.status(400).json({ error: 'Ollama is not installed' });
-    const broadcast = daemon.broadcast || (() => {});
+    if (!OllamaProvider.isInstalled()) return res.status(400).json({ error: 'Ollama is not installed. Install with: brew install ollama' });
+    const broadcast = daemon.broadcast.bind(daemon);
     try {
+      // Auto-start Ollama server if not running
+      const running = await OllamaProvider.isServerRunning();
+      if (!running) {
+        broadcast({ type: 'ollama:serve:starting' });
+        OllamaProvider.startServer();
+        // Wait for server to be ready (up to 10s)
+        for (let i = 0; i < 20; i++) {
+          await new Promise((r) => setTimeout(r, 500));
+          if (await OllamaProvider.isServerRunning()) break;
+        }
+        if (!(await OllamaProvider.isServerRunning())) {
+          return res.status(500).json({ error: 'Could not start Ollama server. Run `ollama serve` manually.' });
+        }
+      }
       broadcast({ type: 'ollama:pull:start', model });
       await OllamaProvider.pullModel(model, (progress) => {
         broadcast({ type: 'ollama:pull:progress', model, progress: progress.trim() });

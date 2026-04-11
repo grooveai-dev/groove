@@ -294,18 +294,29 @@ function ActivityLine({ entry }) {
   );
 }
 
-function ActivityGroup({ entries }) {
+function ActivityGroup({ entries, isLive }) {
   const [cycleIdx, setCycleIdx] = useState(0);
 
-  // Cycle through entries every 1.5s
   useEffect(() => {
-    if (entries.length <= 1) return;
+    if (!isLive || entries.length <= 1) return;
     const timer = setInterval(() => setCycleIdx((i) => (i + 1) % entries.length), 1500);
     return () => clearInterval(timer);
-  }, [entries.length]);
+  }, [entries.length, isLive]);
+
+  if (!isLive) {
+    // Collapsed static summary for completed groups
+    const last = entries[entries.length - 1];
+    const meta = activityMeta(last.text);
+    const Icon = meta.icon;
+    return (
+      <div className="ml-7 flex items-center gap-2 px-3 py-1 text-[10px] text-text-4 font-mono">
+        <Icon size={10} className="opacity-50" />
+        <span className="truncate">{entries.length} tool call{entries.length !== 1 ? 's' : ''}</span>
+      </div>
+    );
+  }
 
   const current = entries[Math.min(cycleIdx, entries.length - 1)];
-  const meta = activityMeta(current.text);
   const display = current.text?.length > 60 ? current.text.slice(0, 60) + '...' : current.text;
 
   return (
@@ -584,7 +595,9 @@ export function AgentFeed({ agent }) {
         )}
         {timeline.map((item, i) => {
           if (item.kind === 'activity-group') {
-            return <ActivityGroup key={`grp-${i}`} entries={item.entries} />;
+            // Only the last activity group is "live" if agent is still running
+            const isLastGroup = !timeline.slice(i + 1).some((t) => t.kind === 'activity-group' || t.from === 'agent');
+            return <ActivityGroup key={`grp-${i}`} entries={item.entries} isLive={isAlive && isLastGroup} />;
           }
           if (item.from === 'user') return <UserMessage key={`msg-${i}`} msg={item} />;
           if (item.from === 'system') return <SystemMessage key={`msg-${i}`} msg={item} />;

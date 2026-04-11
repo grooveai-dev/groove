@@ -264,7 +264,12 @@ export class SkillStore {
    * Downloads content from live API, falls back to contentUrl, then local plugins.
    */
   async install(skillId) {
-    const entry = this.registry.find((s) => s.id === skillId);
+    let entry = this.registry.find((s) => s.id === skillId);
+    // Registry may be stale — refresh and retry lookup
+    if (!entry) {
+      await this._refreshRegistry();
+      entry = this.registry.find((s) => s.id === skillId);
+    }
     if (!entry) throw new Error(`Skill not found: ${skillId}`);
     if (this._isInstalled(skillId)) throw new Error(`Skill already installed: ${skillId}`);
 

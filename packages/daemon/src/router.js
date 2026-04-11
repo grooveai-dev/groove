@@ -15,12 +15,19 @@ const MODES = {
 // Role-based tier hints for new agents with no classifier data yet
 const ROLE_HINTS = {
   planner:   'heavy',    // Planning is foundational — needs deep reasoning
-  docs:      'light',
-  testing:   'medium',
+  fullstack: 'heavy',    // End-to-end work needs full capability
+  slides:    'heavy',    // Design quality needs top-tier model
+  creative:  'heavy',    // Writing quality needs top-tier model
+  security:  'heavy',    // Security audits need deep reasoning
   backend:   'medium',
   frontend:  'medium',
+  testing:   'medium',
   devops:    'medium',
-  fullstack: 'heavy',
+  database:  'medium',
+  analyst:   'medium',
+  docs:      'light',
+  support:   'light',
+  ea:        'light',
 };
 
 export class ModelRouter {

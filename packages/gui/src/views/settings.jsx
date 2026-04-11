@@ -109,7 +109,7 @@ function ProviderCard({ provider, onKeyChange }) {
     return (
       <div className="flex flex-col rounded-lg border border-border-subtle bg-surface-1 overflow-hidden min-w-[220px]">
         <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border-subtle">
-          <StatusDot status={isReady ? 'running' : 'crashed'} size="sm" />
+          <StatusDot status={isReady && installedCount > 0 ? 'running' : 'crashed'} size="sm" />
           <span className="text-[13px] font-semibold text-text-0 font-sans">{provider.name}</span>
           <div className="flex-1" />
           {isReady && installedCount > 0 ? (
@@ -117,49 +117,45 @@ function ProviderCard({ provider, onKeyChange }) {
           ) : isReady ? (
             <Badge variant="warning" className="text-2xs">No models pulled</Badge>
           ) : (
-            <Badge variant="default" className="text-2xs">Ollama not installed</Badge>
+            <Badge variant="default" className="text-2xs">Not set up</Badge>
           )}
         </div>
         <div className="flex-1">
           {ollamaOpen ? (
-            <OllamaSetup isInstalled={isReady} onModelChange={onKeyChange} />
+            <>
+              <OllamaSetup isInstalled={isReady} onModelChange={onKeyChange} />
+              <div className="px-4 py-2 border-t border-border-subtle flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setOllamaOpen(false)} className="flex-1 h-7 text-2xs">
+                  Back
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => { setOllamaOpen(false); goToModels(); }} className="flex-1 h-7 text-2xs gap-1">
+                  Models Tab
+                </Button>
+              </div>
+            </>
           ) : (
             <div className="px-4 py-3 flex flex-col h-full">
               <div className="text-xs text-text-3 font-sans flex-1">
                 {isReady && installedCount > 0
                   ? 'Full agentic runtime — tool calling, context rotation, zero cloud cost'
                   : isReady
-                    ? 'Ollama is running but no models pulled yet. Pull a model or browse the Models tab.'
-                    : 'Run any open-source model on your machine — free, private, fully offline'}
+                    ? 'Ollama is running. Pull a model to start using local agents.'
+                    : 'Run any open-source model locally — free, private, fully offline. Requires Ollama.'}
               </div>
-              {!isReady ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => setOllamaOpen(true)}
-                  className="w-full h-7 text-2xs gap-1.5 mt-3"
-                >
-                  <Cpu size={11} /> Set Up Ollama
-                </Button>
-              ) : installedCount === 0 ? (
-                <div className="flex gap-2 mt-3">
+              <div className="flex gap-2 mt-3">
+                {!isReady ? (
                   <Button variant="primary" size="sm" onClick={() => setOllamaOpen(true)} className="flex-1 h-7 text-2xs gap-1.5">
-                    <Cpu size={11} /> Pull Models
+                    <Cpu size={11} /> Set Up Ollama
                   </Button>
-                  <Button variant="secondary" size="sm" onClick={goToModels} className="flex-1 h-7 text-2xs gap-1.5">
-                    Browse HuggingFace
+                ) : (
+                  <Button variant="primary" size="sm" onClick={() => setOllamaOpen(true)} className="flex-1 h-7 text-2xs gap-1.5">
+                    <Cpu size={11} /> {installedCount > 0 ? 'Manage' : 'Pull Models'}
                   </Button>
-                </div>
-              ) : (
-                <div className="flex gap-2 mt-3">
-                  <Button variant="secondary" size="sm" onClick={() => setOllamaOpen(true)} className="flex-1 h-7 text-2xs gap-1.5">
-                    <Cpu size={11} /> Manage
-                  </Button>
-                  <Button variant="secondary" size="sm" onClick={goToModels} className="flex-1 h-7 text-2xs gap-1.5">
-                    Browse Models
-                  </Button>
-                </div>
-              )}
+                )}
+                <Button variant="secondary" size="sm" onClick={goToModels} className="flex-1 h-7 text-2xs gap-1.5">
+                  Models Tab
+                </Button>
+              </div>
             </div>
           )}
         </div>

@@ -184,7 +184,7 @@ export class OllamaProvider extends Provider {
 
   static getInstalledModels() {
     try {
-      const output = execSync('ollama list', { encoding: 'utf8', timeout: 10000 });
+      const output = execSync('ollama list', { encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] });
       const lines = output.split('\n').slice(1).filter(Boolean);
       return lines.map((line) => {
         const parts = line.split(/\s+/);

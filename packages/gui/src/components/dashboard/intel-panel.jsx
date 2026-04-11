@@ -36,7 +36,7 @@ function SavingsBar({ label, value, total, color }) {
         <span className="text-text-2">{label}</span>
         <span className="text-text-1 tabular-nums">{fmtNum(value)}</span>
       </div>
-      <div className="h-[2px] bg-surface-0 rounded-full overflow-hidden">
+      <div className="h-[2px] bg-surface-4 rounded-full overflow-hidden">
         <div
           className="h-full rounded-full transition-all duration-500"
           style={{ width: `${Math.min(pct, 100)}%`, background: color }}

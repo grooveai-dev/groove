@@ -73,7 +73,7 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
 
       {/* Full-width context bar with threshold marker */}
       <div className="flex items-center gap-2">
-        <div className="relative flex-1 h-[3px] bg-surface-0 rounded-full overflow-visible">
+        <div className="relative flex-1 h-[3px] bg-surface-4 rounded-full overflow-visible">
           <div
             className="absolute inset-y-0 left-0 rounded-full transition-all duration-700"
             style={{

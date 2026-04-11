@@ -4,7 +4,7 @@ import {
   Send, Loader2, MessageSquare, ArrowRight,
   FileEdit, Search, Terminal, CheckCircle2, AlertCircle,
   RotateCw, Zap, Wrench, Eye, Code2, Bug,
-  ChevronDown, HelpCircle, Pencil,
+  ChevronDown, HelpCircle, Pencil, Paperclip,
 } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
@@ -464,6 +464,7 @@ export function AgentFeed({ agent }) {
   const [sending, setSending] = useState(false);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const timeline = useMemo(() => {
     const items = [];
@@ -519,6 +520,15 @@ export function AgentFeed({ agent }) {
       });
     }
   }, [timeline.length]);
+
+  function handleFileSelect(e) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    const names = files.map((f) => f.name).join(', ');
+    setInput((prev) => (prev ? prev + '\n' : '') + `[Attached: ${names}] — Read these files from the working directory.`);
+    e.target.value = '';
+    inputRef.current?.focus();
+  }
 
   async function handleSend() {
     const text = input.trim();
@@ -628,9 +638,24 @@ export function AgentFeed({ agent }) {
         </div>
 
         <div className={cn(
-          'flex items-end gap-2 rounded-xl border bg-surface-0 p-1 transition-colors',
+          'flex items-end gap-1 rounded-xl border bg-surface-0 p-1 transition-colors',
           mode === 'query' ? 'border-info/20 focus-within:border-info/40' : 'border-border-subtle focus-within:border-accent/30',
         )}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".pdf,.png,.jpg,.jpeg,.gif,.svg,.csv,.txt,.md,.json,.yaml,.yml,.docx,.pptx,.xlsx"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="w-9 h-9 flex items-center justify-center rounded-lg text-text-4 hover:text-text-1 hover:bg-surface-3 transition-colors cursor-pointer flex-shrink-0 mb-px"
+            title="Attach file"
+          >
+            <Paperclip size={14} />
+          </button>
           <textarea
             ref={inputRef}
             value={input}

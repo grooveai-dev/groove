@@ -11,9 +11,10 @@ import {
   Server, Monitor, Code2, TestTube, Cloud, FileText,
   Shield, Database, Megaphone, Calculator, UserCheck,
   Headphones, BarChart3, Rocket, ChevronDown, Pen, Presentation,
-  Sparkles,
+  Sparkles, X, Search,
 } from 'lucide-react';
 import { api } from '../../lib/api';
+import { Dialog, DialogContent } from '../ui/dialog';
 
 const ROLE_PRESETS = [
   { id: 'planner',   label: 'Planner',    desc: 'Plans the team and tasks',       icon: Rocket,     tier: 'Heavy' },
@@ -34,6 +35,15 @@ const ROLE_PRESETS = [
   { id: 'slides',    label: 'Slides',     desc: 'Pitch decks, presentations',      icon: Presentation, tier: 'Heavy', skillHint: true },
 ];
 
+function CheckMark() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" className="text-accent flex-shrink-0">
+      <circle cx="7" cy="7" r="6" fill="currentColor" fillOpacity="0.15" stroke="currentColor" strokeWidth="1" />
+      <path d="M4.5 7 L6.5 9 L9.5 5.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function SpawnWizard() {
   const detailPanel = useGrooveStore((s) => s.detailPanel);
   const closeDetail = useGrooveStore((s) => s.closeDetail);
@@ -50,6 +60,8 @@ export function SpawnWizard() {
   const [providers, setProviders] = useState([]);
   const [installedSkills, setInstalledSkills] = useState([]);
   const [selectedSkills, setSelectedSkills] = useState([]);
+  const [skillModalOpen, setSkillModalOpen] = useState(false);
+  const [skillSearch, setSkillSearch] = useState('');
   const [spawning, setSpawning] = useState(false);
 
   useEffect(() => {
@@ -211,33 +223,98 @@ export function SpawnWizard() {
                 )}
 
                 {/* Skills */}
-                {installedSkills.length > 0 && (
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-text-2 font-sans">Skills</label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {installedSkills.map((skill) => {
-                        const active = selectedSkills.includes(skill.id);
-                        return (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-text-2 font-sans">Skills</label>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {selectedSkills.map((skillId) => {
+                      const skill = installedSkills.find((s) => s.id === skillId);
+                      return (
+                        <span
+                          key={skillId}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-accent/12 text-accent border border-accent/25 text-2xs font-sans"
+                        >
+                          <Sparkles size={9} />
+                          {skill?.name || skillId}
                           <button
-                            key={skill.id}
-                            onClick={() => setSelectedSkills((prev) =>
-                              active ? prev.filter((s) => s !== skill.id) : [...prev, skill.id]
-                            )}
-                            className={cn(
-                              'inline-flex items-center gap-1 px-2 py-1 rounded text-2xs font-sans transition-colors cursor-pointer',
-                              active
-                                ? 'bg-accent/15 text-accent border border-accent/30'
-                                : 'bg-surface-0 text-text-2 border border-border-subtle hover:border-border',
-                            )}
+                            onClick={() => setSelectedSkills((prev) => prev.filter((s) => s !== skillId))}
+                            className="ml-0.5 hover:text-text-0 cursor-pointer"
                           >
-                            <Sparkles size={10} />
-                            {skill.name || skill.id}
+                            <X size={9} />
                           </button>
-                        );
-                      })}
-                    </div>
+                        </span>
+                      );
+                    })}
+                    <button
+                      onClick={() => { setSkillModalOpen(true); setSkillSearch(''); }}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-2xs font-sans transition-colors cursor-pointer',
+                        'bg-surface-0 text-text-2 border border-border-subtle hover:border-border hover:text-text-0',
+                      )}
+                    >
+                      <Sparkles size={10} />
+                      {selectedSkills.length > 0 ? 'Add skill' : 'Attach skill'}
+                    </button>
                   </div>
-                )}
+                </div>
+
+                {/* Skill picker modal */}
+                <Dialog open={skillModalOpen} onOpenChange={setSkillModalOpen}>
+                  <DialogContent title="Select Skill" className="max-w-sm">
+                    <div className="space-y-3 p-4">
+                      <div className="relative">
+                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-4" />
+                        <input
+                          value={skillSearch}
+                          onChange={(e) => setSkillSearch(e.target.value)}
+                          placeholder="Search skills..."
+                          autoFocus
+                          className="w-full h-8 pl-8 pr-3 text-xs rounded-md bg-surface-0 border border-border text-text-0 font-sans focus:outline-none focus:ring-1 focus:ring-accent"
+                        />
+                      </div>
+                      <div className="max-h-64 overflow-y-auto space-y-1">
+                        {installedSkills
+                          .filter((s) => {
+                            if (!skillSearch) return true;
+                            const q = skillSearch.toLowerCase();
+                            return (s.name || s.id).toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q);
+                          })
+                          .map((skill) => {
+                            const active = selectedSkills.includes(skill.id);
+                            return (
+                              <button
+                                key={skill.id}
+                                onClick={() => {
+                                  setSelectedSkills((prev) =>
+                                    active ? prev.filter((s) => s !== skill.id) : [...prev, skill.id]
+                                  );
+                                }}
+                                className={cn(
+                                  'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left transition-colors cursor-pointer',
+                                  active
+                                    ? 'bg-accent/10 border border-accent/25'
+                                    : 'hover:bg-surface-3 border border-transparent',
+                                )}
+                              >
+                                <Sparkles size={12} className={active ? 'text-accent' : 'text-text-3'} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs font-semibold text-text-0 font-sans truncate">{skill.name || skill.id}</div>
+                                  {skill.description && (
+                                    <div className="text-2xs text-text-3 font-sans truncate">{skill.description}</div>
+                                  )}
+                                </div>
+                                {active && <CheckMark />}
+                              </button>
+                            );
+                          })}
+                        {installedSkills.length === 0 && (
+                          <div className="text-center py-6 text-xs text-text-3 font-sans">
+                            No skills installed. Visit the Marketplace to install skills.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
 
                 <Textarea
                   label="Prompt (optional)"

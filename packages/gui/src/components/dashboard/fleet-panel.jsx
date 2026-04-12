@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { fmtNum, fmtDollar } from '../../lib/format';
 import { cn } from '../../lib/cn';
 import { statusColor, roleColor } from '../../lib/status';
+import { HEX, hexAlpha } from '../../lib/theme-hex';
 import { ScrollArea } from '../ui/scroll-area';
 
 const COST_SOURCE_LABEL = { actual: 'ACT', estimated: 'EST', local: 'LOC' };
@@ -24,7 +25,7 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
   const successRate = quality?.toolSuccessRate != null ? Math.round(quality.toolSuccessRate * 100) : null;
   const thresholdPct = agent.rotationThreshold ? Math.round(agent.rotationThreshold * 100) : null;
   const rc = roleColor(agent.role);
-  const barColor = contextPct > 80 ? '#e06c75' : contextPct > 60 ? '#e5c07b' : isAlive ? '#33afbc' : '#333842';
+  const barColor = contextPct > 80 ? HEX.danger : contextPct > 60 ? HEX.warning : isAlive ? HEX.accent : HEX.surface5;
 
   return (
     <div className="px-3 pl-6 py-2 hover:bg-[rgba(51,175,188,0.06)] transition-colors space-y-1.5">
@@ -94,7 +95,7 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
       <div className="flex items-center gap-2">
         <div
           className="relative flex-1 h-[4px] rounded-full overflow-visible"
-          style={{ background: 'rgba(51,175,188,0.12)' }}
+          style={{ background: hexAlpha(HEX.accent, 0.12) }}
         >
           <div
             className="absolute inset-y-0 left-0 rounded-full transition-all duration-700"
@@ -103,7 +104,7 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
           {thresholdPct && (
             <div
               className="absolute top-[-2px] w-px h-[8px]"
-              style={{ left: `${thresholdPct}%`, background: '#c678dd' }}
+              style={{ left: `${thresholdPct}%`, background: HEX.purple }}
               title={`Rotation at ${thresholdPct}%`}
             />
           )}
@@ -126,7 +127,7 @@ function TeamSection({ team, members, rotatingSet }) {
       <button
         onClick={() => setExpanded((e) => !e)}
         className="w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-[rgba(51,175,188,0.08)] bg-[rgba(51,175,188,0.05)]"
-        style={{ borderLeft: isActive ? '2px solid #33afbc' : '2px solid transparent' }}
+        style={{ borderLeft: isActive ? `2px solid ${HEX.accent}` : '2px solid transparent' }}
       >
         {expanded
           ? <ChevronDown size={10} className="text-text-4 flex-shrink-0" />
@@ -141,7 +142,7 @@ function TeamSection({ team, members, rotatingSet }) {
         )}
         <span
           className="text-2xs font-mono tabular-nums flex-shrink-0 ml-1.5"
-          style={{ color: isActive ? '#33afbc' : undefined }}
+          style={{ color: isActive ? HEX.accent : undefined }}
         >
           {runningCount}/{members.length}
         </span>

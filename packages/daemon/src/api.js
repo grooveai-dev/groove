@@ -1822,14 +1822,35 @@ Keep responses concise. Help them think, don't lecture them about the system the
         );
 
         if (existing && prompt) {
-          // Instruct the existing agent instead of spawning a new one
+          // Reuse existing agent: kill the old process and spawn fresh with full context.
+          // This ensures the agent gets intro context, project map, and design system —
+          // resume() bypasses all of that and the agent spawns blind.
           try {
-            const newAgent = await daemon.processes.resume(existing.id, prompt);
+            // Kill old process if running
+            if (existing.status === 'running' || existing.status === 'starting') {
+              try { await daemon.processes.kill(existing.id); } catch { /* already dead */ }
+            }
+            // Remove old entry
+            daemon.registry.remove(existing.id);
+            daemon.locks.release(existing.id);
+
+            // Spawn fresh with the same name/team but new prompt + full context
+            const validated = validateAgentConfig({
+              role: existing.role,
+              scope: config.scope || existing.scope || [],
+              prompt,
+              provider: config.provider || existing.provider || undefined,
+              model: config.model || existing.model || 'auto',
+              permission: config.permission || existing.permission || 'auto',
+              workingDir: existing.workingDir || projectWorkingDir,
+              name: existing.name,
+            });
+            validated.teamId = defaultTeamId;
+            const newAgent = await daemon.processes.spawn(validated);
             reused.push({ id: newAgent.id, name: newAgent.name, role: newAgent.role, reusedFrom: existing.name });
             phase1Ids.push(newAgent.id);
             daemon.audit.log('team.reuse', { oldId: existing.id, newId: newAgent.id, role: config.role });
           } catch (err) {
-            // Reuse failed — fall through to spawn
             failed.push({ role: config.role, error: `reuse failed: ${err.message}` });
           }
         } else {

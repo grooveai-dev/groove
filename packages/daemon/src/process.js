@@ -84,6 +84,7 @@ When making visual changes, always read app.css for the color palette and existi
 - Running tests (npm test) and builds (npm run build) to catch regressions
 - Auditing changes from other agents for correctness and consistency
 - Fixing integration issues that span the daemon/GUI boundary
+IMPORTANT: Do NOT start long-running dev servers (vite dev, npm start, next dev, etc.) unless explicitly asked. Verify builds compile with "npm run build", not by running a dev server. Rogue servers waste resources and block agent completion.
 
 `,
   testing: `You are a Testing agent. You write and maintain test suites, improve coverage, and verify quality. Focus on:
@@ -167,7 +168,7 @@ For MODE 1 (team creation):
   "agents": [
     { "role": "frontend", "phase": 1, "scope": ["src/components/**", "src/views/**"], "prompt": "Build the frontend: [specific tasks]" },
     { "role": "backend", "phase": 1, "scope": ["src/api/**", "src/server/**"], "prompt": "Build the backend: [specific tasks]" },
-    { "role": "fullstack", "phase": 2, "scope": [], "prompt": "QC Senior Dev: Audit all changes from phase 1 agents. Verify correctness, fix issues, run tests, build the project, commit, and launch. Output the localhost URL." }
+    { "role": "fullstack", "phase": 2, "scope": [], "prompt": "QC Senior Dev: Audit all changes from phase 1 agents. Verify correctness, fix issues, run tests, verify the build compiles (npm run build). Do NOT start long-running dev servers. Commit all changes." }
   ]
 }
 

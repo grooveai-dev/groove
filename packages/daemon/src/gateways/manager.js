@@ -785,7 +785,7 @@ export class GatewayManager {
     if (phase2.length === 0 && phase1.length >= 2) {
       phase2 = [{
         role: 'fullstack', phase: 2, scope: [],
-        prompt: 'QC Senior Dev: All builder agents have completed. Audit their changes for correctness, fix any issues, run tests, build the project, commit all changes, and launch. Output the localhost URL.',
+        prompt: 'QC Senior Dev: All builder agents have completed. Audit their changes for correctness, fix any issues, run tests, and verify the project builds cleanly (npm run build). Do NOT start long-running dev servers. Commit all changes.',
       }];
     }
 

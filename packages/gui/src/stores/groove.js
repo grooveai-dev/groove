@@ -536,8 +536,15 @@ export const useGrooveStore = create((set, get) => ({
           // Auto-delegate — all agents already exist in the team
           set({ recommendedTeam: null });
           const result = await api.post('/recommended-team/launch');
-          const names = result.agents?.map((a) => a.name).join(', ') || '';
+          const agents = result.agents || [];
+          const names = agents.map((a) => a.name).join(', ') || '';
           get().addToast('success', 'Planner delegated work', names ? `→ ${names}` : undefined);
+          // Set thinking indicator for all delegated agents so the UI shows activity
+          if (agents.length > 0) {
+            set((s) => ({
+              thinkingAgents: new Set([...s.thinkingAgents, ...agents.map((a) => a.id)]),
+            }));
+          }
           api.post('/cleanup').catch(() => {});
           return;
         }
@@ -560,7 +567,14 @@ export const useGrooveStore = create((set, get) => ({
         result.phase2Pending ? `${result.phase2Pending} QC queued` : '',
         result.projectDir ? `→ ${result.projectDir}/` : '',
       ].filter(Boolean).join(' · ');
-      get().addToast('success', `Launched ${result.launched} agents`, sub || undefined);
+      get().addToast('success', `Launched ${(result.launched || 0) + (result.reused || 0)} agents`, sub || undefined);
+      // Set thinking indicator for all launched/reused agents
+      const launchedAgents = result.agents || [];
+      if (launchedAgents.length > 0) {
+        set((s) => ({
+          thinkingAgents: new Set([...s.thinkingAgents, ...launchedAgents.map((a) => a.id)]),
+        }));
+      }
       // Clean up stale files
       api.post('/cleanup').catch(() => {});
       return result;

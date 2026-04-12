@@ -1799,7 +1799,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
         phase2 = [{
           name: 'qc-agent',
           role: 'fullstack', phase: 2, scope: [],
-          prompt: 'QC Senior Dev: All builder agents have completed. Audit their changes for correctness, fix any issues, run tests, build the project, commit all changes, and launch the dev server. Output the localhost URL where the app can be accessed. IMPORTANT: Do NOT delete files from other projects or directories outside this project.',
+          prompt: 'QC Senior Dev: All builder agents have completed. Audit their changes for correctness, fix any issues, run tests, and verify the project builds cleanly (npm run build). Do NOT start long-running dev servers — just verify the build succeeds. Commit all changes. IMPORTANT: Do NOT delete files from other projects or directories outside this project.',
         }];
       }
 
@@ -1814,12 +1814,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
         const prompt = config.prompt || '';
 
         // Reuse an existing agent with matching role in this team — never spawn
-        // duplicates. The team's agents persist across tasks.
+        // duplicates. The team's agents persist across tasks regardless of status.
         const existing = teamAgents.find((a) =>
           a.role === config.role &&
           a.role !== 'planner' &&
-          (a.status === 'running' || a.status === 'completed') &&
-          !reused.some((r) => r.id === a.id) // don't reuse the same agent twice
+          !reused.some((r) => r.id === a.id)
         );
 
         if (existing && prompt) {

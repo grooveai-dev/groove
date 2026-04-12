@@ -21,6 +21,7 @@
       "Select scopes: repo, read:org, read:user",
       "Click 'Generate token' and copy it"
     ],
+    "requiresApproval": ["create_issue", "create_pull_request", "create_or_update_file", "delete_file", "push_files"],
     "agentInstructions": "## GitHub Integration\n\nYou have GitHub connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/github/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `create_issue` — params: {owner, repo, title, body}\n- `search_repositories` — params: {query}\n- `create_pull_request` — params: {owner, repo, title, body, head, base}\n- `get_file_contents` — params: {owner, repo, path}\n\n### Rules\n- Confirm before creating issues or PRs\n- Use search before creating duplicates",
     "featured": true,
     "downloads": 0,
@@ -50,6 +51,7 @@
       "Copy the 'Secret key' (starts with sk_live_ or sk_test_)",
       "Use a test key (sk_test_) for safe experimentation"
     ],
+    "requiresApproval": ["create_charge", "create_payment_link", "create_invoice", "create_subscription", "create_refund"],
     "agentInstructions": "## Stripe Integration\n\nYou have Stripe connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/stripe/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `list_customers` — params: {limit}\n- `create_customer` — params: {email, name}\n- `list_charges` — params: {limit}\n- `create_payment_link` — params: {price, quantity}\n\n### Rules\n- Never create live charges without explicit confirmation\n- Prefer test mode keys for experimentation",
     "featured": true,
     "downloads": 0,
@@ -78,6 +80,7 @@
       "Sign in and allow access to your calendar",
       "That's it — token refresh is handled automatically"
     ],
+    "requiresApproval": ["create_event", "delete_event"],
     "agentInstructions": "## Google Calendar Integration\n\nYou have Google Calendar connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-calendar/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `list_events` — params: {timeMin, timeMax}\n- `create_event` — params: {summary, start, end, attendees}\n- `update_event` — params: {eventId, summary, start, end}\n- `delete_event` — params: {eventId}\n\n### Rules\n- Confirm date/time and attendees before creating events\n- Use ISO 8601 format for dates",
     "featured": false,
     "downloads": 0,
@@ -106,6 +109,7 @@
       "Sign in and allow access to your Gmail",
       "That's it — token refresh is handled automatically"
     ],
+    "requiresApproval": ["send_email"],
     "featured": false,
     "downloads": 0,
     "rating": 0,
@@ -137,6 +141,7 @@
     "downloads": 0,
     "rating": 0,
     "ratingCount": 0,
+    "requiresApproval": [],
     "agentInstructions": "## PostgreSQL Integration\n\nYou have PostgreSQL connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/postgres/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `query` — params: {sql}\n- `list_tables` — params: {}\n- `describe_table` — params: {table}\n\n### Rules\n- Never run DROP, TRUNCATE, or DELETE without explicit confirmation\n- Prefer SELECT queries for exploration\n- Use LIMIT on large tables",
     "verified": "mcp-official"
   },
@@ -166,6 +171,7 @@
     "downloads": 0,
     "rating": 0,
     "ratingCount": 0,
+    "requiresApproval": [],
     "agentInstructions": "## Brave Search Integration\n\nYou have Brave Search connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/brave-search/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `brave_web_search` — params: {query, count}\n- `brave_local_search` — params: {query}\n\n### Rules\n- Use specific, targeted queries for best results\n- Summarize findings rather than dumping raw results",
     "verified": "mcp-official"
   },
@@ -197,6 +203,7 @@
     "downloads": 0,
     "rating": 0,
     "ratingCount": 0,
+    "requiresApproval": [],
     "agentInstructions": "## Google Drive Integration\n\nYou have Google Drive connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-drive/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n- `list_files` — params: {folderId}\n\n### Rules\n- This is read-only access — cannot create or modify files\n- Use search to find files before reading",
     "verified": "mcp-official"
   },
@@ -226,6 +233,7 @@
     "downloads": 0,
     "rating": 0,
     "ratingCount": 0,
+    "requiresApproval": ["create_issue", "update_issue", "delete_issue"],
     "agentInstructions": "## Linear Integration\n\nYou have Linear connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/linear/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `create_issue` — params: {title, description, teamId, priority}\n- `list_issues` — params: {filter}\n- `update_issue` — params: {issueId, status, assigneeId}\n- `search_issues` — params: {query}\n\n### Rules\n- Search for existing issues before creating duplicates\n- Confirm title and assignee before creating",
     "verified": "community"
   },
@@ -256,6 +264,7 @@
     "downloads": 0,
     "rating": 0,
     "ratingCount": 0,
+    "requiresApproval": ["create_page", "update_page", "delete_page"],
     "agentInstructions": "## Notion Integration\n\nYou have Notion connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/notion/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search` — params: {query}\n- `create_page` — params: {parentId, title, content}\n- `update_page` — params: {pageId, properties}\n- `query_database` — params: {databaseId, filter}\n\n### Rules\n- Search for existing pages before creating new ones\n- Share pages with the integration first if they're not visible",
     "verified": "community"
   },
@@ -285,6 +294,7 @@
     "downloads": 0,
     "rating": 0,
     "ratingCount": 0,
+    "requiresApproval": ["call_service"],
     "agentInstructions": "## Home Assistant Integration\n\nYou have Home Assistant connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/home-assistant/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `get_states` — params: {}\n- `call_service` — params: {domain, service, entity_id}\n- `get_entity` — params: {entity_id}\n\n### Rules\n- Confirm before toggling devices or running automations\n- Check current state before changing it",
     "verified": "community"
   },
@@ -312,6 +322,7 @@
       "Sign in and allow access to your Docs",
       "That's it — credentials are encrypted and stored locally"
     ],
+    "requiresApproval": [],
     "agentInstructions": "## Google Docs Integration\n\nYou have Google Docs connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-docs/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n\n### Rules\n- Search for documents before reading\n- This uses Google Drive API scoped to Docs",
     "featured": false,
     "downloads": 0,
@@ -343,6 +354,7 @@
       "Sign in and allow access to your Sheets",
       "That's it — credentials are encrypted and stored locally"
     ],
+    "requiresApproval": [],
     "agentInstructions": "## Google Sheets Integration\n\nYou have Google Sheets connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-sheets/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n\n### Rules\n- Search for spreadsheets before reading\n- This uses Google Drive API scoped to Sheets",
     "featured": false,
     "downloads": 0,
@@ -374,6 +386,7 @@
       "Sign in and allow access to your Slides",
       "That's it — credentials are encrypted and stored locally"
     ],
+    "requiresApproval": [],
     "agentInstructions": "## Google Slides Integration\n\nYou have Google Slides connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-slides/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n\n### Rules\n- Search for presentations before reading\n- This uses Google Drive API scoped to Slides",
     "featured": false,
     "downloads": 0,
@@ -403,6 +416,7 @@
       "Create or select a project, then 'Create Credentials' > 'API Key'",
       "Enable the Maps JavaScript API, Geocoding API, and Places API"
     ],
+    "requiresApproval": [],
     "agentInstructions": "## Google Maps Integration\n\nYou have Google Maps connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-maps/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `maps_geocode` — params: {address}\n- `maps_directions` — params: {origin, destination}\n- `maps_search_places` — params: {query, location}\n- `maps_distance_matrix` — params: {origins, destinations}\n\n### Rules\n- Use specific addresses for best geocoding accuracy\n- Check distance/time before suggesting routes",
     "featured": false,
     "downloads": 0,

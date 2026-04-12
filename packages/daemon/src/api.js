@@ -1118,19 +1118,67 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   // --- Integration Execution (provider-agnostic) ---
 
+  const _execRates = new Map();
+  const EXEC_RATE_LIMIT = 30;
+  const EXEC_RATE_WINDOW = 60_000;
+
   app.post('/api/integrations/:id/exec', async (req, res) => {
     try {
-      const { tool, params } = req.body || {};
+      const { tool, params, approvalId, agent: agentId } = req.body || {};
       if (!tool || typeof tool !== 'string') {
         return res.status(400).json({ error: 'tool (string) is required' });
       }
       if (params !== undefined && (typeof params !== 'object' || Array.isArray(params))) {
         return res.status(400).json({ error: 'params must be an object' });
       }
-      if (!daemon.integrations._isInstalled(req.params.id)) {
+      const integrationId = req.params.id;
+      if (!daemon.integrations._isInstalled(integrationId)) {
         return res.status(400).json({ error: 'Integration not installed' });
       }
-      const result = await daemon.mcpManager.execTool(req.params.id, tool, params || {});
+
+      // Rate limiting — sliding window per integration
+      const now = Date.now();
+      let window = _execRates.get(integrationId) || [];
+      window = window.filter((t) => now - t < EXEC_RATE_WINDOW);
+      if (window.length >= EXEC_RATE_LIMIT) {
+        daemon.audit.log('integration.exec.rate_limited', { integrationId, tool, agentId });
+        return res.status(429).json({ error: `Rate limit exceeded (${EXEC_RATE_LIMIT}/min) for ${integrationId}` });
+      }
+      window.push(now);
+      _execRates.set(integrationId, window);
+
+      // Approval gate — dangerous tools require human approval
+      const entry = daemon.integrations.registry.find((s) => s.id === integrationId);
+      if (entry?.requiresApproval?.includes(tool)) {
+        if (approvalId) {
+          const approval = daemon.supervisor.getApproval(approvalId);
+          if (!approval) return res.status(404).json({ error: 'Approval not found' });
+          if (approval.status === 'rejected') {
+            return res.status(403).json({ error: 'Approval rejected', reason: approval.reason });
+          }
+          if (approval.status !== 'approved') {
+            return res.status(202).json({ requiresApproval: true, approvalId, status: 'pending', message: 'Waiting for human approval' });
+          }
+        } else {
+          const paramsSummary = params ? JSON.stringify(params).slice(0, 500) : '{}';
+          const approval = daemon.supervisor.requestApproval(agentId || null, {
+            type: 'integration_exec',
+            integrationId,
+            tool,
+            params: paramsSummary,
+            description: `${entry.name}: ${tool}`,
+          });
+          daemon.audit.log('integration.exec.blocked', { integrationId, tool, approvalId: approval.id, agentId });
+          return res.status(202).json({
+            requiresApproval: true,
+            approvalId: approval.id,
+            message: `Tool "${tool}" requires approval. Retry with this approvalId once approved.`,
+          });
+        }
+      }
+
+      const result = await daemon.mcpManager.execTool(integrationId, tool, params || {});
+      daemon.audit.log('integration.exec', { integrationId, tool, params: params ? JSON.stringify(params).slice(0, 200) : '{}', agentId });
       res.json({ result });
     } catch (err) {
       res.status(400).json({ error: err.message });

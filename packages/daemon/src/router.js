@@ -142,4 +142,47 @@ export class ModelRouter {
       modes: MODES,
     };
   }
+
+  // Suggest a tier downshift when the classifier has enough confidence that
+  // a lighter model would still handle the task. Returns null when no
+  // suggestion is warranted. NEVER auto-applied — user must accept via UI.
+  // Honors the "heavy defaults" design principle: only suggests downshift,
+  // never upshift to heavier (user always has that available manually).
+  getSuggestion(agentId) {
+    const agent = this.daemon.registry.get(agentId);
+    if (!agent) return null;
+
+    const provider = getProvider(agent.provider);
+    if (!provider) return null;
+    const models = provider.constructor.models;
+
+    const classifier = this.daemon.classifier;
+    if (!classifier) return null;
+    const events = classifier.agentWindows[agentId] || [];
+    // Need enough events for a confident classification
+    if (events.length < 40) return null;
+
+    const currentModelId = agent.model || models[0]?.id;
+    const currentModel = models.find((m) => m.id === currentModelId || currentModelId?.includes(m.id));
+    if (!currentModel) return null;
+
+    const classifiedTier = classifier.classify(agentId);
+    const suggestedModel = models.find((m) => m.tier === classifiedTier);
+    if (!suggestedModel || suggestedModel.id === currentModel.id) return null;
+
+    // Tier order (heavy > medium > light). Only suggest if moving to cheaper tier.
+    const tierRank = { heavy: 3, medium: 2, light: 1 };
+    const currentRank = tierRank[currentModel.tier] || 2;
+    const suggestedRank = tierRank[classifiedTier] || 2;
+    if (suggestedRank >= currentRank) return null;
+
+    return {
+      agentId,
+      currentModel: { id: currentModel.id, name: currentModel.name, tier: currentModel.tier },
+      suggestedModel: { id: suggestedModel.id, name: suggestedModel.name, tier: suggestedModel.tier },
+      classifiedTier,
+      eventCount: events.length,
+      reason: `Last ${events.length} events classified as ${classifiedTier}. A lighter model would likely handle this task and reduce cost.`,
+    };
+  }
 }

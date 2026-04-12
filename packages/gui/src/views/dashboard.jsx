@@ -8,6 +8,7 @@ import { TokenChart } from '../components/dashboard/token-chart';
 import { CacheRing } from '../components/dashboard/cache-ring';
 import { RoutingChart } from '../components/dashboard/routing-chart';
 import { IntelPanel } from '../components/dashboard/intel-panel';
+import { TeamBurnPanel } from '../components/dashboard/team-burn-panel';
 import { ActivityFeed } from '../components/dashboard/activity-feed';
 import { Skeleton } from '../components/ui/skeleton';
 import { HEX } from '../lib/theme-hex';
@@ -34,7 +35,7 @@ function DashboardSkeleton() {
 export default function DashboardView() {
   const {
     data, loading, agents, connected, kpiHistory, lastFetch,
-    agentBreakdown, routing, rotation, adaptive, journalist, rotating,
+    agentBreakdown, routing, rotation, adaptive, journalist, rotating, teamBurn, memory,
   } = useDashboard();
 
   const teams = useGrooveStore((s) => s.teams);
@@ -72,6 +73,7 @@ export default function DashboardView() {
     totalTurns: rawTokens.totalTurns || 0,
     agentCount: rawTokens.agentCount || 0,
     savings: rawTokens.savings || {},
+    internalOverhead: rawTokens.internalOverhead || { tokens: 0, costUsd: 0, components: {} },
   };
 
   const ioRatio = tokens.totalOutputTokens > 0 ? (tokens.totalInputTokens / tokens.totalOutputTokens).toFixed(1) : '—';
@@ -145,14 +147,19 @@ export default function DashboardView() {
           <FleetPanel agentBreakdown={agentBreakdown} rotating={rotating} teams={teams} />
         </div>
 
-        <div className="col-span-2 min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-t border-l border-border">
+        <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-t border-l border-border">
           <IntelPanel
             tokens={tokens}
             rotation={rotation}
             adaptive={adaptive}
             journalist={journalist}
             agentBreakdown={agentBreakdown}
+            memory={memory}
           />
+        </div>
+
+        <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-t border-l border-border">
+          <TeamBurnPanel teams={teamBurn} />
         </div>
       </div>
 

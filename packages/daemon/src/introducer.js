@@ -107,6 +107,47 @@ export class Introducer {
         }
       }
 
+      // Project memory (Layer 7) — accumulated wisdom across all prior rotations.
+      // Constraints, recent role handoffs, known error→fix patterns. Total cap ~12K chars.
+      if (this.daemon.memory) {
+        const constraints = this.daemon.memory.getConstraintsMarkdown(4000);
+        const recentChain = this.daemon.memory.getRecentHandoffMarkdown(newAgent.role, 3, 4000);
+        const discoveries = this.daemon.memory.getDiscoveriesMarkdown(newAgent.role, 20, 4000);
+
+        if (constraints || recentChain || discoveries) {
+          lines.push('');
+          lines.push(`## Project Memory`);
+          lines.push('');
+          lines.push(`This is accumulated knowledge from prior agents working on this project. Read carefully — it will save you from rediscovering what others already learned.`);
+
+          if (constraints) {
+            lines.push('');
+            lines.push(`### Constraints`);
+            lines.push('');
+            lines.push(constraints);
+          }
+
+          if (recentChain) {
+            lines.push('');
+            lines.push(`### Recent ${newAgent.role} handoffs`);
+            lines.push('');
+            lines.push(recentChain);
+          }
+
+          if (discoveries) {
+            lines.push('');
+            lines.push(`### Known patterns (from prior ${newAgent.role} agents)`);
+            lines.push('');
+            lines.push(discoveries);
+          }
+
+          lines.push('');
+          lines.push(`You can contribute to this memory via:`);
+          lines.push(`- \`POST /api/memory/discoveries\` — share an error→fix you found`);
+          lines.push(`- \`POST /api/memory/constraints\` — declare a project rule you discovered`);
+        }
+      }
+
       // Project files section — tell the new agent what exists and what to read
       if (allTeamFiles.length > 0) {
         lines.push('');
@@ -149,11 +190,21 @@ export class Introducer {
       lines.push('');
       lines.push(`## Coordination Protocol`);
       lines.push('');
-      lines.push(`Before performing shared/destructive actions (restart server, npm install/build, modify package.json, modify shared config), coordinate with your team:`);
-      lines.push(`1. Read \`.groove/coordination.md\` to check for active operations`);
-      lines.push(`2. Write your intent to \`.groove/coordination.md\` (e.g., "backend-1: restarting server")`);
-      lines.push(`3. Proceed only if no conflicting operations are active`);
-      lines.push(`4. Clear your entry from \`.groove/coordination.md\` when done`);
+      lines.push(`Before performing shared/destructive actions (restart server, npm install/build, modify package.json, modify shared config), declare intent via the GROOVE daemon. Another agent holding the same resource will cause a 423 response — wait and retry.`);
+      lines.push('');
+      lines.push(`Declare:`);
+      lines.push('```');
+      lines.push(`POST http://127.0.0.1:31415/api/coordination/declare`);
+      lines.push(`{ "agentId": "${newAgent.id}", "operation": "npm install", "resources": ["package.json", "node_modules"] }`);
+      lines.push('```');
+      lines.push('');
+      lines.push(`Complete (always call this when done, even on failure):`);
+      lines.push('```');
+      lines.push(`POST http://127.0.0.1:31415/api/coordination/complete`);
+      lines.push(`{ "agentId": "${newAgent.id}" }`);
+      lines.push('```');
+      lines.push('');
+      lines.push(`Operations auto-expire after 10 minutes to prevent deadlock.`);
     }
 
     // File safety — prevent agents from deleting files they didn't create

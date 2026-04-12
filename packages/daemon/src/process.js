@@ -719,6 +719,25 @@ For normal file edits within your scope, proceed without review.
         // Process cross-scope handoff requests from this agent
         this._processHandoffs(agent);
       }
+
+      // Update Layer 7 specialization profile for this agent's session
+      if (this.daemon.memory && (finalStatus === 'completed' || finalStatus === 'crashed')) {
+        try {
+          const events = this.daemon.classifier?.agentWindows?.[agent.id] || [];
+          const signals = events.length >= 6
+            ? this.daemon.adaptive.extractSignals(events, agent.scope)
+            : null;
+          const score = signals ? this.daemon.adaptive.scoreSession(signals) : null;
+          const files = this.daemon.journalist?.getAgentFiles(agent) || [];
+          this.daemon.memory.updateSpecialization(agent.id, {
+            role: agent.role,
+            qualityScore: score,
+            filesTouched: files,
+            signals,
+            threshold: this.daemon.adaptive?.getThreshold(agent.provider, agent.role),
+          });
+        } catch { /* best-effort */ }
+      }
     });
 
     proc.on('error', (err) => {
@@ -1278,7 +1297,7 @@ For normal file edits within your scope, proceed without review.
     ].join('\n');
 
     try {
-      const response = await journalist.callHeadless(prompt);
+      const response = await journalist.callHeadless(prompt, { trackAs: '__negotiator__' });
       return response;
     } catch {
       // Fallback: return raw data for the agent to interpret

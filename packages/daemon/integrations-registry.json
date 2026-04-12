@@ -423,5 +423,553 @@
     "rating": 0,
     "ratingCount": 0,
     "verified": "mcp-official"
+  },
+  {
+    "id": "elevenlabs",
+    "name": "ElevenLabs",
+    "description": "Text-to-speech, voice generation, and audio synthesis",
+    "category": "ai",
+    "icon": "elevenlabs",
+    "tags": ["voice", "tts", "audio", "speech"],
+    "roles": ["creative", "cmo", "support"],
+    "npmPackage": "elevenlabs-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "elevenlabs-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "ELEVENLABS_API_KEY", "label": "API Key", "required": true }
+    ],
+    "setupUrl": "https://elevenlabs.io/app/settings/api-keys",
+    "setupSteps": [
+      "Click the link below to open ElevenLabs settings",
+      "Copy your API key from the API Keys section"
+    ],
+    "requiresApproval": [],
+    "agentInstructions": "## ElevenLabs Integration\n\nYou have ElevenLabs connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/elevenlabs/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `text_to_speech` — params: {text, voice_id}\n- `list_voices` — params: {}\n- `get_voice` — params: {voice_id}\n\n### Rules\n- List voices first to find valid voice_id values\n- Keep text under 5000 chars per request",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "sentry",
+    "name": "Sentry",
+    "description": "Error tracking, issue management, and application monitoring",
+    "category": "developer",
+    "icon": "sentry",
+    "tags": ["errors", "monitoring", "debugging", "issues"],
+    "roles": ["backend", "fullstack", "devops"],
+    "npmPackage": "@sentry/mcp-server",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@sentry/mcp-server"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "SENTRY_AUTH_TOKEN", "label": "Auth Token", "required": true }
+    ],
+    "setupUrl": "https://sentry.io/settings/account/api/auth-tokens/",
+    "setupSteps": [
+      "Click the link below to open Sentry auth tokens",
+      "Create a new auth token with project:read and issue:read scopes",
+      "Copy the token"
+    ],
+    "requiresApproval": [],
+    "agentInstructions": "## Sentry Integration\n\nYou have Sentry connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/sentry/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `list_issues` — params: {project, query}\n- `get_issue` — params: {issue_id}\n- `list_events` — params: {issue_id}\n- `resolve_issue` — params: {issue_id}\n\n### Rules\n- Use query filters to narrow results\n- Check issue frequency before triaging",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "verified"
+  },
+  {
+    "id": "hubspot",
+    "name": "HubSpot",
+    "description": "CRM, contacts, deals, and marketing automation",
+    "category": "crm",
+    "icon": "hubspot",
+    "tags": ["crm", "sales", "contacts", "marketing"],
+    "roles": ["cmo", "analyst", "support"],
+    "npmPackage": "hubspot-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "hubspot-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "HUBSPOT_ACCESS_TOKEN", "label": "Private App Token", "required": true }
+    ],
+    "setupUrl": "https://app.hubspot.com/settings/private-apps",
+    "setupSteps": [
+      "Click the link below to open HubSpot Private Apps",
+      "Create a new private app with the scopes you need",
+      "Copy the access token"
+    ],
+    "requiresApproval": ["create_contact", "create_deal"],
+    "agentInstructions": "## HubSpot Integration\n\nYou have HubSpot connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/hubspot/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_contacts` — params: {query}\n- `create_contact` — params: {email, firstName, lastName}\n- `list_deals` — params: {limit}\n- `create_deal` — params: {name, amount, stage}\n\n### Rules\n- Search before creating to avoid duplicates\n- Confirm contact details before creating",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "jira",
+    "name": "Jira",
+    "description": "Issue tracking, sprints, and project management",
+    "category": "productivity",
+    "icon": "jira",
+    "tags": ["issues", "project-management", "sprints", "tickets"],
+    "roles": ["fullstack", "backend", "devops"],
+    "npmPackage": "jira-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "jira-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "JIRA_HOST", "label": "Jira Host", "placeholder": "your-domain.atlassian.net", "required": true },
+      { "key": "JIRA_EMAIL", "label": "Email", "required": true },
+      { "key": "JIRA_API_TOKEN", "label": "API Token", "required": true }
+    ],
+    "setupUrl": "https://id.atlassian.com/manage-profile/security/api-tokens",
+    "setupSteps": [
+      "Click the link below to open Atlassian API tokens",
+      "Click 'Create API token', label it 'Groove'",
+      "Copy the token and enter your Jira host and email"
+    ],
+    "requiresApproval": ["create_issue", "delete_issue"],
+    "agentInstructions": "## Jira Integration\n\nYou have Jira connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/jira/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_issues` — params: {jql}\n- `create_issue` — params: {project, summary, type, description}\n- `get_issue` — params: {issueKey}\n- `transition_issue` — params: {issueKey, transitionId}\n\n### Rules\n- Use JQL for efficient searches\n- Search before creating to avoid duplicates",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "sendgrid",
+    "name": "SendGrid",
+    "description": "Transactional and marketing email at scale",
+    "category": "communication",
+    "icon": "sendgrid",
+    "tags": ["email", "transactional", "marketing", "newsletters"],
+    "roles": ["cmo", "support", "fullstack"],
+    "npmPackage": "sendgrid-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "sendgrid-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "SENDGRID_API_KEY", "label": "API Key", "placeholder": "SG...", "required": true }
+    ],
+    "setupUrl": "https://app.sendgrid.com/settings/api_keys",
+    "setupSteps": [
+      "Click the link below to open SendGrid API keys",
+      "Click 'Create API Key' with appropriate permissions",
+      "Copy the key (starts with SG)"
+    ],
+    "requiresApproval": ["send_email", "send_campaign"],
+    "agentInstructions": "## SendGrid Integration\n\nYou have SendGrid connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/sendgrid/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `send_email` — params: {to, from, subject, html}\n- `list_templates` — params: {}\n- `get_stats` — params: {start_date}\n\n### Rules\n- Always confirm recipient and content before sending\n- Use verified sender addresses only",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "resend",
+    "name": "Resend",
+    "description": "Modern email API for developers",
+    "category": "communication",
+    "icon": "resend",
+    "tags": ["email", "transactional", "developer"],
+    "roles": ["fullstack", "backend", "cmo"],
+    "npmPackage": "resend-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "resend-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "RESEND_API_KEY", "label": "API Key", "placeholder": "re_...", "required": true }
+    ],
+    "setupUrl": "https://resend.com/api-keys",
+    "setupSteps": [
+      "Click the link below to open Resend API keys",
+      "Create a new API key",
+      "Copy the key (starts with re_)"
+    ],
+    "requiresApproval": ["send_email"],
+    "agentInstructions": "## Resend Integration\n\nYou have Resend connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/resend/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `send_email` — params: {from, to, subject, html}\n- `list_emails` — params: {}\n- `get_email` — params: {id}\n\n### Rules\n- Confirm recipient and subject before sending\n- Use a verified domain as the from address",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "replicate",
+    "name": "Replicate",
+    "description": "Run AI models — image generation, video, audio, and more",
+    "category": "ai",
+    "icon": "replicate",
+    "tags": ["ai", "images", "models", "generation"],
+    "roles": ["creative", "cmo", "analyst"],
+    "npmPackage": "replicate-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "replicate-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "REPLICATE_API_TOKEN", "label": "API Token", "required": true }
+    ],
+    "setupUrl": "https://replicate.com/account/api-tokens",
+    "setupSteps": [
+      "Click the link below to open Replicate API tokens",
+      "Copy your API token"
+    ],
+    "requiresApproval": [],
+    "agentInstructions": "## Replicate Integration\n\nYou have Replicate connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/replicate/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `run_model` — params: {model, input}\n- `list_models` — params: {query}\n- `get_prediction` — params: {id}\n\n### Rules\n- Check model input schema before running\n- Models may take minutes — poll prediction status",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "vercel",
+    "name": "Vercel",
+    "description": "Deployments, domains, and serverless functions",
+    "category": "developer",
+    "icon": "vercel",
+    "tags": ["deploy", "hosting", "serverless", "domains"],
+    "roles": ["devops", "fullstack", "frontend"],
+    "npmPackage": "vercel-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "vercel-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "VERCEL_TOKEN", "label": "Access Token", "required": true }
+    ],
+    "setupUrl": "https://vercel.com/account/tokens",
+    "setupSteps": [
+      "Click the link below to open Vercel tokens",
+      "Create a new token and copy it"
+    ],
+    "requiresApproval": ["create_deployment", "delete_deployment"],
+    "agentInstructions": "## Vercel Integration\n\nYou have Vercel connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/vercel/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `list_deployments` — params: {projectId}\n- `get_deployment` — params: {deploymentId}\n- `list_projects` — params: {}\n- `list_domains` — params: {}\n\n### Rules\n- Confirm before triggering new deployments\n- Check deployment status after triggering",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "supabase",
+    "name": "Supabase",
+    "description": "Database, auth, storage, and edge functions",
+    "category": "database",
+    "icon": "supabase",
+    "tags": ["database", "auth", "storage", "postgres"],
+    "roles": ["backend", "fullstack", "analyst"],
+    "npmPackage": "supabase-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "supabase-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "SUPABASE_URL", "label": "Project URL", "placeholder": "https://xxx.supabase.co", "required": true },
+      { "key": "SUPABASE_SERVICE_KEY", "label": "Service Role Key", "required": true }
+    ],
+    "setupUrl": "https://supabase.com/dashboard/project/_/settings/api",
+    "setupSteps": [
+      "Click the link below to open Supabase project settings",
+      "Copy the Project URL and service_role key from the API section"
+    ],
+    "requiresApproval": [],
+    "agentInstructions": "## Supabase Integration\n\nYou have Supabase connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/supabase/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `query` — params: {sql}\n- `list_tables` — params: {}\n- `list_functions` — params: {}\n- `storage_list` — params: {bucket}\n\n### Rules\n- Never run destructive SQL without confirmation\n- Use service_role key only for admin operations",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "mixpanel",
+    "name": "Mixpanel",
+    "description": "Product analytics, user tracking, and funnel analysis",
+    "category": "analytics",
+    "icon": "mixpanel",
+    "tags": ["analytics", "events", "funnels", "users"],
+    "roles": ["analyst", "cmo", "cfo"],
+    "npmPackage": "mixpanel-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "mixpanel-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "MIXPANEL_API_SECRET", "label": "API Secret", "required": true }
+    ],
+    "setupUrl": "https://mixpanel.com/settings/project",
+    "setupSteps": [
+      "Click the link below to open Mixpanel project settings",
+      "Copy the API Secret from the Overview section"
+    ],
+    "requiresApproval": [],
+    "agentInstructions": "## Mixpanel Integration\n\nYou have Mixpanel connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/mixpanel/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `query_events` — params: {event, from_date, to_date}\n- `get_funnels` — params: {funnel_id}\n- `query_retention` — params: {event}\n\n### Rules\n- Use date ranges to limit query scope\n- Summarize key metrics rather than dumping raw data",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "datadog",
+    "name": "Datadog",
+    "description": "Infrastructure monitoring, APM, and log analysis",
+    "category": "developer",
+    "icon": "datadog",
+    "tags": ["monitoring", "apm", "logs", "metrics"],
+    "roles": ["devops", "backend"],
+    "npmPackage": "datadog-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "datadog-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "DD_API_KEY", "label": "API Key", "required": true },
+      { "key": "DD_APP_KEY", "label": "Application Key", "required": true }
+    ],
+    "setupUrl": "https://app.datadoghq.com/organization-settings/api-keys",
+    "setupSteps": [
+      "Click the link below to open Datadog API keys",
+      "Create an API key and an Application key",
+      "Copy both keys"
+    ],
+    "requiresApproval": [],
+    "agentInstructions": "## Datadog Integration\n\nYou have Datadog connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/datadog/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `query_metrics` — params: {query, from, to}\n- `search_logs` — params: {query, from, to}\n- `list_monitors` — params: {}\n- `get_monitor` — params: {monitor_id}\n\n### Rules\n- Use time ranges to limit query scope\n- Check monitor status before making changes",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "airtable",
+    "name": "Airtable",
+    "description": "Flexible databases and content management",
+    "category": "productivity",
+    "icon": "airtable",
+    "tags": ["database", "spreadsheet", "content", "crm"],
+    "roles": ["ea", "cmo", "analyst"],
+    "npmPackage": "airtable-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "airtable-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "AIRTABLE_API_KEY", "label": "Personal Access Token", "required": true }
+    ],
+    "setupUrl": "https://airtable.com/create/tokens",
+    "setupSteps": [
+      "Click the link below to create an Airtable personal access token",
+      "Add scopes: data.records:read, data.records:write, schema.bases:read",
+      "Copy the token"
+    ],
+    "requiresApproval": ["create_record", "delete_record"],
+    "agentInstructions": "## Airtable Integration\n\nYou have Airtable connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/airtable/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `list_bases` — params: {}\n- `list_records` — params: {baseId, tableId}\n- `create_record` — params: {baseId, tableId, fields}\n- `search_records` — params: {baseId, tableId, formula}\n\n### Rules\n- List bases first to find valid base/table IDs\n- Use filterByFormula for efficient queries",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "zendesk",
+    "name": "Zendesk",
+    "description": "Customer support tickets and knowledge base",
+    "category": "support",
+    "icon": "zendesk",
+    "tags": ["tickets", "support", "helpdesk", "knowledge-base"],
+    "roles": ["support", "ea"],
+    "npmPackage": "zendesk-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "zendesk-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "ZENDESK_SUBDOMAIN", "label": "Subdomain", "placeholder": "your-company", "required": true },
+      { "key": "ZENDESK_EMAIL", "label": "Email", "required": true },
+      { "key": "ZENDESK_API_TOKEN", "label": "API Token", "required": true }
+    ],
+    "setupUrl": "https://support.zendesk.com/hc/en-us/articles/4408889192858",
+    "setupSteps": [
+      "In Zendesk Admin: Apps and Integrations > APIs > Zendesk API",
+      "Enable Token Access and create a new API token",
+      "Enter your subdomain (e.g., 'mycompany' from mycompany.zendesk.com)"
+    ],
+    "requiresApproval": ["create_ticket", "update_ticket"],
+    "agentInstructions": "## Zendesk Integration\n\nYou have Zendesk connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/zendesk/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_tickets` — params: {query}\n- `get_ticket` — params: {ticket_id}\n- `create_ticket` — params: {subject, description, priority}\n- `list_articles` — params: {}\n\n### Rules\n- Search before creating duplicate tickets\n- Confirm priority and assignee before creating",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "intercom",
+    "name": "Intercom",
+    "description": "Customer messaging, support, and engagement",
+    "category": "support",
+    "icon": "intercom",
+    "tags": ["chat", "support", "messaging", "customers"],
+    "roles": ["support", "cmo"],
+    "npmPackage": "intercom-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "intercom-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "INTERCOM_ACCESS_TOKEN", "label": "Access Token", "required": true }
+    ],
+    "setupUrl": "https://app.intercom.com/a/apps/_/developer-hub",
+    "setupSteps": [
+      "Click the link below to open Intercom Developer Hub",
+      "Create or select an app, then go to Authentication",
+      "Copy the Access Token"
+    ],
+    "requiresApproval": ["send_message", "create_conversation"],
+    "agentInstructions": "## Intercom Integration\n\nYou have Intercom connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/intercom/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_contacts` — params: {query}\n- `list_conversations` — params: {}\n- `send_message` — params: {conversation_id, body}\n- `create_note` — params: {contact_id, body}\n\n### Rules\n- Confirm before sending messages to customers\n- Search contacts before creating new ones",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "twilio",
+    "name": "Twilio",
+    "description": "SMS, voice calls, and WhatsApp messaging",
+    "category": "communication",
+    "icon": "twilio",
+    "tags": ["sms", "voice", "phone", "whatsapp"],
+    "roles": ["ea", "support", "cmo"],
+    "npmPackage": "twilio-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "twilio-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "TWILIO_ACCOUNT_SID", "label": "Account SID", "placeholder": "AC...", "required": true },
+      { "key": "TWILIO_AUTH_TOKEN", "label": "Auth Token", "required": true },
+      { "key": "TWILIO_PHONE_NUMBER", "label": "Phone Number", "placeholder": "+1234567890", "required": true }
+    ],
+    "setupUrl": "https://console.twilio.com",
+    "setupSteps": [
+      "Go to console.twilio.com",
+      "Copy your Account SID and Auth Token from the dashboard",
+      "Get a phone number from Phone Numbers > Manage > Buy a number"
+    ],
+    "requiresApproval": ["send_sms", "make_call"],
+    "agentInstructions": "## Twilio Integration\n\nYou have Twilio connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/twilio/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `send_sms` — params: {to, body}\n- `list_messages` — params: {limit}\n- `make_call` — params: {to, twiml}\n- `list_calls` — params: {limit}\n\n### Rules\n- Always confirm recipient number before sending SMS or calling\n- Use E.164 format for phone numbers (+1234567890)",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "telnyx",
+    "name": "Telnyx",
+    "description": "SMS, voice, and fax API",
+    "category": "communication",
+    "icon": "telnyx",
+    "tags": ["sms", "voice", "phone", "fax"],
+    "roles": ["ea", "support"],
+    "npmPackage": "telnyx-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "telnyx-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "TELNYX_API_KEY", "label": "API Key", "placeholder": "KEY...", "required": true },
+      { "key": "TELNYX_PHONE_NUMBER", "label": "Phone Number", "placeholder": "+1234567890", "required": true }
+    ],
+    "setupUrl": "https://portal.telnyx.com/#/app/api-keys",
+    "setupSteps": [
+      "Click the link below to open Telnyx API keys",
+      "Create a new API key and copy it",
+      "Get a phone number from the Telnyx portal"
+    ],
+    "requiresApproval": ["send_sms", "make_call"],
+    "agentInstructions": "## Telnyx Integration\n\nYou have Telnyx connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/telnyx/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `send_sms` — params: {to, text}\n- `list_messages` — params: {}\n- `make_call` — params: {to, from}\n\n### Rules\n- Confirm recipient before sending messages\n- Use E.164 format for phone numbers",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "aws",
+    "name": "AWS",
+    "description": "S3, Lambda, EC2, and cloud services",
+    "category": "developer",
+    "icon": "aws",
+    "tags": ["cloud", "s3", "lambda", "infrastructure"],
+    "roles": ["devops", "backend"],
+    "npmPackage": "aws-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "aws-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "AWS_ACCESS_KEY_ID", "label": "Access Key ID", "required": true },
+      { "key": "AWS_SECRET_ACCESS_KEY", "label": "Secret Access Key", "required": true },
+      { "key": "AWS_REGION", "label": "Region", "placeholder": "us-east-1", "required": true }
+    ],
+    "setupUrl": "https://console.aws.amazon.com/iam/home#/security_credentials",
+    "setupSteps": [
+      "Click the link below to open AWS IAM Security Credentials",
+      "Create an access key under 'Access keys'",
+      "Copy the Access Key ID and Secret Access Key"
+    ],
+    "requiresApproval": ["delete_object", "terminate_instance", "delete_function"],
+    "agentInstructions": "## AWS Integration\n\nYou have AWS connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/aws/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `s3_list_buckets` — params: {}\n- `s3_list_objects` — params: {bucket, prefix}\n- `lambda_list_functions` — params: {}\n- `lambda_invoke` — params: {functionName, payload}\n\n### Rules\n- Never delete resources without explicit confirmation\n- Use least-privilege access keys",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
+  },
+  {
+    "id": "plaid",
+    "name": "Plaid",
+    "description": "Bank connections and financial data",
+    "category": "finance",
+    "icon": "plaid",
+    "tags": ["banking", "transactions", "finance", "accounts"],
+    "roles": ["cfo", "analyst"],
+    "npmPackage": "plaid-mcp",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "plaid-mcp"],
+    "authType": "api-key",
+    "envKeys": [
+      { "key": "PLAID_CLIENT_ID", "label": "Client ID", "required": true },
+      { "key": "PLAID_SECRET", "label": "Secret", "required": true },
+      { "key": "PLAID_ENV", "label": "Environment", "placeholder": "sandbox", "required": false }
+    ],
+    "setupUrl": "https://dashboard.plaid.com/team/keys",
+    "setupSteps": [
+      "Click the link below to open Plaid team keys",
+      "Copy your Client ID and Secret",
+      "Use 'sandbox' environment for testing"
+    ],
+    "requiresApproval": [],
+    "agentInstructions": "## Plaid Integration\n\nYou have Plaid connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/plaid/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `get_accounts` — params: {access_token}\n- `get_transactions` — params: {access_token, start_date, end_date}\n- `get_balance` — params: {access_token}\n\n### Rules\n- Use sandbox environment for testing\n- Never expose access_tokens in output",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "community"
   }
 ]

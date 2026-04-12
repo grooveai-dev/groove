@@ -116,10 +116,33 @@ export class TokenTracker {
       cacheReadTokens: detail.cacheReadTokens || 0,
       cacheCreationTokens: detail.cacheCreationTokens || 0,
       model: detail.model || null,
+      // Reserved for future per-project grouping (workspaces feature).
+      // Caller passes the project's absolute root path when known.
+      projectRoot: detail.projectRoot || null,
       timestamp: new Date().toISOString(),
     });
 
     this.save();
+  }
+
+  // Sum tokens recorded for an agent since a given timestamp.
+  // Used by safety rotation triggers to measure per-instance burn
+  // (scoped to spawnedAt avoids counting pre-rotation history).
+  getTokensInWindow(agentId, sinceTs) {
+    const entry = this.usage[agentId];
+    if (!entry || !Array.isArray(entry.sessions)) return 0;
+    const cutoff = typeof sinceTs === 'number' ? sinceTs : new Date(sinceTs).getTime();
+    let total = 0;
+    for (const session of entry.sessions) {
+      const ts = new Date(session.timestamp).getTime();
+      if (ts >= cutoff) total += session.tokens || 0;
+    }
+    return total;
+  }
+
+  // Rolling velocity: tokens consumed in the last `windowMs` milliseconds.
+  getVelocity(agentId, windowMs) {
+    return this.getTokensInWindow(agentId, Date.now() - windowMs);
   }
 
   // Record session-level result data (cost, duration, turns) — fires once per completion
@@ -179,22 +202,23 @@ export class TokenTracker {
     return Object.values(this.usage).reduce((sum, a) => sum + (a.totalCostUsd || 0), 0);
   }
 
+  // Cache hit rate = cache reads / all cacheable input (reads + creation).
+  // Fresh inputTokens are conversation turns that were never cache-eligible,
+  // so they must be excluded from the denominator.
   getCacheHitRate() {
-    let totalRead = 0, totalCreation = 0, totalInput = 0;
+    let totalRead = 0, totalCreation = 0;
     for (const a of Object.values(this.usage)) {
       totalRead += a.cacheReadTokens || 0;
       totalCreation += a.cacheCreationTokens || 0;
-      totalInput += a.inputTokens || 0;
     }
-    const total = totalRead + totalCreation + totalInput;
-    return total > 0 ? totalRead / total : 0;
+    const cacheable = totalRead + totalCreation;
+    return cacheable > 0 ? totalRead / cacheable : 0;
   }
 
   // Generate a savings summary
   getSummary() {
     const totalTokens = this.getTotal();
     const totalCostUsd = this.getTotalCost();
-    const agentCount = Object.keys(this.usage).length;
     const sessionDuration = Date.now() - this.sessionStart;
 
     let totalInputTokens = 0, totalOutputTokens = 0;
@@ -210,6 +234,29 @@ export class TokenTracker {
       totalTurns += a.totalTurns || 0;
     }
 
+    // Segregate internal overhead (reserved IDs prefixed __) from user agents.
+    // Internal tokens still count in totals (real billing) but show separately.
+    const userEntries = Object.entries(this.usage).filter(([id]) => !id.startsWith('__'));
+    const internalEntries = Object.entries(this.usage).filter(([id]) => id.startsWith('__'));
+    const agentCount = userEntries.length;
+
+    const internalComponents = {};
+    let internalTokens = 0;
+    let internalCostUsd = 0;
+    for (const [id, data] of internalEntries) {
+      internalComponents[id] = {
+        tokens: data.total,
+        costUsd: data.totalCostUsd || 0,
+        inputTokens: data.inputTokens || 0,
+        outputTokens: data.outputTokens || 0,
+        cacheReadTokens: data.cacheReadTokens || 0,
+        cacheCreationTokens: data.cacheCreationTokens || 0,
+        sessions: data.sessions.length,
+      };
+      internalTokens += data.total;
+      internalCostUsd += data.totalCostUsd || 0;
+    }
+
     const coldStartOverhead = this.getColdStartOverhead();
     const coldStartWaste = this.coldStartsSkipped * coldStartOverhead;
     const conflictWaste = this.conflictsPrevented * CONFLICT_OVERHEAD;
@@ -221,8 +268,10 @@ export class TokenTracker {
       ? Math.round(rawPct * 10) / 10
       : Math.round(rawPct);
 
-    const cacheTotal = totalCacheRead + totalCacheCreation + totalInputTokens;
-    const cacheHitRate = cacheTotal > 0 ? totalCacheRead / cacheTotal : 0;
+    // Cache hit rate: reads / (reads + creation). Excludes fresh inputTokens
+    // which are never cache-eligible.
+    const cacheable = totalCacheRead + totalCacheCreation;
+    const cacheHitRate = cacheable > 0 ? totalCacheRead / cacheable : 0;
 
     return {
       totalTokens,
@@ -244,7 +293,12 @@ export class TokenTracker {
         percentage: coordPct,
         estimatedWithoutGroove: estimatedWithout,
       },
-      perAgent: Object.entries(this.usage).map(([id, data]) => ({
+      internalOverhead: {
+        tokens: internalTokens,
+        costUsd: internalCostUsd,
+        components: internalComponents,
+      },
+      perAgent: userEntries.map(([id, data]) => ({
         agentId: id,
         tokens: data.total,
         costUsd: data.totalCostUsd || 0,

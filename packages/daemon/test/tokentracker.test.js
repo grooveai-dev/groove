@@ -109,4 +109,82 @@ describe('TokenTracker', () => {
     assert.ok(summary.savings.percentage > 0);
     assert.ok(summary.savings.estimatedWithoutGroove > summary.totalTokens);
   });
+
+  it('cache hit rate returns 0 when no cacheable tokens exist', () => {
+    tracker.record('agent-1', { tokens: 1000, inputTokens: 1000 });
+    const summary = tracker.getSummary();
+    assert.equal(summary.cacheHitRate, 0);
+    assert.equal(tracker.getCacheHitRate(), 0);
+  });
+
+  it('cache hit rate excludes fresh input tokens from denominator', () => {
+    // 800 cache reads + 200 cache creation = 1000 cacheable → 80% hit rate.
+    // Fresh inputTokens must NOT inflate the denominator.
+    tracker.record('agent-1', {
+      tokens: 6000,
+      inputTokens: 5000,
+      cacheReadTokens: 800,
+      cacheCreationTokens: 200,
+    });
+    const summary = tracker.getSummary();
+    assert.equal(summary.cacheHitRate, 0.8);
+  });
+
+  it('cache hit rate is 1.0 when all cacheable tokens are reads', () => {
+    tracker.record('agent-1', {
+      tokens: 1000,
+      cacheReadTokens: 1000,
+      cacheCreationTokens: 0,
+    });
+    assert.equal(tracker.getCacheHitRate(), 1.0);
+  });
+
+  it('internal reserved IDs (__prefix) are segregated from user agents', () => {
+    tracker.record('agent-1', { tokens: 1000, inputTokens: 1000 });
+    tracker.record('agent-2', { tokens: 500, inputTokens: 500 });
+    tracker.record('__journalist__', { tokens: 300, inputTokens: 300 });
+    tracker.record('__pm__', { tokens: 200, inputTokens: 200 });
+
+    const summary = tracker.getSummary();
+    // perAgent excludes internal IDs
+    assert.equal(summary.perAgent.length, 2);
+    assert.ok(summary.perAgent.every((a) => !a.agentId.startsWith('__')));
+    // agentCount reflects user-facing agents only
+    assert.equal(summary.agentCount, 2);
+    // Internal overhead is exposed separately
+    assert.equal(summary.internalOverhead.tokens, 500);
+    assert.equal(summary.internalOverhead.components['__journalist__'].tokens, 300);
+    assert.equal(summary.internalOverhead.components['__pm__'].tokens, 200);
+    // totalTokens still includes internal (reflects real billing)
+    assert.equal(summary.totalTokens, 2000);
+  });
+
+  it('empty internalOverhead when no internal IDs recorded', () => {
+    tracker.record('agent-1', { tokens: 100 });
+    const summary = tracker.getSummary();
+    assert.equal(summary.internalOverhead.tokens, 0);
+    assert.deepEqual(summary.internalOverhead.components, {});
+  });
+
+  it('getTokensInWindow returns 0 for unknown agent', () => {
+    assert.equal(tracker.getTokensInWindow('nonexistent', 0), 0);
+  });
+
+  it('getTokensInWindow sums sessions since a given timestamp', () => {
+    tracker.record('agent-1', { tokens: 100 });
+    tracker.record('agent-1', { tokens: 200 });
+    tracker.record('agent-1', { tokens: 300 });
+    // sinceTs = 0 captures all
+    assert.equal(tracker.getTokensInWindow('agent-1', 0), 600);
+    // sinceTs = now + 10s captures nothing
+    assert.equal(tracker.getTokensInWindow('agent-1', Date.now() + 10_000), 0);
+  });
+
+  it('getVelocity returns tokens in a rolling window', () => {
+    tracker.record('agent-1', { tokens: 1000 });
+    // Large window captures the recent recording
+    assert.equal(tracker.getVelocity('agent-1', 60_000), 1000);
+    // Empty tracker returns 0
+    assert.equal(tracker.getVelocity('unknown-agent', 60_000), 0);
+  });
 });

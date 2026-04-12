@@ -162,4 +162,112 @@ describe('Rotator', () => {
     assert.equal(stats.totalRotations, 2);
     assert.equal(stats.totalTokensSaved, 8000);
   });
+
+  describe('safety triggers', () => {
+    const SPAWNED = new Date(Date.now() - 60_000).toISOString(); // spawned 1 min ago
+
+    function mkAgent(overrides = {}) {
+      return {
+        id: 'a1', name: 'backend-1', role: 'backend',
+        provider: 'claude-code', scope: [], model: null,
+        tokensUsed: 0, contextUsage: 0.1, workingDir: '/tmp',
+        spawnedAt: SPAWNED, status: 'running',
+        ...overrides,
+      };
+    }
+
+    it('returns null when safety config is missing', () => {
+      mockDaemon.config = undefined;
+      const trigger = rotator._checkSafetyTriggers(mkAgent());
+      assert.equal(trigger, null);
+    });
+
+    it('returns null when autoRotate is disabled', () => {
+      mockDaemon.config = { safety: { autoRotate: false, tokenCeilingPerAgent: 100 } };
+      mockDaemon.tokens.getTokensInWindow = () => 1000;
+      const trigger = rotator._checkSafetyTriggers(mkAgent());
+      assert.equal(trigger, null);
+    });
+
+    it('fires token_limit_exceeded when instance tokens hit ceiling', () => {
+      mockDaemon.config = {
+        safety: {
+          autoRotate: true,
+          tokenCeilingPerAgent: 1_000_000,
+          velocityWindowSeconds: 300,
+          velocityTokenThreshold: 2_000_000,
+        },
+      };
+      mockDaemon.tokens.getTokensInWindow = () => 1_200_000;
+      mockDaemon.tokens.getVelocity = () => 0;
+
+      const trigger = rotator._checkSafetyTriggers(mkAgent());
+      assert.equal(trigger.reason, 'token_limit_exceeded');
+      assert.equal(trigger.instanceTokens, 1_200_000);
+      assert.equal(trigger.ceiling, 1_000_000);
+    });
+
+    it('fires runaway_velocity when recent burn exceeds threshold', () => {
+      mockDaemon.config = {
+        safety: {
+          autoRotate: true,
+          tokenCeilingPerAgent: 10_000_000,
+          velocityWindowSeconds: 300,
+          velocityTokenThreshold: 1_000_000,
+        },
+      };
+      mockDaemon.tokens.getTokensInWindow = () => 500_000; // under ceiling
+      mockDaemon.tokens.getVelocity = () => 1_500_000;
+
+      const trigger = rotator._checkSafetyTriggers(mkAgent());
+      assert.equal(trigger.reason, 'runaway_velocity');
+      assert.equal(trigger.velocity, 1_500_000);
+      assert.equal(trigger.threshold, 1_000_000);
+      assert.equal(trigger.windowMs, 300_000);
+    });
+
+    it('ceiling check takes priority over velocity check', () => {
+      mockDaemon.config = {
+        safety: {
+          autoRotate: true,
+          tokenCeilingPerAgent: 1_000_000,
+          velocityWindowSeconds: 300,
+          velocityTokenThreshold: 1_000_000,
+        },
+      };
+      mockDaemon.tokens.getTokensInWindow = () => 2_000_000;
+      mockDaemon.tokens.getVelocity = () => 2_000_000;
+      const trigger = rotator._checkSafetyTriggers(mkAgent());
+      assert.equal(trigger.reason, 'token_limit_exceeded');
+    });
+
+    it('returns null when neither threshold hit', () => {
+      mockDaemon.config = {
+        safety: {
+          autoRotate: true,
+          tokenCeilingPerAgent: 5_000_000,
+          velocityWindowSeconds: 300,
+          velocityTokenThreshold: 1_500_000,
+        },
+      };
+      mockDaemon.tokens.getTokensInWindow = () => 100_000;
+      mockDaemon.tokens.getVelocity = () => 10_000;
+      const trigger = rotator._checkSafetyTriggers(mkAgent());
+      assert.equal(trigger, null);
+    });
+
+    it('stats track safety-triggered rotations separately', async () => {
+      mockDaemon.registry.agents = [mkAgent({ tokensUsed: 1_200_000 })];
+      await rotator.rotate('a1', {
+        reason: 'token_limit_exceeded',
+        instanceTokens: 1_200_000,
+        ceiling: 1_000_000,
+      });
+
+      const stats = rotator.getStats();
+      assert.equal(stats.tokenLimitRotations, 1);
+      assert.equal(stats.velocityRotations, 0);
+      assert.equal(stats.totalRotations, 1);
+    });
+  });
 });

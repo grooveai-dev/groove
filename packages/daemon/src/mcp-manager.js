@@ -75,7 +75,7 @@ export class McpManager {
 
     proc.on('exit', (code, signal) => {
       console.log(`[Groove:MCP:${integrationId}] Process exited: code=${code} signal=${signal}`);
-      if (code !== 0 && code !== null) {
+      if ((code !== 0 && code !== null) || (code === null && signal)) {
         this._handleCrash(integrationId);
       }
     });
@@ -102,6 +102,7 @@ export class McpManager {
       await this.startServer(integrationId);
       server = this.servers.get(integrationId);
     }
+    if (!server) throw new Error(`Failed to start MCP server for ${integrationId}`);
 
     server.lastCall = Date.now();
     this._resetIdleTimer(server);

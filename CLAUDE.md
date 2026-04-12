@@ -33,19 +33,20 @@ groove/
 - **MimeTypes** (`mimetypes.js`) — MIME type lookup utilities
 
 **Coordination:**
-- **Introducer** (`introducer.js`) — generates AGENTS_REGISTRY.md, injects GROOVE section into CLAUDE.md, team context for new agents
-- **LockManager** (`lockmanager.js`) — file scope ownership via glob patterns, conflict detection with minimatch
+- **Introducer** (`introducer.js`) — generates AGENTS_REGISTRY.md, injects GROOVE section into CLAUDE.md, team context + Project Memory (Layer 7) injection for new agents
+- **LockManager** (`lockmanager.js`) — file scope ownership via glob patterns, coordination operations (enforced knock protocol, 10-min TTL), conflict detection with minimatch
 - **Supervisor** (`supervisor.js`) — QC approval routing, conflict recording, GROOVE_CONFLICTS.md, auto-QC at 4+ agents
 - **Teams** (`teams.js`) — live organizational groups (CRUD), auto-migration of legacy agents, backward compat stubs
 
 **Intelligence:**
-- **Journalist** (`journalist.js`) — AI-powered context synthesis (headless claude -p), log filtering (stream-json parsing), GROOVE_PROJECT_MAP.md, GROOVE_DECISIONS.md, per-agent session logs, handoff brief generation
-- **Rotator** (`rotator.js`) — context rotation engine (kill + respawn with fresh context), auto-rotation at adaptive threshold, timeline integration
-- **Adaptive** (`adaptive.js`) — per-provider per-role rotation thresholds, session scoring 0-100, threshold adjustment (+2%/-5%), convergence detection
-- **TokenTracker** (`tokentracker.js`) — per-agent token accounting, session metrics (duration/turns/cost), savings calculator
-- **Classifier** (`classifier.js`) — task complexity classification (light/medium/heavy) via sliding window pattern matching
-- **Router** (`router.js`) — adaptive model routing (Fixed/Auto/Auto-with-floor modes), cost tracking
-- **Timeline** (`timeline.js`) — historical metrics snapshots (30s intervals, max 2K), lifecycle events (spawn/complete/crash/kill/rotate, max 500)
+- **Journalist** (`journalist.js`) — AI-powered context synthesis (headless claude -p), log filtering (stream-json parsing), GROOVE_PROJECT_MAP.md, GROOVE_DECISIONS.md, per-agent session logs, handoff brief generation (prepends last 3 rotations from memory), reserved-ID token tracking for synthesis overhead
+- **Rotator** (`rotator.js`) — context rotation engine (kill + respawn with fresh context), adaptive threshold + quality + safety triggers (token ceiling, velocity spike), 5-min cooldown, pre/post velocity measurement, appends brief to persistent chain, updates specializations
+- **Adaptive** (`adaptive.js`) — per-provider per-role rotation thresholds, session scoring 0-100, threshold adjustment (+2%/-5%), convergence detection (used to gate quality rotations)
+- **TokenTracker** (`tokentracker.js`) — per-agent token accounting, session metrics (duration/turns/cost), corrected cache hit rate, velocity + windowed-tokens queries, internal overhead segregation, savings calculator
+- **Classifier** (`classifier.js`) — task complexity classification (light/medium/heavy) via sliding window, broadcasts mid-session updates every 20 events for downshift suggestions
+- **Router** (`router.js`) — adaptive model routing (Fixed/Auto/Auto-with-floor modes), cost tracking, downshift suggestion API (never auto-applied, requires user click)
+- **Memory** (`memory.js`) — **Layer 7** persistent agent memory: project-constraints.md, handoff-chain/<role>.md (last 10 per role), agent-discoveries.jsonl (error→fix pairs, dedup), agent-specializations.json (per-agent + per-role quality profiles)
+- **Timeline** (`timeline.js`) — historical metrics snapshots (30s intervals, max 2K), lifecycle events (spawn/complete/crash/kill/rotate with reason, max 500)
 
 **Services:**
 - **Skills** (`skills.js`) — skill marketplace management, API integration, local cache, auth tokens
@@ -226,9 +227,9 @@ GROOVE is a process manager, NOT a harness. Hard rules:
 - **Website:** groovedev.ai
 - **Docs:** docs.groovedev.ai
 
-## Current Status (v0.20.0)
+## Current Status (v0.27.0)
 
-Fully functional multi-agent orchestration system with complete GUI v2 rebuild. 29 daemon source files, 59 GUI components, 21+ CLI commands, 50+ API endpoints.
+Audit-driven release. Multi-agent orchestration system with 7 coordination layers: Journalist, Introducer/Knock Protocol, Rotator, Adaptive Thresholds, Token Tracker, Router/Classifier, and Persistent Agent Memory (new).
 
 **Key capabilities:**
 - GUI v2: VS Code-style layout, Tailwind CSS v4, Radix UI, zero inline styles
@@ -236,25 +237,29 @@ Fully functional multi-agent orchestration system with complete GUI v2 rebuild. 
 - Agent panel: chat (bubble UI, mode pills), stats (canvas charts), controls (model swap, rotate, kill)
 - Marketplace: NFT-style skill cards, integrations, search, ratings
 - Editor: CodeMirror 6, file tree, terminal (xterm.js)
-- Dashboard: KPI sparklines, token/cost charts, fleet panel, savings breakdown
+- Dashboard: KPI sparklines, token/cost charts, fleet panel, savings breakdown, per-team burn panel
 - Quick Launch: planner recommends team, one-click spawns all agents
 - Chat continuation: reply to completed agents, streaming text, markdown rendering
 - Context chain: planner output flows automatically to builders
-- Journalist: zero cold-start, synthesis on completion, 40K char budget
-- Infinite Sessions: adaptive rotation, degradation detection
-- Token tracking: wired end-to-end, session metrics, savings data real
+- Journalist: zero cold-start, synthesis on completion, 40K char budget, synthesis tokens now tracked
+- Infinite Sessions: adaptive rotation, degradation detection, 5-min cooldown, converged-profile awareness
+- Token tracking: wired end-to-end, session metrics, cache-corrected hit rate, internal overhead segregated from user agents
 - Timeline: historical metrics snapshots, lifecycle events
-- Teams: live organizational groups with CRUD operations
-- Coordination: knock protocol, task negotiation, memory containment
+- Teams: live organizational groups with CRUD operations, per-team burn tracking
+- Coordination: enforced knock protocol via HTTP, task negotiation, scope locks
+- Safety: auto-rotate on token ceiling (5M) or velocity spike (1.5M/5min), scoped to agent instance
+- Persistent Memory (Layer 7): project constraints, handoff chains, error→fix discoveries, per-agent specializations — agent #50 knows what agent #1 learned
+- Mid-session classification: surfaces downshift suggestions, never silently downshifts
 - Federation: daemon-to-daemon pairing over Tailscale mesh
 - Scheduling: cron-based agent scheduling
 - Audit: append-only operation logging
 
 **Next steps:**
+- GUI: memory view (constraints/chains/discoveries tabs)
+- GUI: downshift suggestion pill in agent panel
+- Stress test: reproduce 275M burn with v0.27 to measure real improvements
 - Terminal multi-tab support
 - Marketplace detail modal for integrations
 - Dashboard: routing donut, cache panel, context health gauges
-- Settings view
 - Monitor/QC agent mode (stay active, loop)
-- Semantic degradation detection
 - Distribution: demo video, HN launch, Twitter content

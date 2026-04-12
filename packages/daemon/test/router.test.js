@@ -93,4 +93,68 @@ describe('ModelRouter', () => {
     assert.equal(status.modes.AUTO, 'auto');
     assert.equal(status.modes.AUTO_FLOOR, 'auto-floor');
   });
+
+  describe('getSuggestion (downshift only, never auto-applied)', () => {
+    beforeEach(() => {
+      // Mock registry returns an agent on claude-code with heavy model
+      mockDaemon.registry.get = (id) => ({
+        id,
+        provider: 'claude-code',
+        model: 'claude-opus-4-6',
+        role: 'backend',
+      });
+    });
+
+    it('returns null when agent not found', () => {
+      mockDaemon.registry.get = () => null;
+      assert.equal(router.getSuggestion('missing'), null);
+    });
+
+    it('returns null when classifier has too few events', () => {
+      // Add a handful — below the 40-event threshold
+      for (let i = 0; i < 10; i++) {
+        mockDaemon.classifier.addEvent('agent-1', { type: 'tool', tool: 'Read', input: `f${i}.js` });
+      }
+      assert.equal(router.getSuggestion('agent-1'), null);
+    });
+
+    it('suggests a lighter model when classification is light with enough data', () => {
+      for (let i = 0; i < 50; i++) {
+        mockDaemon.classifier.addEvent('agent-1', { type: 'tool', tool: 'Read', input: `f${i}.js` });
+      }
+      const s = router.getSuggestion('agent-1');
+      assert.ok(s, 'expected a suggestion');
+      assert.equal(s.classifiedTier, 'light');
+      assert.equal(s.currentModel.tier, 'heavy');
+      assert.ok(['medium', 'light'].includes(s.suggestedModel.tier));
+    });
+
+    it('does not suggest upshift (never silently escalates)', () => {
+      // Heavy-signal events
+      for (let i = 0; i < 50; i++) {
+        mockDaemon.classifier.addEvent('agent-1', {
+          type: 'tool', tool: 'Edit', input: `f${i}.js`, data: 'complex refactor migrate schema',
+        });
+      }
+      // Current model is already heavy; never suggest going heavier
+      const s = router.getSuggestion('agent-1');
+      // Either null (no lower tier) or only suggests lighter
+      if (s) {
+        const tierRank = { heavy: 3, medium: 2, light: 1 };
+        assert.ok(tierRank[s.suggestedModel.tier] < tierRank[s.currentModel.tier]);
+      }
+    });
+
+    it('returns null when current model already matches classification', () => {
+      mockDaemon.registry.get = (id) => ({
+        id, provider: 'claude-code',
+        model: 'claude-haiku-4-5-20251001', // light tier
+        role: 'backend',
+      });
+      for (let i = 0; i < 50; i++) {
+        mockDaemon.classifier.addEvent('agent-1', { type: 'tool', tool: 'Read', input: `f${i}.js` });
+      }
+      assert.equal(router.getSuggestion('agent-1'), null);
+    });
+  });
 });

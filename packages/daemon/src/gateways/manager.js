@@ -638,7 +638,7 @@ export class GatewayManager {
         '\nSynthesize a concise answer based on the team\'s collective context.',
       ].join('\n');
 
-      const response = await this.daemon.journalist.callHeadless(prompt);
+      const response = await this.daemon.journalist.callHeadless(prompt, { trackAs: '__gateway__' });
       return { text: `\ud83d\udcac Team ${result.team.name}:\n${truncate(response, 3000)}` };
     }
 
@@ -659,7 +659,7 @@ export class GatewayManager {
       '\nAnswer concisely based on the agent context above.',
     ].filter(Boolean).join('\n');
 
-    const response = await this.daemon.journalist.callHeadless(prompt);
+    const response = await this.daemon.journalist.callHeadless(prompt, { trackAs: '__gateway__' });
     return { text: `\ud83d\udcac ${agent.name || agent.id}:\n${truncate(response, 3000)}` };
   }
 

@@ -54,7 +54,7 @@ Review: Is this within scope? Conflicts with other agents? Aligns with project? 
 Respond in ONE line: APPROVED: <reason> or REJECTED: <reason>`;
 
     try {
-      const result = await this.daemon.journalist.callHeadless(prompt);
+      const result = await this.daemon.journalist.callHeadless(prompt, { trackAs: '__pm__' });
       const text = (result || '').trim();
       const approved = !text.toUpperCase().startsWith('REJECTED');
       const reason = text.replace(/^(APPROVED|REJECTED):?\s*/i, '').trim();

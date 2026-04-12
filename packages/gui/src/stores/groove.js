@@ -58,8 +58,6 @@ export const useGrooveStore = create((set, get) => ({
   chatHistory: loadJSON('groove:chatHistory'),
   chatInputs: {},   // Per-agent draft input text — persists across tab switches
   tokenTimeline: {},
-  dashTelemetry: {},
-  ccChartTimeline: [],
 
   // ── Approvals ─────────────────────────────────────────────
   pendingApprovals: [],

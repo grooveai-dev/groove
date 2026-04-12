@@ -5,7 +5,7 @@ import { fmtNum, fmtPct, fmtDollar, timeAgo } from '../../lib/format';
 import { cn } from '../../lib/cn';
 import { HEX } from '../../lib/theme-hex';
 import { roleColor } from '../../lib/status';
-import { Activity, Brain, Radio, AlertTriangle, CheckCircle, RotateCw, HelpCircle } from 'lucide-react';
+import { Activity, Brain, Radio, AlertTriangle, CheckCircle, RotateCw, HelpCircle, BookOpen } from 'lucide-react';
 import { Tooltip } from '../ui/tooltip';
 
 /* ── Tiny SVG sparkline for inline use ──────────────────────── */
@@ -204,17 +204,70 @@ function HealthTab({ tokens, rotation, agentBreakdown }) {
         </div>
       )}
 
+      {/* Internal Overhead (GROOVE's own cost to coordinate) */}
+      {tokens?.internalOverhead?.tokens > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-2xs font-mono text-text-3 uppercase tracking-wider flex items-center">
+              GROOVE Overhead
+              <InfoTip text="Tokens consumed by GROOVE's own coordination: the Journalist (synthesis), PM (approval gates), Planner, Task Negotiator, Gateway, and user Q&A. Previously invisible — now tracked for honest ROI." />
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-2xs font-mono text-text-2 tabular-nums">
+                {fmtNum(tokens.internalOverhead.tokens)} tokens
+              </span>
+              <span className="text-2xs font-mono text-text-3 tabular-nums">
+                {fmtDollar(tokens.internalOverhead.costUsd || 0)}
+              </span>
+              {tokens.totalTokens > 0 && (
+                <span className="text-2xs font-mono font-semibold tabular-nums" style={{ color: HEX.purple }}>
+                  {Math.round((tokens.internalOverhead.tokens / tokens.totalTokens) * 100)}%
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {Object.entries(tokens.internalOverhead.components || {})
+              .sort((a, b) => (b[1].tokens || 0) - (a[1].tokens || 0))
+              .slice(0, 6)
+              .map(([id, comp]) => {
+                const label = id.replace(/^__|__$/g, '').replace(/_/g, ' ');
+                return (
+                  <div key={id} className="bg-surface-0 rounded px-2 py-1.5">
+                    <div className="text-2xs font-mono text-text-3 uppercase tracking-wider truncate">{label}</div>
+                    <div className="text-xs font-mono text-text-1 tabular-nums font-semibold">
+                      {fmtNum(comp.tokens || 0)}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
       {/* Coordination savings */}
       {(tokens?.savings?.total || 0) > 0 && (
         <div>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-2xs font-mono text-text-3 uppercase tracking-wider">Coordination Savings</span>
+            <span className="text-2xs font-mono text-text-3 uppercase tracking-wider flex items-center">
+              Coordination Savings
+              <InfoTip text="Tokens saved vs. uncoordinated agents. Rotation savings are estimated from context degradation (pre/post velocity measurement underway). Conflict prevention and cold-start skip use fixed-overhead models. Compare against GROOVE Overhead above for honest ROI." />
+            </span>
             <span className="text-2xs font-mono text-text-2 tabular-nums">{fmtNum(tokens.savings.total)} tokens</span>
           </div>
           <div className="space-y-2">
-            <ProgressBar label="Cold-start skip" value={tokens.savings.fromColdStartSkip || 0} total={tokens.savings.total || 1} color={HEX.info} />
-            <ProgressBar label="Rotation" value={tokens.savings.fromRotation || 0} total={tokens.savings.total || 1} color={HEX.accent} />
-            <ProgressBar label="Conflict prevention" value={tokens.savings.fromConflictPrevention || 0} total={tokens.savings.total || 1} color="#4ec9d4" />
+            <div className="space-y-1">
+              <ProgressBar label="Cold-start skip" value={tokens.savings.fromColdStartSkip || 0} total={tokens.savings.total || 1} color={HEX.info} />
+              <div className="text-2xs font-mono text-text-4 pl-2">estimated · {(tokens?.savings?.fromColdStartSkip || 0) > 0 ? 'fixed overhead per skip' : ''}</div>
+            </div>
+            <div className="space-y-1">
+              <ProgressBar label="Rotation" value={tokens.savings.fromRotation || 0} total={tokens.savings.total || 1} color={HEX.accent} />
+              <div className="text-2xs font-mono text-text-4 pl-2">estimated · velocity measurement accumulating</div>
+            </div>
+            <div className="space-y-1">
+              <ProgressBar label="Conflict prevention" value={tokens.savings.fromConflictPrevention || 0} total={tokens.savings.total || 1} color="#4ec9d4" />
+              <div className="text-2xs font-mono text-text-4 pl-2">estimated · fixed overhead per conflict</div>
+            </div>
           </div>
         </div>
       )}
@@ -227,7 +280,13 @@ function HealthTab({ tokens, rotation, agentBreakdown }) {
             {recentHistory.map((r, i) => {
               const isQuality = r.reason === 'quality_degradation';
               const isNatural = r.reason === 'natural_compaction';
-              const dotColor = isQuality ? '#e5c07b' : isNatural ? '#c678dd' : '#33afbc';
+              const isTokenLimit = r.reason === 'token_limit_exceeded';
+              const isVelocity = r.reason === 'runaway_velocity';
+              const dotColor = isTokenLimit ? '#e06c75'
+                : isVelocity ? '#ff8c42'
+                : isQuality ? '#e5c07b'
+                : isNatural ? '#c678dd'
+                : '#33afbc';
               return (
                 <div key={i} className="flex items-start gap-2.5">
                   <div className="flex flex-col items-center flex-shrink-0">
@@ -249,7 +308,25 @@ function HealthTab({ tokens, rotation, agentBreakdown }) {
                       <span className="text-xs font-mono text-text-1 font-medium capitalize truncate flex-1">
                         {r.agentName || r.role}
                       </span>
-                      {isQuality ? (
+                      {isTokenLimit ? (
+                        <span className="text-2xs font-mono font-semibold tabular-nums flex-shrink-0" style={{ color: '#e06c75' }}
+                          title={`Auto-rotated: agent burned ${r.instanceTokens?.toLocaleString()} tokens in one session`}>
+                          T:{fmtPct(((r.instanceTokens || 0) / 1_000_000) * 100).replace('%', 'M')}
+                        </span>
+                      ) : isVelocity ? (
+                        <span className="flex items-center gap-1 flex-shrink-0">
+                          <span className="text-2xs font-mono font-semibold tabular-nums" style={{ color: '#ff8c42' }}
+                            title={`Auto-rotated: runaway velocity (${r.velocity?.toLocaleString()} tokens in recent window)`}>
+                            V:{fmtPct(((r.velocity || 0) / 1_000_000) * 100).replace('%', 'M')}
+                          </span>
+                          {r.velocityDelta != null && r.velocityDelta > 0 && (
+                            <span className="text-2xs font-mono tabular-nums" style={{ color: '#4ae168' }}
+                              title={`Post-rotation velocity dropped by ${r.velocityDelta.toLocaleString()} tokens — rotation worked`}>
+                              ↓{fmtPct((r.velocityDelta / 1_000_000) * 100).replace('%', 'M')}
+                            </span>
+                          )}
+                        </span>
+                      ) : isQuality ? (
                         <span className="text-2xs font-mono font-semibold tabular-nums flex-shrink-0" style={{ color: '#e5c07b' }}>
                           Q:{r.qualityScore}
                         </span>
@@ -462,14 +539,175 @@ function JournalistTab({ journalist }) {
   );
 }
 
+/* ── Memory Tab (Layer 7) ───────────────────────────────────── */
+function MemoryTab({ memory }) {
+  const constraints = memory?.constraints || [];
+  const discoveries = memory?.discoveries || [];
+  const roles = memory?.roles || [];
+  const perAgent = memory?.specializations?.perAgent || {};
+  const perRole = memory?.specializations?.perProjectRole || {};
+  const agentCount = Object.keys(perAgent).length;
+  const roleCount = Object.keys(perRole).length;
+
+  const totalItems = constraints.length + discoveries.length + roles.length;
+  if (totalItems === 0 && agentCount === 0) {
+    return (
+      <div className="p-6 text-center text-xs font-mono text-text-3">
+        <BookOpen size={24} className="mx-auto mb-2 text-text-4" />
+        <div>No memory accumulated yet</div>
+        <div className="text-2xs text-text-4 mt-1">Constraints, handoff chains, and discoveries populate as agents work</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-3 space-y-4">
+      {/* Hero stats */}
+      <div className="grid grid-cols-4 gap-2">
+        <div className="bg-surface-0 rounded p-2.5">
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1 flex items-center">
+            Constraints
+            <InfoTip text="Project rules discovered by agents or set by the user. Every new agent reads these on spawn to avoid rediscovering them." />
+          </div>
+          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: HEX.accent }}>
+            {constraints.length}
+          </div>
+        </div>
+        <div className="bg-surface-0 rounded p-2.5">
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1 flex items-center">
+            Discoveries
+            <InfoTip text="Error→fix pairs successful agents have recorded. Injected into future agent context so they don't rediscover known solutions." />
+          </div>
+          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: HEX.success }}>
+            {discoveries.length}
+          </div>
+        </div>
+        <div className="bg-surface-0 rounded p-2.5">
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1 flex items-center">
+            Handoff Chains
+            <InfoTip text="Cumulative rotation briefs per role. Agent #50 knows what agent #1 struggled with. Each role keeps its last 10 rotation briefs." />
+          </div>
+          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: HEX.purple }}>
+            {roles.length}
+          </div>
+        </div>
+        <div className="bg-surface-0 rounded p-2.5">
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1 flex items-center">
+            Specializations
+            <InfoTip text="Per-agent quality profiles: session counts, average quality, file touches, preferred thresholds." />
+          </div>
+          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: HEX.info }}>
+            {agentCount}
+          </div>
+          {roleCount > 0 && (
+            <div className="text-2xs font-mono text-text-4 mt-0.5">across {roleCount} roles</div>
+          )}
+        </div>
+      </div>
+
+      {/* Constraints list */}
+      {constraints.length > 0 && (
+        <div>
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-2">Project Constraints</div>
+          <div className="space-y-1">
+            {constraints.slice(0, 10).map((c) => (
+              <div key={c.hash} className="flex items-start gap-2 bg-surface-0 rounded px-2 py-1.5">
+                <span className="text-2xs font-mono px-1.5 py-px rounded-sm bg-surface-4 text-text-3 uppercase tracking-wider flex-shrink-0 mt-0.5">
+                  {c.category}
+                </span>
+                <span className="text-xs font-mono text-text-2 leading-relaxed flex-1">{c.text}</span>
+              </div>
+            ))}
+            {constraints.length > 10 && (
+              <div className="text-2xs font-mono text-text-4 px-2">+{constraints.length - 10} more</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Recent discoveries */}
+      {discoveries.length > 0 && (
+        <div>
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-2">Recent Discoveries</div>
+          <div className="space-y-1.5">
+            {discoveries.slice(0, 8).map((d, i) => {
+              const rc = roleColor(d.role);
+              return (
+                <div key={i} className="bg-surface-0 rounded px-2 py-1.5 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xs font-mono font-semibold capitalize px-1.5 py-px rounded-sm" style={{ background: rc.bg, color: rc.text }}>
+                      {d.role}
+                    </span>
+                    <span className="text-2xs font-mono text-text-4 flex-1">{timeAgo(d.ts)}</span>
+                  </div>
+                  <div className="text-xs font-mono text-text-2 leading-relaxed">
+                    <span className="text-text-4">When:</span> <span className="text-text-1">{d.trigger}</span>
+                  </div>
+                  <div className="text-xs font-mono text-text-2 leading-relaxed">
+                    <span className="text-text-4">Fix:</span> <span style={{ color: HEX.success }}>{d.fix}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Handoff chain roles */}
+      {roles.length > 0 && (
+        <div>
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-2">Active Role Chains</div>
+          <div className="flex flex-wrap gap-1.5">
+            {roles.map((role) => {
+              const rc = roleColor(role);
+              return (
+                <span key={role} className="text-2xs font-mono font-semibold capitalize px-2 py-1 rounded" style={{ background: rc.bg, color: rc.text }}>
+                  {role}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Per-role specialization summary */}
+      {roleCount > 0 && (
+        <div>
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-2">Role Quality Profiles</div>
+          <div className="space-y-1">
+            {Object.entries(perRole).map(([role, data]) => {
+              const rc = roleColor(role);
+              return (
+                <div key={role} className="flex items-center gap-2 bg-surface-0 rounded px-2 py-1.5">
+                  <span className="text-2xs font-mono font-semibold capitalize px-1.5 py-px rounded-sm" style={{ background: rc.bg, color: rc.text }}>
+                    {role}
+                  </span>
+                  <span className="text-xs font-mono text-text-3 flex-1">{data.sessionCount} sessions</span>
+                  <span className="text-xs font-mono font-semibold tabular-nums" style={{ color: qualityColor(data.avgQualityScore) }}>
+                    Q:{data.avgQualityScore}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Intel Panel (main export) ──────────────────────────────── */
-const IntelPanel = memo(function IntelPanel({ tokens, rotation, adaptive, journalist, agentBreakdown }) {
+const IntelPanel = memo(function IntelPanel({ tokens, rotation, adaptive, journalist, agentBreakdown, memory }) {
   return (
     <Tabs defaultValue="health" className="flex flex-col h-full">
       <TabsList className="flex-shrink-0 px-1">
         <TabsTrigger value="health" className="text-xs px-2.5 py-1.5 inline-flex items-center gap-1.5">
           <Activity size={11} />
           Health
+        </TabsTrigger>
+        <TabsTrigger value="memory" className="text-xs px-2.5 py-1.5 inline-flex items-center gap-1.5">
+          <BookOpen size={11} />
+          Memory
         </TabsTrigger>
         <TabsTrigger value="adaptive" className="text-xs px-2.5 py-1.5 inline-flex items-center gap-1.5">
           <Brain size={11} />
@@ -484,6 +722,11 @@ const IntelPanel = memo(function IntelPanel({ tokens, rotation, adaptive, journa
       <TabsContent value="health" className="flex-1 min-h-0 relative">
         <div className="absolute inset-0 overflow-y-auto">
           <HealthTab tokens={tokens} rotation={rotation} agentBreakdown={agentBreakdown} />
+        </div>
+      </TabsContent>
+      <TabsContent value="memory" className="flex-1 min-h-0 relative">
+        <div className="absolute inset-0 overflow-y-auto">
+          <MemoryTab memory={memory} />
         </div>
       </TabsContent>
       <TabsContent value="adaptive" className="flex-1 min-h-0 relative">

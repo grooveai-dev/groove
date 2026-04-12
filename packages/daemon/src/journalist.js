@@ -355,7 +355,40 @@ export class Journalist {
     }
   }
 
-  async callHeadless(prompt) {
+  // Extract usage from stream-json stdout and record to token tracker.
+  // Reserved agent IDs (__journalist__, __pm__, etc.) capture overhead
+  // separately from user-facing agents. Silent no-op if provider doesn't
+  // emit usage data.
+  _recordHeadlessUsage(stdout, trackAs, modelId) {
+    if (!this.daemon?.tokens || !stdout) return;
+    const lines = stdout.split('\n');
+    for (const line of lines) {
+      try {
+        const data = JSON.parse(line);
+        if (data.type !== 'result') continue;
+        const usage = data.usage;
+        if (!usage) continue;
+        const inputTokens = usage.input_tokens || 0;
+        const outputTokens = usage.output_tokens || 0;
+        const cacheReadTokens = usage.cache_read_input_tokens || 0;
+        const cacheCreationTokens = usage.cache_creation_input_tokens || 0;
+        const total = inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens;
+        if (total === 0) continue;
+        this.daemon.tokens.record(trackAs, {
+          tokens: total,
+          inputTokens,
+          outputTokens,
+          cacheReadTokens,
+          cacheCreationTokens,
+          model: modelId,
+          estimatedCostUsd: data.total_cost_usd || 0,
+        });
+        return;
+      } catch { /* skip non-JSON lines */ }
+    }
+  }
+
+  async callHeadless(prompt, { trackAs = '__journalist__' } = {}) {
     // Find the best available provider for headless synthesis
     // Priority: claude-code (cheapest via Haiku) > gemini > codex > ollama
     const priority = ['claude-code', 'gemini', 'codex', 'ollama'];
@@ -391,6 +424,7 @@ export class Journalist {
         proc.on('exit', (code) => {
           clearTimeout(timer);
           if (code !== 0) return reject(new Error(`Headless exited with code ${code}`));
+          this._recordHeadlessUsage(stdout, trackAs, modelId);
           // Process stdout same as execFile path below
           const lines = stdout.split('\n');
           for (const line of lines) {
@@ -412,6 +446,8 @@ export class Journalist {
         timeout: 60_000,
       }, (err, stdout, stderr) => {
         if (err) return reject(err);
+
+        this._recordHeadlessUsage(stdout, trackAs, modelId);
 
         // Parse stream-json output to extract the result text
         const lines = stdout.split('\n');
@@ -648,12 +684,18 @@ export class Journalist {
       .slice(-3)
       .join('\n');
 
+    // Pull recent rotation history from persistent memory (Layer 7).
+    // Gives the new agent causal continuity: what the last 3 agents struggled
+    // with, decided, and solved — not just what the current session did.
+    const recentChain = this.daemon.memory?.getRecentHandoffMarkdown(agent.role, 3, 3000) || '';
+
     return [
       `# Agent Handoff Brief`,
       ``,
       `You are continuing the work of **${agent.name}** (role: ${agent.role}).`,
       `This is a context rotation — the previous session is being replaced to keep context fresh.`,
       ``,
+      recentChain ? `## Rotation History (recent)\n\n${recentChain}\n` : '',
       `## Your Identity`,
       `- Role: ${agent.role}`,
       `- Scope: ${agent.scope?.join(', ') || 'unrestricted'}`,

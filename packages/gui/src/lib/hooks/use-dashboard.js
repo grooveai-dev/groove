@@ -8,6 +8,8 @@ export function useDashboard() {
   const agents = useGrooveStore((s) => s.agents);
 
   const [data, setData] = useState(null);
+  const [teamBurn, setTeamBurn] = useState([]);
+  const [memory, setMemory] = useState({ constraints: [], discoveries: [], roles: [], specializations: null });
   const [loading, setLoading] = useState(true);
   const [kpiHistory, setKpiHistory] = useState({
     tokens: [], cost: [], saved: [], efficiency: [],
@@ -21,9 +23,23 @@ export function useDashboard() {
 
     async function fetch() {
       try {
-        const d = await api.get('/dashboard');
+        const [d, teams, constraints, discoveries, chainRoles, specs] = await Promise.all([
+          api.get('/dashboard'),
+          api.get('/tokens/by-team').catch(() => ({ teams: [] })),
+          api.get('/memory/constraints').catch(() => ({ constraints: [] })),
+          api.get('/memory/discoveries?limit=20').catch(() => ({ discoveries: [] })),
+          api.get('/memory/handoff-chain').catch(() => ({ roles: [] })),
+          api.get('/memory/specializations').catch(() => ({ perAgent: {}, perProjectRole: {} })),
+        ]);
         if (!alive) return;
         setData(d);
+        setTeamBurn(teams?.teams || []);
+        setMemory({
+          constraints: constraints?.constraints || [],
+          discoveries: discoveries?.discoveries || [],
+          roles: chainRoles?.roles || [],
+          specializations: specs || { perAgent: {}, perProjectRole: {} },
+        });
         setLoading(false);
         lastFetch.current = Date.now();
 
@@ -70,5 +86,6 @@ export function useDashboard() {
     data, loading, agents, connected, kpiHistory,
     lastFetch: lastFetch.current,
     agentBreakdown, routing, rotation, adaptive, journalist, rotating,
+    teamBurn, memory,
   };
 }

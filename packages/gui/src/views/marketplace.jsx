@@ -383,15 +383,24 @@ function MyLibrary() {
   const authenticated = useGrooveStore((s) => s.marketplaceAuthenticated);
   const login = useGrooveStore((s) => s.marketplaceLogin);
   const [purchases, setPurchases] = useState([]);
-  const [installed, setInstalled] = useState([]);
+  const [installedSkills, setInstalledSkills] = useState([]);
+  const [installedIntegrations, setInstalledIntegrations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState(null);
+  const [libraryFilter, setLibraryFilter] = useState('all');
+  const [librarySearch, setLibrarySearch] = useState('');
+  const [selectedSkill, setSelectedSkill] = useState(null);
+  const [wizardIntegration, setWizardIntegration] = useState(null);
+  const [showWizard, setShowWizard] = useState(false);
   const toast = useToast();
   const fileRef = useRef(null);
 
   const refreshInstalled = async () => {
-    const data = await api.get('/skills/installed');
-    setInstalled(Array.isArray(data) ? data : data.skills || []);
+    const [skillsData, intData] = await Promise.all([
+      api.get('/skills/installed').catch(() => []),
+      api.get('/integrations/installed').catch(() => []),
+    ]);
+    setInstalledSkills(Array.isArray(skillsData) ? skillsData : skillsData.skills || []);
+    setInstalledIntegrations(Array.isArray(intData) ? intData : intData.integrations || []);
   };
 
   useEffect(() => {
@@ -399,31 +408,13 @@ function MyLibrary() {
     Promise.all([
       authenticated ? api.get('/auth/purchases').then((d) => d.purchases || []).catch(() => []) : Promise.resolve([]),
       api.get('/skills/installed').then((d) => Array.isArray(d) ? d : d.skills || []).catch(() => []),
-    ]).then(([p, i]) => {
+      api.get('/integrations/installed').then((d) => Array.isArray(d) ? d : d.integrations || []).catch(() => []),
+    ]).then(([p, s, i]) => {
       setPurchases(p);
-      setInstalled(i);
+      setInstalledSkills(s);
+      setInstalledIntegrations(i);
     }).finally(() => setLoading(false));
   }, [authenticated]);
-
-  async function handleUpdate(s) {
-    setBusyId(s.id);
-    try {
-      await api.post(`/skills/${s.id}/update`);
-      toast.success(`${s.name || s.id} updated`);
-      await refreshInstalled();
-    } catch (err) { toast.error('Update failed', err.message); }
-    setBusyId(null);
-  }
-
-  async function handleUninstall(s) {
-    setBusyId(s.id);
-    try {
-      await api.delete(`/skills/${s.id}`);
-      toast.success(`${s.name || s.id} uninstalled`);
-      await refreshInstalled();
-    } catch (err) { toast.error('Uninstall failed', err.message); }
-    setBusyId(null);
-  }
 
   async function handleImport(e) {
     const file = e.target.files?.[0];
@@ -440,6 +431,35 @@ function MyLibrary() {
     e.target.value = '';
   }
 
+  if (selectedSkill) {
+    return <SkillDetail skill={selectedSkill} onBack={() => setSelectedSkill(null)} />;
+  }
+
+  const searchLower = librarySearch.toLowerCase();
+  const filteredSkills = (libraryFilter === 'all' || libraryFilter === 'skills')
+    ? installedSkills.filter((s) => !searchLower || (s.name || s.id || '').toLowerCase().includes(searchLower) || (s.description || '').toLowerCase().includes(searchLower))
+    : [];
+  const filteredIntegrations = (libraryFilter === 'all' || libraryFilter === 'integrations')
+    ? installedIntegrations.filter((i) => !searchLower || (i.name || i.id || '').toLowerCase().includes(searchLower) || (i.description || '').toLowerCase().includes(searchLower))
+    : [];
+
+  const allItems = [
+    ...filteredSkills.map((s) => ({ ...s, _type: 'skill' })),
+    ...filteredIntegrations.map((i) => ({ ...i, _type: 'integration' })),
+  ];
+
+  const filters = [
+    { id: 'all', label: 'All' },
+    { id: 'skills', label: 'Skills' },
+    { id: 'integrations', label: 'Integrations' },
+  ];
+
+  const emptyMessages = {
+    all: 'No skills or integrations installed yet. Visit the Marketplace to get started.',
+    skills: 'No skills installed.',
+    integrations: 'No integrations installed.',
+  };
+
   if (loading) {
     return (
       <div className="p-5 space-y-3">
@@ -450,9 +470,28 @@ function MyLibrary() {
 
   return (
     <ScrollArea className="h-full">
-      <div className="px-5 py-4 space-y-6">
-        {/* Import button */}
-        <div className="flex items-center gap-3">
+      <div className="px-5 py-4 space-y-5">
+        {/* Search + filter pills + import */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="w-72">
+            <SearchBar value={librarySearch} onChange={setLibrarySearch} placeholder="Search library..." />
+          </div>
+          <div className="flex items-center gap-1">
+            {filters.map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setLibraryFilter(f.id)}
+                className={`px-3 py-1.5 text-xs font-semibold font-sans rounded-full cursor-pointer select-none transition-colors ${
+                  libraryFilter === f.id
+                    ? 'bg-accent/15 text-accent border border-accent/25'
+                    : 'text-text-3 hover:text-text-1 border border-transparent hover:border-border-subtle'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1" />
           <input ref={fileRef} type="file" accept=".md" onChange={handleImport} className="hidden" />
           <Button
             variant="secondary"
@@ -461,9 +500,9 @@ function MyLibrary() {
             className="gap-1.5"
           >
             <Upload size={13} />
-            Import .md Skill
+            Import .md
           </Button>
-          <span className="text-2xs text-text-4 font-sans">Drop a markdown skill file to install locally</span>
+          <span className="text-2xs text-text-4 font-mono flex-shrink-0">{allItems.length}</span>
         </div>
 
         {/* Purchases */}
@@ -507,53 +546,40 @@ function MyLibrary() {
           </div>
         )}
 
-        {/* Installed Skills */}
-        <div>
-          <h3 className="text-xs font-semibold text-text-2 font-sans uppercase tracking-wider mb-3 flex items-center gap-1.5">
-            <Package size={12} />
-            Installed ({installed.length})
-          </h3>
-          {installed.length === 0 ? (
-            <div className="bg-surface-1 border border-border-subtle rounded-md px-4 py-6 text-center">
-              <Download size={20} className="mx-auto text-text-4 mb-2" />
-              <p className="text-xs text-text-3 font-sans">No skills installed — browse the Skills tab or import a .md file</p>
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              {installed.map((s) => (
-                <div key={s.id} className="flex items-center gap-3 px-3 py-2.5 rounded-md bg-surface-1 border border-border-subtle group">
-                  <div className="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center text-sm flex-shrink-0">
-                    {s.icon || s.name?.[0]?.toUpperCase() || '?'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-text-0 font-sans truncate">{s.name || s.id}</div>
-                    <div className="text-2xs text-text-3 font-sans truncate">{s.description || s.category || 'local skill'}</div>
-                  </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => handleUpdate(s)}
-                      disabled={busyId === s.id}
-                      title="Pull latest version"
-                      className="p-1.5 rounded text-text-3 hover:text-accent hover:bg-accent/10 cursor-pointer transition-colors disabled:opacity-50"
-                    >
-                      <RefreshCw size={12} className={busyId === s.id ? 'animate-spin' : ''} />
-                    </button>
-                    <button
-                      onClick={() => handleUninstall(s)}
-                      disabled={busyId === s.id}
-                      title="Uninstall"
-                      className="p-1.5 rounded text-text-3 hover:text-error hover:bg-error/10 cursor-pointer transition-colors disabled:opacity-50"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                  <Badge variant="accent" className="text-2xs flex-shrink-0">Installed</Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Card grid */}
+        {allItems.length > 0 ? (
+          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
+            {allItems.map((item) => item._type === 'skill' ? (
+              <MarketplaceCard
+                key={`skill-${item.id}`}
+                item={{ ...item, installed: true }}
+                onClick={() => setSelectedSkill(item)}
+              />
+            ) : (
+              <MarketplaceCard
+                key={`int-${item.id}`}
+                item={{ ...item, installed: true }}
+                onClick={() => { setWizardIntegration(item); setShowWizard(true); }}
+                statusBadge={
+                  <Badge variant={item.configured ? 'success' : 'warning'} className="text-2xs">
+                    {item.configured ? 'Active' : 'Not configured'}
+                  </Badge>
+                }
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-16 text-text-4 font-sans text-sm">
+            {emptyMessages[libraryFilter]}
+          </div>
+        )}
       </div>
+
+      <IntegrationWizard
+        integration={wizardIntegration}
+        open={showWizard}
+        onClose={() => { setShowWizard(false); setWizardIntegration(null); refreshInstalled(); }}
+      />
     </ScrollArea>
   );
 }

@@ -5,8 +5,12 @@ import { fmtNum } from '../../lib/format';
 
 const CacheRing = memo(function CacheRing({ cacheRead = 0, cacheCreation = 0, totalInput = 0, size = 140 }) {
   const canvasRef = useRef(null);
-  const total = cacheRead + cacheCreation + totalInput;
-  const hitRate = total > 0 ? (cacheRead / total) * 100 : 0;
+  // Cache hit rate denominator is only cacheable tokens (reads + creation).
+  // Fresh inputTokens are conversation turns that were never cache-eligible;
+  // including them falsely depresses the rate.
+  const cacheable = cacheRead + cacheCreation;
+  const total = cacheable; // used only by arc-fill and hit-rate
+  const hitRate = cacheable > 0 ? (cacheRead / cacheable) * 100 : 0;
 
   useEffect(() => {
     const canvas = canvasRef.current;

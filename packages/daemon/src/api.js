@@ -117,6 +117,116 @@ export function createApi(app, daemon) {
     res.json(daemon.locks.getAll());
   });
 
+  // Coordination protocol — agents declare intent on shared resources
+  // (npm install, server restart, package.json edit) to prevent races.
+  // Returns 423 Locked if another agent holds a conflicting resource.
+  app.post('/api/coordination/declare', (req, res) => {
+    const { agentId, operation, resources, ttlMs } = req.body || {};
+    if (!agentId || !operation || !Array.isArray(resources) || resources.length === 0) {
+      return res.status(400).json({ error: 'agentId, operation, and resources[] required' });
+    }
+    const result = daemon.locks.declareOperation(agentId, operation, resources, ttlMs);
+    if (result.conflict) {
+      daemon.audit.log('coordination.conflict', { agentId, operation, resource: result.resource, owner: result.owner });
+      return res.status(423).json(result);
+    }
+    daemon.audit.log('coordination.declared', { agentId, operation, resources });
+    daemon.broadcast({ type: 'coordination:declared', agentId, operation, resources });
+    res.json({ declared: true, operation, resources });
+  });
+
+  app.post('/api/coordination/complete', (req, res) => {
+    const { agentId } = req.body || {};
+    if (!agentId) return res.status(400).json({ error: 'agentId required' });
+    const removed = daemon.locks.completeOperation(agentId);
+    daemon.audit.log('coordination.completed', { agentId });
+    daemon.broadcast({ type: 'coordination:completed', agentId });
+    res.json({ completed: removed });
+  });
+
+  app.get('/api/coordination', (req, res) => {
+    res.json({ operations: daemon.locks.getOperations() });
+  });
+
+  // --- Persistent Memory (Layer 7) ---
+  // Constraints: project rules discovered by agents / set by user
+  app.get('/api/memory/constraints', (req, res) => {
+    res.json({ constraints: daemon.memory.listConstraints() });
+  });
+
+  app.post('/api/memory/constraints', (req, res) => {
+    const { text, category } = req.body || {};
+    const result = daemon.memory.addConstraint({ text, category });
+    if (!result.added && result.error) {
+      return res.status(400).json(result);
+    }
+    if (result.added) {
+      daemon.audit.log('memory.constraint.added', { hash: result.hash, category });
+      daemon.broadcast({ type: 'memory:constraint:added', hash: result.hash });
+    }
+    res.json(result);
+  });
+
+  app.delete('/api/memory/constraints/:hash', (req, res) => {
+    const removed = daemon.memory.removeConstraint(req.params.hash);
+    if (removed) {
+      daemon.audit.log('memory.constraint.removed', { hash: req.params.hash });
+      daemon.broadcast({ type: 'memory:constraint:removed', hash: req.params.hash });
+    }
+    res.json({ removed });
+  });
+
+  // Handoff chains (per role)
+  app.get('/api/memory/handoff-chain/:role', (req, res) => {
+    res.json({
+      role: req.params.role,
+      entries: daemon.memory.getHandoffChain(req.params.role),
+    });
+  });
+
+  app.get('/api/memory/handoff-chain/:role/recent', (req, res) => {
+    const count = Math.min(parseInt(req.query.count) || 3, 10);
+    res.json({
+      role: req.params.role,
+      markdown: daemon.memory.getRecentHandoffMarkdown(req.params.role, count, 10_000),
+    });
+  });
+
+  app.get('/api/memory/handoff-chain', (req, res) => {
+    res.json({ roles: daemon.memory.listHandoffRoles() });
+  });
+
+  // Discoveries (error → fix pairs)
+  app.get('/api/memory/discoveries', (req, res) => {
+    const role = req.query.role;
+    const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+    res.json({ discoveries: daemon.memory.listDiscoveries({ role, limit }) });
+  });
+
+  app.post('/api/memory/discoveries', (req, res) => {
+    const { agentId, role, trigger, fix, outcome } = req.body || {};
+    const result = daemon.memory.addDiscovery({ agentId, role, trigger, fix, outcome });
+    if (!result.added && result.error) {
+      return res.status(400).json(result);
+    }
+    if (result.added) {
+      daemon.audit.log('memory.discovery.added', { agentId, role });
+      daemon.broadcast({ type: 'memory:discovery:added', agentId, role });
+    }
+    res.json(result);
+  });
+
+  // Specializations (per-agent + per-role quality profiles)
+  app.get('/api/memory/specializations', (req, res) => {
+    res.json(daemon.memory.getAllSpecializations());
+  });
+
+  app.get('/api/memory/specializations/:agentId', (req, res) => {
+    const spec = daemon.memory.getSpecialization(req.params.agentId);
+    if (!spec) return res.status(404).json({ error: 'No specialization data for this agent' });
+    res.json(spec);
+  });
+
   // Token usage
   app.get('/api/tokens', (req, res) => {
     res.json(daemon.tokens.getAll());
@@ -375,6 +485,14 @@ export function createApi(app, daemon) {
     res.json(rec);
   });
 
+  // Downshift suggestion — NEVER auto-applied. User must accept via UI.
+  // Returns null (204) when classifier has no strong suggestion.
+  app.get('/api/agents/:id/routing/suggestion', (req, res) => {
+    const suggestion = daemon.router.getSuggestion(req.params.id);
+    if (!suggestion) return res.status(204).send();
+    res.json(suggestion);
+  });
+
   // Daemon status
   app.get('/api/status', (req, res) => {
     res.json({
@@ -457,6 +575,55 @@ export function createApi(app, daemon) {
 
   app.get('/api/tokens/summary', (req, res) => {
     res.json(daemon.tokens.getSummary());
+  });
+
+  // Per-team token burn ranked by total. Answers "which team burned the most?"
+  app.get('/api/tokens/by-team', (req, res) => {
+    const agents = daemon.registry.getAll();
+    const usage = daemon.tokens.getAll();
+    const teams = daemon.teams.list();
+    const unassignedId = '__unassigned__';
+
+    const perTeam = new Map();
+    for (const t of teams) {
+      perTeam.set(t.id, {
+        teamId: t.id,
+        teamName: t.name,
+        isDefault: !!t.isDefault,
+        agentCount: 0,
+        totalTokens: 0,
+        totalCostUsd: 0,
+        avgTokensPerAgent: 0,
+      });
+    }
+    perTeam.set(unassignedId, {
+      teamId: unassignedId,
+      teamName: '(unassigned)',
+      isDefault: false,
+      agentCount: 0,
+      totalTokens: 0,
+      totalCostUsd: 0,
+      avgTokensPerAgent: 0,
+    });
+
+    for (const agent of agents) {
+      const bucket = perTeam.get(agent.teamId) || perTeam.get(unassignedId);
+      const u = usage[agent.id];
+      if (!u) continue;
+      bucket.agentCount += 1;
+      bucket.totalTokens += u.total || 0;
+      bucket.totalCostUsd += u.totalCostUsd || 0;
+    }
+
+    const result = [...perTeam.values()]
+      .map((t) => ({
+        ...t,
+        avgTokensPerAgent: t.agentCount > 0 ? Math.round(t.totalTokens / t.agentCount) : 0,
+      }))
+      .filter((t) => t.agentCount > 0 || t.isDefault)
+      .sort((a, b) => b.totalTokens - a.totalTokens);
+
+    res.json({ teams: result });
   });
 
   // Stop an agent's current work without killing the agent
@@ -555,7 +722,7 @@ export function createApi(app, daemon) {
         '\nAnswer concisely based on the agent context above.',
       ].filter(Boolean).join('\n');
 
-      const response = await daemon.journalist.callHeadless(prompt);
+      const response = await daemon.journalist.callHeadless(prompt, { trackAs: '__agent_qa__' });
       res.json({ response, agentId: agent.id, agentName: agent.name });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -734,7 +901,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
       // Slow path: CLI fallback for subscription auth (~10s)
       const fullPrompt = `${PLAN_SYSTEM}\n\n${prompt}`;
-      const response = await daemon.journalist.callHeadless(fullPrompt);
+      const response = await daemon.journalist.callHeadless(fullPrompt, { trackAs: '__planner__' });
       res.json({ response, mode: 'cli' });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -2117,7 +2284,8 @@ Keep responses concise. Help them think, don't lecture them about the system the
     // Per-agent enriched data with quality signals
     const agentBreakdown = agents.map((a) => {
       const tokenData = daemon.tokens.getAgent(a.id);
-      const agentCacheTotal = (tokenData.cacheReadTokens || 0) + (tokenData.cacheCreationTokens || 0) + (tokenData.inputTokens || 0);
+      // Cache rate denominator: reads + creation (cacheable), excludes fresh inputTokens
+      const agentCacheable = (tokenData.cacheReadTokens || 0) + (tokenData.cacheCreationTokens || 0);
 
       let quality = null;
       try {
@@ -2156,7 +2324,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
         costSource: a.provider === 'claude-code' ? 'actual' : a.provider === 'ollama' ? 'local' : 'estimated',
         inputTokens: tokenData.inputTokens || 0,
         outputTokens: tokenData.outputTokens || 0,
-        cacheHitRate: agentCacheTotal > 0 ? Math.round(((tokenData.cacheReadTokens || 0) / agentCacheTotal) * 1000) / 1000 : 0,
+        cacheHitRate: agentCacheable > 0 ? Math.round(((tokenData.cacheReadTokens || 0) / agentCacheable) * 1000) / 1000 : 0,
         contextUsage: a.contextUsage || 0,
         rotationThreshold: daemon.adaptive.getThreshold(a.provider, a.role),
         durationMs: a.durationMs || tokenData.totalDurationMs || 0,

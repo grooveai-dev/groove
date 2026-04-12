@@ -15,6 +15,16 @@ const DEFAULT_CONFIG = {
   qcThreshold: 4,
   maxAgents: 10,
   defaultProvider: 'claude-code',
+  // Self-healing rotation triggers. Catch pathological agent behavior
+  // (stuck loops, runaway tool-call cycles) and auto-rotate with fresh
+  // context. Tokens carry forward; journalist generates handoff brief.
+  // Set autoRotate=false to disable and get broadcast-only notifications.
+  safety: {
+    autoRotate: true,
+    tokenCeilingPerAgent: 5_000_000,
+    velocityWindowSeconds: 300,
+    velocityTokenThreshold: 1_500_000,
+  },
 };
 
 export function isFirstRun(grooveDir) {
@@ -123,7 +133,10 @@ export function loadConfig(grooveDir) {
 
   try {
     const saved = JSON.parse(readFileSync(configPath, 'utf8'));
-    return { ...DEFAULT_CONFIG, ...saved };
+    const merged = { ...DEFAULT_CONFIG, ...saved };
+    // Deep-merge safety subtree so partial user config doesn't drop defaults
+    merged.safety = { ...DEFAULT_CONFIG.safety, ...(saved.safety || {}) };
+    return merged;
   } catch {
     return { ...DEFAULT_CONFIG };
   }

@@ -127,19 +127,6 @@ export function validateTeamName(name) {
   // Allow spaces and special chars in display name, sanitize for filesystem separately
 }
 
-export function sanitizeForFilename(name) {
-  const sanitized = name
-    .replace(/[^a-zA-Z0-9_-]/g, '_')
-    .replace(/_+/g, '_')
-    .toLowerCase()
-    .slice(0, 50);
-
-  if (!sanitized || /^_+$/.test(sanitized)) {
-    throw new Error('Team name must contain alphanumeric characters');
-  }
-  return sanitized;
-}
-
 const VALID_GATEWAY_TYPES = ['telegram', 'discord', 'slack'];
 const VALID_NOTIFICATION_PRESETS = ['critical', 'lifecycle', 'all', 'custom'];
 

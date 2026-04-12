@@ -1,5 +1,64 @@
 # Changelog
 
+## v0.27.0 — Audit-driven release: visibility, safety, Layer 7 memory (2026-04-12)
+
+Backend audit after a 275M-token stress test revealed three classes of gaps: blind spots (invisible tokens), unvalidated claims (hardcoded coefficients posing as measurements), and missing memory (every new agent started from scratch). This release closes all three.
+
+**Visibility — you can now see what's actually happening**
+- Journalist, PM, planner, negotiator, gateway, and agent-QA headless calls now record tokens under reserved IDs (`__journalist__`, `__pm__`, etc.) — previously invisible 1-6M tokens/day now tracked
+- Cache hit rate formula fixed: denominator was incorrectly including fresh input tokens; corrected to `reads / (reads + creation)` so the number reflects real cache efficiency
+- New `GET /api/tokens/by-team` endpoint — ranked team burn breakdown answers "which team used the most tokens?" in one call
+- Dashboard gets a new Team Burn panel with per-team bars, cost, and agent count
+- Per-agent cache rate in `/api/dashboard` uses the corrected formula
+- `projectRoot` field reserved in token session records for future per-workspace grouping
+
+**Safety — the system self-heals on pathological agents**
+- Token ceiling auto-rotate: when an agent burns more than `safety.tokenCeilingPerAgent` (default 5M) since its spawn, rotator fires `token_limit_exceeded` rotation with journalist handoff brief
+- Velocity auto-rotate: when an agent burns more than `safety.velocityTokenThreshold` (default 1.5M) in a rolling `safety.velocityWindowSeconds` window (default 300s), rotator fires `runaway_velocity`
+- Both triggers use existing rotation infrastructure — no new kill/respawn code, just new `shouldRotate()` conditions
+- Triggers scoped to `spawnedAt` so post-rotation agents don't re-trigger on inherited cumulative tokens
+- Coordination protocol is now enforced, not advisory: `POST /api/coordination/declare` acquires a short-lived resource lock; returns 423 on conflict with owner + expiry info; auto-expires after 10min to prevent deadlock
+- Introducer now instructs agents to use the HTTP protocol instead of editing `.groove/coordination.md`
+- Intel panel shows safety-triggered rotations with distinct badges (`T:5M` red, `V:1.5M` orange) and hover tooltips
+
+**Layer 7 — persistent agent memory**
+- New `MemoryStore` module (`memory.js`) persists four file types in `.groove/memory/`:
+  - `project-constraints.md` — hash-deduped project rules (capped at 50)
+  - `handoff-chain/<role>.md` — last 10 rotation briefs per role, newest first
+  - `agent-discoveries.jsonl` — error→fix pairs (success-only, 1000-entry cap)
+  - `agent-specializations.json` — per-agent + per-role quality profiles
+- Rotator appends brief to chain on every rotation; journalist reads last 3 into new briefs for causal continuity across rotations
+- Introducer injects accumulated memory into every new agent spawn (constraints + recent handoffs + known patterns, 12K char budget)
+- Process manager updates specializations on agent completion/crash (avg quality, file touches, error signatures)
+- 9 new API endpoints for CRUD on all four memory types
+- 26 new unit tests covering dedup, size caps, role-scoped filtering, persistence
+
+**Rotation intelligence**
+- `QUALITY_THRESHOLD` raised 40 → 55 (tuned up from hair-trigger threshold)
+- `MIN_EVENTS` raised 10 → 30 (require ~100 turns of stable signal before scoring)
+- New 5-minute rotation cooldown prevents back-to-back churn on persistently low-quality tasks
+- Safety triggers bypass cooldown (pathological burn must stop immediately)
+- Converged adaptive profiles get a deeper quality floor (threshold - 15) before rotating — if the threshold has stabilized, trust it
+- Pre/post-rotation velocity captured on every rotation; `velocityDelta` computed after new agent has 10 min of data — replaces hardcoded 30% assumption with measurable signal for future accuracy tuning
+
+**Mid-session classification (never silent downshift)**
+- Classifier broadcasts `classifier:update` events every 20 events once it has 40+ — enables UI to surface downshift suggestions
+- `GET /api/agents/:id/routing/suggestion` returns `{ currentModel, suggestedModel, classifiedTier, eventCount, reason }` when a lighter model would handle the current task
+- NEVER auto-applied — user must accept via UI click (heavy defaults principle preserved)
+- Never upshifts — only suggests moving to a cheaper tier
+- Returns 204 when classifier has no strong suggestion
+
+**Cleanup and dependencies**
+- Removed unused code: `sanitizeForFilename`, `formatDuration`, `dashTelemetry`, `ccChartTimeline`, entire `dropdown-menu.jsx` and `use-media-query.js`
+- Removed unused Radix deps (`react-popover`, `react-separator`, `react-dropdown-menu`)
+- Fixed duplicate `bundledDependencies` / `bundleDependencies` keys in root package.json
+- Archived v1 build plan to `docs/archive/GROVE_BUILD_PLAN.md`; v2 plan is the active document
+- Workspace versions synced: daemon/cli/gui/root all at 0.26.39 (tagged 0.27.0 on release)
+- `.DS_Store` and stale logs cleaned
+- GUI dist/ rebuilt from scratch
+
+**Tests: 137 → 218 (+81 new)**
+
 ## v0.26.33 — Self-building pipeline, team persistence, agent quality overhaul (2026-04-11)
 
 Major release: Groove now builds itself. Full team lifecycle, intelligent context synthesis, and agent quality improvements across the board.

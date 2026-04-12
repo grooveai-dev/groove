@@ -42,9 +42,3 @@ export function timeAgo(ts) {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
 }
-
-export function formatDuration(ms) {
-  if (!ms) return '0s';
-  const s = Math.floor(ms / 1000);
-  return fmtUptime(s);
-}

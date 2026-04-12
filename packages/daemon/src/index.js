@@ -32,6 +32,7 @@ import { IntegrationStore } from './integrations.js';
 import { Scheduler } from './scheduler.js';
 import { FileWatcher } from './filewatcher.js';
 import { TimelineTracker } from './timeline.js';
+import { MemoryStore } from './memory.js';
 import { TerminalManager } from './terminal-pty.js';
 import { GatewayManager } from './gateways/manager.js';
 import { McpManager } from './mcp-manager.js';
@@ -111,6 +112,7 @@ export class Daemon {
     this.registry = new Registry(this.state);
     this.locks = new LockManager(this.grooveDir);
     this.tokens = new TokenTracker(this.grooveDir);
+    this.memory = new MemoryStore(this.grooveDir);
     this.timeline = new TimelineTracker(this);
     this.processes = new ProcessManager(this);
     this.introducer = new Introducer(this);
@@ -120,7 +122,7 @@ export class Daemon {
     this.adaptive = new AdaptiveThresholds(this.grooveDir);
     this.teams = new Teams(this);
     this.credentials = new CredentialStore(this.grooveDir);
-    this.classifier = new TaskClassifier();
+    this.classifier = new TaskClassifier(this);
     this.router = new ModelRouter(this);
     this.pm = new ProjectManager(this);
     this.indexer = new CodebaseIndexer(this);

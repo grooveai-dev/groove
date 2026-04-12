@@ -1,5 +1,60 @@
 # Changelog
 
+## v0.26.33 — Self-building pipeline, team persistence, agent quality overhaul (2026-04-11)
+
+Major release: Groove now builds itself. Full team lifecycle, intelligent context synthesis, and agent quality improvements across the board.
+
+**Team Persistence and Agent Reuse**
+- Teams are persistent — agents stay across tasks instead of respawning every time
+- Launch flow reuses existing agents by role: planner delegates, existing frontend/backend resume with new task and full context
+- Auto-delegate: when all required roles exist in the team, planner skips the Launch modal and routes work directly (toast notification)
+- QC lifecycle: spawns idle when no work, auto-triggers with teammate context when agents complete real work
+- Cross-scope handoffs: agents write `.groove/handoffs/{role}.md`, system auto-routes to the owning agent
+
+**Planner Intelligence**
+- Mode 1 (team creation): full codebase exploration, detailed team structure
+- Mode 2 (task routing): detects existing team via AGENTS_REGISTRY.md, reads only relevant files, routes to existing agents — fast, under 5 tool calls
+- Always writes recommended-team.json, even for team-building-only mode (empty prompts = agents await instructions)
+
+**Agent Quality**
+- Role prompts for all 16 agent roles — frontend gets full design system (colors, CSS variables, fonts, components), backend gets ESM conventions and compliance rules
+- All roles default to Heavy tier (Opus) — intelligence out of the box, users opt into cheaper models
+- Permission and scope changes now persist (added to registry SAFE_FIELDS)
+
+**Journalist Overhaul**
+- Dropped exploration noise: Read/Glob/Grep tool calls no longer clutter synthesis
+- Edit diffs captured: `"bg-[#3e4451]" -> "HEX.accent"` shows in project map
+- Bash output captured: `npm test -> 141 passed` gives agents build/test context
+- Thinking threshold raised (50 -> 200 chars) — only real decisions survive
+- Transient stderr errors dropped — no more phantom error degradation
+- User feedback tracking: messages to agents recorded and injected into future agent context, persisted to disk
+- Decisions log deduplication: >60% word overlap with previous entry = skip
+- Completed agents persist in project map for 30 minutes after finishing
+- Decisions log capped at 20 entries
+
+**Promote Pipeline**
+- `./promote.sh`: build GUI -> run tests -> staging daemon on :31416 -> verify -> publish to npm + push to GitHub
+- Staging uses isolated `.groove-staging/` directory — doesn't kill running daemon
+- npm registry retry with version verification and cache clear
+- Explicit file staging (no `git add -A`) for safety
+
+**UX Improvements**
+- Thinking indicator: rich animated phases (Analyzing, Reasoning, Planning...), elapsed timer, shimmer sweep, fires immediately on all launch paths
+- Chat message dedup: Claude Code assistant + result events no longer double up
+- Chat input persists across tab switches (stored in Zustand per agent)
+- Agent tree: debounced fitView prevents jitter on team launch, node positions saved by name (stable across resumes)
+- Edge handles recalculated from actual node positions on every render
+- HTML preview in editor: Code/Preview toggle for .html files via sandboxed iframe
+- Context bars use teal accent color (agent nodes + fleet panel)
+
+**Infrastructure**
+- Terminal PTY uses crypto.randomUUID() instead of predictable counters
+- Codex agents skip PM gate (sandboxed providers can't reach localhost)
+- Skill marketplace: Pull Latest, Uninstall, and Update flow
+- Auth logs scrubbed — username only, no PII
+- GC: immediate cleanup on team delete, orphaned logs removed instantly
+- QC agents verify builds (`npm run build`), never start long-running dev servers
+
 ## v0.20.0 — Settings page, Ollama setup, GUI v2 rebuild, full system overhaul (2026-04-08)
 
 Major release: complete GUI rebuild + Settings page + Ollama setup + tech debt cleanup.

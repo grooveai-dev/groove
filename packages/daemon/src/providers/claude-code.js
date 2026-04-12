@@ -75,9 +75,11 @@ export class ClaudeCodeProvider extends Provider {
   }
 
   buildHeadlessCommand(prompt, model) {
-    const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose'];
+    // Pass prompt via stdin to avoid OS argument length limits.
+    // Long prompts (journalist synthesis with agent logs) can exceed ARG_MAX.
+    const args = ['-p', '--output-format', 'stream-json', '--verbose'];
     if (model) args.push('--model', model);
-    return { command: 'claude', args, env: {} };
+    return { command: 'claude', args, env: {}, stdin: prompt };
   }
 
   buildFullPrompt(agent) {

@@ -474,7 +474,10 @@ export function AgentFeed({ agent }) {
   const queryAgent = useGrooveStore((s) => s.queryAgent);
   const isThinking = useGrooveStore((s) => s.thinkingAgents?.has(agent.id));
 
-  const [input, setInput] = useState('');
+  const storeInput = useGrooveStore((s) => s.chatInputs[agent.id] || '');
+  const setStoreInput = (val) => useGrooveStore.setState((s) => ({ chatInputs: { ...s.chatInputs, [agent.id]: val } }));
+  const input = storeInput;
+  const setInput = setStoreInput;
   const [mode, setMode] = useState('instruct'); // instruct | query
   const [sending, setSending] = useState(false);
   const scrollRef = useRef(null);

@@ -132,13 +132,9 @@ step "Update global install"
 npm i -g groove-dev@latest
 echo -e "  ${GREEN}Global updated${RESET}"
 
-# ── Restart daemon ────────────────────────────────────────
-
-step "Restart daemon"
-groove stop 2>/dev/null || true
-sleep 1
-groove start
-
 echo ""
-echo -e "  ${GREEN}✓ Live: v${VERSION} on :31415${RESET}"
+echo -e "  ${GREEN}✓ v${VERSION} published and globally installed${RESET}"
+echo ""
+echo -e "  Restart your daemon to pick up the new version:"
+echo -e "  ${DIM}Ctrl+C in your groove terminal, then: groove start${RESET}"
 echo ""

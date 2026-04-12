@@ -1803,29 +1803,57 @@ Keep responses concise. Help them think, don't lecture them about the system the
         }];
       }
 
-      // Spawn phase 1 agents immediately — all scoped to projectWorkingDir
+      // Spawn phase 1 agents — reuse idle team members with matching roles when possible
       const spawned = [];
+      const reused = [];
       const failed = [];
       const phase1Ids = [];
+      const teamAgents = daemon.registry.getAll().filter((a) => a.teamId === defaultTeamId);
+
       for (const config of phase1) {
-        try {
-          const validated = validateAgentConfig({
-            role: config.role,
-            scope: config.scope || [],
-            prompt: config.prompt || '',
-            provider: config.provider || undefined,
-            model: config.model || 'auto',
-            permission: config.permission || 'auto',
-            workingDir: config.workingDir || projectWorkingDir,
-            name: config.name || undefined,
-          });
-          validated.teamId = defaultTeamId;
-          const agent = await daemon.processes.spawn(validated);
-          spawned.push({ id: agent.id, name: agent.name, role: agent.role });
-          phase1Ids.push(agent.id);
-        } catch (err) {
-          failed.push({ role: config.role, error: err.message });
-          console.log(`[Groove] Failed to spawn ${config.role}: ${err.message}`);
+        const prompt = config.prompt || '';
+
+        // Reuse an existing agent with matching role in this team — never spawn
+        // duplicates. The team's agents persist across tasks.
+        const existing = teamAgents.find((a) =>
+          a.role === config.role &&
+          a.role !== 'planner' &&
+          (a.status === 'running' || a.status === 'completed') &&
+          !reused.some((r) => r.id === a.id) // don't reuse the same agent twice
+        );
+
+        if (existing && prompt) {
+          // Instruct the existing agent instead of spawning a new one
+          try {
+            const newAgent = await daemon.processes.resume(existing.id, prompt);
+            reused.push({ id: newAgent.id, name: newAgent.name, role: newAgent.role, reusedFrom: existing.name });
+            phase1Ids.push(newAgent.id);
+            daemon.audit.log('team.reuse', { oldId: existing.id, newId: newAgent.id, role: config.role });
+          } catch (err) {
+            // Reuse failed — fall through to spawn
+            failed.push({ role: config.role, error: `reuse failed: ${err.message}` });
+          }
+        } else {
+          // No matching idle agent — spawn a new one
+          try {
+            const validated = validateAgentConfig({
+              role: config.role,
+              scope: config.scope || [],
+              prompt,
+              provider: config.provider || undefined,
+              model: config.model || 'auto',
+              permission: config.permission || 'auto',
+              workingDir: config.workingDir || projectWorkingDir,
+              name: config.name || undefined,
+            });
+            validated.teamId = defaultTeamId;
+            const agent = await daemon.processes.spawn(validated);
+            spawned.push({ id: agent.id, name: agent.name, role: agent.role });
+            phase1Ids.push(agent.id);
+          } catch (err) {
+            failed.push({ role: config.role, error: err.message });
+            console.log(`[Groove] Failed to spawn ${config.role}: ${err.message}`);
+          }
         }
       }
 
@@ -1846,10 +1874,10 @@ Keep responses concise. Help them think, don't lecture them about the system the
       }
 
       daemon.audit.log('team.launch', {
-        phase1: spawned.length, phase2Pending: phase2.length, failed: failed.length,
-        agents: spawned.map((a) => a.role), projectDir: projectDir || null,
+        phase1: spawned.length, reused: reused.length, phase2Pending: phase2.length, failed: failed.length,
+        agents: [...spawned, ...reused].map((a) => a.role), projectDir: projectDir || null,
       });
-      res.json({ launched: spawned.length, phase2Pending: phase2.length, agents: spawned, failed, projectDir: projectDir || null });
+      res.json({ launched: spawned.length, reused: reused.length, phase2Pending: phase2.length, agents: [...spawned, ...reused], failed, projectDir: projectDir || null });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

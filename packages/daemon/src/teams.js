@@ -157,6 +157,10 @@ export class Teams {
     this.teams.delete(id);
     this._save();
     this.daemon.broadcast({ type: 'team:deleted', teamId: id });
+
+    // Clean up orphaned logs immediately — don't wait for the 24h GC cycle
+    try { this.daemon._gc(); } catch { /* gc should never block deletion */ }
+
     return true;
   }
 

@@ -16,10 +16,30 @@ export class Introducer {
   generateContext(newAgent, options = {}) {
     const { taskNegotiation } = options;
     const agents = this.daemon.registry.getAll();
-    // Only include ACTIVE agents — not completed/killed ones from previous sessions
-    // Completed agents' work is captured in the journalist's project map, not here
-    const others = agents.filter((a) => a.id !== newAgent.id &&
-      (a.status === 'running' || a.status === 'starting'));
+
+    // Team awareness must include completed teammates, not just running ones.
+    // Agents that finished an empty-prompt standup (common pattern: spawn the
+    // team upfront, then direct them task-by-task) sit in `completed` status
+    // until resumed. Hiding them from the new agent's context makes planners
+    // falsely conclude "I'm alone" and spawn duplicate roles.
+    //
+    // Scope to the same team so one team's agents don't leak into another's
+    // context. Completed teammates get a 1-hour freshness cutoff so truly
+    // stale ones don't clutter the intro.
+    const COMPLETED_WINDOW_MS = 60 * 60 * 1000;
+    const sameTeam = (a) =>
+      a.id !== newAgent.id &&
+      (!newAgent.teamId || a.teamId === newAgent.teamId);
+    const activeOthers = agents.filter((a) =>
+      sameTeam(a) && (a.status === 'running' || a.status === 'starting')
+    );
+    const recentCompleted = agents.filter((a) => {
+      if (!sameTeam(a)) return false;
+      if (a.status !== 'completed') return false;
+      const ts = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
+      return Date.now() - ts < COMPLETED_WINDOW_MS;
+    });
+    const others = [...activeOthers, ...recentCompleted];
 
     const lines = [
       `# GROOVE Agent Context`,
@@ -42,8 +62,17 @@ export class Introducer {
     if (others.length === 0) {
       lines.push('You are the only agent on this project right now.');
     } else {
-      lines.push(`## Team (${others.length} other agent${others.length > 1 ? 's' : ''})`);
+      const activeCount = activeOthers.length;
+      const readyCount = recentCompleted.length;
+      const parts = [];
+      if (activeCount > 0) parts.push(`${activeCount} active`);
+      if (readyCount > 0) parts.push(`${readyCount} ready to resume`);
+      lines.push(`## Team (${others.length} teammate${others.length > 1 ? 's' : ''} — ${parts.join(', ')})`);
       lines.push('');
+      if (readyCount > 0) {
+        lines.push(`**Teammates marked "ready" are part of your team.** They finished their last task and will resume their session when assigned new work. If you're a planner, route new tasks to them by role — do NOT spawn duplicates.`);
+        lines.push('');
+      }
 
       // Collect all files created by teammates for the project files section
       const allTeamFiles = [];
@@ -51,7 +80,8 @@ export class Introducer {
       for (const other of others) {
         const scope = other.scope?.length > 0 ? other.scope.join(', ') : 'unrestricted';
         const dir = other.workingDir ? ` — dir: ${other.workingDir}` : '';
-        lines.push(`- **${other.name}** (${other.role}) — scope: ${scope}${dir} — ${other.status}`);
+        const statusLabel = other.status === 'completed' ? 'ready to resume' : other.status;
+        lines.push(`- **${other.name}** (${other.role}) — scope: ${scope}${dir} — ${statusLabel}`);
 
         // Get files this agent created/modified
         const files = this.daemon.journalist?.getAgentFiles(other) || [];

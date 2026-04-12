@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.27.3 — Planner sees ready-to-resume teammates (2026-04-12)
+
+Fixes a Mode 1 / Mode 2 detection bug where a planner spawned duplicate agents instead of routing work to existing teammates.
+
+**The bug**
+When a team is created with empty prompts (the "spawn the team first, then assign tasks" pattern), the builders complete in a few seconds (no task to do → return). Their status flips to `completed`. Later, when the planner spawns and looks at its intro context, the team section only listed `running`/`starting` agents — so the planner saw "you are the only agent on this project right now" and went Mode 1, spawning duplicates instead of routing to the existing ready-to-resume team.
+
+Not a regression from v0.27.x — this has been brittle for any empty-prompt team flow. Surfaced now.
+
+**Fix**
+- Introducer's team section now includes **recent completed teammates** alongside active ones, scoped to the same `teamId` with a 1-hour freshness window. Shown as "ready to resume" with an explicit note: *"Teammates marked 'ready' are part of your team. They finished their last task and will resume their session when assigned new work. If you're a planner, route new tasks to them by role — do NOT spawn duplicates."*
+- Planner role prompt (`process.js`) updated: Mode 2 detection now references the intro context's Team section directly, not just `AGENTS_REGISTRY.md`. Explicitly instructs: *"Teammates listed as 'ready to resume' are REAL agents. They WILL pick up new work when routed. NEVER spawn a new agent of a role that already exists."*
+
+**What this means for you**
+The flow that felt perfect — spawn the team, then iterate with the planner task-by-task — now works regardless of whether the builders are actively running or resting between tasks.
+
 ## v0.27.2 — Drop velocity trigger (2026-04-12)
 
 Following up on v0.27.1: the role-multiplier fix addressed the planner but left the same false-positive class live for any agent doing heavy exploration on a large codebase. Dropping velocity-based rotation entirely rather than papering over it further.

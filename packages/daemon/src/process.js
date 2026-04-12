@@ -196,8 +196,10 @@ Do NOT re-explore the entire codebase. You already know it from team creation.
 Just read the specific files related to the bug/feature, decide which existing agent should handle it, and write the routing config. This should be FAST — under 5 tool calls.
 
 HOW TO DETECT WHICH MODE:
-- Read AGENTS_REGISTRY.md. If it lists agents with roles matching your team (frontend, backend, fullstack), you are in MODE 2.
-- If no agents exist or only a planner exists, you are in MODE 1.
+- Check the Team section of YOUR intro context (above this prompt). If it lists any teammates — active OR ready-to-resume — you are in MODE 2.
+- If no teammates exist or only a planner exists, you are in MODE 1.
+- Teammates listed as "ready to resume" are REAL agents on your team. They finished their last task and await new instructions. They WILL pick up new work when you route it to them via recommended-team.json. Do NOT treat them as absent.
+- NEVER spawn a new agent of a role that already exists in your team. A second backend when a backend already exists is always a bug.
 
 After completing your plan, you MUST write .groove/recommended-team.json — EVERY TIME, no exceptions.
 

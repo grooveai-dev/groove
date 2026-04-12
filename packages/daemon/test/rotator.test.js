@@ -256,6 +256,54 @@ describe('Rotator', () => {
       assert.equal(trigger, null);
     });
 
+    it('planner gets a 10x multiplier so normal exploration does not trigger', () => {
+      mockDaemon.config = {
+        safety: {
+          autoRotate: true,
+          tokenCeilingPerAgent: 5_000_000,
+          velocityWindowSeconds: 300,
+          velocityTokenThreshold: 1_500_000,
+        },
+      };
+      // 2M in 5min would have triggered under v0.27.0 defaults (user bug report)
+      mockDaemon.tokens.getTokensInWindow = () => 3_000_000;
+      mockDaemon.tokens.getVelocity = () => 2_053_414;
+      const trigger = rotator._checkSafetyTriggers(mkAgent({ role: 'planner' }));
+      assert.equal(trigger, null, 'planner should NOT trigger on 2M velocity');
+    });
+
+    it('planner still triggers on genuinely runaway velocity (>15M per 5min)', () => {
+      mockDaemon.config = {
+        safety: {
+          autoRotate: true,
+          tokenCeilingPerAgent: 5_000_000,
+          velocityWindowSeconds: 300,
+          velocityTokenThreshold: 1_500_000,
+        },
+      };
+      mockDaemon.tokens.getTokensInWindow = () => 1_000_000;
+      mockDaemon.tokens.getVelocity = () => 20_000_000;
+      const trigger = rotator._checkSafetyTriggers(mkAgent({ role: 'planner' }));
+      assert.equal(trigger.reason, 'runaway_velocity');
+      assert.equal(trigger.threshold, 15_000_000, 'planner threshold = 1.5M × 10');
+    });
+
+    it('role multipliers are config-overridable', () => {
+      mockDaemon.config = {
+        safety: {
+          autoRotate: true,
+          tokenCeilingPerAgent: 1_000_000,
+          velocityWindowSeconds: 300,
+          velocityTokenThreshold: 500_000,
+          roleMultipliers: { backend: 2, frontend: 2 },
+        },
+      };
+      mockDaemon.tokens.getTokensInWindow = () => 1_500_000; // above base ceiling
+      mockDaemon.tokens.getVelocity = () => 0;
+      const backendTrigger = rotator._checkSafetyTriggers(mkAgent({ role: 'backend' }));
+      assert.equal(backendTrigger, null, 'backend with 2x multiplier should allow 2M ceiling');
+    });
+
     it('stats track safety-triggered rotations separately', async () => {
       mockDaemon.registry.agents = [mkAgent({ tokensUsed: 1_200_000 })];
       await rotator.rotate('a1', {

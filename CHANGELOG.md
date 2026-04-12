@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.27.1 — Seamless rotation hotfix (2026-04-12)
+
+Fixes a severe UX regression where planner and other exploration-heavy agents auto-rotated on legitimate activity, breaking the "infinite sessions" promise.
+
+**The bug**
+Running a planner on a new project triggered `runaway_velocity` rotation at 2M tokens / 5min — which is normal behavior for a planner reading a codebase. The rotation killed the chat panel, reset the agent, and made the session feel broken. The whole point of context rotation is that it should be invisible to the user.
+
+**Fixes**
+
+- **Role-based safety multipliers.** Planners, fullstack auditors, analysts, and security roles now have much higher velocity/ceiling thresholds by default. Planner gets 10× (effective 15M/5min), fullstack/security get 4×, analyst 5×. Implementers (backend, frontend) stay at 1×. User-overridable via `safety.roleMultipliers` config.
+- **Handoff brief rewritten for seamless continuation.** The agent is no longer told "this is a context rotation, the previous session is being replaced." It's now instructed to continue the conversation naturally — no greetings, no "resuming", no announcement. From the user's side, the conversation never paused.
+- **User's recent messages included in the brief.** Previously the new agent had no memory of what the user was asking for. Now the last 5 user messages to this agent are carried forward so the conversation resumes with full context.
+- **Chat history always migrates on rotation.** Previously only migrated when the user had the old agent's detail panel open — if they'd navigated away, chat was orphaned forever. Now migrates unconditionally for all agent-keyed state (chat, activity log, token timeline, draft input). Persisted to localStorage immediately.
+- **Rotation toasts silenced.** "Rotating..." and "Rotated, saved X tokens" toasts removed from the default flow. Rotations still fully visible in the dashboard Intel panel for users who want to see them.
+
+Tests: 218 → 221 (+3 covering planner multiplier and config overrides).
+
 ## v0.27.0 — Audit-driven release: visibility, safety, Layer 7 memory (2026-04-12)
 
 Backend audit after a 275M-token stress test revealed three classes of gaps: blind spots (invisible tokens), unvalidated claims (hardcoded coefficients posing as measurements), and missing memory (every new agent started from scratch). This release closes all three.

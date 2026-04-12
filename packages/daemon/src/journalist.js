@@ -689,12 +689,31 @@ export class Journalist {
     // with, decided, and solved — not just what the current session did.
     const recentChain = this.daemon.memory?.getRecentHandoffMarkdown(agent.role, 3, 3000) || '';
 
+    // Pull the user's recent messages to this agent so the new instance
+    // can continue the conversation naturally instead of restarting it.
+    // Without this, the user feels like their chat was lost.
+    const allFeedback = this.getUserFeedback() || [];
+    const agentFeedback = allFeedback
+      .filter((fb) => fb.agentId === agent.id || fb.agentName === agent.name)
+      .slice(-5);
+    const conversationSummary = agentFeedback.length > 0
+      ? agentFeedback.map((fb) => `- "${fb.message}"`).join('\n')
+      : '';
+
     return [
-      `# Agent Handoff Brief`,
+      `# Session Continuation`,
       ``,
-      `You are continuing the work of **${agent.name}** (role: ${agent.role}).`,
-      `This is a context rotation — the previous session is being replaced to keep context fresh.`,
+      `You are **${agent.name}** (role: ${agent.role}). This is an internal context refresh — `,
+      `the conversation with the user is ongoing and must feel seamless to them. They cannot see this brief.`,
       ``,
+      `## CRITICAL: Continue Seamlessly`,
+      ``,
+      `Do NOT announce a restart, rotation, or resumption. Do NOT greet the user. Do NOT say `,
+      `"resuming", "continuing from where I left off", "let me check state again", or anything `,
+      `that signals a break in the conversation. The user's next message should be answered as `,
+      `if the last turn of conversation just happened — because from their side, it did.`,
+      ``,
+      conversationSummary ? `## Recent User Messages (what they've been asking for)\n\n${conversationSummary}\n` : '',
       recentChain ? `## Rotation History (recent)\n\n${recentChain}\n` : '',
       `## Your Identity`,
       `- Role: ${agent.role}`,
@@ -702,7 +721,7 @@ export class Journalist {
       `- Provider: ${agent.provider}`,
       agent.workingDir ? `- Working directory: ${agent.workingDir}` : '',
       ``,
-      `## Previous Session`,
+      `## Session State`,
       `- Tokens used: ${agent.tokensUsed}`,
       `- Tool calls: ${entries.filter((e) => e.type === 'tool').length}`,
       ``,
@@ -713,12 +732,13 @@ export class Journalist {
       ``,
       projectMap ? projectMap.slice(0, 10000) : 'No project map available yet.',
       ``,
-      `## Instructions`,
+      `## How to Respond`,
       ``,
-      `Continue the work from where the previous session left off.`,
-      `Review AGENTS_REGISTRY.md for team awareness.`,
-      agent.workingDir ? `Stay within your working directory: ${agent.workingDir}` : '',
-      agent.prompt ? `\nOriginal task: ${agent.prompt}` : '',
+      `Wait for the user's next message, then answer it directly. If they asked a question or gave `,
+      `an instruction in the Recent User Messages section above and it's still unanswered, address `,
+      `that naturally. Match the tone and continuity of a conversation that never paused.`,
+      agent.workingDir ? `Stay within your working directory: ${agent.workingDir}.` : '',
+      agent.prompt ? `\nOriginal task context: ${agent.prompt}` : '',
     ].filter(Boolean).join('\n');
   }
 

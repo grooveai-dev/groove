@@ -168,7 +168,7 @@ describe('Journalist', () => {
   });
 
   describe('generateHandoffBrief', () => {
-    it('should generate a handoff brief for context rotation', async () => {
+    it('should generate a handoff brief for seamless session continuation', async () => {
       const { daemon, grooveDir } = createMockDaemon();
       const journalist = new Journalist(daemon);
 
@@ -192,7 +192,10 @@ describe('Journalist', () => {
       const brief = await journalist.generateHandoffBrief(agent);
 
       assert.ok(brief.includes('backend-1'));
-      assert.ok(brief.includes('context rotation'));
+      // The brief must NOT tell the agent to announce a rotation/restart —
+      // seamless infinite sessions require the agent to continue naturally.
+      assert.ok(brief.includes('seamless') || brief.includes('Continue'));
+      assert.ok(!brief.includes('previous session is being replaced'));
       assert.ok(brief.includes('src/api/**'));
       assert.ok(brief.includes('5000'));
       assert.ok(brief.includes('Build the auth API'));

@@ -249,25 +249,52 @@ export const useGrooveStore = create((set, get) => ({
           break;
 
         case 'rotation:start':
-          get().addToast('info', `Rotating ${msg.agentName}...`);
+          // Silent — rotation must feel seamless to the user.
+          // Visibility is available in dashboard Intel panel for curious users.
           break;
 
         case 'rotation:complete': {
-          get().addToast('success', `Rotated ${msg.agentName}`, `Saved ${msg.tokensSaved} tokens`);
-          const panel = get().detailPanel;
-          if (panel?.type === 'agent' && panel.agentId === msg.oldAgentId && msg.newAgentId) {
-            set((s) => {
-              const chatHistory = { ...s.chatHistory };
-              const tokenTimeline = { ...s.tokenTimeline };
-              const activityLog = { ...s.activityLog };
-              if (chatHistory[msg.oldAgentId]?.length) chatHistory[msg.newAgentId] = [...chatHistory[msg.oldAgentId]];
-              if (tokenTimeline[msg.oldAgentId]?.length) tokenTimeline[msg.newAgentId] = [...tokenTimeline[msg.oldAgentId]];
-              if (activityLog[msg.oldAgentId]?.length) activityLog[msg.newAgentId] = [...activityLog[msg.oldAgentId]];
+          // Silent toast — seamless infinite sessions are the whole promise.
+          // Migrate all agent-keyed state to the new ID ALWAYS, not just when
+          // the old agent's panel is open. Chat history, activity log, token
+          // timeline all carry forward so no state is orphaned.
+          if (!msg.newAgentId || !msg.oldAgentId) break;
+          set((s) => {
+            const chatHistory = { ...s.chatHistory };
+            const tokenTimeline = { ...s.tokenTimeline };
+            const activityLog = { ...s.activityLog };
+            const chatInputs = { ...s.chatInputs };
+            if (chatHistory[msg.oldAgentId]?.length) {
+              chatHistory[msg.newAgentId] = [...chatHistory[msg.oldAgentId]];
+              delete chatHistory[msg.oldAgentId];
+            }
+            if (tokenTimeline[msg.oldAgentId]?.length) {
+              tokenTimeline[msg.newAgentId] = [...tokenTimeline[msg.oldAgentId]];
+              delete tokenTimeline[msg.oldAgentId];
+            }
+            if (activityLog[msg.oldAgentId]?.length) {
+              activityLog[msg.newAgentId] = [...activityLog[msg.oldAgentId]];
+              delete activityLog[msg.oldAgentId];
+            }
+            if (chatInputs[msg.oldAgentId]) {
+              chatInputs[msg.newAgentId] = chatInputs[msg.oldAgentId];
+              delete chatInputs[msg.oldAgentId];
+            }
+            // Only redirect the detail panel if the user was actively viewing
+            // the old agent. Otherwise leave their current view alone.
+            const panel = s.detailPanel;
+            let detailPanel = panel;
+            let teamDetailPanels = s.teamDetailPanels;
+            if (panel?.type === 'agent' && panel.agentId === msg.oldAgentId) {
               const newPanel = { type: 'agent', agentId: msg.newAgentId };
+              detailPanel = newPanel;
               const tid = get().activeTeamId;
-              return { chatHistory, tokenTimeline, activityLog, detailPanel: newPanel, teamDetailPanels: { ...s.teamDetailPanels, [tid]: newPanel } };
-            });
-          }
+              teamDetailPanels = { ...s.teamDetailPanels, [tid]: newPanel };
+            }
+            // Persist the migration to localStorage so it survives a reload
+            try { localStorage.setItem('groove:chatHistory', JSON.stringify(chatHistory)); } catch {}
+            return { chatHistory, tokenTimeline, activityLog, chatInputs, detailPanel, teamDetailPanels };
+          });
           break;
         }
 

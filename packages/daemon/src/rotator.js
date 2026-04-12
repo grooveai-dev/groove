@@ -136,6 +136,27 @@ export class Rotator extends EventEmitter {
     return result;
   }
 
+  // Per-role safety multipliers. Exploration-heavy roles burn tokens fast
+  // by design (reading codebases, searching files) — a planner running
+  // normally can hit 2M+ tokens in 5 min just reading. One-size-fits-all
+  // thresholds produce false positives on exactly the roles that need to
+  // read fast. Multipliers scale both the velocity threshold and the
+  // instance ceiling. User can override via config.safety.roleMultipliers.
+  _getRoleMultiplier(role) {
+    const safety = this.daemon.config?.safety;
+    const overrides = safety?.roleMultipliers || {};
+    if (overrides[role] != null) return overrides[role];
+    // Defaults tuned from observed legitimate velocity
+    const defaults = {
+      planner: 10,    // heavy exploration — effectively exempt in practice
+      fullstack: 4,   // QC auditors read broadly
+      analyst: 5,     // research/analysis roles
+      security: 4,    // audit roles
+      docs: 1,        // focused edits
+    };
+    return defaults[role] || 1;
+  }
+
   // Safety triggers — runaway agent detection. Scoped to `spawnedAt` so
   // a rotation doesn't re-trigger on inherited cumulative tokens.
   _checkSafetyTriggers(agent) {
@@ -143,8 +164,11 @@ export class Rotator extends EventEmitter {
     if (!safety || safety.autoRotate === false) return null;
     if (!this.daemon.tokens || !agent.spawnedAt) return null;
 
+    const multiplier = this._getRoleMultiplier(agent.role);
     const spawnedAtMs = new Date(agent.spawnedAt).getTime();
-    const ceiling = safety.tokenCeilingPerAgent;
+
+    const baseCeiling = safety.tokenCeilingPerAgent;
+    const ceiling = baseCeiling > 0 ? Math.round(baseCeiling * multiplier) : 0;
     if (ceiling > 0) {
       const instanceTokens = this.daemon.tokens.getTokensInWindow(agent.id, spawnedAtMs);
       if (instanceTokens >= ceiling) {
@@ -152,12 +176,16 @@ export class Rotator extends EventEmitter {
           reason: 'token_limit_exceeded',
           instanceTokens,
           ceiling,
+          multiplier,
         };
       }
     }
 
     const windowMs = (safety.velocityWindowSeconds || 300) * 1000;
-    const velocityThreshold = safety.velocityTokenThreshold;
+    const baseVelocityThreshold = safety.velocityTokenThreshold;
+    const velocityThreshold = baseVelocityThreshold > 0
+      ? Math.round(baseVelocityThreshold * multiplier)
+      : 0;
     if (velocityThreshold > 0) {
       const velocity = this.daemon.tokens.getVelocity(agent.id, windowMs);
       if (velocity >= velocityThreshold) {
@@ -166,6 +194,7 @@ export class Rotator extends EventEmitter {
           velocity,
           windowMs,
           threshold: velocityThreshold,
+          multiplier,
         };
       }
     }

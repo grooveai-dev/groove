@@ -39,6 +39,7 @@ program
 program
   .command('stop')
   .description('Stop the GROOVE daemon')
+  .option('-f, --force', 'Stop even if agents are still running (destroys their work)')
   .action(stop);
 
 program
@@ -69,6 +70,7 @@ program
 program
   .command('nuke')
   .description('Kill all agents and stop the daemon')
+  .option('-f, --force', 'Required when agents are still running')
   .action(nuke);
 
 program

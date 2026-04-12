@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import {
-  Network, Code2, BarChart3, Puzzle, Users, Plus,
+  Network, Code2, ChartSpline, Puzzle, Users, Plus,
   RotateCw, Skull, MessageSquare, Terminal, Newspaper,
   Search,
 } from 'lucide-react';
@@ -12,7 +12,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 const STATIC_COMMANDS = [
   { id: 'nav:agents',      label: 'Go to Agents',      icon: Network,    category: 'Navigation', action: (s) => { s.setActiveView('agents'); } },
   { id: 'nav:editor',      label: 'Go to Editor',      icon: Code2,      category: 'Navigation', action: (s) => { s.setActiveView('editor'); } },
-  { id: 'nav:dashboard',   label: 'Go to Dashboard',   icon: BarChart3,  category: 'Navigation', action: (s) => { s.setActiveView('dashboard'); } },
+  { id: 'nav:dashboard',   label: 'Go to Dashboard',   icon: ChartSpline, category: 'Navigation', action: (s) => { s.setActiveView('dashboard'); } },
   { id: 'nav:marketplace', label: 'Go to Marketplace', icon: Puzzle,     category: 'Navigation', action: (s) => { s.setActiveView('marketplace'); } },
   { id: 'nav:teams',       label: 'Go to Teams',       icon: Users,      category: 'Navigation', action: (s) => { s.setActiveView('teams'); } },
   { id: 'action:spawn',    label: 'Spawn Agent',       icon: Plus,       category: 'Actions',    action: (s) => { s.openDetail({ type: 'spawn' }); } },

@@ -75,6 +75,10 @@ export function validateAgentConfig(config) {
     integrations = config.integrations.filter((s) => typeof s === 'string' && s.length > 0 && s.length <= 100);
   }
 
+  // Validate integration approval mode
+  const validApprovalModes = ['auto', 'manual'];
+  const integrationApproval = validApprovalModes.includes(config.integrationApproval) ? config.integrationApproval : 'manual';
+
   // Return sanitized config (only known fields)
   return {
     role: config.role,
@@ -88,6 +92,7 @@ export function validateAgentConfig(config) {
     permission,
     skills,
     integrations,
+    integrationApproval,
   };
 }
 

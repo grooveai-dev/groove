@@ -9,6 +9,7 @@ import { BreadcrumbBar } from './breadcrumb-bar';
 import { StatusBar } from './status-bar';
 import { DetailPanel } from './detail-panel';
 import { CommandPalette } from './command-palette';
+import { TeamTabBar } from '../../views/agents';
 
 export function AppShell({ children, detailContent, terminalContent }) {
   const activeView = useGrooveStore((s) => s.activeView);
@@ -75,28 +76,32 @@ export function AppShell({ children, detailContent, terminalContent }) {
             }}
           />
 
-          {/* Center: main content + terminal */}
+          {/* Content area (right of activity bar) */}
           <div className="flex-1 flex flex-col min-w-0 min-h-0">
-            {/* Main content — collapses when terminal is maximized */}
-            {!(terminalVisible && terminalFullHeight) && (
-              <main className="flex-1 min-h-0 overflow-hidden relative">
-                {children}
-              </main>
-            )}
+            {activeView === 'agents' && <TeamTabBar />}
 
-            {/* Terminal — self-contained with its own panel, tabs, controls */}
-            {terminalContent}
+            <div className="flex-1 flex min-h-0">
+              {/* Center: main content + terminal */}
+              <div className="flex-1 flex flex-col min-w-0 min-h-0">
+                {!(terminalVisible && terminalFullHeight) && (
+                  <main className="flex-1 min-h-0 overflow-hidden relative">
+                    {children}
+                  </main>
+                )}
+                {terminalContent}
+              </div>
+
+              {showDetail && (
+                <DetailPanel
+                  width={detailPanelWidth}
+                  onWidthChange={setDetailPanelWidth}
+                  onClose={closeDetail}
+                >
+                  {detailContent}
+                </DetailPanel>
+              )}
+            </div>
           </div>
-
-          {showDetail && (
-            <DetailPanel
-              width={detailPanelWidth}
-              onWidthChange={setDetailPanelWidth}
-              onClose={closeDetail}
-            >
-              {detailContent}
-            </DetailPanel>
-          )}
         </div>
 
         <StatusBar

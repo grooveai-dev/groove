@@ -103,9 +103,9 @@ export class AdaptiveThresholds {
     const errorCount = signals.errorCount || 0;
     score -= errorCount * 5;
 
-    // Repetitions: each detected repetition costs 8 points (agent repeating itself)
+    // Repetitions: 3+ Write/Edit to the same file in a sliding window
     const repetitions = signals.repetitions || 0;
-    score -= repetitions * 8;
+    score -= Math.min(repetitions * 6, 30);
 
     // Out-of-scope access: each violation costs 10 points
     const scopeViolations = signals.scopeViolations || 0;
@@ -116,12 +116,12 @@ export class AdaptiveThresholds {
     const toolFailures = signals.toolFailures || 0;
     if (toolCalls > 0) {
       const successRate = (toolCalls - toolFailures) / toolCalls;
-      score += Math.round((successRate - 0.8) * 20); // Bonus/penalty around 80%
+      score += Math.round((successRate - 0.8) * 20);
     }
 
-    // File churn: editing same file 3+ times signals circular refactoring
+    // File churn: same file written 5+ times — genuine circular refactoring
     const fileChurn = signals.fileChurn || 0;
-    score -= fileChurn * 12;
+    score -= fileChurn * 10;
 
     // Error trend: increasing errors in second half = degradation
     const errorTrend = signals.errorTrend || 0;
@@ -162,46 +162,34 @@ export class AdaptiveThresholds {
       errorTrend: 0,        // errors increasing in recent window → degradation signal
     };
 
-    const recentTools = [];
     const writtenFiles = new Set();
-    const fileWriteCounts = {}; // track how many times each file is written
-    const errorTimestamps = [];
+    const fileWriteCounts = {};
+    const writeEditOps = [];
 
     for (const entry of entries) {
       if (entry.type === 'error') {
         signals.errorCount++;
-        errorTimestamps.push(entry.timestamp || Date.now());
       }
 
       if (entry.type === 'tool') {
         signals.toolCalls++;
 
-        // Track file writes and churn
         if (entry.tool === 'Write' || entry.tool === 'Edit') {
           if (entry.input) {
             writtenFiles.add(entry.input);
             fileWriteCounts[entry.input] = (fileWriteCounts[entry.input] || 0) + 1;
+            writeEditOps.push(entry.input);
           }
         }
 
-        // Track tool failures — errors that follow tool calls indicate failure
-        // (stream-json emits tool_use then tool_result with is_error)
-        if (entry.type === 'tool' && entry.isError) {
+        if (entry.isError) {
           signals.toolFailures++;
         }
 
-        // Detect repetitions: same tool+input within last 5 calls
-        const key = `${entry.tool}:${entry.input}`;
-        if (recentTools.includes(key)) {
-          signals.repetitions++;
-        }
-        recentTools.push(key);
-        if (recentTools.length > 5) recentTools.shift();
-
-        // Detect scope violations (simplified check)
+        // Scope violations: writes outside declared scope
         if (agentScope && agentScope.length > 0 && entry.input) {
-          const file = entry.input;
           if (entry.tool === 'Write' || entry.tool === 'Edit') {
+            const file = entry.input;
             const inScope = agentScope.some((pattern) =>
               file.includes(pattern.replace('/**', '').replace('**/', ''))
             );
@@ -213,9 +201,19 @@ export class AdaptiveThresholds {
 
     signals.filesWritten = writtenFiles.size;
 
-    // File churn: count files written 3+ times (circular refactoring signal)
+    // Repetitions: only count Write/Edit to the same file as circular behavior.
+    // Read/Grep/Glob revisits are normal investigation — not degradation.
+    // Require 3+ writes to the same file within a 15-op sliding window.
+    for (let i = 0; i < writeEditOps.length; i++) {
+      const windowStart = Math.max(0, i - 14);
+      const window = writeEditOps.slice(windowStart, i);
+      const count = window.filter((f) => f === writeEditOps[i]).length;
+      if (count >= 2) signals.repetitions++;
+    }
+
+    // File churn: files written 5+ times (circular refactoring, not normal iteration)
     for (const count of Object.values(fileWriteCounts)) {
-      if (count >= 3) signals.fileChurn++;
+      if (count >= 5) signals.fileChurn++;
     }
 
     // Error trend: compare error rate in first half vs second half of session

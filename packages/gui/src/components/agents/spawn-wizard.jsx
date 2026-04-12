@@ -84,6 +84,7 @@ export function SpawnWizard() {
   const [selectedIntegrations, setSelectedIntegrations] = useState([]);
   const [integrationModalOpen, setIntegrationModalOpen] = useState(false);
   const [integrationSearch, setIntegrationSearch] = useState('');
+  const [integrationApproval, setIntegrationApproval] = useState('manual');
   const [spawning, setSpawning] = useState(false);
 
   useEffect(() => {
@@ -108,6 +109,7 @@ export function SpawnWizard() {
       setRole(''); setCustomRole(''); setName(''); setProvider(''); setModel(''); setPrompt('');
       setSelectedSkills([]);
       setSelectedIntegrations([]);
+      setIntegrationApproval('manual');
     }
   }, [open, fetchProviders]);
 
@@ -128,6 +130,7 @@ export function SpawnWizard() {
         ...(prompt && { prompt }),
         ...(selectedSkills.length > 0 && { skills: selectedSkills }),
         ...(selectedIntegrations.length > 0 && { integrations: selectedIntegrations }),
+        ...(selectedIntegrations.length > 0 && { integrationApproval }),
       };
       await spawnAgent(config);
       closeDetail();
@@ -478,6 +481,45 @@ export function SpawnWizard() {
                     </div>
                   </DialogContent>
                 </Dialog>
+
+                {/* Approval mode */}
+                {selectedIntegrations.length > 0 && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-text-2 font-sans">Integration Approvals</label>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => setIntegrationApproval('manual')}
+                        className={cn(
+                          'flex-1 flex items-center gap-2 px-3 py-2 rounded-md border text-left transition-all cursor-pointer',
+                          integrationApproval === 'manual'
+                            ? 'border-accent bg-accent/5'
+                            : 'border-border-subtle bg-surface-1 hover:border-border',
+                        )}
+                      >
+                        <Shield size={13} className={integrationApproval === 'manual' ? 'text-accent' : 'text-text-3'} />
+                        <div>
+                          <div className="text-2xs font-semibold text-text-0 font-sans">Manual</div>
+                          <div className="text-2xs text-text-3 font-sans">You approve each action</div>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => setIntegrationApproval('auto')}
+                        className={cn(
+                          'flex-1 flex items-center gap-2 px-3 py-2 rounded-md border text-left transition-all cursor-pointer',
+                          integrationApproval === 'auto'
+                            ? 'border-warning bg-warning/5'
+                            : 'border-border-subtle bg-surface-1 hover:border-border',
+                        )}
+                      >
+                        <Sparkles size={13} className={integrationApproval === 'auto' ? 'text-warning' : 'text-text-3'} />
+                        <div>
+                          <div className="text-2xs font-semibold text-text-0 font-sans">Auto</div>
+                          <div className="text-2xs text-text-3 font-sans">Agent acts without asking</div>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
               </div>
             )}

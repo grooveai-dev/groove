@@ -32,16 +32,16 @@ export function useDashboard() {
           const now = Date.now();
           const add = (arr, val) => [...arr.slice(-59), { t: now, v: val || 0 }];
           const totalUsed = d.tokens?.totalTokens || 0;
-          const sav = d.tokens?.savings || {};
-          const cacheSavedUsd = sav.cacheCostSavingsUsd || 0;
-          const costEff = sav.costEfficiency || 0;
           const input = d.tokens?.totalInputTokens || 0;
           const output = d.tokens?.totalOutputTokens || 0;
+          const breakdown = d.agents?.breakdown || [];
+          const withQ = breakdown.filter((a) => a.quality?.score != null);
+          const avgQ = withQ.length > 0 ? withQ.reduce((s, a) => s + a.quality.score, 0) / withQ.length : 0;
           return {
             tokens: add(prev.tokens, totalUsed),
             cost: add(prev.cost, d.tokens?.totalCostUsd),
-            saved: add(prev.saved, cacheSavedUsd),
-            efficiency: add(prev.efficiency, costEff),
+            saved: add(prev.saved, avgQ),
+            efficiency: add(prev.efficiency, d.rotation?.totalRotations || 0),
             cache: add(prev.cache, d.tokens?.cacheHitRate),
             inputOutput: add(prev.inputOutput, output > 0 ? input / output : 0),
             agents: add(prev.agents, d.agents?.running || 0),

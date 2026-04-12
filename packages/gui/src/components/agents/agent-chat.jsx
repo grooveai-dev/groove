@@ -236,14 +236,13 @@ export function AgentChat({ agent }) {
             placeholder={isAlive ? 'Instruct agent... (? to query)' : 'Continue conversation...'}
             rows={1}
             className={cn(
-              'flex-1 resize-none rounded-xl px-4 py-2.5 text-sm',
+              'flex-1 resize-y rounded-xl px-4 py-2.5 text-sm',
               'bg-surface-0 border text-text-0 font-sans',
               'placeholder:text-text-4',
               'focus:outline-none focus:ring-1',
-              'max-h-[120px] min-h-[40px]',
+              'min-h-[40px]',
               isQuery ? 'border-info/30 focus:ring-info/40' : 'border-border focus:ring-accent/40',
             )}
-            style={{ height: Math.min(Math.max(40, input.split('\n').length * 22), 120) }}
           />
           {isThinking ? (
             <button

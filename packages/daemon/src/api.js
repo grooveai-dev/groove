@@ -1147,9 +1147,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
       window.push(now);
       _execRates.set(integrationId, window);
 
-      // Approval gate — dangerous tools require human approval
+      // Approval gate — dangerous tools require human approval (unless agent is set to auto)
       const entry = daemon.integrations.registry.find((s) => s.id === integrationId);
-      if (entry?.requiresApproval?.includes(tool)) {
+      const callingAgent = agentId ? daemon.registry.get(agentId) : null;
+      const autoApprove = callingAgent?.integrationApproval === 'auto';
+      if (entry?.requiresApproval?.includes(tool) && !autoApprove) {
         if (approvalId) {
           const approval = daemon.supervisor.getApproval(approvalId);
           if (!approval) return res.status(404).json({ error: 'Approval not found' });
@@ -1206,25 +1208,29 @@ Keep responses concise. Help them think, don't lecture them about the system the
         return res.status(400).json({ error: 'filePath (string) is required' });
       }
 
-      // Approval gate
-      if (approvalId) {
-        const approval = daemon.supervisor.getApproval(approvalId);
-        if (!approval) return res.status(404).json({ error: 'Approval not found' });
-        if (approval.status === 'rejected') return res.status(403).json({ error: 'Approval rejected', reason: approval.reason });
-        if (approval.status !== 'approved') return res.status(202).json({ requiresApproval: true, approvalId, status: 'pending' });
-      } else {
-        const approval = daemon.supervisor.requestApproval(agentId || null, {
-          type: 'google_drive_upload',
-          filePath,
-          name: name || filePath.split('/').pop(),
-          description: `Upload to Google Drive: ${name || filePath.split('/').pop()}`,
-        });
-        daemon.audit.log('integration.upload.blocked', { filePath, approvalId: approval.id, agentId });
-        return res.status(202).json({
-          requiresApproval: true,
-          approvalId: approval.id,
-          message: `Upload requires approval. Retry with this approvalId once approved.`,
-        });
+      // Approval gate (unless agent is set to auto)
+      const uploadAgent = agentId ? daemon.registry.get(agentId) : null;
+      const autoApproveUpload = uploadAgent?.integrationApproval === 'auto';
+      if (!autoApproveUpload) {
+        if (approvalId) {
+          const approval = daemon.supervisor.getApproval(approvalId);
+          if (!approval) return res.status(404).json({ error: 'Approval not found' });
+          if (approval.status === 'rejected') return res.status(403).json({ error: 'Approval rejected', reason: approval.reason });
+          if (approval.status !== 'approved') return res.status(202).json({ requiresApproval: true, approvalId, status: 'pending' });
+        } else {
+          const approval = daemon.supervisor.requestApproval(agentId || null, {
+            type: 'google_drive_upload',
+            filePath,
+            name: name || filePath.split('/').pop(),
+            description: `Upload to Google Drive: ${name || filePath.split('/').pop()}`,
+          });
+          daemon.audit.log('integration.upload.blocked', { filePath, approvalId: approval.id, agentId });
+          return res.status(202).json({
+            requiresApproval: true,
+            approvalId: approval.id,
+            message: `Upload requires approval. Retry with this approvalId once approved.`,
+          });
+        }
       }
 
       const result = await daemon.integrations.uploadToGoogleDrive(filePath, {
@@ -2119,8 +2125,10 @@ Keep responses concise. Help them think, don't lecture them about the system the
         const signals = events.length >= 6 ? daemon.adaptive.extractSignals(events, a.scope) : null;
         const score = signals ? daemon.adaptive.scoreSession(signals) : null;
         const classification = daemon.classifier.classify(a.id);
+        const history = daemon.rotator.scoreHistory[a.id] || [];
         quality = {
           score,
+          scoreHistory: history,
           errorCount: signals?.errorCount || 0,
           toolCalls: signals?.toolCalls || 0,
           toolFailures: signals?.toolFailures || 0,

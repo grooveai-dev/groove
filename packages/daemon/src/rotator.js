@@ -5,8 +5,12 @@ import { EventEmitter } from 'events';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
-const DEFAULT_THRESHOLD = 0.75; // 75% context usage triggers rotation
-const CHECK_INTERVAL = 15_000; // Check every 15 seconds
+const DEFAULT_THRESHOLD = 0.75;
+const CHECK_INTERVAL = 15_000;
+const QUALITY_THRESHOLD = 40;   // Score below this triggers quality rotation
+const MIN_EVENTS = 10;          // Minimum classifier events before scoring
+const MIN_AGE_SEC = 120;        // Minimum agent age before quality rotation
+const SCORE_HISTORY_MAX = 40;   // ~10 min at 15s intervals
 
 export class Rotator extends EventEmitter {
   constructor(daemon) {
@@ -16,6 +20,8 @@ export class Rotator extends EventEmitter {
     this.rotationHistory = [];
     this.rotating = new Set();
     this.enabled = false;
+    this.liveScores = {};
+    this.scoreHistory = {};
     this.historyPath = daemon.grooveDir ? resolve(daemon.grooveDir, 'rotation-history.json') : null;
     this._loadHistory();
   }
@@ -50,6 +56,7 @@ export class Rotator extends EventEmitter {
         provider: e.provider || 'unknown',
         oldTokens: e.tokensBefore || 0,
         contextUsage: 0,
+        reason: e.reason || 'context_threshold',
         timestamp: ts,
         newAgentId: e.agentId,
         newTokens: 0,
@@ -83,6 +90,39 @@ export class Rotator extends EventEmitter {
     this.enabled = false;
   }
 
+  _idleMs(agent) {
+    return agent.lastActivity
+      ? Date.now() - new Date(agent.lastActivity).getTime()
+      : Infinity;
+  }
+
+  scoreLiveSession(agent) {
+    const events = this.daemon.classifier.agentWindows[agent.id] || [];
+    const ageSec = (Date.now() - new Date(agent.spawnedAt).getTime()) / 1000;
+
+    if (events.length < MIN_EVENTS || ageSec < MIN_AGE_SEC) {
+      return { score: 70, signals: {}, hasEnoughData: false, ageSec: Math.round(ageSec), eventCount: events.length };
+    }
+
+    const signals = this.daemon.adaptive.extractSignals(events, agent.scope);
+    let score = this.daemon.adaptive.scoreSession(signals);
+
+    if (ageSec > 1800) score -= 5;
+    if (ageSec > 3600) score -= 10;
+
+    score = Math.max(0, Math.min(100, score));
+
+    const result = { score, signals, hasEnoughData: true, ageSec: Math.round(ageSec), eventCount: events.length };
+    this.liveScores[agent.id] = result;
+
+    if (!this.scoreHistory[agent.id]) this.scoreHistory[agent.id] = [];
+    const hist = this.scoreHistory[agent.id];
+    hist.push({ t: Date.now(), s: score });
+    if (hist.length > SCORE_HISTORY_MAX) hist.shift();
+
+    return result;
+  }
+
   async check() {
     const agents = this.daemon.registry.getAll();
     const running = agents.filter((a) => a.status === 'running');
@@ -94,15 +134,26 @@ export class Rotator extends EventEmitter {
         ? this.daemon.adaptive.getThreshold(agent.provider, agent.role)
         : DEFAULT_THRESHOLD;
 
+      // Context-based rotation (original)
       if (agent.contextUsage >= threshold) {
-        // Check for natural pause: if agent has been idle for >10s
-        const idleMs = agent.lastActivity
-          ? Date.now() - new Date(agent.lastActivity).getTime()
-          : Infinity;
+        if (this._idleMs(agent) > 10_000) {
+          console.log(`  Rotator: ${agent.name} at ${Math.round(agent.contextUsage * 100)}% — rotating (context)`);
+          await this.rotate(agent.id, { reason: 'context_threshold' });
+          continue;
+        }
+      }
 
-        if (idleMs > 10_000) {
-          console.log(`  Rotator: ${agent.name} at ${Math.round(agent.contextUsage * 100)}% — rotating`);
-          await this.rotate(agent.id);
+      // Quality-based rotation — detects degradation before tokens are wasted
+      const quality = this.scoreLiveSession(agent);
+      if (quality.hasEnoughData && quality.score < QUALITY_THRESHOLD) {
+        if (this._idleMs(agent) > 10_000) {
+          console.log(`  Rotator: ${agent.name} quality=${quality.score} — rotating (quality)`);
+          await this.rotate(agent.id, {
+            reason: 'quality_degradation',
+            qualityScore: quality.score,
+            signals: quality.signals,
+          });
+          continue;
         }
       }
     }
@@ -120,28 +171,26 @@ export class Rotator extends EventEmitter {
       type: 'rotation:start',
       agentId,
       agentName: agent.name,
+      reason: options.reason || 'manual',
     });
 
     try {
-      // 1. Record adaptive session so rotation thresholds learn over time
       const classifierEvents = this.daemon.classifier.agentWindows[agentId] || [];
       if (classifierEvents.length > 0) {
         const signals = this.daemon.adaptive.extractSignals(classifierEvents, agent.scope);
         this.daemon.adaptive.recordSession(agent.provider, agent.role, signals);
       }
 
-      // Clear classifier window for the old agent
       this.daemon.classifier.clearAgent(agentId);
+      delete this.liveScores[agentId];
+      delete this.scoreHistory[agentId];
 
-      // 2. Generate handoff brief from Journalist
       let brief = await journalist.generateHandoffBrief(agent);
 
-      // Append additional prompt if provided (used by instruct/continue endpoints)
       if (options.additionalPrompt) {
         brief = brief + '\n\n## User Instruction\n\n' + options.additionalPrompt;
       }
 
-      // 3. Record rotation history
       const record = {
         agentId: agent.id,
         agentName: agent.name,
@@ -149,17 +198,13 @@ export class Rotator extends EventEmitter {
         provider: agent.provider,
         oldTokens: agent.tokensUsed,
         contextUsage: agent.contextUsage,
+        reason: options.reason || 'manual',
+        qualityScore: options.qualityScore || null,
         timestamp: new Date().toISOString(),
       };
 
-      // 4. Kill/clean up the old agent
-      // processes.kill handles both alive and dead agents:
-      // - alive: sends SIGTERM, waits for exit, removes from registry
-      // - dead: just removes from registry and releases locks
       await processes.kill(agentId);
 
-      // 5. Respawn with handoff brief as the prompt
-      // Preserve auto routing mode so the router re-evaluates on respawn
       const routingMode = this.daemon.router.getMode(agentId);
       const respawnModel = routingMode.mode === 'auto' ? 'auto' : agent.model;
 
@@ -171,18 +216,15 @@ export class Rotator extends EventEmitter {
         prompt: brief,
         permission: agent.permission || 'full',
         workingDir: agent.workingDir,
-        name: agent.name, // Keep the same name for continuity
-        teamId: agent.teamId, // Keep the same team
+        name: agent.name,
+        teamId: agent.teamId,
       });
 
-      // Carry cumulative token stats so the dashboard shows lifetime totals
       if (agent.tokensUsed > 0) {
         registry.update(newAgent.id, { tokensUsed: agent.tokensUsed });
       }
 
-      // Record rotation savings in token tracker
       this.daemon.tokens.recordRotation(agent.id, agent.tokensUsed);
-      // Each rotation is a cold-start that the Journalist's handoff brief skips
       this.daemon.tokens.recordColdStartSkipped();
 
       record.newAgentId = newAgent.id;
@@ -194,12 +236,13 @@ export class Rotator extends EventEmitter {
       }
       this._saveHistory();
 
-      // Record rotation lifecycle event for timeline
       if (this.daemon.timeline) {
         this.daemon.timeline.recordEvent('rotate', {
           agentId: newAgent.id, oldAgentId: agentId,
           agentName: newAgent.name, role: agent.role,
           tokensBefore: agent.tokensUsed,
+          reason: record.reason,
+          qualityScore: record.qualityScore,
         });
       }
 
@@ -208,6 +251,7 @@ export class Rotator extends EventEmitter {
         agentId: newAgent.id,
         agentName: newAgent.name,
         oldAgentId: agentId,
+        reason: record.reason,
         tokensSaved: agent.tokensUsed,
       });
 
@@ -226,6 +270,50 @@ export class Rotator extends EventEmitter {
     }
   }
 
+  recordNaturalCompaction(agent, peakUsage, currentUsage) {
+    const record = {
+      agentId: agent.id,
+      agentName: agent.name,
+      role: agent.role,
+      provider: agent.provider,
+      oldTokens: agent.tokensUsed || 0,
+      contextUsage: peakUsage,
+      contextAfter: currentUsage,
+      reason: 'natural_compaction',
+      qualityScore: null,
+      timestamp: new Date().toISOString(),
+      newAgentId: agent.id,
+      newTokens: agent.tokensUsed || 0,
+    };
+
+    this.rotationHistory.push(record);
+    if (this.rotationHistory.length > 100) {
+      this.rotationHistory = this.rotationHistory.slice(-100);
+    }
+    this._saveHistory();
+
+    if (this.daemon.timeline) {
+      this.daemon.timeline.recordEvent('rotate', {
+        agentId: agent.id,
+        agentName: agent.name,
+        role: agent.role,
+        reason: 'natural_compaction',
+        contextBefore: peakUsage,
+        contextAfter: currentUsage,
+      });
+    }
+
+    this.daemon.broadcast({
+      type: 'rotation:natural',
+      agentId: agent.id,
+      agentName: agent.name,
+      peakUsage,
+      currentUsage,
+    });
+
+    console.log(`  Rotator: ${agent.name} natural compaction detected (${Math.round(peakUsage * 100)}% → ${Math.round(currentUsage * 100)}%)`);
+  }
+
   isRotating(agentId) {
     return this.rotating.has(agentId);
   }
@@ -234,14 +322,26 @@ export class Rotator extends EventEmitter {
     return this.rotationHistory;
   }
 
+  getLiveScores() {
+    return this.liveScores;
+  }
+
   getStats() {
     const totalRotations = this.rotationHistory.length;
-    const totalTokensSaved = this.rotationHistory.reduce((sum, r) => sum + r.oldTokens, 0);
+    const totalTokensSaved = this.rotationHistory.reduce((sum, r) => sum + (r.oldTokens || 0), 0);
+    const qualityRotations = this.rotationHistory.filter((r) => r.reason === 'quality_degradation').length;
+    const contextRotations = this.rotationHistory.filter((r) => r.reason === 'context_threshold').length;
+    const naturalCompactions = this.rotationHistory.filter((r) => r.reason === 'natural_compaction').length;
     return {
       enabled: this.enabled,
       totalRotations,
       totalTokensSaved,
+      qualityRotations,
+      contextRotations,
+      naturalCompactions,
       rotating: Array.from(this.rotating),
+      liveScores: this.liveScores,
+      scoreHistory: this.scoreHistory,
     };
   }
 }

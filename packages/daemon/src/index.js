@@ -160,16 +160,35 @@ export class Daemon {
     // Wire up API routes
     createApi(this.app, this);
 
+    // Enrich agent list with live quality + efficiency scores for GUI
+    const enrichAgents = (agents) => agents.map((a) => {
+      const enriched = { ...a };
+      try {
+        const events = this.classifier.agentWindows[a.id] || [];
+        if (events.length >= 6) {
+          const signals = this.adaptive.extractSignals(events, a.scope);
+          const score = signals ? this.adaptive.scoreSession(signals) : null;
+          if (score != null) enriched.qualityScore = score;
+        }
+      } catch { /* classifier/adaptive may not be ready */ }
+      try {
+        const td = this.tokens.getAgent(a.id);
+        const total = (td.cacheReadTokens || 0) + (td.cacheCreationTokens || 0) + (td.inputTokens || 0);
+        if (total > 0) enriched.efficiency = Math.round(((td.cacheReadTokens || 0) / total) * 100);
+      } catch { /* token tracker may not have data */ }
+      return enriched;
+    });
+
     // Broadcast registry changes over WebSocket
     this.registry.on('change', () => {
-      this.broadcast({ type: 'state', data: this.registry.getAll() });
+      this.broadcast({ type: 'state', data: enrichAgents(this.registry.getAll()) });
     });
 
     // Send full state to new WebSocket clients + handle editor messages
     this.wss.on('connection', (ws) => {
       ws.send(JSON.stringify({
         type: 'state',
-        data: this.registry.getAll(),
+        data: enrichAgents(this.registry.getAll()),
       }));
 
       // Track which files this client is watching (for cleanup on disconnect)

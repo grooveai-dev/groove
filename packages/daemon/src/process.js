@@ -2,11 +2,18 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { spawn as cpSpawn } from 'child_process';
-import { createWriteStream, mkdirSync, chmodSync, existsSync, readFileSync, unlinkSync, readdirSync } from 'fs';
-import { resolve } from 'path';
+import { createWriteStream, mkdirSync, chmodSync, existsSync, readFileSync, unlinkSync, readdirSync, copyFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { getProvider, getInstalledProviders } from './providers/index.js';
 import { AgentLoop } from './agent-loop.js';
 import { validateAgentConfig } from './validate.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SLIDES_ENGINE_SRC = resolve(__dirname, '../templates/groove-slides.cjs');
+
+const COMPACTION_DROP_THRESHOLD = 0.25; // 25% drop from peak = natural compaction
+const COMPACTION_MIN_PEAK = 0.15;       // Ignore compaction if peak was below 15%
 
 // Role-specific prompt prefixes — applied during spawn regardless of entry point
 // (SpawnPanel, chat continue, CLI, API) for consistency
@@ -134,12 +141,36 @@ Restarting the daemon destroys ALL other agents currently running in other teams
 - Writing database-related tests and verifying migration safety
 
 `,
-  slides: `You are a Slide Deck agent. You build presentation decks as HTML slides (Reveal.js) with optional PPTX export. Focus on:
+  slides: `You are a Slide Deck agent. You build presentation decks as HTML slides (Reveal.js) with a matching PPTX export. Focus on:
 - Creating clean, professional slide layouts with strong visual hierarchy
-- Structuring content into clear sections with concise bullet points
+- Structuring content into clear sections with concise, editorial copy
 - Building responsive HTML slides that look polished in the browser
-- Generating a slides.json data file alongside HTML for PPTX conversion
-For best results, apply a slide deck skill from the Marketplace. The skill provides templates, styling, and export automation.
+- Generating a slides.json data file alongside HTML so PPTX export stays in sync
+
+MANDATORY PPTX LAYOUT ENGINE — baked into Groove, not optional
+
+A file called groove-slides.cjs has been written into your working directory. It is the layout engine — it does NOT define any theme or style. You MUST use it in your convert-slides.js (which must also be CommonJS — use require, not import). Do not re-implement its functions. Do not copy its contents into your own code.
+
+  const {
+    LAYOUT, estimateTextHeight, fitFontSize,
+    hardGate, tracker,
+  } = require('./groove-slides.cjs');
+
+What the engine gives you:
+- LAYOUT constants — SLIDE_W (10), SLIDE_H (5.625), SAFE_X (0.6), SAFE_W (8.8), SAFE_BOT (5.125), CONTENT_START (0.65), plus standard gaps. Any element whose y + h exceeds SAFE_BOT (5.125) is clipped off the slide — treat that as a build failure.
+- estimateTextHeight(text, fontSize, boxW, {bold}) — returns the height the text will actually need.
+- fitFontSize(text, maxSize, minSize, boxW, boxH, {bold}) — returns the largest integer font size that fits the text in the box. Use this for every headline, hero number, price, or any text that could wrap. It replaces shrinkText.
+- tracker() — returns { track, placed }. Wrap EVERY slide.addText / slide.addShape call's options with track('element-name', {x, y, w, h, text, fontSize, bold, ...}) so the gate can inspect it.
+- hardGate(pairs) — runs collision, bounds, and wrap checks over every slide. Calls process.exit(1) on any issue. Call it once, before pres.writeFile(), with allSlides.map(s => [s.name, s.elements]).
+
+Non-negotiable rules:
+1. Do NOT use shrinkText: true. PowerPoint honors it; Google Slides and LibreOffice PDF export largely do not — the text renders at its declared size and overflows. Compute a real font size with fitFontSize() instead.
+2. Do NOT invent skipCollision, skipBounds, skipWrap, or any other opt-out flag on tracked elements. The engine rejects them with an error. If a design element legitimately extends past the safe area (e.g., an orb bleeding off-slide as atmosphere), call slide.addImage directly WITHOUT tracking it — the gate only validates elements you declare placed.
+3. Y advances come from estimateTextHeight() or an explicit box budget (const titleBoxH = 1.2). Never write a hardcoded magic number like Y += 0.95.
+4. Do NOT wrap hardGate() in try/catch. Do NOT run pres.writeFile() after a failing gate. If the gate fails, the deck is not shippable — fix the slide generator.
+5. Track the brand watermark and category label you draw on every slide. If they are not in placed[], the gate cannot detect a title bleeding into them.
+
+A marketplace skill (e.g., modern-pitch-deck) layers theme on top — color palette, typography choices, gradient backgrounds, visual components (orbs, charts, heatmaps), slide archetype patterns. Skills must NOT redefine the engine functions, reset LAYOUT constants, or introduce their own gate. If you see a skill doing any of those, ignore that part and keep using the engine as documented here.
 
 `,
   home: `You are a Smart Home automation agent. You have MCP integrations for Home Assistant. Focus on:
@@ -232,6 +263,7 @@ export class ProcessManager {
   constructor(daemon) {
     this.daemon = daemon;
     this.handles = new Map(); // agentId -> { proc, logStream }
+    this.peakContextUsage = new Map(); // agentId -> highest contextUsage seen
   }
 
   async spawn(config) {
@@ -303,6 +335,20 @@ export class ProcessManager {
     // Register file locks for the agent's scope
     if (agent.scope && agent.scope.length > 0) {
       locks.register(agent.id, agent.scope);
+    }
+
+    // For slides-role agents, write the baked-in layout engine into the working
+    // directory. The agent imports it as `./groove-slides.cjs`. Core layout rules
+    // (Y-cursor, fitFontSize, collision/bounds/wrap gates) ship with Groove so
+    // they apply without a skill attached — skills only provide theme/style.
+    if (config.role === 'slides') {
+      try {
+        const dest = resolve(agent.workingDir || this.daemon.projectDir, 'groove-slides.cjs');
+        mkdirSync(dirname(dest), { recursive: true });
+        copyFileSync(SLIDES_ENGINE_SRC, dest);
+      } catch (err) {
+        console.log(`[Groove:Spawn] Failed to write groove-slides.cjs: ${err.message}`);
+      }
     }
 
     // Pre-spawn task negotiation — if same-role agents are running,
@@ -581,6 +627,17 @@ For normal file edits within your scope, proceed without review.
         }
         if (output.contextUsage !== undefined) {
           updates.contextUsage = output.contextUsage;
+
+          const peak = this.peakContextUsage.get(agent.id) || 0;
+          if (output.contextUsage > peak) {
+            this.peakContextUsage.set(agent.id, output.contextUsage);
+          } else if (peak >= COMPACTION_MIN_PEAK) {
+            const drop = peak - output.contextUsage;
+            if (drop >= COMPACTION_DROP_THRESHOLD * peak) {
+              this.daemon.rotator.recordNaturalCompaction(agent, peak, output.contextUsage);
+              this.peakContextUsage.set(agent.id, output.contextUsage);
+            }
+          }
         }
         registry.update(agent.id, updates);
 
@@ -726,6 +783,17 @@ For normal file edits within your scope, proceed without review.
     // Context window usage (0-1 scale) — drives rotation threshold
     if (output.contextUsage !== undefined) {
       updates.contextUsage = output.contextUsage;
+
+      const peak = this.peakContextUsage.get(agentId) || 0;
+      if (output.contextUsage > peak) {
+        this.peakContextUsage.set(agentId, output.contextUsage);
+      } else if (peak >= COMPACTION_MIN_PEAK) {
+        const drop = peak - output.contextUsage;
+        if (drop >= COMPACTION_DROP_THRESHOLD * peak) {
+          this.daemon.rotator.recordNaturalCompaction(agent, peak, output.contextUsage);
+          this.peakContextUsage.set(agentId, output.contextUsage);
+        }
+      }
     }
 
     // Session ID for resume support
@@ -1087,6 +1155,7 @@ For normal file edits within your scope, proceed without review.
   }
 
   async kill(agentId) {
+    this.peakContextUsage.delete(agentId);
     const handle = this.handles.get(agentId);
 
     if (!handle) {

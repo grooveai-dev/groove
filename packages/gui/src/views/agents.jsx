@@ -28,6 +28,18 @@ function savePositions(positions) {
   try { localStorage.setItem('groove:nodePositions', JSON.stringify(positions)); } catch {}
 }
 
+function loadTeamViewports() {
+  try { return JSON.parse(localStorage.getItem('groove:teamViewports') || '{}'); } catch { return {}; }
+}
+
+function saveTeamViewport(teamId, viewport) {
+  try {
+    const all = loadTeamViewports();
+    all[teamId] = viewport;
+    localStorage.setItem('groove:teamViewports', JSON.stringify(all));
+  } catch {}
+}
+
 /* ── Team Tab Bar (IDE-style) ──────────────────────────────── */
 
 function teamStatus(agents, teamId) {
@@ -42,7 +54,7 @@ function teamStatus(agents, teamId) {
   return 'idle';
 }
 
-function TeamTabBar() {
+export function TeamTabBar() {
   const teams = useGrooveStore((s) => s.teams);
   const activeTeamId = useGrooveStore((s) => s.activeTeamId);
   const agents = useGrooveStore((s) => s.agents);
@@ -51,11 +63,15 @@ function TeamTabBar() {
   const deleteTeam = useGrooveStore((s) => s.deleteTeam);
   const renameTeam = useGrooveStore((s) => s.renameTeam);
 
+  const reorderTeams = useGrooveStore((s) => s.reorderTeams);
+
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const submitting = useRef(false);
+  const [dragId, setDragId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
 
   function handleCreate() {
     const name = newName.trim();
@@ -89,13 +105,29 @@ function TeamTabBar() {
         return (
           <div
             key={team.id}
+            draggable={!isRenaming}
+            onDragStart={(e) => { setDragId(team.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', ''); }}
+            onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragId && dragId !== team.id) setDragOverId(team.id); }}
+            onDragLeave={() => { if (dragOverId === team.id) setDragOverId(null); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (!dragId || dragId === team.id) return;
+              const from = teams.findIndex((t) => t.id === dragId);
+              const to = teams.findIndex((t) => t.id === team.id);
+              if (from !== -1 && to !== -1) reorderTeams(from, to);
+              setDragId(null);
+              setDragOverId(null);
+            }}
             onClick={() => !isRenaming && switchTeam(team.id)}
             onDoubleClick={() => startRename(team)}
             className={cn(
               'group relative flex items-center gap-2 px-4 h-9 text-xs font-sans cursor-pointer select-none transition-colors',
               isActive
-                ? 'bg-surface-0 text-text-0 font-semibold border-x border-x-border'
+                ? 'text-text-0 font-semibold border-x border-x-border bg-[#242830]'
                 : 'text-text-3 hover:text-text-1 hover:bg-surface-3/50',
+              dragId === team.id && 'opacity-40',
+              dragOverId === team.id && dragId !== team.id && 'border-l-2 !border-l-accent',
             )}
           >
             {/* Thin accent line at top */}
@@ -164,7 +196,7 @@ function TeamTabBar() {
 
             {/* Bottom edge hides the parent border for active tab */}
             {isActive && (
-              <div className="absolute bottom-[-1px] left-0 right-0 h-px bg-surface-0" />
+              <div className="absolute bottom-[-1px] left-0 right-0 h-px bg-[#242830]" />
             )}
           </div>
         );
@@ -219,8 +251,9 @@ function AgentTreeInner() {
     [allAgents, activeTeamId],
   );
 
-  const { fitView } = useReactFlow();
+  const { fitView, setViewport } = useReactFlow();
   const [prevCount, setPrevCount] = useState(0);
+  const prevTeamIdRef = useRef(activeTeamId);
 
   // Build nodes — positions are stable, data updates flow to node components
   const targetNodes = useMemo(() => {
@@ -372,11 +405,23 @@ function AgentTreeInner() {
     });
   }, [targetEdges, nodes, setEdges]);
 
-  // Only fitView when agents are added — debounced so team launches (multiple spawns)
-  // don't cause repeated zoom/pan jitter
   const agentIdStr = agents.map((a) => a.id).join(',');
   const fitTimer = useRef(null);
   useEffect(() => {
+    // Team switch — restore saved viewport instead of fitting
+    if (prevTeamIdRef.current !== activeTeamId) {
+      prevTeamIdRef.current = activeTeamId;
+      prevAgentIds.current = new Set(agents.map((a) => a.id));
+      setPrevCount(agents.length);
+      const saved = loadTeamViewports()[activeTeamId];
+      if (saved) {
+        setViewport(saved, { duration: 200 });
+      } else if (agents.length > 0) {
+        fitView({ padding: 0.3, maxZoom: 1.2, duration: 200 });
+      }
+      return;
+    }
+
     const currentIds = new Set(agents.map((a) => a.id));
     const isNewAgent = agents.length > 0 && [...currentIds].some((id) => !prevAgentIds.current.has(id));
     prevAgentIds.current = currentIds;
@@ -384,12 +429,15 @@ function AgentTreeInner() {
     if (prevCount === 0 && agents.length > 0) {
       fitView({ padding: 0.3, maxZoom: 1.2, duration: 0 });
     } else if (isNewAgent) {
-      // Debounce: wait 500ms for batch spawns to settle before fitting
       clearTimeout(fitTimer.current);
       fitTimer.current = setTimeout(() => fitView({ padding: 0.3, maxZoom: 1.2, duration: 300 }), 500);
     }
     setPrevCount(agents.length);
-  }, [agentIdStr, prevCount, fitView]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [agentIdStr, prevCount, fitView, activeTeamId, setViewport]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onMoveEnd = useCallback((_e, viewport) => {
+    saveTeamViewport(activeTeamId, viewport);
+  }, [activeTeamId]);
 
   const onNodeClick = useCallback((_e, node) => {
     if (node.id === ROOT_ID) return;
@@ -445,6 +493,7 @@ function AgentTreeInner() {
       onPaneClick={onPaneClick}
       onNodeDrag={onNodeDrag}
       onNodeDragStop={onNodeDragStop}
+      onMoveEnd={onMoveEnd}
       defaultViewport={{ x: 0, y: 0, zoom: 1.2 }}
       proOptions={{ hideAttribution: true }}
       minZoom={0.2}
@@ -677,7 +726,6 @@ export default function AgentsView() {
 
   return (
     <div className="flex flex-col h-full relative">
-      <TeamTabBar />
       <div className="flex-1 min-h-0">
         {isLoading ? (
           <div className={cn(

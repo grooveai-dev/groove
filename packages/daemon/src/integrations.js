@@ -239,7 +239,20 @@ export class IntegrationStore {
       authenticated = configured;
     }
 
-    return { id: integrationId, installed, configured, envKeys, authenticated };
+    let needsReauth = false;
+    if (authenticated && entry.oauthScopes?.length) {
+      const raw = this.getCredential(integrationId, 'GOOGLE_AUTHORIZED_SCOPES');
+      if (raw) {
+        try {
+          const authorized = new Set(JSON.parse(raw));
+          needsReauth = entry.oauthScopes.some((s) => !authorized.has(s));
+        } catch {}
+      } else {
+        needsReauth = true;
+      }
+    }
+
+    return { id: integrationId, installed, configured, envKeys, authenticated, needsReauth };
   }
 
   /**
@@ -459,6 +472,10 @@ export class IntegrationStore {
       }
 
       const entry = this.registry.find((s) => s.id === integrationId);
+      if (entry?.oauthScopes) {
+        this.setCredential(integrationId, 'GOOGLE_AUTHORIZED_SCOPES', JSON.stringify(entry.oauthScopes));
+      }
+
       if (entry?.authType === 'google-autoauth' && entry.oauthKeysDir && tokens.refresh_token) {
         this._writeAutoauthCredentials(entry, clientId, clientSecret, tokens.refresh_token);
       }

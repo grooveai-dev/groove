@@ -82,13 +82,11 @@ describe('TaskClassifier', () => {
   });
 
   it('should maintain sliding window', () => {
-    // Add 60 events — should only keep last 50 (window size)
-    for (let i = 0; i < 60; i++) {
+    const cap = classifier.windowSize;
+    for (let i = 0; i < cap + 10; i++) {
       classifier.addEvent('agent-1', { type: 'tool', tool: 'Read', input: `file${i}.js` });
     }
-
-    // Window should be 50
-    assert.equal(classifier.agentWindows['agent-1'].length, 50);
+    assert.equal(classifier.agentWindows['agent-1'].length, cap);
   });
 
   it('should clear agent window', () => {

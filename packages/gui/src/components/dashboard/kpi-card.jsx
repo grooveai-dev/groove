@@ -2,6 +2,8 @@
 import { memo } from 'react';
 import { cn } from '../../lib/cn';
 import { HEX } from '../../lib/theme-hex';
+import { Tooltip } from '../ui/tooltip';
+import { HelpCircle } from 'lucide-react';
 
 function MiniSparkline({ data, color = HEX.accent, width = 72, height = 22 }) {
   if (!data || data.length < 2) return <div style={{ width, height }} />;
@@ -32,7 +34,7 @@ function MiniSparkline({ data, color = HEX.accent, width = 72, height = 22 }) {
   );
 }
 
-const KpiCard = memo(function KpiCard({ label, value, sparkData, color = HEX.accent, className }) {
+const KpiCard = memo(function KpiCard({ label, value, sparkData, color = HEX.accent, hint, className }) {
   return (
     <div className={cn(
       'flex items-center gap-2.5 px-3 py-2.5 min-w-0',
@@ -40,7 +42,14 @@ const KpiCard = memo(function KpiCard({ label, value, sparkData, color = HEX.acc
       className,
     )}>
       <div className="flex-1 min-w-0">
-        <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5 truncate">{label}</div>
+        <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5 truncate flex items-center gap-1">
+          {label}
+          {hint && (
+            <Tooltip content={<span className="max-w-[220px] block leading-relaxed">{hint}</span>} side="bottom">
+              <HelpCircle size={10} className="text-text-4 hover:text-text-2 cursor-help flex-shrink-0 transition-colors" />
+            </Tooltip>
+          )}
+        </div>
         <div className="text-base font-semibold font-mono text-text-0 tabular-nums leading-none">{value}</div>
       </div>
       <MiniSparkline data={sparkData} color={color} />
@@ -58,6 +67,7 @@ export function KpiStrip({ kpis }) {
           value={kpi.value}
           sparkData={kpi.sparkData}
           color={kpi.color}
+          hint={kpi.hint}
           className={cn(
             'flex-1 basis-[12.5%] min-w-[140px]',
             'border-b border-r border-border',

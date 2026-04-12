@@ -44,6 +44,7 @@ export const useGrooveStore = create((set, get) => ({
   // ── Navigation ────────────────────────────────────────────
   activeView: 'agents',           // 'agents' | 'editor' | 'dashboard' | 'marketplace' | 'teams' | 'settings'
   detailPanel: null,              // null | { type: 'agent', agentId } | { type: 'spawn' } | { type: 'journalist' }
+  teamDetailPanels: {},            // { [teamId]: detailPanel } — persists panel state per team
   commandPaletteOpen: false,
 
   // ── Layout persistence ────────────────────────────────────
@@ -264,7 +265,9 @@ export const useGrooveStore = create((set, get) => ({
               if (chatHistory[msg.oldAgentId]?.length) chatHistory[msg.newAgentId] = [...chatHistory[msg.oldAgentId]];
               if (tokenTimeline[msg.oldAgentId]?.length) tokenTimeline[msg.newAgentId] = [...tokenTimeline[msg.oldAgentId]];
               if (activityLog[msg.oldAgentId]?.length) activityLog[msg.newAgentId] = [...activityLog[msg.oldAgentId]];
-              return { chatHistory, tokenTimeline, activityLog, detailPanel: { type: 'agent', agentId: msg.newAgentId } };
+              const newPanel = { type: 'agent', agentId: msg.newAgentId };
+              const tid = get().activeTeamId;
+              return { chatHistory, tokenTimeline, activityLog, detailPanel: newPanel, teamDetailPanels: { ...s.teamDetailPanels, [tid]: newPanel } };
             });
           }
           break;
@@ -339,8 +342,17 @@ export const useGrooveStore = create((set, get) => ({
   async fetchTeams() {
     try {
       const data = await api.get('/teams');
-      const teams = data.teams || [];
+      let teams = data.teams || [];
       const defaultTeamId = data.defaultTeamId;
+      try {
+        const saved = JSON.parse(localStorage.getItem('groove:teamOrder') || '[]');
+        if (saved.length) {
+          const byId = Object.fromEntries(teams.map((t) => [t.id, t]));
+          const ordered = saved.filter((id) => byId[id]).map((id) => byId[id]);
+          const remaining = teams.filter((t) => !saved.includes(t.id));
+          teams = [...ordered, ...remaining];
+        }
+      } catch {}
       const { activeTeamId } = get();
       const ids = teams.map((t) => t.id);
       const resolved = ids.includes(activeTeamId) ? activeTeamId : defaultTeamId;
@@ -350,7 +362,11 @@ export const useGrooveStore = create((set, get) => ({
   },
 
   switchTeam(id) {
-    set({ activeTeamId: id, detailPanel: null });
+    const { activeTeamId, detailPanel, teamDetailPanels } = get();
+    const updated = { ...teamDetailPanels };
+    if (activeTeamId) updated[activeTeamId] = detailPanel;
+    const restored = updated[id] || null;
+    set({ activeTeamId: id, detailPanel: restored, teamDetailPanels: updated });
     localStorage.setItem('groove:activeTeamId', id);
   },
 
@@ -382,6 +398,14 @@ export const useGrooveStore = create((set, get) => ({
     }
   },
 
+  reorderTeams(fromIndex, toIndex) {
+    const teams = [...get().teams];
+    const [moved] = teams.splice(fromIndex, 1);
+    teams.splice(toIndex, 0, moved);
+    set({ teams });
+    try { localStorage.setItem('groove:teamOrder', JSON.stringify(teams.map((t) => t.id))); } catch {}
+  },
+
   async renameTeam(id, name) {
     try {
       const team = await api.patch(`/teams/${id}`, { name });
@@ -392,10 +416,23 @@ export const useGrooveStore = create((set, get) => ({
       throw err;
     }
   },
-  openDetail(descriptor) { set({ detailPanel: descriptor }); },
-  closeDetail() { set({ detailPanel: null }); },
-  selectAgent(id) { set({ detailPanel: { type: 'agent', agentId: id } }); },
-  clearSelection() { set({ detailPanel: null }); },
+  openDetail(descriptor) {
+    const tid = get().activeTeamId;
+    set((s) => ({ detailPanel: descriptor, teamDetailPanels: { ...s.teamDetailPanels, [tid]: descriptor } }));
+  },
+  closeDetail() {
+    const tid = get().activeTeamId;
+    set((s) => ({ detailPanel: null, teamDetailPanels: { ...s.teamDetailPanels, [tid]: null } }));
+  },
+  selectAgent(id) {
+    const tid = get().activeTeamId;
+    const panel = { type: 'agent', agentId: id };
+    set((s) => ({ detailPanel: panel, teamDetailPanels: { ...s.teamDetailPanels, [tid]: panel } }));
+  },
+  clearSelection() {
+    const tid = get().activeTeamId;
+    set((s) => ({ detailPanel: null, teamDetailPanels: { ...s.teamDetailPanels, [tid]: null } }));
+  },
   toggleCommandPalette() { set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })); },
 
   setDetailPanelWidth(w) {

@@ -1,110 +1,48 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { memo, useState } from 'react';
+import { memo, useState, useMemo, useRef, useEffect } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { useGrooveStore } from '../../stores/groove';
-import { cn } from '../../lib/cn';
 import { statusColor } from '../../lib/status';
-import { fmtNum } from '../../lib/format';
+import { fmtNum, fmtDollar, fmtUptime } from '../../lib/format';
 
 const EMPTY = [];
+const ERROR_RE = /error|crash|fail/i;
+const BAR_BG = 'rgba(51, 175, 188, 0.15)';
+const BAR_H = 'h-[2px]';
 
-// ── Clean up model ID → short display name ───────────────
-// "claude-haiku-4-5-20251001" → "Haiku 4.5"
-// "claude-opus-4-6" → "Opus 4.6"
-// "gemini-3.1-pro-preview" → "Gemini 3.1 Pro"
-// "o4-mini" → "o4-mini"
 function shortModel(id) {
   if (!id || id === 'auto') return 'auto';
-  // Claude models: strip "claude-" prefix and date suffix, capitalize
   const claude = id.match(/^claude-(opus|sonnet|haiku)-(\d+)-(\d+)(?:-\d+)?$/);
   if (claude) {
     const name = claude[1][0].toUpperCase() + claude[1].slice(1);
     return `${name} ${claude[2]}.${claude[3]}`;
   }
-  // Gemini: strip "-preview"
   if (id.startsWith('gemini-')) {
     return id.replace('gemini-', 'Gemini ').replace('-preview', '').replace('-flash-lite', ' Flash Lite').replace('-flash', ' Flash').replace('-pro', ' Pro');
   }
-  // GPT: capitalize
   if (id.startsWith('gpt-')) return id.toUpperCase().replace('GPT-', 'GPT-');
   return id;
 }
 
-// ── Activity label ───────────────────────────────────────
-function activityLabel(text) {
-  if (!text) return null;
-  const t = text.toLowerCase();
-  if (t.includes('read'))    return 'READ';
-  if (t.includes('edit') || t.includes('writ')) return 'WRITE';
-  if (t.includes('search') || t.includes('grep') || t.includes('glob')) return 'SEARCH';
-  if (t.includes('bash') || t.includes('exec') || t.includes('running')) return 'EXEC';
-  if (t.includes('test'))    return 'TEST';
-  if (t.includes('error') || t.includes('fail')) return 'ERR';
-  if (t.includes('complet') || t.includes('done')) return 'DONE';
-  return 'WORK';
+function burnRate(timeline) {
+  if (!timeline || timeline.length < 2) return null;
+  const samples = timeline.slice(-10);
+  const dt = (samples[samples.length - 1].t - samples[0].t) / 60000;
+  if (dt <= 0) return null;
+  const dv = samples[samples.length - 1].v - samples[0].v;
+  return dv / dt;
 }
 
-function timeShort(ts) {
-  if (!ts) return '';
-  const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  return `${Math.floor(s / 3600)}h`;
+function qualityColor(score) {
+  if (score >= 70) return 'var(--color-success)';
+  if (score >= 40) return 'var(--color-warning)';
+  return 'var(--color-danger)';
 }
 
-// ── Slide-out panel (appears to the right) ───────────────
-function NodePanel({ agent }) {
-  const activityLog = useGrooveStore((s) => s.activityLog[agent.id]) || EMPTY;
-  const recent = activityLog.slice(-8);
-
-  return (
-    <div
-      className="absolute left-full top-0 ml-2 z-50 pointer-events-none"
-      style={{ width: 220, animation: 'tooltip-slide-in 0.15s ease-out' }}
-    >
-      <div
-        className="overflow-hidden"
-        style={{ background: '#181b21', border: '1px solid #262a32', borderRadius: 4 }}
-      >
-        {/* Prompt */}
-        {agent.prompt && (
-          <div className="px-2.5 py-2 border-b border-[#262a32]">
-            <p className="text-[9px] font-sans text-[#8b929e] line-clamp-3 leading-snug">{agent.prompt}</p>
-          </div>
-        )}
-
-        {/* Activity log */}
-        {recent.length > 0 ? (
-          <div>
-            <div className="px-2.5 pt-1.5 pb-1">
-              <span className="text-[8px] font-mono text-[#3a3f4b] uppercase tracking-widest">Activity</span>
-            </div>
-            {recent.map((entry, i) => {
-              const label = activityLabel(entry.text);
-              const display = entry.text?.length > 45 ? entry.text.slice(0, 45) + '...' : entry.text;
-              return (
-                <div key={i} className="px-2.5 py-[3px] flex items-start gap-1.5">
-                  <span className="text-[8px] font-mono text-[#333842] w-5 flex-shrink-0 text-right">{timeShort(entry.timestamp)}</span>
-                  {label && (
-                    <span className={cn(
-                      'text-[7px] font-mono w-7 flex-shrink-0 text-center rounded-sm px-0.5 py-px',
-                      label === 'ERR' ? 'text-[#e06c75] bg-[#e06c75]/10' : 'text-[#505862] bg-[#505862]/10',
-                    )}>{label}</span>
-                  )}
-                  <span className="text-[9px] font-sans text-[#6e7681] truncate flex-1">{display}</span>
-                </div>
-              );
-            })}
-            <div className="h-1.5" />
-          </div>
-        ) : (
-          <div className="px-2.5 py-3">
-            <span className="text-[9px] font-mono text-[#333842]">Awaiting activity...</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+function efficiencyColor(pct) {
+  if (pct >= 60) return 'var(--color-success)';
+  if (pct >= 30) return 'var(--color-warning)';
+  return 'var(--color-danger)';
 }
 
 // ── Status labels ────────────────────────────────────────
@@ -121,18 +59,41 @@ const AgentNode = memo(({ data, selected }) => {
   const sColor = statusColor(agent.status);
   const tokens = agent.tokensUsed || 0;
   const [hovered, setHovered] = useState(false);
+  const nodeRef = useRef(null);
+
+  useEffect(() => {
+    const rfNode = nodeRef.current?.closest('.react-flow__node');
+    if (rfNode) rfNode.style.zIndex = hovered ? '1000' : '';
+  }, [hovered]);
+
+  const activityLog = useGrooveStore((s) => s.activityLog[agent.id]) || EMPTY;
+  const tokenTimeline = useGrooveStore((s) => s.tokenTimeline[agent.id]) || EMPTY;
+  const rate = burnRate(tokenTimeline);
+  const errorCount = useMemo(() => activityLog.filter((e) => ERROR_RE.test(e.text)).length, [activityLog]);
+  const ctxColor = contextPct > 75 ? 'var(--color-danger)' : contextPct > 50 ? 'var(--color-warning)' : 'var(--color-success)';
+
+  const qScore = agent.qualityScore != null ? Math.round(agent.qualityScore) : null;
+  const qColor = qScore != null ? qualityColor(qScore) : null;
+
+  const effPct = agent.efficiency != null ? agent.efficiency : null;
+  const effColor = effPct != null ? efficiencyColor(effPct) : null;
+
+  const uptimeSec = agent.durationMs ? agent.durationMs / 1000
+    : agent.spawnedAt ? (Date.now() - new Date(agent.spawnedAt).getTime()) / 1000
+    : agent.createdAt ? (Date.now() - new Date(agent.createdAt).getTime()) / 1000
+    : 0;
 
   return (
     <div
-      className="relative"
+      ref={nodeRef}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
       <div
-        className="w-[220px] overflow-hidden transition-all duration-150"
+        className="w-[220px] overflow-hidden transition-all duration-200 ease-out"
         style={{
-          background: '#1c1f26',
-          border: `1px solid ${selected ? '#2e323a' : '#262a32'}`,
+          background: hovered ? '#141720' : '#1c1f26',
+          border: `1px solid ${hovered ? '#2e3640' : selected ? '#2e323a' : '#262a32'}`,
           borderRadius: 4,
         }}
       >
@@ -195,7 +156,7 @@ const AgentNode = memo(({ data, selected }) => {
           </div>
 
           {/* Context bar */}
-          <div className="mt-1.5 h-[2px] rounded-sm overflow-hidden" style={{ background: 'rgba(51, 175, 188, 0.15)' }}>
+          <div className={`mt-1.5 ${BAR_H} rounded-sm overflow-hidden`} style={{ background: BAR_BG }}>
             <div
               className="h-full rounded-sm transition-all duration-700"
               style={{
@@ -207,10 +168,91 @@ const AgentNode = memo(({ data, selected }) => {
             />
           </div>
         </div>
-      </div>
 
-      {/* ── Hover panel — slides out right ────────────── */}
-      {hovered && <NodePanel agent={agent} />}
+        {/* ── Expanded stats (morphs on hover) ────────── */}
+        <div
+          className="grid transition-[grid-template-rows] duration-200 ease-out"
+          style={{ gridTemplateRows: hovered ? '1fr' : '0fr' }}
+        >
+          <div className="overflow-hidden">
+            <div className="mx-3 border-t border-white/[0.04]" />
+
+            {/* Context Health */}
+            <div className="px-3 pt-1.5 pb-1">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[9px] font-mono text-[#505862] uppercase tracking-wider">Context</span>
+                {(agent.rotations || 0) > 0 && (
+                  <span className="text-[8px] font-mono text-[#606878] bg-white/[0.04] rounded px-1 py-px">{agent.rotations}x rot</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <div className={`flex-1 ${BAR_H} rounded-sm overflow-hidden`} style={{ background: BAR_BG }}>
+                  <div className="h-full rounded-sm transition-all duration-500" style={{ width: `${Math.max(contextPct, 1)}%`, background: ctxColor }} />
+                </div>
+                <span className="text-[9px] font-mono font-medium" style={{ color: ctxColor }}>{contextPct}%</span>
+              </div>
+            </div>
+
+            {/* Quality */}
+            <div className="px-3 pt-1 pb-1">
+              <span className="text-[9px] font-mono text-[#505862] uppercase tracking-wider">Quality</span>
+              <div className="flex items-center gap-2 mt-1">
+                <div className={`flex-1 ${BAR_H} rounded-sm overflow-hidden`} style={{ background: BAR_BG }}>
+                  <div className="h-full rounded-sm transition-all duration-500" style={{ width: `${qScore != null ? Math.max(qScore, 1) : 0}%`, background: qColor || '#505862' }} />
+                </div>
+                <span className="text-[9px] font-mono font-medium" style={{ color: qColor || '#505862' }}>{qScore != null ? qScore : '—'}</span>
+              </div>
+            </div>
+
+            {/* Efficiency (cache hit rate) */}
+            <div className="px-3 pt-1 pb-1">
+              <span className="text-[9px] font-mono text-[#505862] uppercase tracking-wider">Efficiency</span>
+              <div className="flex items-center gap-2 mt-1">
+                <div className={`flex-1 ${BAR_H} rounded-sm overflow-hidden`} style={{ background: BAR_BG }}>
+                  <div className="h-full rounded-sm transition-all duration-500" style={{ width: `${effPct != null ? Math.max(effPct, 1) : 0}%`, background: effColor || '#505862' }} />
+                </div>
+                <span className="text-[9px] font-mono font-medium" style={{ color: effColor || '#505862' }}>{effPct != null ? `${effPct}%` : '—'}</span>
+              </div>
+            </div>
+
+            {/* Stats row */}
+            <div className="px-3 pt-1 pb-1">
+              <div className="grid grid-cols-3 gap-1">
+                <div>
+                  <div className="text-[9px] font-mono font-medium text-[#bcc2cd]">{fmtDollar(agent.costUsd || 0)}</div>
+                  <div className="text-[7px] font-mono text-[#505862]">cost</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-mono font-medium text-[#bcc2cd]">{rate ? fmtNum(Math.round(rate)) : '—'}</div>
+                  <div className="text-[7px] font-mono text-[#505862]">tok/m</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-mono font-medium text-[#bcc2cd]">{agent.turns || 0}</div>
+                  <div className="text-[7px] font-mono text-[#505862]">turns</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Session */}
+            <div className="px-3 pt-1 pb-2">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] font-mono text-[#8b929e]">{fmtUptime(Math.max(0, Math.floor(uptimeSec)))}</span>
+                  <span className="text-[7px] font-mono text-[#505862]">up</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  {errorCount > 0 ? (
+                    <span className="text-[9px] font-mono text-[var(--color-danger)]">{errorCount}</span>
+                  ) : (
+                    <span className="text-[9px] font-mono text-[#505862]">0</span>
+                  )}
+                  <span className="text-[7px] font-mono text-[#505862]">err</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 });

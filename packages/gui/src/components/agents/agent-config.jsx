@@ -5,7 +5,7 @@ import {
   Gauge, FolderSearch, Key, Check, Eye, EyeOff,
   AlertCircle, Layers, Activity,
   RotateCw, Skull, Copy, Trash2,
-  Sparkles, Calendar,
+  Sparkles, Calendar, Plug,
 } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { Badge } from '../ui/badge';
@@ -435,6 +435,27 @@ export function AgentConfig({ agent }) {
           }}
         />
       </ConfigSection>
+
+      {/* ── Integration Approvals ────────────────────────────── */}
+      {agent.integrations?.length > 0 && (
+        <ConfigSection label="Integration Approvals" icon={Plug} description="Manual = you approve dangerous actions. Auto = agent acts freely.">
+          <SegmentedControl
+            options={[
+              { value: 'manual', label: 'Manual' },
+              { value: 'auto', label: 'Auto' },
+            ]}
+            value={agent.integrationApproval || 'manual'}
+            onChange={async (val) => {
+              try {
+                await api.patch(`/agents/${agent.id}`, { integrationApproval: val });
+                addToast('success', `Integration approvals → ${val === 'auto' ? 'Auto' : 'Manual'}`);
+              } catch (err) {
+                addToast('error', 'Update failed', err.message);
+              }
+            }}
+          />
+        </ConfigSection>
+      )}
 
       {/* ── Model Routing ────────────────────────────────────── */}
       <ConfigSection label="Model Routing" icon={Activity} description="How Groove selects models for this agent's tasks.">

@@ -1,12 +1,12 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Network, Code2, BarChart3, Puzzle, Users, Box, Newspaper, Settings } from 'lucide-react';
+import { Network, Code2, ChartSpline, Puzzle, Users, Box, Newspaper, Settings } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Tooltip } from '../ui/tooltip';
 
 const NAV_ITEMS = [
   { id: 'agents',      icon: Network,   label: 'Agents' },
   { id: 'editor',      icon: Code2,     label: 'Editor' },
-  { id: 'dashboard',   icon: BarChart3,  label: 'Dashboard' },
+  { id: 'dashboard',   icon: ChartSpline, label: 'Dashboard' },
   { id: 'marketplace', icon: Puzzle,     label: 'Marketplace' },
   { id: 'models',      icon: Box,       label: 'Models' },
   { id: 'teams',       icon: Users,     label: 'Teams' },
@@ -51,7 +51,7 @@ export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel
           return (
             <Tooltip key={item.id} content={item.label} side="right">
               <button
-                onClick={() => item.panel ? onTogglePanel(item.id) : onNavigate(item.nav ? item.id : item.id)}
+                onClick={() => item.panel ? onTogglePanel(item.id) : onNavigate(item.id)}
                 className={cn(
                   'w-10 h-10 flex items-center justify-center rounded-md transition-colors cursor-pointer',
                   isActive

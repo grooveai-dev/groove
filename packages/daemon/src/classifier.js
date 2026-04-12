@@ -36,17 +36,45 @@ const LIGHT_SIGNALS = [
 
 export class TaskClassifier {
   constructor() {
-    this.windowSize = 50; // Look at last N events — needs to be large enough
+    this.windowSize = 200; // Large enough for quality signal extraction across tool calls
     this.agentWindows = {}; // for degradation detection and adaptive scoring
   }
 
-  // Add an event to the classification window
   addEvent(agentId, event) {
     if (!this.agentWindows[agentId]) this.agentWindows[agentId] = [];
-    this.agentWindows[agentId].push(event);
-    if (this.agentWindows[agentId].length > this.windowSize) {
-      this.agentWindows[agentId].shift();
+    const window = this.agentWindows[agentId];
+
+    // Extract structured tool/error events from Claude Code content blocks.
+    // Claude's stream-json emits assistant messages with content arrays containing
+    // tool_use and tool_result blocks that drive quality signal extraction.
+    let extracted = false;
+    if (event.type === 'activity' && Array.isArray(event.data)) {
+      for (const block of event.data) {
+        if (block.type === 'tool_use') {
+          window.push({
+            type: 'tool',
+            tool: block.name,
+            input: block.input?.file_path || block.input?.path || block.input?.command || '',
+            isError: false,
+            timestamp: Date.now(),
+          });
+          extracted = true;
+        }
+        if (block.type === 'tool_result') {
+          if (block.is_error) {
+            window.push({ type: 'error', timestamp: Date.now() });
+            extracted = true;
+          }
+        }
+      }
     }
+
+    // Only push the raw event if we didn't extract structured events from it —
+    // avoids double-counting and window bloat from activity wrappers.
+    if (!extracted) {
+      window.push({ ...event, timestamp: event.timestamp || Date.now() });
+    }
+    while (window.length > this.windowSize) window.shift();
   }
 
   // Classify current activity for an agent

@@ -1,10 +1,10 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   Send, Loader2, MessageSquare, ArrowRight, Square,
   FileEdit, Search, Terminal, CheckCircle2, AlertCircle,
   RotateCw, Zap, Wrench, Eye, Code2, Bug,
-  ChevronDown, HelpCircle, Pencil, Paperclip,
+  ChevronDown, HelpCircle, Pencil, Paperclip, GripHorizontal,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useGrooveStore } from '../../stores/groove';
@@ -480,9 +480,21 @@ export function AgentFeed({ agent }) {
   const setInput = setStoreInput;
   const [mode, setMode] = useState('instruct'); // instruct | query
   const [sending, setSending] = useState(false);
+  const [inputHeight, setInputHeight] = useState(36);
+  const dragRef = useRef(null);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  const onDragStart = useCallback((e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = inputHeight;
+    const onMove = (ev) => setInputHeight(Math.min(Math.max(36, startH - (ev.clientY - startY)), 280));
+    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [inputHeight]);
 
   const timeline = useMemo(() => {
     const items = [];
@@ -648,7 +660,17 @@ export function AgentFeed({ agent }) {
       </div>
 
       {/* Input area */}
-      <div className="border-t border-border px-4 py-3 bg-surface-1/50 flex-shrink-0">
+      <div className="bg-surface-1/50 flex-shrink-0">
+        {/* Drag handle */}
+        <div
+          ref={dragRef}
+          onMouseDown={onDragStart}
+          className="flex items-center justify-center h-5 cursor-row-resize border-t border-border hover:bg-surface-3/50 transition-colors group"
+        >
+          <GripHorizontal size={12} className="text-text-4 group-hover:text-text-2 transition-colors" />
+        </div>
+
+        <div className="px-4 pb-3">
         {/* Mode pills */}
         <div className="flex items-center gap-1 mb-2">
           <button
@@ -713,9 +735,8 @@ export function AgentFeed({ agent }) {
               'bg-transparent text-text-0 font-sans',
               'placeholder:text-text-4',
               'focus:outline-none',
-              'max-h-[120px] min-h-[36px]',
             )}
-            style={{ height: Math.min(Math.max(36, input.split('\n').length * 20), 120) }}
+            style={{ height: inputHeight }}
           />
           {isThinking ? (
             <button
@@ -742,6 +763,7 @@ export function AgentFeed({ agent }) {
               {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
             </button>
           )}
+        </div>
         </div>
       </div>
     </div>

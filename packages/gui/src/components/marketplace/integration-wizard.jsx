@@ -8,7 +8,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../lib/hooks/use-toast';
 import {
   Check, CheckCircle, ExternalLink, Loader2, Eye, EyeOff,
-  Key, Shield, Trash2, ChevronRight, X, Copy,
+  Key, Shield, Trash2, ChevronRight, X, Copy, RefreshCw,
 } from 'lucide-react';
 
 // Reuse integration logos from marketplace-card
@@ -652,9 +652,14 @@ function ServiceRow({ item, status, onInstall, onUninstall, busy }) {
         <div className="text-xs font-semibold text-text-0 font-sans">{item.name}</div>
         <div className="text-2xs text-text-3 font-sans truncate">{item.description}</div>
       </div>
-      {installed && authenticated && (
+      {installed && authenticated && !status?.needsReauth && (
         <Badge variant="success" className="text-2xs flex-shrink-0 gap-1">
           <Check size={8} /> Ready
+        </Badge>
+      )}
+      {installed && authenticated && status?.needsReauth && (
+        <Badge variant="warning" className="text-2xs flex-shrink-0 gap-1">
+          <RefreshCw size={8} /> Update
         </Badge>
       )}
       {installed && !authenticated && (
@@ -717,6 +722,7 @@ export function GoogleWorkspaceWizard({ integrations, open, onClose }) {
   const installedIds = Object.entries(statuses).filter(([, s]) => s?.installed).map(([id]) => id);
   const allAuthenticated = installedIds.length > 0 && installedIds.every((id) => statuses[id]?.authenticated);
   const needsAuth = installedIds.some((id) => !statuses[id]?.authenticated);
+  const needsReauth = allAuthenticated && installedIds.some((id) => statuses[id]?.needsReauth);
 
   async function handleInstall(id) {
     setBusy(id);
@@ -872,6 +878,34 @@ export function GoogleWorkspaceWizard({ integrations, open, onClose }) {
                   <p className="text-2xs text-text-3 font-sans">
                     Your agents can now use these Google integrations.
                   </p>
+                  {needsReauth ? (
+                    <div className="w-full space-y-2 pt-2">
+                      <p className="text-2xs text-warning font-sans">
+                        New permissions available — re-authenticate to enable all features.
+                      </p>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleConnect}
+                        disabled={authenticating}
+                        className="w-full gap-2"
+                      >
+                        {authenticating ? (
+                          <><Loader2 size={12} className="animate-spin" /> Opening browser...</>
+                        ) : (
+                          <><RefreshCw size={12} /> Re-authenticate</>
+                        )}
+                      </Button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleConnect}
+                      disabled={authenticating}
+                      className="text-2xs text-text-4 hover:text-text-2 font-sans underline underline-offset-2 transition-colors mt-1"
+                    >
+                      {authenticating ? 'Opening browser...' : 'Re-authenticate'}
+                    </button>
+                  )}
                 </div>
               )}
 

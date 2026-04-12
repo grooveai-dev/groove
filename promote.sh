@@ -134,8 +134,9 @@ echo -e "  ${GREEN}Published groove-dev@${VERSION}${RESET}"
 # ── Update global install ────────────────────────────────
 
 step "Update global install"
-npm i -g groove-dev@latest
-echo -e "  ${GREEN}Global updated${RESET}"
+# Pin to exact version — npm CDN can lag behind on @latest after publish
+npm i -g "groove-dev@${VERSION}"
+echo -e "  ${GREEN}Global updated to ${VERSION}${RESET}"
 
 echo ""
 echo -e "  ${GREEN}✓ v${VERSION} published and globally installed${RESET}"

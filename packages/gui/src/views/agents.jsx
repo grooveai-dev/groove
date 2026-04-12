@@ -261,13 +261,13 @@ function AgentTreeInner() {
     return nodes;
   }, [agents, tokenTimeline]);
 
-  // Build edges
+  // Build edges — compute closest handle based on saved node positions
   const targetEdges = useMemo(() => {
     const saved = loadPositions();
     const rootPos = saved[ROOT_ID] || { x: 0, y: 0 };
 
     return agents.map((agent, i) => {
-      const key = agent.id;
+      const key = agent.name || agent.id;
       const row = Math.floor(i / MAX_PER_ROW);
       const col = i % MAX_PER_ROW;
       const totalInRow = Math.min(agents.length - row * MAX_PER_ROW, MAX_PER_ROW);

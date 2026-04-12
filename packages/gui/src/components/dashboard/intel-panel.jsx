@@ -1,7 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { memo } from 'react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
-import { fmtNum, fmtPct, timeAgo } from '../../lib/format';
+import { fmtNum, fmtPct, fmtDollar, timeAgo } from '../../lib/format';
 import { cn } from '../../lib/cn';
 import { HEX } from '../../lib/theme-hex';
 import { roleColor } from '../../lib/status';
@@ -55,16 +55,41 @@ function SavingsBar({ label, value, total, color }) {
 /* ── Rotation Tab ───────────────────────────────────────────── */
 function RotationTab({ tokens, rotation }) {
   const savings = tokens?.savings || {};
-  const totalSaved = savings.total || 0;
-  const totalUsed = tokens?.totalTokens || 0;
-  const hypothetical = totalUsed + totalSaved;
-  const efficiencyPct = hypothetical > 0 ? Math.round((totalSaved / hypothetical) * 100) : 0;
+  const coordSaved = savings.total || 0;
+  const cacheSavedUsd = savings.cacheCostSavingsUsd || 0;
+  const actualCostUsd = savings.actualCostUsd || tokens?.totalCostUsd || 0;
+  const hypotheticalCostUsd = savings.hypotheticalCostUsd || actualCostUsd;
+  const costEfficiency = savings.costEfficiency || 0;
 
+  const coordBreakdownTotal = coordSaved || 1;
   const recentHistory = (rotation?.history || []).slice(-10).reverse();
 
   return (
     <div className="p-3 space-y-4">
-      {/* Hero stats */}
+      {/* Cost efficiency hero */}
+      <div className="rounded p-3" style={{ background: 'rgba(74,225,104,0.06)', border: '1px solid rgba(74,225,104,0.15)' }}>
+        <div className="flex items-end justify-between mb-2">
+          <div>
+            <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1">Cost Efficiency</div>
+            <div className="text-3xl font-mono font-bold tabular-nums leading-none" style={{ color: '#4ae168' }}>
+              {fmtPct(costEfficiency)}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-2xs font-mono text-text-4">saved</div>
+            <div className="text-lg font-mono font-bold tabular-nums leading-none" style={{ color: '#4ae168' }}>
+              {fmtDollar(cacheSavedUsd)}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-2xs font-mono text-text-3">
+          <span>Actual: <span className="text-text-1 font-semibold">{fmtDollar(actualCostUsd)}</span></span>
+          <span className="text-text-4">|</span>
+          <span>Without cache: <span className="text-text-2">{fmtDollar(hypotheticalCostUsd)}</span></span>
+        </div>
+      </div>
+
+      {/* Stats row */}
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-surface-0 rounded p-2.5">
           <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1">Rotations</div>
@@ -73,24 +98,30 @@ function RotationTab({ tokens, rotation }) {
           </div>
         </div>
         <div className="bg-surface-0 rounded p-2.5">
-          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1">Saved</div>
-          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: '#4ae168' }}>
-            {fmtNum(totalSaved)}
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1">Cache Rate</div>
+          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: HEX.accent }}>
+            {fmtPct((tokens?.cacheHitRate || 0) * 100)}
           </div>
         </div>
         <div className="bg-surface-0 rounded p-2.5">
-          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1">Efficiency</div>
-          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: '#33afbc' }}>
-            {efficiencyPct}%
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1">Agents</div>
+          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: HEX.accent }}>
+            {tokens?.agentCount || 0}
           </div>
         </div>
       </div>
 
-      {/* Savings breakdown */}
-      <div className="space-y-2.5">
-        <SavingsBar label="Rotation" value={savings.fromRotation || 0} total={hypothetical} color={HEX.accent} />
-        <SavingsBar label="Conflict prevention" value={savings.fromConflictPrevention || 0} total={hypothetical} color="#4ec9d4" />
-        <SavingsBar label="Cold-start skip" value={savings.fromColdStartSkip || 0} total={hypothetical} color={HEX.info} />
+      {/* Coordination savings breakdown */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-2xs font-mono text-text-3 uppercase tracking-wider">Coordination Savings</span>
+          <span className="text-2xs font-mono text-text-2 tabular-nums">{fmtNum(coordSaved)} tokens</span>
+        </div>
+        <div className="space-y-2">
+          <SavingsBar label="Cold-start skip" value={savings.fromColdStartSkip || 0} total={coordBreakdownTotal} color={HEX.info} />
+          <SavingsBar label="Rotation" value={savings.fromRotation || 0} total={coordBreakdownTotal} color={HEX.accent} />
+          <SavingsBar label="Conflict prevention" value={savings.fromConflictPrevention || 0} total={coordBreakdownTotal} color="#4ec9d4" />
+        </div>
       </div>
 
       {/* Rotation timeline */}
@@ -100,7 +131,6 @@ function RotationTab({ tokens, rotation }) {
           <div className="space-y-0">
             {recentHistory.map((r, i) => (
               <div key={i} className="flex items-start gap-2.5">
-                {/* Dot + line column */}
                 <div className="flex flex-col items-center flex-shrink-0">
                   <div className="h-1.5" />
                   <div
@@ -118,8 +148,6 @@ function RotationTab({ tokens, rotation }) {
                     />
                   )}
                 </div>
-
-                {/* Content card */}
                 <div className={cn('flex-1 bg-surface-0 rounded px-2 py-1.5', i < recentHistory.length - 1 && 'mb-2')}>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-mono text-text-1 font-medium capitalize truncate flex-1">
@@ -144,7 +172,7 @@ function RotationTab({ tokens, rotation }) {
         <div className="bg-surface-0 rounded p-3 text-center space-y-1.5">
           <div className="text-xs font-mono text-text-2 font-semibold">No rotations yet</div>
           <div className="text-2xs font-mono text-text-3 leading-relaxed">
-            Rotations trigger when an agent's context exceeds its threshold, clearing memory while preserving progress via a handoff brief.
+            Auto-rotation triggers when context exceeds the adaptive threshold, preserving progress via handoff brief.
           </div>
         </div>
       )}

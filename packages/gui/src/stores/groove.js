@@ -656,6 +656,21 @@ export const useGrooveStore = create((set, get) => ({
   // Track which agents are thinking (sent a message, waiting for response)
   thinkingAgents: new Set(),
 
+  async stopAgent(id) {
+    try {
+      await api.post(`/agents/${id}/stop`);
+      // Clear thinking indicator
+      set((s) => {
+        const next = new Set(s.thinkingAgents);
+        next.delete(id);
+        return { thinkingAgents: next };
+      });
+      get().addToast('info', 'Stopped agent');
+    } catch (err) {
+      get().addToast('error', 'Stop failed', err.message);
+    }
+  },
+
   async instructAgent(id, message) {
     const agent = get().agents.find((a) => a.id === id);
     const isAlive = agent && (agent.status === 'running' || agent.status === 'starting');

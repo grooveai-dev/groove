@@ -32,15 +32,16 @@ export function useDashboard() {
           const now = Date.now();
           const add = (arr, val) => [...arr.slice(-59), { t: now, v: val || 0 }];
           const totalUsed = d.tokens?.totalTokens || 0;
-          const totalSaved = d.tokens?.savings?.total || 0;
-          const hypothetical = totalUsed + totalSaved;
+          const sav = d.tokens?.savings || {};
+          const cacheSavedUsd = sav.cacheCostSavingsUsd || 0;
+          const costEff = sav.costEfficiency || 0;
           const input = d.tokens?.totalInputTokens || 0;
           const output = d.tokens?.totalOutputTokens || 0;
           return {
             tokens: add(prev.tokens, totalUsed),
             cost: add(prev.cost, d.tokens?.totalCostUsd),
-            saved: add(prev.saved, totalSaved),
-            efficiency: add(prev.efficiency, hypothetical > 0 ? (totalSaved / hypothetical) * 100 : 0),
+            saved: add(prev.saved, cacheSavedUsd),
+            efficiency: add(prev.efficiency, costEff),
             cache: add(prev.cache, d.tokens?.cacheHitRate),
             inputOutput: add(prev.inputOutput, output > 0 ? input / output : 0),
             agents: add(prev.agents, d.agents?.running || 0),

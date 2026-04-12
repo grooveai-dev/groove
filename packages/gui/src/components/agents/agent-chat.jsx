@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, MessageSquare, HelpCircle, ArrowRight, Paperclip } from 'lucide-react';
+import { Send, Loader2, MessageSquare, HelpCircle, ArrowRight, Paperclip, Square } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { Avatar } from '../ui/avatar';
@@ -245,19 +245,29 @@ export function AgentChat({ agent }) {
             )}
             style={{ height: Math.min(Math.max(40, input.split('\n').length * 22), 120) }}
           />
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || sending}
-            className={cn(
-              'w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer',
-              'disabled:opacity-20 disabled:cursor-not-allowed',
-              input.trim()
-                ? 'bg-accent text-surface-0 hover:bg-accent/90 shadow-lg shadow-accent/20'
-                : 'bg-surface-4 text-text-4',
-            )}
-          >
-            {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-          </button>
+          {isThinking ? (
+            <button
+              onClick={() => useGrooveStore.getState().stopAgent(agent.id)}
+              title="Stop agent"
+              className="w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer bg-danger/80 text-white hover:bg-danger shadow-lg shadow-danger/20"
+            >
+              <Square size={14} fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={!input.trim() || sending}
+              className={cn(
+                'w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer',
+                'disabled:opacity-20 disabled:cursor-not-allowed',
+                input.trim()
+                  ? 'bg-accent text-surface-0 hover:bg-accent/90 shadow-lg shadow-accent/20'
+                  : 'bg-surface-4 text-text-4',
+              )}
+            >
+              {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            </button>
+          )}
         </div>
       </div>
     </div>

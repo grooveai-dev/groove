@@ -6,16 +6,18 @@ import { fmtNum } from '../../lib/format';
 
 // Well-known integration logos via CDN (simple-icons on cdn.simpleicons.org)
 const INTEGRATION_LOGOS = {
-  slack:       'https://cdn.simpleicons.org/slack/E01E5A',
+  'google-workspace': 'https://cdn.simpleicons.org/google/white',
   github:      'https://cdn.simpleicons.org/github/white',
   stripe:      'https://cdn.simpleicons.org/stripe/635BFF',
   gmail:       'https://cdn.simpleicons.org/gmail/EA4335',
   'google-calendar': 'https://cdn.simpleicons.org/googlecalendar/4285F4',
   'google-drive':    'https://cdn.simpleicons.org/googledrive/4285F4',
+  'google-docs':     'https://cdn.simpleicons.org/googledocs/4285F4',
+  'google-sheets':   'https://cdn.simpleicons.org/googlesheets/34A853',
+  'google-slides':   'https://cdn.simpleicons.org/googleslides/FBBC04',
   'google-maps':     'https://cdn.simpleicons.org/googlemaps/4285F4',
   postgres:    'https://cdn.simpleicons.org/postgresql/4169E1',
   notion:      'https://cdn.simpleicons.org/notion/white',
-  discord:     'https://cdn.simpleicons.org/discord/5865F2',
   linear:      'https://cdn.simpleicons.org/linear/5E6AD2',
   'brave-search': 'https://cdn.simpleicons.org/brave/FB542B',
   'home-assistant': 'https://cdn.simpleicons.org/homeassistant/18BCF2',
@@ -108,7 +110,9 @@ export function MarketplaceCard({ item, onClick, className }) {
         )}
         <span className="flex-1" />
         {installed && (
-          <Badge variant="accent" className="text-2xs">Installed</Badge>
+          <Badge variant="accent" className="text-2xs">
+            {item._installedCount ? `${item._installedCount} active` : 'Installed'}
+          </Badge>
         )}
       </div>
     </button>

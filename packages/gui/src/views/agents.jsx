@@ -30,6 +30,18 @@ function savePositions(positions) {
 
 /* ── Team Tab Bar (IDE-style) ──────────────────────────────── */
 
+function teamStatus(agents, teamId) {
+  const ta = agents.filter((a) => a.teamId === teamId);
+  if (ta.length === 0) return 'idle';
+  const running = ta.some((a) => a.status === 'running' || a.status === 'starting');
+  if (running) return 'working';
+  const allDone = ta.every((a) => a.status === 'completed');
+  if (allDone) return 'completed';
+  const anyCrashed = ta.some((a) => a.status === 'crashed');
+  if (anyCrashed) return 'crashed';
+  return 'idle';
+}
+
 function TeamTabBar() {
   const teams = useGrooveStore((s) => s.teams);
   const activeTeamId = useGrooveStore((s) => s.activeTeamId);
@@ -88,7 +100,21 @@ function TeamTabBar() {
           >
             {/* Thin accent line at top */}
             {isActive && <div className="absolute top-0 left-0 right-0 h-px bg-accent" style={{ height: '0.5px' }} />}
-            <Users size={13} className={isActive ? 'text-accent' : 'text-text-4'} />
+            {(() => {
+              const status = teamStatus(agents, team.id);
+              const iconColor = status === 'working' ? 'text-green-400'
+                : status === 'completed' ? 'text-green-400'
+                : status === 'crashed' ? 'text-red-400'
+                : isActive ? 'text-accent' : 'text-text-4';
+              return (
+                <span className="relative flex-shrink-0">
+                  <Users size={13} className={cn(iconColor, status === 'working' && 'animate-pulse')} />
+                  {status === 'working' && (
+                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                  )}
+                </span>
+              );
+            })()}
 
             {isRenaming ? (
               <input

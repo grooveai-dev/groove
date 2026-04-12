@@ -84,7 +84,14 @@ When making visual changes, always read app.css for the color palette and existi
 - Running tests (npm test) and builds (npm run build) to catch regressions
 - Auditing changes from other agents for correctness and consistency
 - Fixing integration issues that span the daemon/GUI boundary
-IMPORTANT: Do NOT start long-running dev servers (vite dev, npm start, next dev, etc.) unless explicitly asked. Verify builds compile with "npm run build", not by running a dev server. Rogue servers waste resources and block agent completion.
+
+CRITICAL — NEVER DO THESE:
+- NEVER restart the Groove daemon. No "groove stop", "groove start", "groove nuke", "groove restart".
+- NEVER kill the daemon process. No "kill <pid>", "pkill groove", "killall node", etc.
+- NEVER run "./promote.sh", "./promote-local.sh", or any publish/deploy script.
+- NEVER start long-running dev servers (vite dev, npm start, next dev, etc.).
+
+Restarting the daemon destroys ALL other agents currently running in other teams. Verification is done via "npm run build" and "npm test", which exit cleanly. If code changes require a daemon restart to take effect, report that in your output so the user can restart manually — do NOT do it yourself.
 
 `,
   testing: `You are a Testing agent. You write and maintain test suites, improve coverage, and verify quality. Focus on:
@@ -469,9 +476,12 @@ For normal file edits within your scope, proceed without review.
 
     // Write MCP config for agent integrations (command/args only, no secrets)
     // Credentials are injected via process environment below
+    // Only write .mcp.json for claude-code — other providers use GROOVE's exec API
     let integrationEnv = {};
     if (config.integrations?.length > 0 && this.daemon.integrations) {
-      this.daemon.integrations.writeMcpJson(config.integrations);
+      if (agent.provider === 'claude-code') {
+        this.daemon.integrations.writeMcpJson(config.integrations);
+      }
       integrationEnv = this.daemon.integrations.getSpawnEnv(config.integrations);
     }
 
@@ -1040,6 +1050,40 @@ For normal file edits within your scope, proceed without review.
     });
 
     return newAgent;
+  }
+
+  /**
+   * Stop the agent's current work without killing the agent.
+   * The process is terminated but the agent stays in the registry with its
+   * sessionId intact, so you can resume it later with a new message.
+   */
+  async stop(agentId) {
+    const handle = this.handles.get(agentId);
+    if (!handle) return;
+
+    const { proc, loop } = handle;
+
+    if (loop) {
+      await loop.stop();
+      this.handles.delete(agentId);
+      this.daemon.registry.update(agentId, { status: 'stopped', pid: null });
+      return;
+    }
+
+    return new Promise((resolveStop) => {
+      const forceTimer = setTimeout(() => {
+        try { proc.kill('SIGKILL'); } catch {}
+      }, 5000);
+
+      proc.on('exit', () => {
+        clearTimeout(forceTimer);
+        this.handles.delete(agentId);
+        this.daemon.registry.update(agentId, { status: 'stopped', pid: null });
+        resolveStop();
+      });
+
+      try { proc.kill('SIGTERM'); } catch { resolveStop(); }
+    });
   }
 
   async kill(agentId) {

@@ -74,23 +74,24 @@ export default function DashboardView() {
     savings: rawTokens.savings || {},
   };
 
-  const totalHypothetical = tokens.totalTokens + (tokens.savings.total || 0);
-  const efficiency = totalHypothetical > 0 ? ((tokens.savings.total || 0) / totalHypothetical) * 100 : 0;
+  const efficiency = tokens.savings.costEfficiency || 0;
   const ioRatio = tokens.totalOutputTokens > 0 ? (tokens.totalInputTokens / tokens.totalOutputTokens).toFixed(1) : '—';
 
   const timeline = data.timeline || {};
   const snapshots = timeline.snapshots || [];
   const events = timeline.events || data.events || [];
 
+  const cacheSavedUsd = tokens.savings.cacheCostSavingsUsd || 0;
+
   const kpis = [
-    { label: 'Tokens Used',  value: fmtNum(tokens.totalTokens),        sparkData: kpiHistory.tokens,      color: HEX.accent },
-    { label: 'Total Cost',   value: fmtDollar(tokens.totalCostUsd),    sparkData: kpiHistory.cost,        color: HEX.warning },
-    { label: 'Tokens Saved', value: fmtNum(tokens.savings.total || 0), sparkData: kpiHistory.saved,       color: HEX.success },
-    { label: 'Efficiency',   value: fmtPct(efficiency),                sparkData: kpiHistory.efficiency,  color: HEX.purple },
-    { label: 'Cache Rate',   value: fmtPct(tokens.cacheHitRate * 100), sparkData: kpiHistory.cache,       color: HEX.info },
-    { label: 'I/O Ratio',    value: `${ioRatio}:1`,                    sparkData: kpiHistory.inputOutput, color: HEX.orange },
-    { label: 'Agents',       value: `${runningCount}/${agents.length}`, sparkData: kpiHistory.agents,      color: HEX.accent },
-    { label: 'Turns',        value: fmtNum(tokens.totalTurns),         sparkData: kpiHistory.turns,       color: HEX.text2 },
+    { label: 'Tokens Used',    value: fmtNum(tokens.totalTokens),        sparkData: kpiHistory.tokens,      color: HEX.accent },
+    { label: 'Actual Cost',    value: fmtDollar(tokens.totalCostUsd),    sparkData: kpiHistory.cost,        color: HEX.warning },
+    { label: 'Cost Saved',     value: fmtDollar(cacheSavedUsd),          sparkData: kpiHistory.saved,       color: HEX.success },
+    { label: 'Efficiency',     value: fmtPct(efficiency),                sparkData: kpiHistory.efficiency,  color: HEX.purple },
+    { label: 'Cache Rate',     value: fmtPct(tokens.cacheHitRate * 100), sparkData: kpiHistory.cache,       color: HEX.info },
+    { label: 'I/O Ratio',      value: `${ioRatio}:1`,                    sparkData: kpiHistory.inputOutput, color: HEX.orange },
+    { label: 'Agents',         value: `${runningCount}/${agents.length}`, sparkData: kpiHistory.agents,      color: HEX.accent },
+    { label: 'Turns',          value: fmtNum(tokens.totalTurns),         sparkData: kpiHistory.turns,       color: HEX.text2 },
   ];
 
   return (

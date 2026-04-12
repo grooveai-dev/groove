@@ -459,6 +459,19 @@ export function createApi(app, daemon) {
     res.json(daemon.tokens.getSummary());
   });
 
+  // Stop an agent's current work without killing the agent
+  app.post('/api/agents/:id/stop', async (req, res) => {
+    try {
+      const agent = daemon.registry.get(req.params.id);
+      if (!agent) return res.status(404).json({ error: 'Agent not found' });
+      await daemon.processes.stop(req.params.id);
+      daemon.audit.log('agent.stop', { id: req.params.id, name: agent.name });
+      res.json({ id: req.params.id, status: 'stopped' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Rotate an agent
   app.post('/api/agents/:id/rotate', async (req, res) => {
     try {
@@ -1025,6 +1038,17 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
+  app.post('/api/integrations/google-workspace/oauth/start', (req, res) => {
+    try {
+      const { integrationIds } = req.body || {};
+      if (!integrationIds?.length) return res.status(400).json({ error: 'integrationIds required' });
+      const url = daemon.integrations.getGoogleWorkspaceOAuthUrl(integrationIds);
+      res.json({ url });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // Parameterized :id routes (after specific routes above)
 
   app.post('/api/integrations/:id/authenticate', (req, res) => {
@@ -1087,6 +1111,39 @@ Keep responses concise. Help them think, don't lecture them about the system the
     try {
       const url = daemon.integrations.getOAuthUrl(req.params.id);
       res.json({ url });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // --- Integration Execution (provider-agnostic) ---
+
+  app.post('/api/integrations/:id/exec', async (req, res) => {
+    try {
+      const { tool, params } = req.body || {};
+      if (!tool || typeof tool !== 'string') {
+        return res.status(400).json({ error: 'tool (string) is required' });
+      }
+      if (params !== undefined && (typeof params !== 'object' || Array.isArray(params))) {
+        return res.status(400).json({ error: 'params must be an object' });
+      }
+      if (!daemon.integrations._isInstalled(req.params.id)) {
+        return res.status(400).json({ error: 'Integration not installed' });
+      }
+      const result = await daemon.mcpManager.execTool(req.params.id, tool, params || {});
+      res.json({ result });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/integrations/:id/tools', async (req, res) => {
+    try {
+      if (!daemon.integrations._isInstalled(req.params.id)) {
+        return res.status(400).json({ error: 'Integration not installed' });
+      }
+      const tools = await daemon.mcpManager.listTools(req.params.id);
+      res.json({ tools });
     } catch (err) {
       res.status(400).json({ error: err.message });
     }
@@ -1939,8 +1996,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
       // Recalculate savings estimates
       const estimated = registryTokens + tokenSummary.savings.total;
       tokenSummary.savings.estimatedWithoutGroove = estimated;
-      tokenSummary.savings.percentage = estimated > 0
-        ? Math.round((tokenSummary.savings.total / estimated) * 100) : 0;
+      const rawPct = estimated > 0 ? (tokenSummary.savings.total / estimated) * 100 : 0;
+      tokenSummary.savings.percentage = rawPct > 0 && rawPct < 1
+        ? Math.round(rawPct * 10) / 10 : Math.round(rawPct);
     }
     const rotationStats = daemon.rotator.getStats();
     const rotationHistory = daemon.rotator.getHistory();

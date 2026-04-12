@@ -84,6 +84,15 @@ export class Introducer {
       lines.push(`  - Expected behavior after the change`);
       lines.push(`  GROOVE will automatically wake the target agent and deliver your request.`);
       lines.push(`- Check AGENTS_REGISTRY.md for the latest team state.`);
+      lines.push('');
+      lines.push(`## Daemon Safety (NEVER VIOLATE)`);
+      lines.push('');
+      lines.push(`You are running inside the Groove daemon. Other agents in other teams are running in parallel. Restarting or killing the daemon destroys ALL of their work.`);
+      lines.push(`- NEVER run "groove stop", "groove start", "groove restart", or "groove nuke"`);
+      lines.push(`- NEVER kill the daemon process ("kill <pid>", "pkill groove", "killall node")`);
+      lines.push(`- NEVER run "./promote.sh", "./promote-local.sh", or any publish/deploy script`);
+      lines.push(`- NEVER start long-running dev servers that block process exit (vite dev, npm start, next dev)`);
+      lines.push(`If code changes require a daemon restart to take effect, state that in your output so the user can restart manually. Do NOT restart it yourself.`);
 
       // User feedback from previous tasks — critical context about what the user
       // observed and what needs to change. Prevents agents from repeating mistakes.
@@ -220,26 +229,34 @@ export class Introducer {
       }
     }
 
-    // Integration context — list MCP tools available to this agent
+    // Integration context — inject playbooks for GROOVE exec API
     if (newAgent.integrations && newAgent.integrations.length > 0 && this.daemon.integrations) {
       const integrationSections = [];
       for (const integrationId of newAgent.integrations) {
         const entry = this.daemon.integrations.registry.find((s) => s.id === integrationId);
         if (entry) {
           const configured = this.daemon.integrations._isConfigured(entry);
-          const status = configured ? 'connected' : 'NOT CONFIGURED — credentials missing';
-          integrationSections.push(`- **${entry.name}** (${status}): ${entry.description}`);
+          if (!configured) {
+            integrationSections.push(`- **${entry.name}** — NOT CONFIGURED (credentials missing)`);
+          } else if (entry.agentInstructions) {
+            integrationSections.push(entry.agentInstructions);
+          } else {
+            integrationSections.push(`- **${entry.name}**: ${entry.description}\n  Exec: \`POST http://localhost:31415/api/integrations/${entry.id}/exec\` with \`{"tool": "...", "params": {...}}\``);
+          }
         }
       }
       if (integrationSections.length > 0) {
         lines.push('');
         lines.push(`## Integrations (${integrationSections.length} connected)`);
         lines.push('');
-        lines.push('You have MCP tools available from these integrations. Use them to interact with external services:');
+        lines.push('You have integrations connected via GROOVE. To use them, make HTTP POST requests:');
+        lines.push('```');
+        lines.push('POST http://localhost:31415/api/integrations/{id}/exec');
+        lines.push('Body: {"tool": "tool_name", "params": {...}}');
+        lines.push('```');
+        lines.push('To discover available tools: `GET http://localhost:31415/api/integrations/{id}/tools`');
         lines.push('');
-        lines.push(integrationSections.join('\n'));
-        lines.push('');
-        lines.push('Call these tools directly — they are available in your MCP tool list. Do not attempt to use curl or API calls for services that have an MCP integration attached.');
+        lines.push(integrationSections.join('\n\n'));
       }
     }
 

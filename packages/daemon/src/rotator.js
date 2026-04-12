@@ -2,6 +2,8 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { EventEmitter } from 'events';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { resolve } from 'path';
 
 const DEFAULT_THRESHOLD = 0.75; // 75% context usage triggers rotation
 const CHECK_INTERVAL = 15_000; // Check every 15 seconds
@@ -11,9 +13,60 @@ export class Rotator extends EventEmitter {
     super();
     this.daemon = daemon;
     this.interval = null;
-    this.rotationHistory = []; // [{ agentId, agentName, oldTokens, timestamp, brief }]
-    this.rotating = new Set(); // Agent IDs currently being rotated
+    this.rotationHistory = [];
+    this.rotating = new Set();
     this.enabled = false;
+    this.historyPath = daemon.grooveDir ? resolve(daemon.grooveDir, 'rotation-history.json') : null;
+    this._loadHistory();
+  }
+
+  _loadHistory() {
+    if (this.historyPath && existsSync(this.historyPath)) {
+      try {
+        const data = JSON.parse(readFileSync(this.historyPath, 'utf8'));
+        this.rotationHistory = Array.isArray(data) ? data : [];
+      } catch {
+        this.rotationHistory = [];
+      }
+    }
+    this._recoverFromTimeline();
+  }
+
+  _recoverFromTimeline() {
+    if (!this.daemon.timeline) return;
+    const events = this.daemon.timeline.getEvents(500);
+    const rotateEvents = events.filter((e) => e.type === 'rotate');
+    if (rotateEvents.length === 0) return;
+
+    const existingTimestamps = new Set(this.rotationHistory.map((r) => r.timestamp));
+    let added = 0;
+    for (const e of rotateEvents) {
+      const ts = new Date(e.t).toISOString();
+      if (existingTimestamps.has(ts)) continue;
+      this.rotationHistory.push({
+        agentId: e.oldAgentId || e.agentId,
+        agentName: e.agentName || 'unknown',
+        role: e.role || 'unknown',
+        provider: e.provider || 'unknown',
+        oldTokens: e.tokensBefore || 0,
+        contextUsage: 0,
+        timestamp: ts,
+        newAgentId: e.agentId,
+        newTokens: 0,
+      });
+      added++;
+    }
+    if (added > 0) {
+      this.rotationHistory.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      this._saveHistory();
+    }
+  }
+
+  _saveHistory() {
+    if (!this.historyPath) return;
+    try {
+      writeFileSync(this.historyPath, JSON.stringify(this.rotationHistory, null, 2));
+    } catch { /* best-effort */ }
   }
 
   start() {
@@ -136,10 +189,10 @@ export class Rotator extends EventEmitter {
       record.newTokens = 0;
       this.rotationHistory.push(record);
 
-      // Keep last 100 rotations
       if (this.rotationHistory.length > 100) {
         this.rotationHistory = this.rotationHistory.slice(-100);
       }
+      this._saveHistory();
 
       // Record rotation lifecycle event for timeline
       if (this.daemon.timeline) {

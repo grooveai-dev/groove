@@ -11,10 +11,28 @@ import {
   Server, Monitor, Code2, TestTube, Cloud, FileText,
   Shield, Database, Megaphone, Calculator, UserCheck,
   Headphones, BarChart3, Rocket, ChevronDown, Pen, Presentation,
-  Sparkles, X, Search, AlertTriangle,
+  Sparkles, X, Search, AlertTriangle, Plug,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Dialog, DialogContent } from '../ui/dialog';
+
+const INTEGRATION_LOGOS = {
+  'google-workspace': 'https://cdn.simpleicons.org/google/white',
+  github:      'https://cdn.simpleicons.org/github/white',
+  stripe:      'https://cdn.simpleicons.org/stripe/635BFF',
+  gmail:       'https://cdn.simpleicons.org/gmail/EA4335',
+  'google-calendar': 'https://cdn.simpleicons.org/googlecalendar/4285F4',
+  'google-drive':    'https://cdn.simpleicons.org/googledrive/4285F4',
+  'google-docs':     'https://cdn.simpleicons.org/googledocs/4285F4',
+  'google-sheets':   'https://cdn.simpleicons.org/googlesheets/34A853',
+  'google-slides':   'https://cdn.simpleicons.org/googleslides/FBBC04',
+  'google-maps':     'https://cdn.simpleicons.org/googlemaps/4285F4',
+  postgres:    'https://cdn.simpleicons.org/postgresql/4169E1',
+  notion:      'https://cdn.simpleicons.org/notion/white',
+  linear:      'https://cdn.simpleicons.org/linear/5E6AD2',
+  'brave-search': 'https://cdn.simpleicons.org/brave/FB542B',
+  'home-assistant': 'https://cdn.simpleicons.org/homeassistant/18BCF2',
+};
 
 const ROLE_PRESETS = [
   { id: 'planner',   label: 'Planner',    desc: 'Plans the team and tasks',       icon: Rocket,     tier: 'Heavy' },
@@ -62,6 +80,10 @@ export function SpawnWizard() {
   const [selectedSkills, setSelectedSkills] = useState([]);
   const [skillModalOpen, setSkillModalOpen] = useState(false);
   const [skillSearch, setSkillSearch] = useState('');
+  const [installedIntegrations, setInstalledIntegrations] = useState([]);
+  const [selectedIntegrations, setSelectedIntegrations] = useState([]);
+  const [integrationModalOpen, setIntegrationModalOpen] = useState(false);
+  const [integrationSearch, setIntegrationSearch] = useState('');
   const [spawning, setSpawning] = useState(false);
 
   useEffect(() => {
@@ -80,8 +102,12 @@ export function SpawnWizard() {
       api.get('/skills/installed').then((data) => {
         setInstalledSkills(Array.isArray(data) ? data : []);
       }).catch(() => {});
+      api.get('/integrations/installed').then((data) => {
+        setInstalledIntegrations(Array.isArray(data) ? data : []);
+      }).catch(() => {});
       setRole(''); setCustomRole(''); setName(''); setProvider(''); setModel(''); setPrompt('');
       setSelectedSkills([]);
+      setSelectedIntegrations([]);
     }
   }, [open, fetchProviders]);
 
@@ -101,6 +127,7 @@ export function SpawnWizard() {
         ...(model && { model }),
         ...(prompt && { prompt }),
         ...(selectedSkills.length > 0 && { skills: selectedSkills }),
+        ...(selectedIntegrations.length > 0 && { integrations: selectedIntegrations }),
       };
       await spawnAgent(config);
       closeDetail();
@@ -321,6 +348,130 @@ export function SpawnWizard() {
                         {installedSkills.length === 0 && (
                           <div className="text-center py-6 text-xs text-text-3 font-sans">
                             No skills installed. Visit the Marketplace to install skills.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                {/* Integrations */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-text-2 font-sans">Integrations</label>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {selectedIntegrations.map((integrationId) => {
+                      const integration = installedIntegrations.find((i) => i.id === integrationId);
+                      const logoUrl = INTEGRATION_LOGOS[integrationId];
+                      return (
+                        <span
+                          key={integrationId}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-accent/12 text-accent border border-accent/25 text-2xs font-sans"
+                        >
+                          {logoUrl ? (
+                            <img src={logoUrl} alt="" className="w-2.5 h-2.5" />
+                          ) : (
+                            <Plug size={9} />
+                          )}
+                          {integration?.name || integrationId}
+                          <button
+                            onClick={() => setSelectedIntegrations((prev) => prev.filter((i) => i !== integrationId))}
+                            className="ml-0.5 hover:text-text-0 cursor-pointer"
+                          >
+                            <X size={9} />
+                          </button>
+                        </span>
+                      );
+                    })}
+                    <button
+                      onClick={() => { setIntegrationModalOpen(true); setIntegrationSearch(''); }}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-2xs font-sans transition-colors cursor-pointer',
+                        'bg-surface-0 text-text-2 border border-border-subtle hover:border-border hover:text-text-0',
+                      )}
+                    >
+                      <Plug size={10} />
+                      {selectedIntegrations.length > 0 ? 'Add integration' : 'Attach integration'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Integration picker modal */}
+                <Dialog open={integrationModalOpen} onOpenChange={setIntegrationModalOpen}>
+                  <DialogContent title="Select Integration" className="max-w-sm">
+                    <div className="space-y-3 p-4">
+                      <div className="relative">
+                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-4" />
+                        <input
+                          value={integrationSearch}
+                          onChange={(e) => setIntegrationSearch(e.target.value)}
+                          placeholder="Search integrations..."
+                          autoFocus
+                          className="w-full h-8 pl-8 pr-3 text-xs rounded-md bg-surface-0 border border-border text-text-0 font-sans focus:outline-none focus:ring-1 focus:ring-accent"
+                        />
+                      </div>
+                      <div className="max-h-64 overflow-y-auto space-y-1">
+                        {installedIntegrations
+                          .filter((i) => {
+                            if (!integrationSearch) return true;
+                            const q = integrationSearch.toLowerCase();
+                            return (i.name || i.id).toLowerCase().includes(q) || (i.description || '').toLowerCase().includes(q);
+                          })
+                          .map((integration) => {
+                            const active = selectedIntegrations.includes(integration.id);
+                            const configured = integration.configured !== false;
+                            const logoUrl = INTEGRATION_LOGOS[integration.id];
+                            const roleMatch = selectedRole && Array.isArray(integration.roles) && integration.roles.includes(selectedRole);
+                            return (
+                              <button
+                                key={integration.id}
+                                onClick={() => {
+                                  if (!configured) return;
+                                  setSelectedIntegrations((prev) =>
+                                    active ? prev.filter((i) => i !== integration.id) : [...prev, integration.id]
+                                  );
+                                }}
+                                disabled={!configured}
+                                className={cn(
+                                  'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left transition-colors',
+                                  configured ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed',
+                                  active
+                                    ? 'bg-accent/10 border border-accent/25'
+                                    : configured
+                                      ? 'hover:bg-surface-3 border border-transparent'
+                                      : 'border border-transparent',
+                                )}
+                              >
+                                {logoUrl ? (
+                                  <img src={logoUrl} alt="" className="w-4 h-4 flex-shrink-0" />
+                                ) : (
+                                  <Plug size={12} className={active ? 'text-accent' : 'text-text-3'} />
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-semibold text-text-0 font-sans truncate">{integration.name || integration.id}</span>
+                                    {!configured && (
+                                      <span className="text-2xs text-text-4 font-sans">(not configured)</span>
+                                    )}
+                                    {configured && roleMatch && (
+                                      <span className="text-2xs font-mono text-accent/70 bg-accent/8 px-1 py-px rounded">
+                                        rec
+                                      </span>
+                                    )}
+                                  </div>
+                                  {integration.description && (
+                                    <div className="text-2xs text-text-3 font-sans truncate">{integration.description}</div>
+                                  )}
+                                  {!configured && (
+                                    <div className="text-2xs text-text-4 font-sans">Configure in Marketplace</div>
+                                  )}
+                                </div>
+                                {active && <CheckMark />}
+                              </button>
+                            );
+                          })}
+                        {installedIntegrations.length === 0 && (
+                          <div className="text-center py-6 text-xs text-text-3 font-sans">
+                            No integrations installed. Visit the Marketplace to install integrations.
                           </div>
                         )}
                       </div>

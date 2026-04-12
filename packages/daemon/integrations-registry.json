@@ -1,37 +1,5 @@
 [
   {
-    "id": "slack",
-    "name": "Slack",
-    "description": "Send and read messages, manage channels, search history, post reactions and thread replies",
-    "category": "communication",
-    "icon": "slack",
-    "tags": ["chat", "messaging", "notifications", "team"],
-    "roles": ["cmo", "ea", "support", "fullstack"],
-    "npmPackage": "@modelcontextprotocol/server-slack",
-    "transport": "stdio",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-slack"],
-    "authType": "api-key",
-    "envKeys": [
-      { "key": "SLACK_BOT_TOKEN", "label": "Bot Token", "placeholder": "xoxb-...", "required": true },
-      { "key": "SLACK_TEAM_ID", "label": "Team ID", "placeholder": "T01234567", "required": true }
-    ],
-    "setupUrl": "https://api.slack.com/apps",
-    "setupSteps": [
-      "Go to api.slack.com/apps and click 'Create New App'",
-      "Choose 'From scratch', name it 'Groove', pick your workspace",
-      "Go to 'OAuth & Permissions', add scopes: channels:read, channels:history, chat:write, users:read",
-      "Click 'Install to Workspace' and authorize",
-      "Copy the 'Bot User OAuth Token' (starts with xoxb-)",
-      "Your Team ID is in the workspace URL: app.slack.com/client/TXXXXXXX"
-    ],
-    "featured": true,
-    "downloads": 0,
-    "rating": 0,
-    "ratingCount": 0,
-    "verified": "mcp-official"
-  },
-  {
     "id": "github",
     "name": "GitHub",
     "description": "Manage repos, issues, pull requests, code search, file operations, and workflows",
@@ -53,6 +21,7 @@
       "Select scopes: repo, read:org, read:user",
       "Click 'Generate token' and copy it"
     ],
+    "agentInstructions": "## GitHub Integration\n\nYou have GitHub connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/github/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `create_issue` — params: {owner, repo, title, body}\n- `search_repositories` — params: {query}\n- `create_pull_request` — params: {owner, repo, title, body, head, base}\n- `get_file_contents` — params: {owner, repo, path}\n\n### Rules\n- Confirm before creating issues or PRs\n- Use search before creating duplicates",
     "featured": true,
     "downloads": 0,
     "rating": 0,
@@ -81,6 +50,7 @@
       "Copy the 'Secret key' (starts with sk_live_ or sk_test_)",
       "Use a test key (sk_test_) for safe experimentation"
     ],
+    "agentInstructions": "## Stripe Integration\n\nYou have Stripe connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/stripe/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `list_customers` — params: {limit}\n- `create_customer` — params: {email, name}\n- `list_charges` — params: {limit}\n- `create_payment_link` — params: {price, quantity}\n\n### Rules\n- Never create live charges without explicit confirmation\n- Prefer test mode keys for experimentation",
     "featured": true,
     "downloads": 0,
     "rating": 0,
@@ -100,13 +70,15 @@
     "command": "npx",
     "args": ["-y", "@gongrzhe/server-calendar-autoauth-mcp"],
     "authType": "google-autoauth",
+    "oauthScopes": ["https://www.googleapis.com/auth/calendar"],
     "oauthKeysDir": ".calendar-mcp",
     "envKeys": [],
     "setupSteps": [
-      "One-time: link your Google Cloud OAuth app (shared across all Google integrations)",
-      "Click 'Sign in with Google' — a browser opens for authorization",
-      "Done — the MCP server handles token refresh automatically"
+      "Click 'Sign in with Google' below — your browser will open",
+      "Sign in and allow access to your calendar",
+      "That's it — token refresh is handled automatically"
     ],
+    "agentInstructions": "## Google Calendar Integration\n\nYou have Google Calendar connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-calendar/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `list_events` — params: {timeMin, timeMax}\n- `create_event` — params: {summary, start, end, attendees}\n- `update_event` — params: {eventId, summary, start, end}\n- `delete_event` — params: {eventId}\n\n### Rules\n- Confirm date/time and attendees before creating events\n- Use ISO 8601 format for dates",
     "featured": false,
     "downloads": 0,
     "rating": 0,
@@ -126,17 +98,19 @@
     "command": "npx",
     "args": ["-y", "@gongrzhe/server-gmail-autoauth-mcp"],
     "authType": "google-autoauth",
+    "oauthScopes": ["https://www.googleapis.com/auth/gmail.modify"],
     "oauthKeysDir": ".gmail-mcp",
     "envKeys": [],
     "setupSteps": [
-      "One-time: link your Google Cloud OAuth app (shared across all Google integrations)",
-      "Click 'Sign in with Google' — a browser opens for authorization",
-      "Done — the MCP server handles token refresh automatically"
+      "Click 'Sign in with Google' below — your browser will open",
+      "Sign in and allow access to your Gmail",
+      "That's it — token refresh is handled automatically"
     ],
     "featured": false,
     "downloads": 0,
     "rating": 0,
     "ratingCount": 0,
+    "agentInstructions": "## Gmail Integration\n\nYou have Gmail connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/gmail/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `send_email` — params: {to, subject, body}\n- `search_emails` — params: {query}\n- `get_email` — params: {id}\n- `draft_email` — params: {to, subject, body}\n\n### Rules\n- Always confirm recipient and subject before sending\n- Use search before replying to find the thread\n- Draft emails in a professional tone unless told otherwise",
     "verified": "community"
   },
   {
@@ -163,6 +137,7 @@
     "downloads": 0,
     "rating": 0,
     "ratingCount": 0,
+    "agentInstructions": "## PostgreSQL Integration\n\nYou have PostgreSQL connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/postgres/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `query` — params: {sql}\n- `list_tables` — params: {}\n- `describe_table` — params: {table}\n\n### Rules\n- Never run DROP, TRUNCATE, or DELETE without explicit confirmation\n- Prefer SELECT queries for exploration\n- Use LIMIT on large tables",
     "verified": "mcp-official"
   },
   {
@@ -191,6 +166,7 @@
     "downloads": 0,
     "rating": 0,
     "ratingCount": 0,
+    "agentInstructions": "## Brave Search Integration\n\nYou have Brave Search connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/brave-search/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `brave_web_search` — params: {query, count}\n- `brave_local_search` — params: {query}\n\n### Rules\n- Use specific, targeted queries for best results\n- Summarize findings rather than dumping raw results",
     "verified": "mcp-official"
   },
   {
@@ -213,14 +189,15 @@
       { "key": "GOOGLE_REFRESH_TOKEN", "label": "Refresh Token", "required": true, "hidden": true }
     ],
     "setupSteps": [
-      "Click 'Connect with Google' below to sign in",
-      "Authorize Groove to access your Drive",
-      "Done — credentials are encrypted and stored locally"
+      "Click 'Connect with Google' below — your browser will open",
+      "Sign in and allow access to your Drive",
+      "That's it — credentials are encrypted and stored locally"
     ],
     "featured": false,
     "downloads": 0,
     "rating": 0,
     "ratingCount": 0,
+    "agentInstructions": "## Google Drive Integration\n\nYou have Google Drive connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-drive/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n- `list_files` — params: {folderId}\n\n### Rules\n- This is read-only access — cannot create or modify files\n- Use search to find files before reading",
     "verified": "mcp-official"
   },
   {
@@ -249,6 +226,7 @@
     "downloads": 0,
     "rating": 0,
     "ratingCount": 0,
+    "agentInstructions": "## Linear Integration\n\nYou have Linear connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/linear/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `create_issue` — params: {title, description, teamId, priority}\n- `list_issues` — params: {filter}\n- `update_issue` — params: {issueId, status, assigneeId}\n- `search_issues` — params: {query}\n\n### Rules\n- Search for existing issues before creating duplicates\n- Confirm title and assignee before creating",
     "verified": "community"
   },
   {
@@ -278,36 +256,7 @@
     "downloads": 0,
     "rating": 0,
     "ratingCount": 0,
-    "verified": "community"
-  },
-  {
-    "id": "discord",
-    "name": "Discord",
-    "description": "Send and read messages, manage channels and servers on Discord",
-    "category": "communication",
-    "icon": "discord",
-    "tags": ["chat", "community", "messaging", "voice"],
-    "roles": ["cmo", "support"],
-    "npmPackage": "mcp-discord",
-    "transport": "stdio",
-    "command": "npx",
-    "args": ["-y", "mcp-discord"],
-    "authType": "api-key",
-    "envKeys": [
-      { "key": "DISCORD_BOT_TOKEN", "label": "Bot Token", "required": true }
-    ],
-    "setupUrl": "https://discord.com/developers/applications",
-    "setupSteps": [
-      "Click the link below to open Discord Developer Portal",
-      "Click 'New Application', name it 'Groove'",
-      "Go to 'Bot' tab, click 'Reset Token', copy it",
-      "Enable 'Message Content Intent' under Privileged Gateway Intents",
-      "Go to OAuth2 > URL Generator, select 'bot' scope, invite to your server"
-    ],
-    "featured": false,
-    "downloads": 0,
-    "rating": 0,
-    "ratingCount": 0,
+    "agentInstructions": "## Notion Integration\n\nYou have Notion connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/notion/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search` — params: {query}\n- `create_page` — params: {parentId, title, content}\n- `update_page` — params: {pageId, properties}\n- `query_database` — params: {databaseId, filter}\n\n### Rules\n- Search for existing pages before creating new ones\n- Share pages with the integration first if they're not visible",
     "verified": "community"
   },
   {
@@ -336,7 +285,101 @@
     "downloads": 0,
     "rating": 0,
     "ratingCount": 0,
+    "agentInstructions": "## Home Assistant Integration\n\nYou have Home Assistant connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/home-assistant/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `get_states` — params: {}\n- `call_service` — params: {domain, service, entity_id}\n- `get_entity` — params: {entity_id}\n\n### Rules\n- Confirm before toggling devices or running automations\n- Check current state before changing it",
     "verified": "community"
+  },
+  {
+    "id": "google-docs",
+    "name": "Google Docs",
+    "description": "Create, read, and edit Google Docs documents",
+    "category": "productivity",
+    "icon": "docs",
+    "tags": ["documents", "writing", "collaboration", "google"],
+    "roles": ["ea", "cmo", "analyst"],
+    "npmPackage": "@modelcontextprotocol/server-gdrive",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-gdrive"],
+    "authType": "oauth-google",
+    "oauthScopes": ["https://www.googleapis.com/auth/documents", "https://www.googleapis.com/auth/drive.readonly"],
+    "envKeys": [
+      { "key": "GOOGLE_CLIENT_ID", "label": "OAuth Client ID", "required": true, "hidden": true },
+      { "key": "GOOGLE_CLIENT_SECRET", "label": "OAuth Client Secret", "required": true, "hidden": true },
+      { "key": "GOOGLE_REFRESH_TOKEN", "label": "Refresh Token", "required": true, "hidden": true }
+    ],
+    "setupSteps": [
+      "Click 'Connect with Google' below — your browser will open",
+      "Sign in and allow access to your Docs",
+      "That's it — credentials are encrypted and stored locally"
+    ],
+    "agentInstructions": "## Google Docs Integration\n\nYou have Google Docs connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-docs/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n\n### Rules\n- Search for documents before reading\n- This uses Google Drive API scoped to Docs",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "mcp-official"
+  },
+  {
+    "id": "google-sheets",
+    "name": "Google Sheets",
+    "description": "Read, create, and update Google Sheets spreadsheets and data",
+    "category": "productivity",
+    "icon": "sheets",
+    "tags": ["spreadsheets", "data", "tables", "google"],
+    "roles": ["analyst", "cfo", "ea"],
+    "npmPackage": "@modelcontextprotocol/server-gdrive",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-gdrive"],
+    "authType": "oauth-google",
+    "oauthScopes": ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive.readonly"],
+    "envKeys": [
+      { "key": "GOOGLE_CLIENT_ID", "label": "OAuth Client ID", "required": true, "hidden": true },
+      { "key": "GOOGLE_CLIENT_SECRET", "label": "OAuth Client Secret", "required": true, "hidden": true },
+      { "key": "GOOGLE_REFRESH_TOKEN", "label": "Refresh Token", "required": true, "hidden": true }
+    ],
+    "setupSteps": [
+      "Click 'Connect with Google' below — your browser will open",
+      "Sign in and allow access to your Sheets",
+      "That's it — credentials are encrypted and stored locally"
+    ],
+    "agentInstructions": "## Google Sheets Integration\n\nYou have Google Sheets connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-sheets/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n\n### Rules\n- Search for spreadsheets before reading\n- This uses Google Drive API scoped to Sheets",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "mcp-official"
+  },
+  {
+    "id": "google-slides",
+    "name": "Google Slides",
+    "description": "Create, read, and edit Google Slides presentations",
+    "category": "productivity",
+    "icon": "slides",
+    "tags": ["presentations", "slides", "decks", "google"],
+    "roles": ["cmo", "ea", "analyst"],
+    "npmPackage": "@modelcontextprotocol/server-gdrive",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-gdrive"],
+    "authType": "oauth-google",
+    "oauthScopes": ["https://www.googleapis.com/auth/presentations", "https://www.googleapis.com/auth/drive.readonly"],
+    "envKeys": [
+      { "key": "GOOGLE_CLIENT_ID", "label": "OAuth Client ID", "required": true, "hidden": true },
+      { "key": "GOOGLE_CLIENT_SECRET", "label": "OAuth Client Secret", "required": true, "hidden": true },
+      { "key": "GOOGLE_REFRESH_TOKEN", "label": "Refresh Token", "required": true, "hidden": true }
+    ],
+    "setupSteps": [
+      "Click 'Connect with Google' below — your browser will open",
+      "Sign in and allow access to your Slides",
+      "That's it — credentials are encrypted and stored locally"
+    ],
+    "agentInstructions": "## Google Slides Integration\n\nYou have Google Slides connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-slides/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n\n### Rules\n- Search for presentations before reading\n- This uses Google Drive API scoped to Slides",
+    "featured": false,
+    "downloads": 0,
+    "rating": 0,
+    "ratingCount": 0,
+    "verified": "mcp-official"
   },
   {
     "id": "google-maps",
@@ -360,6 +403,7 @@
       "Create or select a project, then 'Create Credentials' > 'API Key'",
       "Enable the Maps JavaScript API, Geocoding API, and Places API"
     ],
+    "agentInstructions": "## Google Maps Integration\n\nYou have Google Maps connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-maps/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `maps_geocode` — params: {address}\n- `maps_directions` — params: {origin, destination}\n- `maps_search_places` — params: {query, location}\n- `maps_distance_matrix` — params: {origins, destinations}\n\n### Rules\n- Use specific addresses for best geocoding accuracy\n- Check distance/time before suggesting routes",
     "featured": false,
     "downloads": 0,
     "rating": 0,

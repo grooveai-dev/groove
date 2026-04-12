@@ -1,7 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useRef, useEffect, useMemo } from 'react';
 import {
-  Send, Loader2, MessageSquare, ArrowRight,
+  Send, Loader2, MessageSquare, ArrowRight, Square,
   FileEdit, Search, Terminal, CheckCircle2, AlertCircle,
   RotateCw, Zap, Wrench, Eye, Code2, Bug,
   ChevronDown, HelpCircle, Pencil, Paperclip,
@@ -717,21 +717,31 @@ export function AgentFeed({ agent }) {
             )}
             style={{ height: Math.min(Math.max(36, input.split('\n').length * 20), 120) }}
           />
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || sending}
-            className={cn(
-              'w-9 h-9 flex items-center justify-center rounded-lg transition-all cursor-pointer flex-shrink-0 mb-px',
-              'disabled:opacity-15 disabled:cursor-not-allowed',
-              input.trim()
-                ? mode === 'query'
-                  ? 'bg-info text-white hover:bg-info/85'
-                  : 'bg-accent text-white hover:bg-accent/85'
-                : 'bg-transparent text-text-4',
-            )}
-          >
-            {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-          </button>
+          {isThinking ? (
+            <button
+              onClick={() => useGrooveStore.getState().stopAgent(agent.id)}
+              title="Stop agent"
+              className="w-9 h-9 flex items-center justify-center rounded-lg border border-danger/30 bg-danger/12 text-danger hover:bg-danger/20 transition-all cursor-pointer flex-shrink-0 mb-px"
+            >
+              <Square size={13} fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={!input.trim() || sending}
+              className={cn(
+                'w-9 h-9 flex items-center justify-center rounded-lg transition-all cursor-pointer flex-shrink-0 mb-px',
+                'disabled:opacity-15 disabled:cursor-not-allowed',
+                input.trim()
+                  ? mode === 'query'
+                    ? 'bg-info text-white hover:bg-info/85'
+                    : 'bg-accent text-white hover:bg-accent/85'
+                  : 'bg-transparent text-text-4',
+              )}
+            >
+              {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+            </button>
+          )}
         </div>
       </div>
     </div>

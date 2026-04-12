@@ -197,12 +197,11 @@ export class TokenTracker {
     const agentCount = Object.keys(this.usage).length;
     const sessionDuration = Date.now() - this.sessionStart;
 
-    // Aggregate I/O and cache breakdown
     let totalInputTokens = 0, totalOutputTokens = 0;
     let totalCacheRead = 0, totalCacheCreation = 0;
     let totalDurationMs = 0, totalTurns = 0;
-    let realCostUsd = 0, estimatedCostUsd = 0;
 
+    const modelTokens = {};
     for (const a of Object.values(this.usage)) {
       totalInputTokens += a.inputTokens || 0;
       totalOutputTokens += a.outputTokens || 0;
@@ -210,17 +209,39 @@ export class TokenTracker {
       totalCacheCreation += a.cacheCreationTokens || 0;
       totalDurationMs += a.totalDurationMs || 0;
       totalTurns += a.totalTurns || 0;
+      for (const [model, tokens] of Object.entries(a.modelDistribution || {})) {
+        modelTokens[model] = (modelTokens[model] || 0) + tokens;
+      }
     }
 
-    // Estimate what uncoordinated usage would have cost
+    // Coordination savings (rotation, cold-start, conflict prevention)
     const coldStartOverhead = this.getColdStartOverhead();
     const coldStartWaste = this.coldStartsSkipped * coldStartOverhead;
     const conflictWaste = this.conflictsPrevented * CONFLICT_OVERHEAD;
-    const totalSavings = this.rotationSavings + coldStartWaste + conflictWaste;
+    const coordinationSavings = this.rotationSavings + coldStartWaste + conflictWaste;
 
-    const estimatedWithout = totalTokens + totalSavings;
-    const savingsPct = estimatedWithout > 0
-      ? Math.round((totalSavings / estimatedWithout) * 100)
+    // Cache cost savings — cache reads are ~90% cheaper than full input
+    const totalModelTokens = Object.values(modelTokens).reduce((s, v) => s + v, 0);
+    let weightedInputPrice = 3.0;
+    if (totalModelTokens > 0) {
+      let w = 0;
+      for (const [model, tokens] of Object.entries(modelTokens)) {
+        const price = model.includes('opus') ? 15.0 : model.includes('haiku') ? 0.25 : 3.0;
+        w += (tokens / totalModelTokens) * price;
+      }
+      weightedInputPrice = w;
+    }
+    const cacheCostSavingsUsd = (totalCacheRead / 1_000_000) * weightedInputPrice * 0.9;
+    const hypotheticalCostUsd = totalCostUsd + cacheCostSavingsUsd;
+
+    const estimatedWithout = totalTokens + coordinationSavings;
+    const rawPct = estimatedWithout > 0 ? (coordinationSavings / estimatedWithout) * 100 : 0;
+    const coordPct = rawPct > 0 && rawPct < 1
+      ? Math.round(rawPct * 10) / 10
+      : Math.round(rawPct);
+
+    const costEfficiency = hypotheticalCostUsd > 0
+      ? Math.round((cacheCostSavingsUsd / hypotheticalCostUsd) * 1000) / 10
       : 0;
 
     const cacheTotal = totalCacheRead + totalCacheCreation + totalInputTokens;
@@ -239,12 +260,16 @@ export class TokenTracker {
       agentCount,
       sessionDurationMs: sessionDuration,
       savings: {
-        total: totalSavings,
+        total: coordinationSavings,
         fromRotation: this.rotationSavings,
         fromConflictPrevention: conflictWaste,
         fromColdStartSkip: coldStartWaste,
-        percentage: savingsPct,
+        percentage: coordPct,
         estimatedWithoutGroove: estimatedWithout,
+        cacheCostSavingsUsd,
+        hypotheticalCostUsd,
+        costEfficiency,
+        actualCostUsd: totalCostUsd,
       },
       perAgent: Object.entries(this.usage).map(([id, data]) => ({
         agentId: id,

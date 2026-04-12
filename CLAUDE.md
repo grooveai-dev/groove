@@ -258,3 +258,13 @@ Fully functional multi-agent orchestration system with complete GUI v2 rebuild. 
 - Monitor/QC agent mode (stay active, loop)
 - Semantic degradation detection
 - Distribution: demo video, HN launch, Twitter content
+
+<!-- GROOVE:START -->
+## GROOVE Orchestration (auto-injected)
+Active agents: 1
+| Name | Role | Scope |
+|------|------|-------|
+| fullstack-14 | fullstack | - |
+See AGENTS_REGISTRY.md for full agent state.
+**Memory policy:** Ignore auto-memory. Do not read or write MEMORY.md. GROOVE manages all context.
+<!-- GROOVE:END -->

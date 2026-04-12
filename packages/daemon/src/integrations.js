@@ -229,7 +229,17 @@ export class IntegrationStore {
     }));
     const configured = envKeys.length === 0 || envKeys.every((ek) => !ek.required || ek.set);
 
-    return { id: integrationId, installed, configured, envKeys };
+    let authenticated = false;
+    if (entry.authType === 'google-autoauth' && entry.oauthKeysDir) {
+      const homedir = process.env.HOME || process.env.USERPROFILE || '~';
+      authenticated = existsSync(resolve(homedir, entry.oauthKeysDir, 'credentials.json'));
+    } else if (entry.authType === 'oauth-google') {
+      authenticated = !!this.getCredential(integrationId, 'GOOGLE_REFRESH_TOKEN');
+    } else if (entry.authType === 'api-key') {
+      authenticated = configured;
+    }
+
+    return { id: integrationId, installed, configured, envKeys, authenticated };
   }
 
   /**
@@ -378,7 +388,9 @@ export class IntegrationStore {
   getOAuthUrl(integrationId) {
     const entry = this.registry.find((s) => s.id === integrationId);
     if (!entry) throw new Error(`Integration not found: ${integrationId}`);
-    if (entry.authType !== 'oauth-google') throw new Error('Integration does not use OAuth');
+    if (entry.authType !== 'oauth-google' && entry.authType !== 'google-autoauth') {
+      throw new Error('Integration does not use Google OAuth');
+    }
 
     const creds = this._getGoogleOAuthCredentials();
     if (!creds) {
@@ -405,15 +417,17 @@ export class IntegrationStore {
   /**
    * Handle OAuth callback — exchange code for tokens.
    */
-  async handleOAuthCallback(code, integrationId) {
+  async handleOAuthCallback(code, stateParam, redirectUri) {
     const creds = this._getGoogleOAuthCredentials();
     if (!creds) {
       throw new Error('Google OAuth credentials not found');
     }
     const { clientId, clientSecret } = creds;
 
-    const port = this.daemon.port || 31415;
-    const redirectUri = `http://localhost:${port}/api/integrations/oauth/callback`;
+    if (!redirectUri) {
+      const port = this.daemon.port || 31415;
+      redirectUri = `http://localhost:${port}/api/integrations/oauth/callback`;
+    }
 
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -434,16 +448,59 @@ export class IntegrationStore {
 
     const tokens = await res.json();
 
-    // Store the tokens for this integration
-    this.setCredential(integrationId, 'GOOGLE_CLIENT_ID', clientId);
-    this.setCredential(integrationId, 'GOOGLE_CLIENT_SECRET', clientSecret);
-    if (tokens.refresh_token) {
-      this.setCredential(integrationId, 'GOOGLE_REFRESH_TOKEN', tokens.refresh_token);
+    // State can be a single ID or comma-separated list for combined auth
+    const integrationIds = stateParam.split(',').filter(Boolean);
+
+    for (const integrationId of integrationIds) {
+      this.setCredential(integrationId, 'GOOGLE_CLIENT_ID', clientId);
+      this.setCredential(integrationId, 'GOOGLE_CLIENT_SECRET', clientSecret);
+      if (tokens.refresh_token) {
+        this.setCredential(integrationId, 'GOOGLE_REFRESH_TOKEN', tokens.refresh_token);
+      }
+
+      const entry = this.registry.find((s) => s.id === integrationId);
+      if (entry?.authType === 'google-autoauth' && entry.oauthKeysDir && tokens.refresh_token) {
+        this._writeAutoauthCredentials(entry, clientId, clientSecret, tokens.refresh_token);
+      }
+
+      this.daemon.audit.log('integration.oauth.complete', { id: integrationId });
     }
 
-    this.daemon.audit.log('integration.oauth.complete', { id: integrationId });
+    return { ok: true, integrationIds };
+  }
 
-    return { ok: true, integrationId };
+  /**
+   * Build a combined OAuth URL for multiple Google integrations at once.
+   * Aggregates scopes and uses comma-separated state.
+   */
+  getGoogleWorkspaceOAuthUrl(integrationIds) {
+    const creds = this._getGoogleOAuthCredentials();
+    if (!creds) {
+      throw new Error('Google OAuth not configured. Set up your Google Cloud project first.');
+    }
+
+    const allScopes = new Set();
+    for (const id of integrationIds) {
+      const entry = this.registry.find((s) => s.id === id);
+      if (entry?.oauthScopes) {
+        for (const scope of entry.oauthScopes) allScopes.add(scope);
+      }
+    }
+
+    const port = this.daemon.port || 31415;
+    const redirectUri = `http://localhost:${port}/api/integrations/oauth/callback`;
+
+    const params = new URLSearchParams({
+      client_id: creds.clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: Array.from(allScopes).join(' '),
+      access_type: 'offline',
+      prompt: 'consent',
+      state: integrationIds.join(','),
+    });
+
+    return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }
 
   /**
@@ -595,7 +652,6 @@ export class IntegrationStore {
       },
     }, null, 2);
 
-    // Write to the directory the MCP server expects (e.g., ~/.gmail-mcp/)
     const keysDir = entry.oauthKeysDir;
     if (keysDir) {
       const homedir = process.env.HOME || process.env.USERPROFILE || '~';
@@ -607,6 +663,40 @@ export class IntegrationStore {
     } else {
       console.log(`[Groove:Integrations] WARNING: No oauthKeysDir for ${entry.id}`);
     }
+  }
+
+  /**
+   * Write credential files for google-autoauth MCP servers after OAuth completes.
+   * Writes both the keys file (client config) and credentials file (refresh token)
+   * so the MCP server finds valid auth at runtime without its own browser flow.
+   */
+  _writeAutoauthCredentials(entry, clientId, clientSecret, refreshToken) {
+    const homedir = process.env.HOME || process.env.USERPROFILE || '~';
+    const dirPath = resolve(homedir, entry.oauthKeysDir);
+    mkdirSync(dirPath, { recursive: true });
+
+    // Write the OAuth client config (gcp-oauth.keys.json)
+    const keysPath = resolve(dirPath, 'gcp-oauth.keys.json');
+    writeFileSync(keysPath, JSON.stringify({
+      installed: {
+        client_id: clientId,
+        client_secret: clientSecret,
+        auth_uri: 'https://accounts.google.com/o/oauth2/auth',
+        token_uri: 'https://oauth2.googleapis.com/token',
+        redirect_uris: ['http://localhost'],
+      },
+    }, null, 2), { mode: 0o600 });
+
+    // Write the user credentials (credentials.json) in Google authorized_user format
+    const credPath = resolve(dirPath, 'credentials.json');
+    writeFileSync(credPath, JSON.stringify({
+      type: 'authorized_user',
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+    }, null, 2), { mode: 0o600 });
+
+    console.log(`[Groove:Integrations] Wrote OAuth keys + credentials to: ${dirPath}`);
   }
 
   // --- Internal ---

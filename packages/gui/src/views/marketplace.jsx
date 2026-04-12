@@ -17,7 +17,7 @@ import { api } from '../lib/api';
 import { useToast } from '../lib/hooks/use-toast';
 import { fmtNum, timeAgo } from '../lib/format';
 import { useGrooveStore } from '../stores/groove';
-import { IntegrationWizard } from '../components/marketplace/integration-wizard';
+import { IntegrationWizard, GoogleWorkspaceWizard } from '../components/marketplace/integration-wizard';
 import {
   ChevronLeft, ChevronDown, Sparkles, Plug, LogIn, LogOut,
   User, Upload, Package, Download, ShoppingBag, RefreshCw, Trash2,
@@ -275,12 +275,15 @@ function SkillsBrowse() {
 }
 
 // ── Integrations Browse ──────────────────────────────────
+const GOOGLE_IDS = new Set(['gmail', 'google-calendar', 'google-drive', 'google-docs', 'google-sheets', 'google-slides']);
+
 function IntegrationsBrowse() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedIntegration, setSelectedIntegration] = useState(null);
   const [showWizard, setShowWizard] = useState(false);
+  const [showGoogleWizard, setShowGoogleWizard] = useState(false);
 
   const fetchItems = () => {
     setLoading(true);
@@ -292,6 +295,11 @@ function IntegrationsBrowse() {
 
   useEffect(() => { fetchItems(); }, [search]);
 
+  // Split items: Google services get grouped, rest stay as individual cards
+  const googleItems = items.filter((i) => GOOGLE_IDS.has(i.id));
+  const otherItems = items.filter((i) => !GOOGLE_IDS.has(i.id));
+  const googleInstalledCount = googleItems.filter((i) => i.installed).length;
+
   function handleCardClick(item) {
     setSelectedIntegration(item);
     setShowWizard(true);
@@ -300,9 +308,12 @@ function IntegrationsBrowse() {
   function handleWizardClose() {
     setShowWizard(false);
     setSelectedIntegration(null);
-    // Refresh list to pick up install/uninstall changes
     fetchItems();
   }
+
+  // Check if search matches any Google service
+  const googleMatchesSearch = !search || 'google workspace gmail calendar drive docs sheets slides'
+    .includes(search.toLowerCase());
 
   return (
     <ScrollArea className="h-full">
@@ -312,17 +323,42 @@ function IntegrationsBrowse() {
             <SearchBar value={search} onChange={setSearch} placeholder="Search integrations..." />
           </div>
           <div className="flex-1" />
-          <span className="text-2xs text-text-4 font-mono flex-shrink-0">{items.length}</span>
+          <span className="text-2xs text-text-4 font-mono flex-shrink-0">
+            {otherItems.length + (googleItems.length > 0 ? 1 : 0)}
+          </span>
         </div>
 
         <div className="mt-4 grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
-          {loading
-            ? Array.from({ length: 6 }).map((_, i) => <SkillCardSkeleton key={i} />)
-            : items.map((item) => <MarketplaceCard key={item.id} item={item} onClick={() => handleCardClick(item)} />)
-          }
+          {loading ? (
+            Array.from({ length: 6 }).map((_, i) => <SkillCardSkeleton key={i} />)
+          ) : (
+            <>
+              {/* Google Workspace card */}
+              {googleItems.length > 0 && googleMatchesSearch && (
+                <MarketplaceCard
+                  key="google-workspace"
+                  item={{
+                    id: 'google-workspace',
+                    name: 'Google Workspace',
+                    description: `Gmail, Calendar, Drive, Docs, Sheets, Slides — one sign-in for all`,
+                    category: 'productivity',
+                    tags: ['google', 'email', 'calendar', 'drive', 'docs'],
+                    verified: 'mcp-official',
+                    installed: googleInstalledCount > 0,
+                    _installedCount: googleInstalledCount,
+                  }}
+                  onClick={() => setShowGoogleWizard(true)}
+                />
+              )}
+              {/* Other integrations */}
+              {otherItems.map((item) => (
+                <MarketplaceCard key={item.id} item={item} onClick={() => handleCardClick(item)} />
+              ))}
+            </>
+          )}
         </div>
 
-        {!loading && items.length === 0 && (
+        {!loading && otherItems.length === 0 && googleItems.length === 0 && (
           <div className="text-center py-16 text-text-4 font-sans text-sm">No integrations found.</div>
         )}
       </div>
@@ -331,6 +367,12 @@ function IntegrationsBrowse() {
         integration={selectedIntegration}
         open={showWizard}
         onClose={handleWizardClose}
+      />
+
+      <GoogleWorkspaceWizard
+        integrations={items}
+        open={showGoogleWizard}
+        onClose={() => { setShowGoogleWizard(false); fetchItems(); }}
       />
     </ScrollArea>
   );

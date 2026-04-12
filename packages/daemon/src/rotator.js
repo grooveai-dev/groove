@@ -136,69 +136,53 @@ export class Rotator extends EventEmitter {
     return result;
   }
 
-  // Per-role safety multipliers. Exploration-heavy roles burn tokens fast
-  // by design (reading codebases, searching files) — a planner running
-  // normally can hit 2M+ tokens in 5 min just reading. One-size-fits-all
-  // thresholds produce false positives on exactly the roles that need to
-  // read fast. Multipliers scale both the velocity threshold and the
-  // instance ceiling. User can override via config.safety.roleMultipliers.
+  // Per-role safety multiplier for the token ceiling. Exploration-heavy
+  // roles legitimately burn tokens fast on big codebases — multiplier
+  // scales their ceiling so the safety net catches truly runaway agents
+  // without false-positiving legitimate heavy work. User-overridable via
+  // config.safety.roleMultipliers.
   _getRoleMultiplier(role) {
     const safety = this.daemon.config?.safety;
     const overrides = safety?.roleMultipliers || {};
     if (overrides[role] != null) return overrides[role];
-    // Defaults tuned from observed legitimate velocity
     const defaults = {
-      planner: 10,    // heavy exploration — effectively exempt in practice
+      planner: 10,    // heavy exploration by design
       fullstack: 4,   // QC auditors read broadly
-      analyst: 5,     // research/analysis roles
-      security: 4,    // audit roles
-      docs: 1,        // focused edits
+      analyst: 5,
+      security: 4,
+      docs: 1,
     };
     return defaults[role] || 1;
   }
 
-  // Safety triggers — runaway agent detection. Scoped to `spawnedAt` so
-  // a rotation doesn't re-trigger on inherited cumulative tokens.
+  // Safety trigger — runaway agent detection. One check only: per-instance
+  // token ceiling scoped to `spawnedAt` so rotations don't re-trigger on
+  // inherited cumulative tokens. Velocity-based triggers were removed in
+  // v0.27.2 — they produced too many false positives on legitimate heavy
+  // exploration. If a pattern emerges from real usage that warrants an
+  // earlier-warning signal, re-add it gated on quality-degradation signals
+  // (repetitions, errors, file churn) — not velocity alone.
   _checkSafetyTriggers(agent) {
     const safety = this.daemon.config?.safety;
     if (!safety || safety.autoRotate === false) return null;
     if (!this.daemon.tokens || !agent.spawnedAt) return null;
 
-    const multiplier = this._getRoleMultiplier(agent.role);
-    const spawnedAtMs = new Date(agent.spawnedAt).getTime();
-
     const baseCeiling = safety.tokenCeilingPerAgent;
-    const ceiling = baseCeiling > 0 ? Math.round(baseCeiling * multiplier) : 0;
-    if (ceiling > 0) {
-      const instanceTokens = this.daemon.tokens.getTokensInWindow(agent.id, spawnedAtMs);
-      if (instanceTokens >= ceiling) {
-        return {
-          reason: 'token_limit_exceeded',
-          instanceTokens,
-          ceiling,
-          multiplier,
-        };
-      }
-    }
+    if (!baseCeiling || baseCeiling <= 0) return null;
 
-    const windowMs = (safety.velocityWindowSeconds || 300) * 1000;
-    const baseVelocityThreshold = safety.velocityTokenThreshold;
-    const velocityThreshold = baseVelocityThreshold > 0
-      ? Math.round(baseVelocityThreshold * multiplier)
-      : 0;
-    if (velocityThreshold > 0) {
-      const velocity = this.daemon.tokens.getVelocity(agent.id, windowMs);
-      if (velocity >= velocityThreshold) {
-        return {
-          reason: 'runaway_velocity',
-          velocity,
-          windowMs,
-          threshold: velocityThreshold,
-          multiplier,
-        };
-      }
-    }
+    const multiplier = this._getRoleMultiplier(agent.role);
+    const ceiling = Math.round(baseCeiling * multiplier);
+    const spawnedAtMs = new Date(agent.spawnedAt).getTime();
+    const instanceTokens = this.daemon.tokens.getTokensInWindow(agent.id, spawnedAtMs);
 
+    if (instanceTokens >= ceiling) {
+      return {
+        reason: 'token_limit_exceeded',
+        instanceTokens,
+        ceiling,
+        multiplier,
+      };
+    }
     return null;
   }
 
@@ -236,10 +220,7 @@ export class Rotator extends EventEmitter {
       // Bypasses cooldown: pathological burn must be stopped immediately.
       const safety = this._checkSafetyTriggers(agent);
       if (safety) {
-        const summary = safety.reason === 'token_limit_exceeded'
-          ? `${safety.instanceTokens} tokens >= ${safety.ceiling} ceiling`
-          : `${safety.velocity} tokens in ${safety.windowMs / 1000}s >= ${safety.threshold} threshold`;
-        console.log(`  Rotator: ${agent.name} ${safety.reason} (${summary}) — auto-rotating`);
+        console.log(`  Rotator: ${agent.name} ${safety.reason} (${safety.instanceTokens} tokens >= ${safety.ceiling} ceiling, ${safety.multiplier}x role mult) — auto-rotating`);
         await this.rotate(agent.id, safety);
         continue;
       }
@@ -508,6 +489,8 @@ export class Rotator extends EventEmitter {
     const contextRotations = this.rotationHistory.filter((r) => r.reason === 'context_threshold').length;
     const naturalCompactions = this.rotationHistory.filter((r) => r.reason === 'natural_compaction').length;
     const tokenLimitRotations = this.rotationHistory.filter((r) => r.reason === 'token_limit_exceeded').length;
+    // Legacy: velocity rotations are no longer triggered (removed v0.27.2)
+    // but historical entries may remain in saved history.
     const velocityRotations = this.rotationHistory.filter((r) => r.reason === 'runaway_velocity').length;
     return {
       enabled: this.enabled,

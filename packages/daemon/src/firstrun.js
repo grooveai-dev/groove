@@ -15,15 +15,15 @@ const DEFAULT_CONFIG = {
   qcThreshold: 4,
   maxAgents: 10,
   defaultProvider: 'claude-code',
-  // Self-healing rotation triggers. Catch pathological agent behavior
-  // (stuck loops, runaway tool-call cycles) and auto-rotate with fresh
-  // context. Tokens carry forward; journalist generates handoff brief.
-  // Set autoRotate=false to disable and get broadcast-only notifications.
+  // Self-healing rotation safety net. Per-instance token ceiling catches
+  // genuinely runaway agents (stuck loops, unbounded context expansion)
+  // without false-positiving legitimate heavy work. Scoped to the agent's
+  // spawnedAt so tokens from prior rotations don't count. Role multipliers
+  // scale the ceiling for exploration-heavy roles — user can override.
+  // Set autoRotate=false to disable enforcement (broadcast-only).
   safety: {
     autoRotate: true,
     tokenCeilingPerAgent: 5_000_000,
-    velocityWindowSeconds: 300,
-    velocityTokenThreshold: 1_500_000,
   },
 };
 

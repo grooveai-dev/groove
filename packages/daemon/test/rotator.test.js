@@ -207,85 +207,34 @@ describe('Rotator', () => {
       assert.equal(trigger.ceiling, 1_000_000);
     });
 
-    it('fires runaway_velocity when recent burn exceeds threshold', () => {
+    it('returns null when ceiling not hit', () => {
       mockDaemon.config = {
-        safety: {
-          autoRotate: true,
-          tokenCeilingPerAgent: 10_000_000,
-          velocityWindowSeconds: 300,
-          velocityTokenThreshold: 1_000_000,
-        },
-      };
-      mockDaemon.tokens.getTokensInWindow = () => 500_000; // under ceiling
-      mockDaemon.tokens.getVelocity = () => 1_500_000;
-
-      const trigger = rotator._checkSafetyTriggers(mkAgent());
-      assert.equal(trigger.reason, 'runaway_velocity');
-      assert.equal(trigger.velocity, 1_500_000);
-      assert.equal(trigger.threshold, 1_000_000);
-      assert.equal(trigger.windowMs, 300_000);
-    });
-
-    it('ceiling check takes priority over velocity check', () => {
-      mockDaemon.config = {
-        safety: {
-          autoRotate: true,
-          tokenCeilingPerAgent: 1_000_000,
-          velocityWindowSeconds: 300,
-          velocityTokenThreshold: 1_000_000,
-        },
-      };
-      mockDaemon.tokens.getTokensInWindow = () => 2_000_000;
-      mockDaemon.tokens.getVelocity = () => 2_000_000;
-      const trigger = rotator._checkSafetyTriggers(mkAgent());
-      assert.equal(trigger.reason, 'token_limit_exceeded');
-    });
-
-    it('returns null when neither threshold hit', () => {
-      mockDaemon.config = {
-        safety: {
-          autoRotate: true,
-          tokenCeilingPerAgent: 5_000_000,
-          velocityWindowSeconds: 300,
-          velocityTokenThreshold: 1_500_000,
-        },
+        safety: { autoRotate: true, tokenCeilingPerAgent: 5_000_000 },
       };
       mockDaemon.tokens.getTokensInWindow = () => 100_000;
-      mockDaemon.tokens.getVelocity = () => 10_000;
       const trigger = rotator._checkSafetyTriggers(mkAgent());
       assert.equal(trigger, null);
     });
 
-    it('planner gets a 10x multiplier so normal exploration does not trigger', () => {
+    it('planner gets a 10x ceiling — normal heavy exploration does not trigger', () => {
       mockDaemon.config = {
-        safety: {
-          autoRotate: true,
-          tokenCeilingPerAgent: 5_000_000,
-          velocityWindowSeconds: 300,
-          velocityTokenThreshold: 1_500_000,
-        },
+        safety: { autoRotate: true, tokenCeilingPerAgent: 5_000_000 },
       };
-      // 2M in 5min would have triggered under v0.27.0 defaults (user bug report)
+      // A planner reading a big codebase at 3M tokens would have tripped
+      // the old 5M ceiling but has 50M headroom under the role multiplier.
       mockDaemon.tokens.getTokensInWindow = () => 3_000_000;
-      mockDaemon.tokens.getVelocity = () => 2_053_414;
       const trigger = rotator._checkSafetyTriggers(mkAgent({ role: 'planner' }));
-      assert.equal(trigger, null, 'planner should NOT trigger on 2M velocity');
+      assert.equal(trigger, null, 'planner should NOT trigger at 3M when base ceiling is 5M');
     });
 
-    it('planner still triggers on genuinely runaway velocity (>15M per 5min)', () => {
+    it('planner still triggers on genuinely runaway burn (>50M instance tokens)', () => {
       mockDaemon.config = {
-        safety: {
-          autoRotate: true,
-          tokenCeilingPerAgent: 5_000_000,
-          velocityWindowSeconds: 300,
-          velocityTokenThreshold: 1_500_000,
-        },
+        safety: { autoRotate: true, tokenCeilingPerAgent: 5_000_000 },
       };
-      mockDaemon.tokens.getTokensInWindow = () => 1_000_000;
-      mockDaemon.tokens.getVelocity = () => 20_000_000;
+      mockDaemon.tokens.getTokensInWindow = () => 60_000_000;
       const trigger = rotator._checkSafetyTriggers(mkAgent({ role: 'planner' }));
-      assert.equal(trigger.reason, 'runaway_velocity');
-      assert.equal(trigger.threshold, 15_000_000, 'planner threshold = 1.5M × 10');
+      assert.equal(trigger.reason, 'token_limit_exceeded');
+      assert.equal(trigger.ceiling, 50_000_000, 'planner ceiling = 5M × 10');
     });
 
     it('role multipliers are config-overridable', () => {
@@ -293,15 +242,23 @@ describe('Rotator', () => {
         safety: {
           autoRotate: true,
           tokenCeilingPerAgent: 1_000_000,
-          velocityWindowSeconds: 300,
-          velocityTokenThreshold: 500_000,
-          roleMultipliers: { backend: 2, frontend: 2 },
+          roleMultipliers: { backend: 2 },
         },
       };
-      mockDaemon.tokens.getTokensInWindow = () => 1_500_000; // above base ceiling
-      mockDaemon.tokens.getVelocity = () => 0;
-      const backendTrigger = rotator._checkSafetyTriggers(mkAgent({ role: 'backend' }));
-      assert.equal(backendTrigger, null, 'backend with 2x multiplier should allow 2M ceiling');
+      mockDaemon.tokens.getTokensInWindow = () => 1_500_000; // above base ceiling, under 2x
+      const trigger = rotator._checkSafetyTriggers(mkAgent({ role: 'backend' }));
+      assert.equal(trigger, null, 'backend with 2x multiplier should allow 2M ceiling');
+    });
+
+    it('does not trigger on velocity (velocity rotation removed in v0.27.2)', () => {
+      mockDaemon.config = {
+        safety: { autoRotate: true, tokenCeilingPerAgent: 10_000_000 },
+      };
+      // Even with huge velocity, no rotation if under ceiling
+      mockDaemon.tokens.getTokensInWindow = () => 500_000;
+      mockDaemon.tokens.getVelocity = () => 99_999_999;
+      const trigger = rotator._checkSafetyTriggers(mkAgent());
+      assert.equal(trigger, null, 'velocity alone should never trigger a rotation');
     });
 
     it('stats track safety-triggered rotations separately', async () => {

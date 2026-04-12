@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.27.2 — Drop velocity trigger (2026-04-12)
+
+Following up on v0.27.1: the role-multiplier fix addressed the planner but left the same false-positive class live for any agent doing heavy exploration on a large codebase. Dropping velocity-based rotation entirely rather than papering over it further.
+
+**What changed**
+- Removed `runaway_velocity` as a rotation trigger. The logic is gone — not disabled, gone.
+- `safety.velocityWindowSeconds` and `safety.velocityTokenThreshold` config keys removed.
+- Token ceiling remains as the single safety net. Per-instance ceiling + role multipliers (planner 10×, fullstack/security 4×, analyst 5×) catch genuinely runaway agents without tripping on fast legitimate work.
+- Stats still expose `velocityRotations` count for historical rotations already in `rotation-history.json`.
+- GUI intel-panel's `V:` badge handling preserved for viewing historical events.
+
+**Why**
+Velocity alone is a bad stuck-loop signal — legitimate heavy work is fast. The only signal that actually distinguishes a runaway from real work is speed combined with non-productivity (repetitions, errors, file churn). Rather than build the gate now, we're waiting for real usage data to see if earlier-warning is actually needed. The ceiling catches real runaways. Adaptive context rotation catches degradation. If a pattern emerges from heavy real-world use that needs an earlier safety net, it'll be re-added gated on quality signals — not velocity.
+
+**Measurement still works.** Pre/post-rotation velocity is still captured in rotation history for savings measurement. We just don't trigger on it.
+
+Tests: 221 → 220 (−1 net; added ceiling-only coverage, removed velocity-specific tests).
+
 ## v0.27.1 — Seamless rotation hotfix (2026-04-12)
 
 Fixes a severe UX regression where planner and other exploration-heavy agents auto-rotated on legitimate activity, breaking the "infinite sessions" promise.

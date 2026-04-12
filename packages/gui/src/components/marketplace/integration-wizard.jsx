@@ -233,11 +233,90 @@ function OverviewStep({ item, status, installing, onInstall, onUninstall, onNext
   );
 }
 
+// ── Google OAuth Setup (shared by google-autoauth + oauth-google) ──
+function GoogleOAuthSetup({ onConfigured }) {
+  const toast = useToast();
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    if (!clientId.trim() || !clientSecret.trim()) return;
+    setSaving(true);
+    try {
+      await api.post('/integrations/google-oauth/setup', {
+        clientId: clientId.trim(),
+        clientSecret: clientSecret.trim(),
+      });
+      toast.success('Google OAuth credentials saved');
+      onConfigured();
+    } catch (err) {
+      toast.error('Failed to save', err.message);
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-warning/8 border border-warning/15 rounded-md px-4 py-3">
+        <p className="text-xs font-semibold text-warning font-sans">Google Cloud credentials required</p>
+        <p className="text-2xs text-text-3 font-sans mt-1">
+          Create an OAuth 2.0 Client ID in the Google Cloud Console, then paste the credentials below.
+        </p>
+        <a
+          href="https://console.cloud.google.com/apis/credentials"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-2xs text-accent font-sans hover:underline mt-1.5"
+        >
+          <ExternalLink size={10} />
+          console.cloud.google.com
+        </a>
+      </div>
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-text-2 font-sans flex items-center gap-1.5">
+            <Key size={11} className="text-text-4" />
+            Client ID <span className="text-danger">*</span>
+          </label>
+          <SecretInput value={clientId} onChange={setClientId} placeholder="123456789.apps.googleusercontent.com" disabled={saving} />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-text-2 font-sans flex items-center gap-1.5">
+            <Key size={11} className="text-text-4" />
+            Client Secret <span className="text-danger">*</span>
+          </label>
+          <SecretInput value={clientSecret} onChange={setClientSecret} placeholder="GOCSPX-..." disabled={saving} />
+        </div>
+      </div>
+      <Button
+        variant="primary"
+        size="lg"
+        onClick={handleSave}
+        disabled={saving || !clientId.trim() || !clientSecret.trim()}
+        className="w-full gap-2"
+      >
+        {saving ? <><Loader2 size={14} className="animate-spin" /> Saving...</> : 'Save Credentials'}
+      </Button>
+    </div>
+  );
+}
+
 // ── Step: Configure ─────────────────────────────────────
 function ConfigureStep({ item, status, onDone, onRefreshStatus }) {
   const toast = useToast();
   const [authenticating, setAuthenticating] = useState(false);
+  const [googleOAuthReady, setGoogleOAuthReady] = useState(null);
   const authType = item.authType;
+  const needsGoogleOAuth = authType === 'google-autoauth' || authType === 'oauth-google';
+
+  useEffect(() => {
+    if (needsGoogleOAuth) {
+      api.get('/integrations/google-oauth/status')
+        .then((d) => setGoogleOAuthReady(d.configured))
+        .catch(() => setGoogleOAuthReady(false));
+    }
+  }, [needsGoogleOAuth]);
 
   async function handleGoogleAutoAuth() {
     setAuthenticating(true);
@@ -322,7 +401,11 @@ function ConfigureStep({ item, status, onDone, onRefreshStatus }) {
         </div>
       )}
 
-      {authType === 'google-autoauth' && (
+      {needsGoogleOAuth && googleOAuthReady === false && (
+        <GoogleOAuthSetup onConfigured={() => setGoogleOAuthReady(true)} />
+      )}
+
+      {authType === 'google-autoauth' && googleOAuthReady && (
         <div className="space-y-3">
           <Button
             variant="primary"
@@ -349,7 +432,7 @@ function ConfigureStep({ item, status, onDone, onRefreshStatus }) {
         </div>
       )}
 
-      {authType === 'oauth-google' && (
+      {authType === 'oauth-google' && googleOAuthReady && (
         <div className="space-y-3">
           <Button
             variant="primary"
@@ -373,6 +456,12 @@ function ConfigureStep({ item, status, onDone, onRefreshStatus }) {
           <p className="text-2xs text-text-4 font-sans text-center">
             Authorize Groove to access your {item.name}
           </p>
+        </div>
+      )}
+
+      {needsGoogleOAuth && googleOAuthReady === null && (
+        <div className="flex justify-center py-3">
+          <Loader2 size={16} className="animate-spin text-text-4" />
         </div>
       )}
 

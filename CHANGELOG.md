@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.27.4 — Fix rotated agents abandoning mid-task work (2026-04-12)
+
+**The bug I introduced in v0.27.1.** The rotation handoff brief told agents: *"Wait for the user's next message, then answer it directly."* That instruction was intended to prevent "Resuming after rotation" announcements — but for an agent that was mid-task when rotation fired (e.g., a planner planning, a backend writing code), it said: *stop the work, wait for the user.* The user gave a direct feature request, the planner burned 3M tokens exploring before rotation, the new planner read "wait for next message" and delivered nothing.
+
+**Fix**
+- Rewritten handoff brief flips the instruction: *"Finish what you were doing. The user is waiting for YOUR output. Produce it. No preamble, no announcement."*
+- Explicitly calls out common mid-task states: "If you were a planner about to output a plan, output the plan now. If you were a builder about to make edits, make the edits."
+- Recent User Messages section is now labeled "what they've been asking for — deliver this."
+- Memory API contribution note de-emphasized (no longer prompts agents to proactively POST to `/api/memory/*` — it's opt-in, not a requirement).
+
+**Regression test added** to lock the fix: any brief containing "wait for the user's next message" now fails CI.
+
 ## v0.27.3 — Planner sees ready-to-resume teammates (2026-04-12)
 
 Fixes a Mode 1 / Mode 2 detection bug where a planner spawned duplicate agents instead of routing work to existing teammates.

@@ -201,6 +201,36 @@ describe('Journalist', () => {
       assert.ok(brief.includes('Build the auth API'));
       assert.ok(brief.includes('Write'));
     });
+
+    it('instructs the agent to deliver the output, not passively wait', async () => {
+      // Regression test: v0.27.1 brief told the agent to "wait for the user's
+      // next message" which caused planners to sit idle mid-plan after a
+      // rotation, burning tokens without producing output. Agents must be
+      // told to finish the work in flight, not wait for further prompting.
+      const { daemon, grooveDir } = createMockDaemon();
+      const journalist = new Journalist(daemon);
+      writeFileSync(join(grooveDir, 'logs', 'planner-1.log'), JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'src/index.js' } }] },
+      }));
+
+      const agent = {
+        id: 'p1', name: 'planner-1', role: 'planner',
+        provider: 'claude-code', scope: [],
+        tokensUsed: 2_000_000, prompt: 'Plan voice integrations',
+      };
+
+      const brief = await journalist.generateHandoffBrief(agent);
+
+      // The brief MUST NOT contain the old passive instruction
+      assert.ok(!/wait for the user's next message/i.test(brief),
+        'brief must not tell agent to wait for next message');
+      // The brief MUST tell the agent to complete/deliver the work
+      assert.ok(/finish|deliver|complete|produce it/i.test(brief),
+        'brief must instruct the agent to finish the work');
+      // Pass-through: planner-specific instruction
+      assert.ok(/output the plan|deliver/i.test(brief));
+    });
   });
 
   describe('status', () => {

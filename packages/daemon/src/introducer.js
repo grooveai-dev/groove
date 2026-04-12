@@ -171,10 +171,9 @@ export class Introducer {
             lines.push(discoveries);
           }
 
-          lines.push('');
-          lines.push(`You can contribute to this memory via:`);
-          lines.push(`- \`POST /api/memory/discoveries\` — share an error→fix you found`);
-          lines.push(`- \`POST /api/memory/constraints\` — declare a project rule you discovered`);
+          // Contributing to memory is opt-in. Only mention if the agent
+          // explicitly needs to record something — no proactive prompting.
+          // (Optional: `POST /api/memory/discoveries` or `POST /api/memory/constraints`)
         }
       }
 

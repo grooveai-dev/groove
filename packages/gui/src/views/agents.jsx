@@ -319,7 +319,32 @@ function AgentTreeInner() {
     });
   }, [targetNodes, setNodes]);
 
-  useEffect(() => { setEdges(targetEdges); }, [targetEdges, setEdges]);
+  // Recalculate edge handles from actual node positions (not saved positions)
+  // Runs after nodes settle — handles always match where nodes actually are
+  useEffect(() => {
+    setEdges(() => {
+      const rootNode = nodes.find((n) => n.id === ROOT_ID);
+      if (!rootNode) return targetEdges;
+      const rootPos = rootNode.position;
+
+      return targetEdges.map((edge) => {
+        const agentNode = nodes.find((n) => n.id === edge.target);
+        if (!agentNode) return edge;
+
+        const dx = agentNode.position.x + NODE_W / 2 - rootPos.x;
+        const dy = agentNode.position.y + NODE_H / 2 - rootPos.y;
+        let sourceHandle, targetHandle;
+        if (Math.abs(dy) > Math.abs(dx)) {
+          sourceHandle = dy > 0 ? 'bottom' : 'top';
+          targetHandle = dy > 0 ? 'top' : 'bottom';
+        } else {
+          sourceHandle = dx > 0 ? 'right' : 'left';
+          targetHandle = dx > 0 ? 'left' : 'right';
+        }
+        return { ...edge, sourceHandle, targetHandle };
+      });
+    });
+  }, [targetEdges, nodes, setEdges]);
 
   // Only fitView when agents are added — debounced so team launches (multiple spawns)
   // don't cause repeated zoom/pan jitter

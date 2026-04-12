@@ -12,22 +12,28 @@ const MODES = {
   AUTO_FLOOR: 'auto-floor', // Auto, but never below a floor model
 };
 
-// Role-based tier hints for new agents with no classifier data yet
+// Role-based tier hints for new agents with no classifier data yet.
+// Default everything to heavy — intelligence out of the box. Users can
+// downgrade to auto/medium if they want to optimize cost. A failed task
+// at a cheaper model costs more than a successful one at the best model.
 const ROLE_HINTS = {
-  planner:   'heavy',    // Planning is foundational — needs deep reasoning
-  fullstack: 'heavy',    // End-to-end work needs full capability
-  slides:    'heavy',    // Design quality needs top-tier model
-  creative:  'heavy',    // Writing quality needs top-tier model
-  security:  'heavy',    // Security audits need deep reasoning
-  backend:   'medium',
-  frontend:  'medium',
-  testing:   'medium',
-  devops:    'medium',
-  database:  'medium',
-  analyst:   'medium',
-  docs:      'light',
-  support:   'light',
-  ea:        'light',
+  planner:   'heavy',
+  fullstack: 'heavy',
+  frontend:  'heavy',
+  backend:   'heavy',
+  slides:    'heavy',
+  creative:  'heavy',
+  security:  'heavy',
+  testing:   'heavy',
+  devops:    'heavy',
+  database:  'heavy',
+  analyst:   'heavy',
+  docs:      'heavy',
+  support:   'heavy',
+  ea:        'heavy',
+  cmo:       'heavy',
+  cfo:       'heavy',
+  home:      'heavy',
 };
 
 export class ModelRouter {

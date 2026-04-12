@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.27.5 — Revert planner/introducer changes (2026-04-12)
+
+Planner flow stopped producing output after v0.27.x intro changes — agents would do partial exploration and stop without outputting a plan. After several failed targeted fixes (v0.27.3, v0.27.4), reverting `introducer.js` and the planner role prompt in `process.js` back to their v0.26.39 state rather than continue iterating on a broken premise. The planner flow that worked through 275M tokens is what should ship.
+
+**What's reverted**
+- `packages/daemon/src/introducer.js` — fully restored to v0.26.39. This removes:
+  - Project Memory injection at spawn (memory still accumulates, just not injected)
+  - "Ready to resume" team section enhancement from v0.27.3
+  - HTTP-based coordination protocol rewrite (back to `.groove/coordination.md` advisory)
+  - Memory API contribution note
+- `packages/daemon/src/process.js` planner role prompt — fully restored to v0.26.39.
+
+**What's preserved**
+- All backend infrastructure: MemoryStore module, safety token ceiling + role multipliers, token tracking, cache formula fix, dashboard, tests.
+- Journalist handoff brief v0.27.4 rewrite (only affects rotations; safety ceiling is 50M for planners so rotations should be extremely rare).
+- Specialization updates on agent completion (re-added to process.js after revert).
+- `__negotiator__` token tracking on task negotiation calls (re-added).
+
+Memory accumulation still works — the rotator writes handoff chains, agent completion updates specializations. The data is captured for future use, it's just not injected into every new agent's intro context. If the injection experiment is worth retrying, it'll be in a separate release with careful A/B testing, not a surprise change.
+
+**Apologies.** I should have done this revert two versions ago when the bug persisted. Trying to patch the symptoms kept the planner in a broken state for longer than necessary.
+
 ## v0.27.4 — Fix rotated agents abandoning mid-task work (2026-04-12)
 
 **The bug I introduced in v0.27.1.** The rotation handoff brief told agents: *"Wait for the user's next message, then answer it directly."* That instruction was intended to prevent "Resuming after rotation" announcements — but for an agent that was mid-task when rotation fired (e.g., a planner planning, a backend writing code), it said: *stop the work, wait for the user.* The user gave a direct feature request, the planner burned 3M tokens exploring before rotation, the new planner read "wait for next message" and delivered nothing.

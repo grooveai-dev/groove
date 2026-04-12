@@ -16,30 +16,10 @@ export class Introducer {
   generateContext(newAgent, options = {}) {
     const { taskNegotiation } = options;
     const agents = this.daemon.registry.getAll();
-
-    // Team awareness must include completed teammates, not just running ones.
-    // Agents that finished an empty-prompt standup (common pattern: spawn the
-    // team upfront, then direct them task-by-task) sit in `completed` status
-    // until resumed. Hiding them from the new agent's context makes planners
-    // falsely conclude "I'm alone" and spawn duplicate roles.
-    //
-    // Scope to the same team so one team's agents don't leak into another's
-    // context. Completed teammates get a 1-hour freshness cutoff so truly
-    // stale ones don't clutter the intro.
-    const COMPLETED_WINDOW_MS = 60 * 60 * 1000;
-    const sameTeam = (a) =>
-      a.id !== newAgent.id &&
-      (!newAgent.teamId || a.teamId === newAgent.teamId);
-    const activeOthers = agents.filter((a) =>
-      sameTeam(a) && (a.status === 'running' || a.status === 'starting')
-    );
-    const recentCompleted = agents.filter((a) => {
-      if (!sameTeam(a)) return false;
-      if (a.status !== 'completed') return false;
-      const ts = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
-      return Date.now() - ts < COMPLETED_WINDOW_MS;
-    });
-    const others = [...activeOthers, ...recentCompleted];
+    // Only include ACTIVE agents — not completed/killed ones from previous sessions
+    // Completed agents' work is captured in the journalist's project map, not here
+    const others = agents.filter((a) => a.id !== newAgent.id &&
+      (a.status === 'running' || a.status === 'starting'));
 
     const lines = [
       `# GROOVE Agent Context`,
@@ -62,17 +42,8 @@ export class Introducer {
     if (others.length === 0) {
       lines.push('You are the only agent on this project right now.');
     } else {
-      const activeCount = activeOthers.length;
-      const readyCount = recentCompleted.length;
-      const parts = [];
-      if (activeCount > 0) parts.push(`${activeCount} active`);
-      if (readyCount > 0) parts.push(`${readyCount} ready to resume`);
-      lines.push(`## Team (${others.length} teammate${others.length > 1 ? 's' : ''} — ${parts.join(', ')})`);
+      lines.push(`## Team (${others.length} other agent${others.length > 1 ? 's' : ''})`);
       lines.push('');
-      if (readyCount > 0) {
-        lines.push(`**Teammates marked "ready" are part of your team.** They finished their last task and will resume their session when assigned new work. If you're a planner, route new tasks to them by role — do NOT spawn duplicates.`);
-        lines.push('');
-      }
 
       // Collect all files created by teammates for the project files section
       const allTeamFiles = [];
@@ -80,8 +51,7 @@ export class Introducer {
       for (const other of others) {
         const scope = other.scope?.length > 0 ? other.scope.join(', ') : 'unrestricted';
         const dir = other.workingDir ? ` — dir: ${other.workingDir}` : '';
-        const statusLabel = other.status === 'completed' ? 'ready to resume' : other.status;
-        lines.push(`- **${other.name}** (${other.role}) — scope: ${scope}${dir} — ${statusLabel}`);
+        lines.push(`- **${other.name}** (${other.role}) — scope: ${scope}${dir} — ${other.status}`);
 
         // Get files this agent created/modified
         const files = this.daemon.journalist?.getAgentFiles(other) || [];
@@ -137,46 +107,6 @@ export class Introducer {
         }
       }
 
-      // Project memory (Layer 7) — accumulated wisdom across all prior rotations.
-      // Constraints, recent role handoffs, known error→fix patterns. Total cap ~12K chars.
-      if (this.daemon.memory) {
-        const constraints = this.daemon.memory.getConstraintsMarkdown(4000);
-        const recentChain = this.daemon.memory.getRecentHandoffMarkdown(newAgent.role, 3, 4000);
-        const discoveries = this.daemon.memory.getDiscoveriesMarkdown(newAgent.role, 20, 4000);
-
-        if (constraints || recentChain || discoveries) {
-          lines.push('');
-          lines.push(`## Project Memory`);
-          lines.push('');
-          lines.push(`This is accumulated knowledge from prior agents working on this project. Read carefully — it will save you from rediscovering what others already learned.`);
-
-          if (constraints) {
-            lines.push('');
-            lines.push(`### Constraints`);
-            lines.push('');
-            lines.push(constraints);
-          }
-
-          if (recentChain) {
-            lines.push('');
-            lines.push(`### Recent ${newAgent.role} handoffs`);
-            lines.push('');
-            lines.push(recentChain);
-          }
-
-          if (discoveries) {
-            lines.push('');
-            lines.push(`### Known patterns (from prior ${newAgent.role} agents)`);
-            lines.push('');
-            lines.push(discoveries);
-          }
-
-          // Contributing to memory is opt-in. Only mention if the agent
-          // explicitly needs to record something — no proactive prompting.
-          // (Optional: `POST /api/memory/discoveries` or `POST /api/memory/constraints`)
-        }
-      }
-
       // Project files section — tell the new agent what exists and what to read
       if (allTeamFiles.length > 0) {
         lines.push('');
@@ -219,21 +149,11 @@ export class Introducer {
       lines.push('');
       lines.push(`## Coordination Protocol`);
       lines.push('');
-      lines.push(`Before performing shared/destructive actions (restart server, npm install/build, modify package.json, modify shared config), declare intent via the GROOVE daemon. Another agent holding the same resource will cause a 423 response — wait and retry.`);
-      lines.push('');
-      lines.push(`Declare:`);
-      lines.push('```');
-      lines.push(`POST http://127.0.0.1:31415/api/coordination/declare`);
-      lines.push(`{ "agentId": "${newAgent.id}", "operation": "npm install", "resources": ["package.json", "node_modules"] }`);
-      lines.push('```');
-      lines.push('');
-      lines.push(`Complete (always call this when done, even on failure):`);
-      lines.push('```');
-      lines.push(`POST http://127.0.0.1:31415/api/coordination/complete`);
-      lines.push(`{ "agentId": "${newAgent.id}" }`);
-      lines.push('```');
-      lines.push('');
-      lines.push(`Operations auto-expire after 10 minutes to prevent deadlock.`);
+      lines.push(`Before performing shared/destructive actions (restart server, npm install/build, modify package.json, modify shared config), coordinate with your team:`);
+      lines.push(`1. Read \`.groove/coordination.md\` to check for active operations`);
+      lines.push(`2. Write your intent to \`.groove/coordination.md\` (e.g., "backend-1: restarting server")`);
+      lines.push(`3. Proceed only if no conflicting operations are active`);
+      lines.push(`4. Clear your entry from \`.groove/coordination.md\` when done`);
     }
 
     // File safety — prevent agents from deleting files they didn't create

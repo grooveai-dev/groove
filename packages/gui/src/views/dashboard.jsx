@@ -1,5 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useDashboard } from '../lib/hooks/use-dashboard';
+import { useGrooveStore } from '../stores/groove';
 import { DashboardHeader } from '../components/dashboard/header-bar';
 import { KpiStrip } from '../components/dashboard/kpi-card';
 import { FleetPanel } from '../components/dashboard/fleet-panel';
@@ -36,6 +37,7 @@ export default function DashboardView() {
     agentBreakdown, routing, rotation, adaptive, journalist, rotating,
   } = useDashboard();
 
+  const teams = useGrooveStore((s) => s.teams);
   const runningCount = agents.filter((a) => a.status === 'running').length;
 
   if (!connected) {
@@ -143,7 +145,7 @@ export default function DashboardView() {
           <div className="px-3 pt-2.5 pb-1 flex-shrink-0">
             <span className="text-2xs font-mono text-text-3 uppercase tracking-widest">Agent Fleet</span>
           </div>
-          <FleetPanel agentBreakdown={agentBreakdown} rotating={rotating} />
+          <FleetPanel agentBreakdown={agentBreakdown} rotating={rotating} teams={teams} />
         </div>
 
         {/* R4C2-3: Intel Panel (spans 2 cols) */}

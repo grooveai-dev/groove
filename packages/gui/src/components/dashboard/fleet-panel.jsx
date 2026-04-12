@@ -134,7 +134,7 @@ function TeamSection({ team, members, rotatingSet }) {
           : <ChevronRight size={10} className="text-text-4 flex-shrink-0" />
         }
         <span className="text-2xs font-mono font-semibold text-text-2 uppercase tracking-widest flex-1 truncate">
-          {team === 'ungrouped' ? 'Ungrouped' : team}
+          {team}
         </span>
         <span className="text-2xs font-mono text-text-3 tabular-nums">{fmtNum(totalTokens)}</span>
         {totalCost > 0 && (
@@ -154,7 +154,7 @@ function TeamSection({ team, members, rotatingSet }) {
   );
 }
 
-const FleetPanel = memo(function FleetPanel({ agentBreakdown, rotating = [] }) {
+const FleetPanel = memo(function FleetPanel({ agentBreakdown, rotating = [], teams: teamList = [] }) {
   if (!agentBreakdown?.length) {
     return (
       <div className="flex-1 flex items-center justify-center text-xs text-text-3 font-mono p-4">
@@ -163,11 +163,14 @@ const FleetPanel = memo(function FleetPanel({ agentBreakdown, rotating = [] }) {
     );
   }
 
-  const teams = {};
+  const teamNameMap = {};
+  for (const t of teamList) teamNameMap[t.id] = t.name;
+
+  const groups = {};
   for (const a of agentBreakdown) {
     const team = a.teamId || 'ungrouped';
-    if (!teams[team]) teams[team] = [];
-    teams[team].push(a);
+    if (!groups[team]) groups[team] = [];
+    groups[team].push(a);
   }
 
   const rotatingSet = new Set(rotating);
@@ -175,8 +178,8 @@ const FleetPanel = memo(function FleetPanel({ agentBreakdown, rotating = [] }) {
   return (
     <ScrollArea className="flex-1">
       <div className="py-1">
-        {Object.entries(teams).map(([team, members]) => (
-          <TeamSection key={team} team={team} members={members} rotatingSet={rotatingSet} />
+        {Object.entries(groups).map(([teamId, members]) => (
+          <TeamSection key={teamId} team={teamNameMap[teamId] || (teamId === 'ungrouped' ? 'Ungrouped' : teamId)} members={members} rotatingSet={rotatingSet} />
         ))}
       </div>
     </ScrollArea>

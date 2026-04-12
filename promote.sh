@@ -134,15 +134,25 @@ echo -e "  ${GREEN}Published groove-dev@${VERSION}${RESET}"
 # ── Update global install ────────────────────────────────
 
 step "Update global install"
-# Pin to exact version — npm CDN can lag behind after publish, retry until available
-for attempt in 1 2 3 4 5; do
-  if npm i -g "groove-dev@${VERSION}" 2>/dev/null; then
+# Clear npm cache and retry until the exact version is installed
+npm cache clean --force 2>/dev/null
+for attempt in 1 2 3 4 5 6; do
+  npm i -g "groove-dev@${VERSION}" --registry https://registry.npmjs.org 2>/dev/null
+  INSTALLED=$(groove --version 2>/dev/null)
+  if [ "$INSTALLED" = "$VERSION" ]; then
     break
   fi
-  echo -e "  ${DIM}Waiting for npm registry to sync... (attempt ${attempt}/5)${RESET}"
-  sleep 3
+  echo -e "  ${DIM}Registry syncing... got ${INSTALLED:-nothing}, want ${VERSION} (attempt ${attempt}/6)${RESET}"
+  sleep 5
 done
-echo -e "  ${GREEN}Global updated to ${VERSION}${RESET}"
+
+INSTALLED=$(groove --version 2>/dev/null)
+if [ "$INSTALLED" != "$VERSION" ]; then
+  echo -e "  ${RED}Warning: global install is ${INSTALLED}, expected ${VERSION}${RESET}"
+  echo -e "  ${DIM}Run manually: npm cache clean --force && npm i -g groove-dev@${VERSION}${RESET}"
+else
+  echo -e "  ${GREEN}Global updated to ${VERSION}${RESET}"
+fi
 
 echo ""
 echo -e "  ${GREEN}✓ v${VERSION} published and globally installed${RESET}"

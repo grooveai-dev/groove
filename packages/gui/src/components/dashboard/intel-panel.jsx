@@ -4,6 +4,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
 import { fmtNum, fmtPct, timeAgo } from '../../lib/format';
 import { cn } from '../../lib/cn';
 import { HEX } from '../../lib/theme-hex';
+import { roleColor } from '../../lib/status';
 import { RotateCw, Brain, Radio } from 'lucide-react';
 
 /* ── Tiny SVG sparkline for inline use ──────────────────────── */
@@ -31,12 +32,17 @@ function TinySparkline({ data, color = HEX.accent, width = 60, height = 16 }) {
 function SavingsBar({ label, value, total, color }) {
   const pct = total > 0 ? (value / total) * 100 : 0;
   return (
-    <div className="space-y-0.5">
-      <div className="flex items-center justify-between text-xs font-mono">
-        <span className="text-text-2">{label}</span>
-        <span className="text-text-1 tabular-nums">{fmtNum(value)}</span>
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-mono text-text-2">{label}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-mono font-semibold tabular-nums" style={{ color }}>
+            {Math.round(pct)}%
+          </span>
+          <span className="text-2xs font-mono text-text-3 tabular-nums w-10 text-right">{fmtNum(value)}</span>
+        </div>
       </div>
-      <div className="h-[2px] bg-surface-4 rounded-full overflow-hidden">
+      <div className="h-[7px] rounded-full overflow-hidden" style={{ background: 'rgba(51,175,188,0.08)' }}>
         <div
           className="h-full rounded-full transition-all duration-500"
           style={{ width: `${Math.min(pct, 100)}%`, background: color }}
@@ -52,38 +58,93 @@ function RotationTab({ tokens, rotation }) {
   const totalSaved = savings.total || 0;
   const totalUsed = tokens?.totalTokens || 0;
   const hypothetical = totalUsed + totalSaved;
+  const efficiencyPct = hypothetical > 0 ? Math.round((totalSaved / hypothetical) * 100) : 0;
+
+  const recentHistory = (rotation?.history || []).slice(-10).reverse();
 
   return (
     <div className="p-3 space-y-4">
-      <div className="flex gap-4">
-        <div>
-          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Rotations</div>
-          <div className="text-xl font-mono font-semibold text-text-0 tabular-nums leading-none">{rotation?.totalRotations || 0}</div>
+      {/* Hero stats */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-surface-0 rounded p-2.5">
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1">Rotations</div>
+          <div className="text-2xl font-mono font-bold text-text-0 tabular-nums leading-none">
+            {rotation?.totalRotations || 0}
+          </div>
         </div>
-        <div>
-          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Saved</div>
-          <div className="text-xl font-mono font-semibold text-success tabular-nums leading-none">{fmtNum(totalSaved)}</div>
-          {hypothetical > 0 && (
-            <div className="text-2xs font-mono text-text-3 mt-0.5">{fmtPct((totalSaved / hypothetical) * 100)} of total</div>
-          )}
+        <div className="bg-surface-0 rounded p-2.5">
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1">Saved</div>
+          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: '#4ae168' }}>
+            {fmtNum(totalSaved)}
+          </div>
+        </div>
+        <div className="bg-surface-0 rounded p-2.5">
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1">Efficiency</div>
+          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: '#33afbc' }}>
+            {efficiencyPct}%
+          </div>
         </div>
       </div>
-      <div className="space-y-2">
+
+      {/* Savings breakdown */}
+      <div className="space-y-2.5">
         <SavingsBar label="Rotation" value={savings.fromRotation || 0} total={hypothetical} color={HEX.accent} />
-        <SavingsBar label="Conflict prevention" value={savings.fromConflictPrevention || 0} total={hypothetical} color={HEX.purple} />
+        <SavingsBar label="Conflict prevention" value={savings.fromConflictPrevention || 0} total={hypothetical} color="#4ec9d4" />
         <SavingsBar label="Cold-start skip" value={savings.fromColdStartSkip || 0} total={hypothetical} color={HEX.info} />
       </div>
-      {rotation?.history?.length > 0 && (
+
+      {/* Rotation timeline */}
+      {recentHistory.length > 0 ? (
         <div>
-          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-1.5">Recent</div>
-          <div className="space-y-1">
-            {rotation.history.slice(-8).reverse().map((r, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs font-mono px-2 py-1 bg-surface-0 rounded">
-                <span className="text-text-1 font-medium capitalize truncate flex-1">{r.agentName || r.role}</span>
-                <span className="text-text-3 tabular-nums">{fmtPct((r.contextUsage || 0) * 100)}</span>
-                <span className="text-text-4">{timeAgo(r.timestamp)}</span>
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-2.5">Recent Rotations</div>
+          <div className="space-y-0">
+            {recentHistory.map((r, i) => (
+              <div key={i} className="flex items-start gap-2.5">
+                {/* Dot + line column */}
+                <div className="flex flex-col items-center flex-shrink-0">
+                  <div className="h-1.5" />
+                  <div
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{
+                      background: i === 0 ? '#33afbc' : 'rgba(51,175,188,0.15)',
+                      border: '1px solid rgba(51,175,188,0.5)',
+                      boxShadow: i === 0 ? '0 0 6px rgba(51,175,188,0.35)' : 'none',
+                    }}
+                  />
+                  {i < recentHistory.length - 1 && (
+                    <div
+                      className="w-px flex-1 mt-1"
+                      style={{ background: 'rgba(51,175,188,0.15)', minHeight: '12px' }}
+                    />
+                  )}
+                </div>
+
+                {/* Content card */}
+                <div className={cn('flex-1 bg-surface-0 rounded px-2 py-1.5', i < recentHistory.length - 1 && 'mb-2')}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-text-1 font-medium capitalize truncate flex-1">
+                      {r.agentName || r.role}
+                    </span>
+                    <span
+                      className="text-2xs font-mono font-semibold tabular-nums flex-shrink-0"
+                      style={{
+                        color: (r.contextUsage || 0) > 0.8 ? '#e06c75' : (r.contextUsage || 0) > 0.6 ? '#e5c07b' : '#33afbc',
+                      }}
+                    >
+                      {fmtPct((r.contextUsage || 0) * 100)}
+                    </span>
+                    <span className="text-2xs font-mono text-text-4 flex-shrink-0">{timeAgo(r.timestamp)}</span>
+                  </div>
+                </div>
               </div>
             ))}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-surface-0 rounded p-3 text-center space-y-1.5">
+          <div className="text-xs font-mono text-text-2 font-semibold">No rotations yet</div>
+          <div className="text-2xs font-mono text-text-3 leading-relaxed">
+            Rotations trigger when an agent's context exceeds its threshold, clearing memory while preserving progress via a handoff brief.
           </div>
         </div>
       )}
@@ -95,87 +156,146 @@ function RotationTab({ tokens, rotation }) {
 function AdaptiveTab({ adaptive }) {
   if (!adaptive?.length) {
     return (
-      <div className="flex-1 flex items-center justify-center text-xs text-text-3 font-mono p-4">
-        No adaptive profiles
+      <div className="p-3">
+        <div className="bg-surface-0 rounded p-4 text-center space-y-2">
+          <div className="text-xs font-mono text-text-2 font-semibold">No adaptive profiles yet</div>
+          <div className="text-2xs font-mono text-text-3 leading-relaxed">
+            Adaptive thresholds learn when each agent role benefits from rotation. GROOVE tracks quality scores and adjusts rotation triggers automatically — converging to the optimal threshold per role and provider.
+          </div>
+        </div>
       </div>
     );
   }
 
-  // Split provider:role into readable parts
   function parseKey(key) {
     const parts = key.split(':');
     return { provider: parts[0] || key, role: parts[1] || '' };
   }
 
   return (
-    <div>
-      <div className="p-3 space-y-1">
-        {/* Header */}
-        <div className="flex items-center gap-2 px-2 pb-1 text-2xs font-mono text-text-4 uppercase tracking-wider">
-          <span className="flex-1">Role</span>
-          <span className="w-12 text-right">Threshold</span>
-          <span className="w-12 text-right">Adj.</span>
-          <span className="w-14 text-right">Status</span>
-        </div>
+    <div className="p-3 space-y-3">
+      {adaptive.map((p) => {
+        const { provider, role } = parseKey(p.key);
+        const displayRole = role || provider;
+        const hasHistory = p.thresholdHistory?.length > 1;
+        const hasScores = p.recentScores?.length > 1;
+        const rc = roleColor(displayRole);
+        const signals = p.lastSignals;
 
-        {adaptive.map((p) => {
-          const { provider, role } = parseKey(p.key);
-          const hasHistory = p.thresholdHistory?.length > 1;
-          const hasScores = p.recentScores?.length > 1;
-
-          return (
-            <div key={p.key} className="bg-surface-0 rounded px-2 py-1.5">
-              {/* Main row */}
-              <div className="flex items-center gap-2">
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs font-mono text-text-1 capitalize">{role || provider}</span>
-                  {role && <span className="text-2xs font-mono text-text-4 ml-1.5">{provider}</span>}
-                </div>
-                <span className="w-12 text-right text-xs font-mono font-semibold text-text-0 tabular-nums">
-                  {fmtPct(p.threshold * 100)}
+        return (
+          <div
+            key={p.key}
+            className="rounded overflow-hidden"
+            style={{
+              background: 'rgba(51,175,188,0.04)',
+              borderLeft: p.converged ? '2px solid #33afbc' : '2px solid rgba(229,192,123,0.35)',
+            }}
+          >
+            {/* Card header */}
+            <div className="flex items-center gap-2 px-3 pt-2.5 pb-1.5">
+              <span
+                className="text-xs font-mono font-semibold capitalize px-1.5 py-px rounded-sm"
+                style={{ background: rc.bg, color: rc.text }}
+              >
+                {displayRole}
+              </span>
+              {role && (
+                <span className="text-2xs font-mono text-text-4 bg-surface-4 px-1.5 py-px rounded-sm">
+                  {provider}
                 </span>
-                <span className="w-12 text-right text-2xs font-mono text-text-3 tabular-nums">
-                  {p.adjustments}
-                </span>
-                <span className={cn(
-                  'w-14 text-right text-2xs font-mono font-bold uppercase',
-                  p.converged ? 'text-success' : 'text-text-4',
-                )}>
-                  {p.converged ? 'Converged' : 'Learning'}
-                </span>
-              </div>
-
-              {/* Sparklines row (if data exists) */}
-              {(hasHistory || hasScores) && (
-                <div className="flex items-center gap-3 mt-1.5 pl-1">
-                  {hasHistory && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-2xs font-mono text-text-4">Threshold</span>
-                      <TinySparkline
-                        data={p.thresholdHistory.map((h) => h.v)}
-                        color={p.converged ? HEX.success : HEX.accent}
-                        width={70}
-                        height={12}
-                      />
-                    </div>
-                  )}
-                  {hasScores && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-2xs font-mono text-text-4">Quality</span>
-                      <TinySparkline
-                        data={p.recentScores}
-                        color={HEX.warning}
-                        width={70}
-                        height={12}
-                      />
-                    </div>
-                  )}
-                </div>
               )}
+              <div className="flex-1" />
+              {/* Convergence pill */}
+              <span
+                className="flex items-center gap-1 text-2xs font-mono font-bold px-2 py-px rounded-full"
+                style={{
+                  background: p.converged ? 'rgba(74,225,104,0.12)' : 'rgba(229,192,123,0.12)',
+                  color: p.converged ? '#4ae168' : '#e5c07b',
+                }}
+              >
+                {!p.converged && (
+                  <span
+                    className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                    style={{ background: '#e5c07b', animation: 'node-pulse-bar 1.5s ease-in-out infinite' }}
+                  />
+                )}
+                {p.converged ? 'Converged' : 'Learning'}
+              </span>
             </div>
-          );
-        })}
-      </div>
+
+            {/* Threshold hero + adjustments */}
+            <div className="flex items-end gap-5 px-3 pb-2">
+              <div>
+                <div className="text-2xs font-mono text-text-4 uppercase tracking-wider mb-0.5">Threshold</div>
+                <div
+                  className="text-3xl font-mono font-bold tabular-nums leading-none"
+                  style={{ color: p.converged ? '#33afbc' : '#e5c07b' }}
+                >
+                  {fmtPct(p.threshold * 100)}
+                </div>
+              </div>
+              <div className="pb-0.5">
+                <div className="text-2xs font-mono text-text-4 uppercase tracking-wider mb-0.5">Adj.</div>
+                <div className="text-lg font-mono font-semibold text-text-1 tabular-nums">{p.adjustments}</div>
+              </div>
+            </div>
+
+            {/* Sparklines */}
+            {(hasHistory || hasScores) && (
+              <div className="px-3 pb-2 space-y-2 overflow-hidden">
+                {hasHistory && (
+                  <div>
+                    <div className="text-2xs font-mono text-text-4 mb-0.5">Threshold history</div>
+                    <TinySparkline
+                      data={p.thresholdHistory.map((h) => h.v)}
+                      color={p.converged ? HEX.accent : HEX.warning}
+                      width={240}
+                      height={32}
+                    />
+                  </div>
+                )}
+                {hasScores && (
+                  <div>
+                    <div className="text-2xs font-mono text-text-4 mb-0.5">Quality score</div>
+                    <TinySparkline
+                      data={p.recentScores}
+                      color={HEX.warning}
+                      width={240}
+                      height={24}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Signal pills */}
+            {signals && (
+              <div className="flex flex-wrap gap-1.5 px-3 pb-2.5">
+                {signals.errorCount != null && (
+                  <span className="text-2xs font-mono px-1.5 py-px rounded-sm bg-surface-4 text-text-3">
+                    Errors: <span className="text-danger">{signals.errorCount}</span>
+                  </span>
+                )}
+                {signals.toolSuccessRate != null && (
+                  <span className="text-2xs font-mono px-1.5 py-px rounded-sm bg-surface-4 text-text-3">
+                    Tools: <span className="text-text-1">{Math.round(signals.toolSuccessRate * 100)}%</span>
+                  </span>
+                )}
+                {signals.fileChurn != null && (
+                  <span className="text-2xs font-mono px-1.5 py-px rounded-sm bg-surface-4 text-text-3">
+                    Churn: <span className="text-text-1">{signals.fileChurn}</span>
+                  </span>
+                )}
+                {signals.repetitions != null && (
+                  <span className="text-2xs font-mono px-1.5 py-px rounded-sm bg-surface-4 text-text-3">
+                    Reps: <span className="text-warning">{signals.repetitions}</span>
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

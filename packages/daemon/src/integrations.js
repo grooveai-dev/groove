@@ -2,7 +2,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'fs';
-import { resolve, dirname } from 'path';
+import { resolve, dirname, basename, extname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync, spawn as cpSpawn } from 'child_process';
 
@@ -697,6 +697,100 @@ export class IntegrationStore {
     }, null, 2), { mode: 0o600 });
 
     console.log(`[Groove:Integrations] Wrote OAuth keys + credentials to: ${dirPath}`);
+  }
+
+  // --- Google Drive Upload ---
+
+  static CONVERT_MAP = {
+    '.pptx': { source: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', target: 'application/vnd.google-apps.presentation' },
+    '.docx': { source: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', target: 'application/vnd.google-apps.document' },
+    '.xlsx': { source: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', target: 'application/vnd.google-apps.spreadsheet' },
+    '.csv':  { source: 'text/csv', target: 'application/vnd.google-apps.spreadsheet' },
+    '.txt':  { source: 'text/plain', target: 'application/vnd.google-apps.document' },
+    '.html': { source: 'text/html', target: 'application/vnd.google-apps.document' },
+    '.pdf':  { source: 'application/pdf', target: null },
+  };
+
+  async getGoogleAccessToken() {
+    const creds = this._getGoogleOAuthCredentials();
+    if (!creds) throw new Error('Google OAuth not configured');
+
+    const googleIds = ['google-drive', 'google-docs', 'google-sheets', 'google-slides', 'google-calendar', 'gmail'];
+    let refreshToken = null;
+    for (const id of googleIds) {
+      refreshToken = this.getCredential(id, 'GOOGLE_REFRESH_TOKEN');
+      if (refreshToken) break;
+    }
+    if (!refreshToken) throw new Error('No Google refresh token found. Authenticate a Google integration first.');
+
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: creds.clientId,
+        client_secret: creds.clientSecret,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`Google token refresh failed: ${err.error_description || err.error || 'unknown'}`);
+    }
+
+    const data = await res.json();
+    return data.access_token;
+  }
+
+  async uploadToGoogleDrive(filePath, options = {}) {
+    const { name, folderId, convert = true } = options;
+
+    if (!existsSync(filePath)) throw new Error(`File not found: ${filePath}`);
+
+    const accessToken = await this.getGoogleAccessToken();
+
+    const ext = extname(filePath).toLowerCase();
+    const fileName = name || basename(filePath);
+    const mapping = IntegrationStore.CONVERT_MAP[ext];
+    const contentType = mapping?.source || 'application/octet-stream';
+
+    const metadata = { name: fileName };
+    if (convert && mapping?.target) metadata.mimeType = mapping.target;
+    if (folderId) metadata.parents = [folderId];
+
+    const fileContent = readFileSync(filePath);
+    const boundary = `groove_upload_${Date.now()}`;
+    const metadataJson = JSON.stringify(metadata);
+
+    const header = Buffer.from(
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadataJson}\r\n--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`
+    );
+    const footer = Buffer.from(`\r\n--${boundary}--`);
+    const body = Buffer.concat([header, fileContent, footer]);
+
+    const res = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,mimeType',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`,
+        },
+        body,
+      },
+    );
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      const msg = err.error?.message || res.statusText;
+      if (res.status === 403 && msg.includes('insufficient')) {
+        throw new Error(`Google Drive upload failed: insufficient permissions. Re-authenticate Google Drive with write access.`);
+      }
+      throw new Error(`Google Drive upload failed: ${msg}`);
+    }
+
+    return res.json();
   }
 
   // --- Internal ---

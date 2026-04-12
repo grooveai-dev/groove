@@ -1197,6 +1197,47 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
+  // --- Google Drive Upload (file → native Google Workspace format) ---
+
+  app.post('/api/integrations/google-drive/upload', async (req, res) => {
+    try {
+      const { filePath, name, folderId, convert, approvalId, agent: agentId } = req.body || {};
+      if (!filePath || typeof filePath !== 'string') {
+        return res.status(400).json({ error: 'filePath (string) is required' });
+      }
+
+      // Approval gate
+      if (approvalId) {
+        const approval = daemon.supervisor.getApproval(approvalId);
+        if (!approval) return res.status(404).json({ error: 'Approval not found' });
+        if (approval.status === 'rejected') return res.status(403).json({ error: 'Approval rejected', reason: approval.reason });
+        if (approval.status !== 'approved') return res.status(202).json({ requiresApproval: true, approvalId, status: 'pending' });
+      } else {
+        const approval = daemon.supervisor.requestApproval(agentId || null, {
+          type: 'google_drive_upload',
+          filePath,
+          name: name || filePath.split('/').pop(),
+          description: `Upload to Google Drive: ${name || filePath.split('/').pop()}`,
+        });
+        daemon.audit.log('integration.upload.blocked', { filePath, approvalId: approval.id, agentId });
+        return res.status(202).json({
+          requiresApproval: true,
+          approvalId: approval.id,
+          message: `Upload requires approval. Retry with this approvalId once approved.`,
+        });
+      }
+
+      const result = await daemon.integrations.uploadToGoogleDrive(filePath, {
+        name, folderId, convert: convert !== false,
+      });
+
+      daemon.audit.log('integration.upload', { filePath, driveFileId: result.id, name: result.name, agentId });
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // --- Agent Integrations (attach/detach) ---
 
   app.post('/api/agents/:agentId/integrations/:integrationId', (req, res) => {
@@ -2072,25 +2113,26 @@ Keep responses concise. Help them think, don't lecture them about the system the
       const tokenData = daemon.tokens.getAgent(a.id);
       const agentCacheTotal = (tokenData.cacheReadTokens || 0) + (tokenData.cacheCreationTokens || 0) + (tokenData.inputTokens || 0);
 
-      // Quality signals from classifier + adaptive
       let quality = null;
       try {
-        const signals = daemon.adaptive.extractSignals ? daemon.adaptive.extractSignals(a.id) : null;
+        const events = daemon.classifier.agentWindows[a.id] || [];
+        const signals = events.length >= 6 ? daemon.adaptive.extractSignals(events, a.scope) : null;
+        const score = signals ? daemon.adaptive.scoreSession(signals) : null;
         const classification = daemon.classifier.classify(a.id);
-        if (signals || classification) {
-          quality = {
-            score: signals?.score || null,
-            errorCount: signals?.errorCount || 0,
-            toolCalls: signals?.toolCalls || 0,
-            toolFailures: signals?.toolFailures || 0,
-            toolSuccessRate: signals?.toolCalls > 0 ? 1 - (signals.toolFailures / signals.toolCalls) : 1,
-            filesWritten: signals?.filesWritten || 0,
-            fileChurn: signals?.fileChurn || 0,
-            repetitions: signals?.repetitions || 0,
-            tier: classification?.tier || 'medium',
-          };
-        }
-      } catch { /* classifier/adaptive may not have data for this agent */ }
+        quality = {
+          score,
+          errorCount: signals?.errorCount || 0,
+          toolCalls: signals?.toolCalls || 0,
+          toolFailures: signals?.toolFailures || 0,
+          toolSuccessRate: signals?.toolCalls > 0 ? 1 - (signals.toolFailures / signals.toolCalls) : 1,
+          filesWritten: signals?.filesWritten || 0,
+          fileChurn: signals?.fileChurn || 0,
+          repetitions: signals?.repetitions || 0,
+          errorTrend: signals?.errorTrend || 0,
+          tier: classification?.tier || classification || 'medium',
+          eventCount: events.length,
+        };
+      } catch { /* classifier/adaptive may not have data yet */ }
 
       return {
         id: a.id,

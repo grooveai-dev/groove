@@ -178,17 +178,17 @@
   {
     "id": "google-drive",
     "name": "Google Drive",
-    "description": "Search and read files in Google Drive (read-only)",
+    "description": "Search, read, and upload files to Google Drive with auto-conversion to Slides/Docs/Sheets",
     "category": "productivity",
     "icon": "drive",
-    "tags": ["files", "documents", "sheets", "storage"],
-    "roles": ["ea", "analyst", "cmo"],
+    "tags": ["files", "documents", "sheets", "storage", "upload"],
+    "roles": ["ea", "analyst", "cmo", "slides"],
     "npmPackage": "@modelcontextprotocol/server-gdrive",
     "transport": "stdio",
     "command": "npx",
     "args": ["-y", "@modelcontextprotocol/server-gdrive"],
     "authType": "oauth-google",
-    "oauthScopes": ["https://www.googleapis.com/auth/drive.readonly"],
+    "oauthScopes": ["https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive.readonly"],
     "envKeys": [
       { "key": "GOOGLE_CLIENT_ID", "label": "OAuth Client ID", "required": true, "hidden": true },
       { "key": "GOOGLE_CLIENT_SECRET", "label": "OAuth Client Secret", "required": true, "hidden": true },
@@ -203,8 +203,8 @@
     "downloads": 0,
     "rating": 0,
     "ratingCount": 0,
-    "requiresApproval": [],
-    "agentInstructions": "## Google Drive Integration\n\nYou have Google Drive connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-drive/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n- `list_files` — params: {folderId}\n\n### Rules\n- This is read-only access — cannot create or modify files\n- Use search to find files before reading",
+    "requiresApproval": ["upload"],
+    "agentInstructions": "## Google Drive Integration\n\nYou have Google Drive connected via GROOVE.\n\n### Search & Read (MCP)\n`POST http://localhost:31415/api/integrations/google-drive/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n- `list_files` — params: {folderId}\n\n### Upload (GROOVE API)\n`POST http://localhost:31415/api/integrations/google-drive/upload`\nBody: `{\"filePath\": \"/absolute/path/to/file.pptx\", \"name\": \"My Deck\", \"convert\": true}`\n\nAuto-converts on upload:\n- `.pptx` → Google Slides\n- `.docx` → Google Docs\n- `.xlsx` → Google Sheets\n- `.csv` → Google Sheets\n- `.html` → Google Docs\n\nResponse: `{\"id\": \"...\", \"name\": \"...\", \"webViewLink\": \"https://...\"}`\n\nRequires approval — you'll get an `approvalId` to retry with.\n\n### Rules\n- Build files locally first (PptxGenJS, etc.), then upload\n- Use `convert: true` (default) for native Google format\n- Use `convert: false` to keep original format in Drive",
     "verified": "mcp-official"
   },
   {
@@ -323,7 +323,7 @@
       "That's it — credentials are encrypted and stored locally"
     ],
     "requiresApproval": [],
-    "agentInstructions": "## Google Docs Integration\n\nYou have Google Docs connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-docs/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n\n### Rules\n- Search for documents before reading\n- This uses Google Drive API scoped to Docs",
+    "agentInstructions": "## Google Docs Integration\n\nYou have Google Docs connected via GROOVE.\n\n### Search & Read\n`POST http://localhost:31415/api/integrations/google-docs/exec`\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n\n### Create (via Drive Upload)\nTo create a Google Doc, build a `.docx` or `.html` file locally, then upload:\n`POST http://localhost:31415/api/integrations/google-drive/upload`\nBody: `{\"filePath\": \"/path/to/doc.docx\", \"convert\": true}`\nThis auto-converts to a native Google Doc.",
     "featured": false,
     "downloads": 0,
     "rating": 0,
@@ -355,7 +355,7 @@
       "That's it — credentials are encrypted and stored locally"
     ],
     "requiresApproval": [],
-    "agentInstructions": "## Google Sheets Integration\n\nYou have Google Sheets connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-sheets/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n\n### Rules\n- Search for spreadsheets before reading\n- This uses Google Drive API scoped to Sheets",
+    "agentInstructions": "## Google Sheets Integration\n\nYou have Google Sheets connected via GROOVE.\n\n### Search & Read\n`POST http://localhost:31415/api/integrations/google-sheets/exec`\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n\n### Create (via Drive Upload)\nTo create a Google Sheet, build a `.xlsx` or `.csv` file locally, then upload:\n`POST http://localhost:31415/api/integrations/google-drive/upload`\nBody: `{\"filePath\": \"/path/to/data.xlsx\", \"convert\": true}`\nThis auto-converts to a native Google Sheet.",
     "featured": false,
     "downloads": 0,
     "rating": 0,
@@ -387,7 +387,7 @@
       "That's it — credentials are encrypted and stored locally"
     ],
     "requiresApproval": [],
-    "agentInstructions": "## Google Slides Integration\n\nYou have Google Slides connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/google-slides/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n\n### Rules\n- Search for presentations before reading\n- This uses Google Drive API scoped to Slides",
+    "agentInstructions": "## Google Slides Integration\n\nYou have Google Slides connected via GROOVE.\n\n### Search & Read\n`POST http://localhost:31415/api/integrations/google-slides/exec`\n- `search_files` — params: {query}\n- `get_file` — params: {fileId}\n\n### Create (via Drive Upload)\nTo create a Google Slides deck, build a `.pptx` file locally (e.g., with PptxGenJS), then upload:\n`POST http://localhost:31415/api/integrations/google-drive/upload`\nBody: `{\"filePath\": \"/path/to/deck.pptx\", \"convert\": true}`\nThis auto-converts to a native Google Slides presentation.",
     "featured": false,
     "downloads": 0,
     "rating": 0,

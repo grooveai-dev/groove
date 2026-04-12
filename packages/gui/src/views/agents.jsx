@@ -474,11 +474,17 @@ function EmptyState({ onPlanner, onSpawn }) {
 
 const ROLE_ICONS = { backend: Server, frontend: Monitor, fullstack: Code2, testing: TestTube, security: Shield };
 
+const NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+
+function sanitizeName(raw) {
+  return raw.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+}
+
 function RecommendedTeamCard() {
   const recommendedTeam = useGrooveStore((s) => s.recommendedTeam);
   const launchRecommendedTeam = useGrooveStore((s) => s.launchRecommendedTeam);
-  const checkRecommendedTeam = useGrooveStore((s) => s.checkRecommendedTeam);
   const [launching, setLaunching] = useState(false);
+  const [editedAgents, setEditedAgents] = useState(null);
 
   if (!recommendedTeam?.agents?.length) return null;
 
@@ -486,10 +492,23 @@ function RecommendedTeamCard() {
   const phase1 = agents.filter((a) => !a.phase || a.phase === 1);
   const phase2 = agents.filter((a) => a.phase === 2);
 
+  // Initialize edits lazily so we get fresh data if recommendedTeam changes
+  const agentEdits = editedAgents ?? phase1.map((a) => ({ ...a, name: a.name || '' }));
+
+  function handleNameChange(i, raw) {
+    const next = agentEdits.map((a, idx) => idx === i ? { ...a, name: sanitizeName(raw) } : a);
+    setEditedAgents(next);
+  }
+
   async function handleLaunch() {
     setLaunching(true);
     try {
-      await launchRecommendedTeam();
+      // Merge edited phase1 names back with phase2 agents
+      const modified = [
+        ...agentEdits,
+        ...phase2,
+      ];
+      await launchRecommendedTeam(modified);
     } catch { /* toast handles */ }
     setLaunching(false);
   }
@@ -507,26 +526,38 @@ function RecommendedTeamCard() {
           <button onClick={handleDismiss} className="text-text-4 hover:text-text-1 cursor-pointer"><X size={14} /></button>
         </div>
 
-        <div className="px-4 py-3 space-y-2">
-          {/* Phase 1 agents */}
-          <div className="flex flex-wrap gap-2">
-            {phase1.map((a, i) => {
-              const Icon = ROLE_ICONS[a.role] || Code2;
-              return (
-                <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-surface-4 border border-border-subtle">
-                  <Icon size={12} className="text-text-2" />
-                  <span className="text-xs font-semibold text-text-0 font-sans capitalize">{a.name || a.role}</span>
-                  {a.scope?.length > 0 && (
-                    <span className="text-2xs text-text-4 font-mono">{a.scope[0]}{a.scope.length > 1 ? ` +${a.scope.length - 1}` : ''}</span>
+        <div className="px-4 py-3 space-y-1.5">
+          {/* Phase 1 agents — editable rows */}
+          {agentEdits.map((a, i) => {
+            const Icon = ROLE_ICONS[a.role] || Code2;
+            const nameValid = !a.name || NAME_RE.test(a.name);
+            return (
+              <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-surface-4 border border-border-subtle">
+                <Icon size={12} className="text-text-2 shrink-0" />
+                <input
+                  type="text"
+                  value={a.name}
+                  onChange={(e) => handleNameChange(i, e.target.value)}
+                  placeholder={a.role}
+                  className={cn(
+                    'flex-1 min-w-0 bg-transparent text-xs font-mono text-text-0 outline-none placeholder:text-text-4',
+                    !nameValid && 'text-red-400',
                   )}
-                </div>
-              );
-            })}
-          </div>
+                  maxLength={64}
+                  spellCheck={false}
+                />
+                {a.scope?.length > 0 && (
+                  <span className="text-2xs text-text-4 font-mono shrink-0 truncate max-w-[120px]">
+                    {a.scope[0]}{a.scope.length > 1 ? ` +${a.scope.length - 1}` : ''}
+                  </span>
+                )}
+              </div>
+            );
+          })}
 
           {/* Project dir indicator */}
           {recommendedTeam.projectDir && (
-            <div className="flex items-center gap-1.5 text-2xs text-text-2 font-mono">
+            <div className="flex items-center gap-1.5 text-2xs text-text-2 font-mono pt-0.5">
               <span className="text-text-4">Project:</span>
               <span className="text-accent">{recommendedTeam.projectDir}/</span>
             </div>

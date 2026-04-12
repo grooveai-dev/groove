@@ -312,9 +312,9 @@ function ActivityGroup({ entries, isLive }) {
     const meta = activityMeta(last.text);
     const Icon = meta.icon;
     return (
-      <div className="w-fit flex items-center gap-2 px-3 py-1 text-[10px] text-text-4 font-mono">
+      <div className="inline-flex items-center gap-2 px-3 py-1 text-[10px] text-text-4 font-mono">
         <Icon size={10} className="opacity-50" />
-        <span className="truncate">{entries.length} tool call{entries.length !== 1 ? 's' : ''}</span>
+        <span>{entries.length} tool call{entries.length !== 1 ? 's' : ''}</span>
       </div>
     );
   }
@@ -323,9 +323,9 @@ function ActivityGroup({ entries, isLive }) {
   const display = current.text?.length > 60 ? current.text.slice(0, 60) + '...' : current.text;
 
   return (
-    <div className="w-fit flex items-center gap-2 px-3 py-2 rounded-md bg-surface-3/50 border border-border-subtle/30">
+    <div className="inline-flex items-center gap-2 px-3 py-2 max-w-[280px] rounded-md bg-surface-3/50 border border-border-subtle/30">
       <Loader2 size={11} className="text-accent animate-spin flex-shrink-0" />
-      <span className="text-[11px] text-text-2 font-mono truncate flex-1 min-w-0 transition-opacity duration-300">
+      <span className="text-[11px] text-text-2 font-mono truncate transition-opacity duration-300">
         {display}
       </span>
       {entries.length > 1 && (
@@ -626,7 +626,7 @@ export function AgentFeed({ agent }) {
           if (item.kind === 'activity-group') {
             // Only the last activity group is "live" if agent is still running
             const isLastGroup = !timeline.slice(i + 1).some((t) => t.kind === 'activity-group' || t.from === 'agent');
-            return <ActivityGroup key={`grp-${i}`} entries={item.entries} isLive={isAlive && isLastGroup} />;
+            return <div key={`grp-${i}`}><ActivityGroup entries={item.entries} isLive={isAlive && isLastGroup} /></div>;
           }
           if (item.from === 'user') return <UserMessage key={`msg-${i}`} msg={item} />;
           if (item.from === 'system') return <SystemMessage key={`msg-${i}`} msg={item} />;

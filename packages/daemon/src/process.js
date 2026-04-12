@@ -2,7 +2,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { spawn as cpSpawn } from 'child_process';
-import { createWriteStream, mkdirSync, chmodSync, existsSync, readFileSync, unlinkSync } from 'fs';
+import { createWriteStream, mkdirSync, chmodSync, existsSync, readFileSync, unlinkSync, readdirSync } from 'fs';
 import { resolve } from 'path';
 import { getProvider, getInstalledProviders } from './providers/index.js';
 import { AgentLoop } from './agent-loop.js';
@@ -76,27 +76,28 @@ For best results, apply a slide deck skill from the Marketplace. The skill provi
 Do NOT write code unless explicitly asked. Use your MCP tools to interact with Home Assistant.
 
 `,
-  planner: `You are a PLANNING ONLY agent. You create plans. You do NOT write code, edit files, or run commands.
+  planner: `You are a PLANNING ONLY agent. You create plans and route work to your team. You do NOT write code, edit files, or run commands.
 
 ABSOLUTE RULE: Never use the Edit, Write, or Bash tools to modify source code. You ONLY use Read, Glob, and Grep to understand the codebase, then output a written plan. If the user says "build this" or "redesign this", create a PLAN for how other agents should build it — do NOT build it yourself.
 
-Focus on:
-- Understanding requirements
-- Exploring the codebase to understand current architecture
-- Identifying approaches and trade-offs
-- Writing structured plans with agent assignments
+YOU HAVE TWO MODES:
 
-After completing your plan, you MUST do two things — EVERY TIME, no exceptions:
+MODE 1 — TEAM CREATION (first time, no team exists yet):
+Explore the codebase thoroughly, understand the architecture, then recommend a team structure.
 
-1. Write your team recommendation as a clear summary in your output so the user can review it.
+MODE 2 — TASK ROUTING (team already exists):
+Check AGENTS_REGISTRY.md or .groove/recommended-team.json to see your existing team.
+Do NOT re-explore the entire codebase. You already know it from team creation.
+Just read the specific files related to the bug/feature, decide which existing agent should handle it, and write the routing config. This should be FAST — under 5 tool calls.
 
-2. Save a machine-readable team config to .groove/recommended-team.json using this EXACT format.
-   ALWAYS write this file, even if the user says "no task yet" or "just building the team."
-   For team-building without a specific task, use empty prompts ("prompt": "") — the agents will wait for instructions.
+HOW TO DETECT WHICH MODE:
+- Read AGENTS_REGISTRY.md. If it lists agents with roles matching your team (frontend, backend, fullstack), you are in MODE 2.
+- If no agents exist or only a planner exists, you are in MODE 1.
 
-For NEW projects (building something from scratch):
+After completing your plan, you MUST write .groove/recommended-team.json — EVERY TIME, no exceptions.
+
+For MODE 1 (team creation):
 {
-  "projectDir": "my-project-name",
   "agents": [
     { "role": "frontend", "phase": 1, "scope": ["src/components/**", "src/views/**"], "prompt": "Build the frontend: [specific tasks]" },
     { "role": "backend", "phase": 1, "scope": ["src/api/**", "src/server/**"], "prompt": "Build the backend: [specific tasks]" },
@@ -104,35 +105,38 @@ For NEW projects (building something from scratch):
   ]
 }
 
-For EXISTING codebases (modifying/extending an existing project):
+For MODE 2 (task routing to existing team):
+Only include the agents that need to do work. Use their EXISTING role — the system will find and reuse them.
 {
   "agents": [
-    { "role": "frontend", "phase": 1, "scope": ["src/components/**"], "prompt": "Update the frontend: [specific tasks]" },
-    { "role": "fullstack", "phase": 2, "scope": [], "prompt": "QC Senior Dev: Audit all changes, fix issues, run tests, build, commit, and launch." }
+    { "role": "frontend", "phase": 1, "prompt": "Fix the bug: [specific description with file paths and what to change]" }
   ]
 }
+Do NOT include QC/fullstack in the JSON for task routing — the system auto-triggers the existing QC when work completes.
+Do NOT include agents that have no work to do.
+Do NOT invent new agent names or roles — use the existing team's roles exactly.
 
-PROJECT DIRECTORY RULES:
-- For NEW projects: ALWAYS include "projectDir" with a short, clean directory name (kebab-case, e.g. "cat-website", "landing-page", "api-service"). All agents will be spawned inside this directory so each project stays isolated.
-- For EXISTING codebases: Do NOT include "projectDir". Agents work in the current repo root. You can tell an existing codebase by the presence of package.json, .git, or established source directories.
-- NEVER mix projects. Each new project gets its own directory.
+For NEW projects (team creation only):
+Include "projectDir" with a short kebab-case directory name. All agents spawn inside it.
+For EXISTING codebases: Do NOT include "projectDir".
 
-MANDATORY RULES — NEVER SKIP THESE:
+MANDATORY RULES:
 
-1. The LAST entry in the agents array MUST be: { "role": "fullstack", "phase": 2, ... }
-   This is the QC Senior Dev. It auto-spawns after all other agents finish.
-   Its prompt: audit changes, fix issues, run tests, build, commit, launch.
-   NEVER omit this agent. Every team needs a QC.
+1. For team creation: the LAST entry MUST be { "role": "fullstack", "phase": 2 } — the QC agent.
+   For task routing: do NOT include the QC — it auto-triggers.
 
-2. ALL other agents are phase: 1 — they run in parallel.
+2. ALL phase 1 agents run in parallel. Do NOT tell agents to wait for each other.
 
-3. Do NOT tell any agent to "wait for" another agent. Phase 2 handles sequencing automatically.
+3. If the user gave a specific task, write detailed prompts with file paths and what to change.
+   If no task was given, use empty prompts ("prompt": "") — agents will await instructions.
 
-4. Set appropriate scopes. If the user gave a specific task, write detailed prompts. If no task was given, use empty prompts ("prompt": "") — the agents will await instructions.
+4. NEVER create new agent names or custom roles. Use the standard roles: frontend, backend, fullstack.
 
-5. NEVER instruct any agent to delete files from other projects or clean up unrelated code. Each agent must ONLY create and modify files relevant to its assigned tasks.
+5. NEVER instruct agents to delete files from other projects or clean up unrelated code.
 
-6. You MUST always write .groove/recommended-team.json. NEVER skip it. The GUI depends on this file to show the Launch Team modal.
+6. You MUST always write .groove/recommended-team.json. NEVER skip it.
+
+7. In MODE 2, be FAST. Read only the files needed to understand the specific task. Do not re-analyze the full codebase.
 
 IMPORTANT: Do not use markdown formatting like ** or ### in your output. Write in plain text with clean formatting. Use line breaks, dashes, and indentation for structure.
 
@@ -373,10 +377,11 @@ For normal file edits within your scope, proceed without review.
         if (status === 'completed' && this.daemon.journalist) this.daemon.journalist.cycle().catch(() => {});
         this._checkPhase2(agent.id);
 
-        // Auto-trigger idle QC in the same team
+        // Auto-trigger idle QC + process cross-scope handoffs
         if (status === 'completed') {
           const files = this.daemon.journalist?.getAgentFiles(agent) || [];
           if (files.length > 0) this._triggerIdleQC(agent);
+          this._processHandoffs(agent);
         }
       });
 
@@ -577,6 +582,8 @@ For normal file edits within your scope, proceed without review.
       if (finalStatus === 'completed') {
         const files = this.daemon.journalist?.getAgentFiles(agent) || [];
         if (files.length > 0) this._triggerIdleQC(agent);
+        // Process cross-scope handoff requests from this agent
+        this._processHandoffs(agent);
       }
     });
 
@@ -763,6 +770,61 @@ For normal file edits within your scope, proceed without review.
       qcId: qc.id, qcName: qc.name,
       triggeredBy: completedAgent.name,
     });
+  }
+
+  /**
+   * Process handoff files in .groove/handoffs/.
+   * Agents write handoff requests when they need cross-scope work from a teammate.
+   * File name = target role (e.g., backend.md). Content = what to do.
+   */
+  _processHandoffs(sourceAgent) {
+    const handoffsDir = resolve(this.daemon.grooveDir, 'handoffs');
+    if (!existsSync(handoffsDir)) return;
+
+    const registry = this.daemon.registry;
+    let files;
+    try { files = readdirSync(handoffsDir); } catch { return; }
+
+    for (const file of files) {
+      if (!file.endsWith('.md')) continue;
+      const targetRole = file.replace(/\.md$/, '');
+      const filePath = resolve(handoffsDir, file);
+
+      let content;
+      try { content = readFileSync(filePath, 'utf8').trim(); } catch { continue; }
+      if (!content) { try { unlinkSync(filePath); } catch {} continue; }
+
+      // Find the target agent in the same team
+      const target = registry.getAll().find((a) =>
+        a.role === targetRole &&
+        a.teamId === sourceAgent.teamId &&
+        a.id !== sourceAgent.id &&
+        (a.status === 'running' || a.status === 'completed')
+      );
+
+      if (!target) {
+        console.log(`[Groove] Handoff to ${targetRole} — no matching agent in team`);
+        try { unlinkSync(filePath); } catch {}
+        continue;
+      }
+
+      // Wake the target agent with the handoff request
+      const message = `Cross-scope handoff from ${sourceAgent.name} (${sourceAgent.role}):\n\n${content}`;
+      this.daemon.processes.resume(target.id, message).then((newAgent) => {
+        this.daemon.audit.log('handoff.routed', {
+          from: sourceAgent.name, to: target.name, newId: newAgent.id, role: targetRole,
+        });
+        this.daemon.broadcast({
+          type: 'handoff:routed',
+          from: sourceAgent.name, to: target.name, role: targetRole,
+        });
+      }).catch((err) => {
+        console.error(`[Groove] Handoff to ${targetRole} failed: ${err.message}`);
+      });
+
+      // Remove the handoff file
+      try { unlinkSync(filePath); } catch {}
+    }
   }
 
   /**

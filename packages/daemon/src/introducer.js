@@ -75,8 +75,14 @@ export class Introducer {
       lines.push('');
       lines.push(`## Coordination Rules`);
       lines.push('');
-      lines.push(`- Stay within your file scope. Do NOT modify files owned by other agents.`);
-      lines.push(`- If you need changes outside your scope, document what you need — GROOVE will coordinate.`);
+      lines.push(`- Stay within your file scope when other agents are actively running.`);
+      lines.push(`- If you are the ONLY active agent, you may edit files outside your scope if needed to complete your task.`);
+      lines.push(`- If you need another agent to make changes (e.g., you're a frontend agent and need backend API changes):`);
+      lines.push(`  Write a handoff file to .groove/handoffs/<role>.md (e.g., .groove/handoffs/backend.md) with:`);
+      lines.push(`  - What needs to change and why`);
+      lines.push(`  - Which files to modify`);
+      lines.push(`  - Expected behavior after the change`);
+      lines.push(`  GROOVE will automatically wake the target agent and deliver your request.`);
       lines.push(`- Check AGENTS_REGISTRY.md for the latest team state.`);
 
       // Project files section — tell the new agent what exists and what to read

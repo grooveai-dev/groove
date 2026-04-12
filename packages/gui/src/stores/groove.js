@@ -550,11 +550,12 @@ export const useGrooveStore = create((set, get) => ({
     }
   },
 
-  async launchRecommendedTeam() {
+  async launchRecommendedTeam(modifiedAgents) {
     try {
       set({ recommendedTeam: null }); // Dismiss modal immediately
       get().addToast('info', 'Launching team...');
-      const result = await api.post('/recommended-team/launch');
+      const body = modifiedAgents ? { agents: modifiedAgents } : undefined;
+      const result = await api.post('/recommended-team/launch', body);
       const sub = [
         result.phase2Pending ? `${result.phase2Pending} QC queued` : '',
         result.projectDir ? `→ ${result.projectDir}/` : '',

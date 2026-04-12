@@ -7,11 +7,10 @@ import { resolve } from 'path';
 
 const DEFAULT_THRESHOLD = 0.75;
 const CHECK_INTERVAL = 15_000;
-const QUALITY_THRESHOLD = 55;   // Score below this triggers quality rotation (tuned up from 40 — too hair-trigger)
-const MIN_EVENTS = 30;          // Minimum classifier events before scoring (tuned up from 10 — ~100 turns for stable signal)
+const QUALITY_THRESHOLD = 40;   // Score below this triggers quality rotation
+const MIN_EVENTS = 10;          // Minimum classifier events before scoring
 const MIN_AGE_SEC = 120;        // Minimum agent age before quality rotation
 const SCORE_HISTORY_MAX = 40;   // ~10 min at 15s intervals
-const ROTATION_COOLDOWN_MS = 5 * 60 * 1000; // 5 min between rotations per agent — prevents churn on persistent low quality
 
 export class Rotator extends EventEmitter {
   constructor(daemon) {
@@ -97,18 +96,6 @@ export class Rotator extends EventEmitter {
       : Infinity;
   }
 
-  // Check if this agent rotated recently. Prevents back-to-back rotation
-  // churn when quality score stays low post-rotation (e.g. genuinely hard task).
-  // Safety triggers bypass cooldown — pathological burn must be stopped.
-  _isInCooldown(agent) {
-    const last = [...this.rotationHistory]
-      .reverse()
-      .find((r) => r.newAgentId === agent.id || r.agentId === agent.id);
-    if (!last) return false;
-    const elapsed = Date.now() - new Date(last.timestamp).getTime();
-    return elapsed < ROTATION_COOLDOWN_MS;
-  }
-
   scoreLiveSession(agent) {
     const events = this.daemon.classifier.agentWindows[agent.id] || [];
     const ageSec = (Date.now() - new Date(agent.spawnedAt).getTime()) / 1000;
@@ -136,98 +123,12 @@ export class Rotator extends EventEmitter {
     return result;
   }
 
-  // Per-role safety multiplier for the token ceiling. Exploration-heavy
-  // roles legitimately burn tokens fast on big codebases — multiplier
-  // scales their ceiling so the safety net catches truly runaway agents
-  // without false-positiving legitimate heavy work. User-overridable via
-  // config.safety.roleMultipliers.
-  _getRoleMultiplier(role) {
-    const safety = this.daemon.config?.safety;
-    const overrides = safety?.roleMultipliers || {};
-    if (overrides[role] != null) return overrides[role];
-    const defaults = {
-      planner: 10,    // heavy exploration by design
-      fullstack: 4,   // QC auditors read broadly
-      analyst: 5,
-      security: 4,
-      docs: 1,
-    };
-    return defaults[role] || 1;
-  }
-
-  // Safety trigger — runaway agent detection. One check only: per-instance
-  // token ceiling scoped to `spawnedAt` so rotations don't re-trigger on
-  // inherited cumulative tokens. Velocity-based triggers were removed in
-  // v0.27.2 — they produced too many false positives on legitimate heavy
-  // exploration. If a pattern emerges from real usage that warrants an
-  // earlier-warning signal, re-add it gated on quality-degradation signals
-  // (repetitions, errors, file churn) — not velocity alone.
-  _checkSafetyTriggers(agent) {
-    const safety = this.daemon.config?.safety;
-    if (!safety || safety.autoRotate === false) return null;
-    if (!this.daemon.tokens || !agent.spawnedAt) return null;
-
-    const baseCeiling = safety.tokenCeilingPerAgent;
-    if (!baseCeiling || baseCeiling <= 0) return null;
-
-    const multiplier = this._getRoleMultiplier(agent.role);
-    const ceiling = Math.round(baseCeiling * multiplier);
-    const spawnedAtMs = new Date(agent.spawnedAt).getTime();
-    const instanceTokens = this.daemon.tokens.getTokensInWindow(agent.id, spawnedAtMs);
-
-    if (instanceTokens >= ceiling) {
-      return {
-        reason: 'token_limit_exceeded',
-        instanceTokens,
-        ceiling,
-        multiplier,
-      };
-    }
-    return null;
-  }
-
-  // Compute post-rotation velocity for rotations that are old enough to
-  // have meaningful data. Replaces hardcoded savings assumptions with
-  // measured deltas. Positive velocityDelta = rotation reduced burn rate.
-  _finalizeRotationMeasurements() {
-    if (!this.daemon.tokens?.getVelocity) return;
-    const now = Date.now();
-    let modified = false;
-    for (const record of this.rotationHistory) {
-      if (record.postRotationVelocity != null) continue;
-      if (record.preRotationVelocity == null) continue;
-      if (!record.newAgentId) continue;
-      const rotatedAt = new Date(record.timestamp).getTime();
-      if (now - rotatedAt < 600_000) continue; // need 10 min of post-data
-      const postVelocity = this.daemon.tokens.getVelocity(record.newAgentId, 600_000);
-      record.postRotationVelocity = postVelocity;
-      record.velocityDelta = record.preRotationVelocity - postVelocity;
-      modified = true;
-    }
-    if (modified) this._saveHistory();
-  }
-
   async check() {
-    this._finalizeRotationMeasurements();
-
     const agents = this.daemon.registry.getAll();
     const running = agents.filter((a) => a.status === 'running');
 
     for (const agent of running) {
       if (this.rotating.has(agent.id)) continue;
-
-      // Safety triggers — highest priority, pathological behavior.
-      // Bypasses cooldown: pathological burn must be stopped immediately.
-      const safety = this._checkSafetyTriggers(agent);
-      if (safety) {
-        console.log(`  Rotator: ${agent.name} ${safety.reason} (${safety.instanceTokens} tokens >= ${safety.ceiling} ceiling, ${safety.multiplier}x role mult) — auto-rotating`);
-        await this.rotate(agent.id, safety);
-        continue;
-      }
-
-      // Cooldown check — skip threshold-based rotations if agent just rotated.
-      // Gives the new instance time to stabilize before another judgment.
-      if (this._isInCooldown(agent)) continue;
 
       const threshold = this.daemon.adaptive
         ? this.daemon.adaptive.getThreshold(agent.provider, agent.role)
@@ -242,17 +143,11 @@ export class Rotator extends EventEmitter {
         }
       }
 
-      // Quality-based rotation — detects degradation before tokens are wasted.
-      // Converged provider:role profiles have stable thresholds already, so
-      // skip quality rotation there unless score is catastrophically low.
+      // Quality-based rotation — detects degradation before tokens are wasted
       const quality = this.scoreLiveSession(agent);
       if (quality.hasEnoughData && quality.score < QUALITY_THRESHOLD) {
-        const profile = this.daemon.adaptive?.getProfile?.(agent.provider, agent.role);
-        const converged = profile?.converged;
-        // If converged, require a deeper score drop before rotating
-        const floor = converged ? QUALITY_THRESHOLD - 15 : QUALITY_THRESHOLD;
-        if (quality.score < floor && this._idleMs(agent) > 10_000) {
-          console.log(`  Rotator: ${agent.name} quality=${quality.score}${converged ? ' (converged profile)' : ''} — rotating (quality)`);
+        if (this._idleMs(agent) > 10_000) {
+          console.log(`  Rotator: ${agent.name} quality=${quality.score} — rotating (quality)`);
           await this.rotate(agent.id, {
             reason: 'quality_degradation',
             qualityScore: quality.score,
@@ -296,13 +191,6 @@ export class Rotator extends EventEmitter {
         brief = brief + '\n\n## User Instruction\n\n' + options.additionalPrompt;
       }
 
-      // Capture pre-rotation velocity (tokens/10min) so we can later measure
-      // whether the rotation actually improved token efficiency. Stored in
-      // history; finalized by _finalizeRotationMeasurements() on later ticks.
-      const preRotationVelocity = this.daemon.tokens?.getVelocity
-        ? this.daemon.tokens.getVelocity(agent.id, 600_000)
-        : null;
-
       const record = {
         agentId: agent.id,
         agentName: agent.name,
@@ -312,21 +200,8 @@ export class Rotator extends EventEmitter {
         contextUsage: agent.contextUsage,
         reason: options.reason || 'manual',
         qualityScore: options.qualityScore || null,
-        instanceTokens: options.instanceTokens || null,
-        velocity: options.velocity || null,
-        preRotationVelocity,
-        postRotationVelocity: null,
-        velocityDelta: null,
         timestamp: new Date().toISOString(),
       };
-
-      // Capture per-session signals for specialization tracking before we clear
-      const sessionSignals = classifierEvents.length > 0
-        ? this.daemon.adaptive.extractSignals(classifierEvents, agent.scope)
-        : null;
-      const sessionScore = sessionSignals
-        ? this.daemon.adaptive.scoreSession(sessionSignals)
-        : null;
 
       await processes.kill(agentId);
 
@@ -361,35 +236,6 @@ export class Rotator extends EventEmitter {
       }
       this._saveHistory();
 
-      // Append to persistent handoff chain (Layer 7 memory)
-      // so agent #50 knows what agent #1 struggled with.
-      if (this.daemon.memory) {
-        this.daemon.memory.appendHandoffBrief(agent.role, {
-          agentId: agent.id,
-          newAgentId: newAgent.id,
-          reason: record.reason,
-          oldTokens: agent.tokensUsed,
-          contextUsage: agent.contextUsage,
-          brief,
-          timestamp: record.timestamp,
-        });
-
-        // Update per-agent + per-role specialization profile
-        const files = Array.from(new Set(
-          classifierEvents
-            .map((e) => e.input || e.file || e.path)
-            .filter((f) => typeof f === 'string' && f.length > 0)
-            .slice(-20)
-        ));
-        this.daemon.memory.updateSpecialization(agent.id, {
-          role: agent.role,
-          qualityScore: sessionScore,
-          filesTouched: files,
-          signals: sessionSignals,
-          threshold: this.daemon.adaptive?.getThreshold(agent.provider, agent.role),
-        });
-      }
-
       if (this.daemon.timeline) {
         this.daemon.timeline.recordEvent('rotate', {
           agentId: newAgent.id, oldAgentId: agentId,
@@ -397,8 +243,6 @@ export class Rotator extends EventEmitter {
           tokensBefore: agent.tokensUsed,
           reason: record.reason,
           qualityScore: record.qualityScore,
-          instanceTokens: record.instanceTokens,
-          velocity: record.velocity,
         });
       }
 
@@ -488,10 +332,6 @@ export class Rotator extends EventEmitter {
     const qualityRotations = this.rotationHistory.filter((r) => r.reason === 'quality_degradation').length;
     const contextRotations = this.rotationHistory.filter((r) => r.reason === 'context_threshold').length;
     const naturalCompactions = this.rotationHistory.filter((r) => r.reason === 'natural_compaction').length;
-    const tokenLimitRotations = this.rotationHistory.filter((r) => r.reason === 'token_limit_exceeded').length;
-    // Legacy: velocity rotations are no longer triggered (removed v0.27.2)
-    // but historical entries may remain in saved history.
-    const velocityRotations = this.rotationHistory.filter((r) => r.reason === 'runaway_velocity').length;
     return {
       enabled: this.enabled,
       totalRotations,
@@ -499,8 +339,6 @@ export class Rotator extends EventEmitter {
       qualityRotations,
       contextRotations,
       naturalCompactions,
-      tokenLimitRotations,
-      velocityRotations,
       rotating: Array.from(this.rotating),
       liveScores: this.liveScores,
       scoreHistory: this.scoreHistory,

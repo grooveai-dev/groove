@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.27.6 — Revert rotator safety triggers — kill switch was killing planners (2026-04-12)
+
+User noticed rotations happening at 25-35% context window — way below the 75% threshold. Root cause: quality-based rotation was firing during planner thinking phases. Chain:
+
+1. Planner explores (grep, find, cat with `2>/dev/null`) — normal planning work
+2. Classifier sees non-zero exits as "errors"; quality score tanks
+3. Planner pauses to synthesize plan — `lastActivity` doesn't update during thinking
+4. Rotator sees: idle > 10s + score < 55 + events > 30 — kills planner mid-thought
+5. New instance spawns but doesn't recover the plan output
+
+I raised `QUALITY_THRESHOLD` from 40 → 55 in v0.27.0 thinking it would catch degradation earlier. Instead it made the rotator trigger-happy on the exact agents whose normal work looks "bad" to the classifier (planners doing exploration, fullstack auditors reviewing code).
+
+**Reverted `rotator.js` entirely to v0.26.39.** The rotator that worked through 275M tokens without killing planners. This removes:
+- Safety ceiling (token_limit_exceeded) and role multipliers — added in v0.27.0
+- Velocity trigger (already removed in v0.27.2)
+- Rotation cooldown — added in v0.27.0
+- Converged-profile gate — added in v0.27.0
+- Pre/post velocity measurement — added in v0.27.0
+- Handoff-chain write on rotation — added in v0.27.0
+- Specialization update from rotator — added in v0.27.0
+- Raised quality threshold (55 → 40) and min events (30 → 10)
+
+Also removed the associated test cases.
+
+**What's preserved from v0.27.x**
+- MemoryStore module (data still accumulates from agent completion via process.js)
+- Dashboard additions (token panel, memory tab, overhead section, cache fix)
+- Journalist token tracking under reserved IDs
+- `__negotiator__` tracking on task negotiation
+- Handoff brief v0.27.4 wording (rotation-only, shouldn't fire often now)
+
+No safety net other than the rotator's original context-threshold and quality-threshold triggers. If a truly runaway agent burns 50M tokens, it'll hit context rotation naturally — no ceiling needed.
+
 ## v0.27.5 — Revert planner/introducer changes (2026-04-12)
 
 Planner flow stopped producing output after v0.27.x intro changes — agents would do partial exploration and stop without outputting a plan. After several failed targeted fixes (v0.27.3, v0.27.4), reverting `introducer.js` and the planner role prompt in `process.js` back to their v0.26.39 state rather than continue iterating on a broken premise. The planner flow that worked through 275M tokens is what should ship.

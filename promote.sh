@@ -127,9 +127,10 @@ echo -e "  Tagged: ${DIM}v${VERSION}${RESET}"
 
 # ── Publish ───────────────────────────────────────────────
 
-step "Publish to npm"
+step "Publish to npm + push to GitHub"
 npm publish
-echo -e "  ${GREEN}Published groove-dev@${VERSION}${RESET}"
+git push && git push --tags
+echo -e "  ${GREEN}Published groove-dev@${VERSION} + pushed to GitHub${RESET}"
 
 # ── Update global install ────────────────────────────────
 

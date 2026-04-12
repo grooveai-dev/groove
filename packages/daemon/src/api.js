@@ -484,6 +484,9 @@ export function createApi(app, daemon) {
       const agent = daemon.registry.get(req.params.id);
       if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
+      // Record user feedback so the journalist can include it in future agent context
+      if (daemon.journalist) daemon.journalist.recordUserFeedback(agent, message.trim());
+
       // Agent loop path — send message directly to the running loop
       if (daemon.processes.hasAgentLoop(req.params.id)) {
         const sent = await daemon.processes.sendMessage(req.params.id, message.trim());

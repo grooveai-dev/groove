@@ -85,6 +85,19 @@ export class Introducer {
       lines.push(`  GROOVE will automatically wake the target agent and deliver your request.`);
       lines.push(`- Check AGENTS_REGISTRY.md for the latest team state.`);
 
+      // User feedback from previous tasks — critical context about what the user
+      // observed and what needs to change. Prevents agents from repeating mistakes.
+      const feedback = this.daemon.journalist?.getUserFeedback() || [];
+      if (feedback.length > 0) {
+        lines.push('');
+        lines.push(`## User Feedback (from previous tasks)`);
+        lines.push('');
+        lines.push(`The user sent these messages about previous agents' work. Pay close attention — these indicate issues that previous agents missed:`);
+        for (const fb of feedback.slice(-10)) {
+          lines.push(`- **${fb.agentName}** (${fb.role}): "${fb.message}"`);
+        }
+      }
+
       // Project files section — tell the new agent what exists and what to read
       if (allTeamFiles.length > 0) {
         lines.push('');

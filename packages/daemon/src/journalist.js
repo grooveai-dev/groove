@@ -57,9 +57,18 @@ export class Journalist {
     if (this.synthesizing) return; // Don't overlap
 
     const agents = this.daemon.registry.getAll();
-    const activeAgents = agents.filter((a) => a.status === 'running');
+    const running = agents.filter((a) => a.status === 'running');
 
-    // Skip if no active agents
+    // Include recently completed agents (last 30 min) so their work persists
+    // in the project map instead of vanishing the moment they finish
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const recentlyCompleted = agents.filter((a) =>
+      a.status === 'completed' && a.lastActivity && a.lastActivity > thirtyMinAgo
+      && !running.some((r) => r.id === a.id)
+    );
+    const activeAgents = [...running, ...recentlyCompleted];
+
+    // Skip if no agents to synthesize
     if (activeAgents.length === 0) return;
 
     // Smart scheduling: skip if no new log output since last cycle
@@ -149,33 +158,75 @@ export class Journalist {
   }
 
   filterLog(rawLog, agent) {
-    // Parse stream-json lines and extract meaningful events
+    // Parse stream-json lines and extract meaningful events.
+    // Focus on PROGRESS (writes, edits, commands with results) not EXPLORATION (reads, greps).
     const entries = [];
     const lines = rawLog.split('\n');
+    const toolResults = new Map(); // tool_use_id -> result text
 
+    // First pass: collect tool results so we can attach them to tool calls
     for (const line of lines) {
-      // Skip empty lines and GROOVE spawn headers
+      if (!line.trim() || line.startsWith('[')) continue;
+      try {
+        const data = JSON.parse(line);
+        if (data.type === 'user' && data.message?.content) {
+          const content = Array.isArray(data.message.content) ? data.message.content : [];
+          for (const block of content) {
+            if (block.type === 'tool_result' && block.tool_use_id) {
+              const text = typeof block.content === 'string' ? block.content
+                : Array.isArray(block.content) ? block.content.map((c) => c.text || '').join('').slice(0, 300)
+                : '';
+              if (text) toolResults.set(block.tool_use_id, text);
+            }
+          }
+        }
+      } catch { /* skip */ }
+    }
+
+    // Second pass: extract meaningful events
+    for (const line of lines) {
       if (!line.trim() || line.startsWith('[')) continue;
 
       try {
         const data = JSON.parse(line);
 
-        // Tool use (file edits, commands)
+        // Tool use — only keep WRITES, EDITS, and COMMANDS (progress, not exploration)
         if (data.type === 'assistant' && data.message?.content) {
           const content = data.message.content;
           if (Array.isArray(content)) {
             for (const block of content) {
               if (block.type === 'tool_use') {
-                entries.push({
+                const tool = block.name;
+
+                // Skip exploration tools — reads/searches are noise for synthesis
+                if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') continue;
+
+                const entry = {
                   type: 'tool',
-                  tool: block.name,
-                  input: this.summarizeToolInput(block.name, block.input),
+                  tool,
+                  input: this.summarizeToolInput(tool, block.input),
                   timestamp: data.timestamp,
-                });
+                };
+
+                // Capture what was actually changed for Edit operations
+                if (tool === 'Edit' && block.input) {
+                  const old = (block.input.old_string || '').slice(0, 150);
+                  const nw = (block.input.new_string || '').slice(0, 150);
+                  if (old && nw) entry.diff = `"${old}" → "${nw}"`;
+                }
+
+                // Capture Bash command output (exit code, first line of result)
+                if (tool === 'Bash' && block.id) {
+                  const result = toolResults.get(block.id);
+                  if (result) entry.output = result.slice(0, 200);
+                }
+
+                entries.push(entry);
               } else if (block.type === 'text' && block.text) {
-                // Only keep substantial text (decisions, explanations)
+                // Only keep substantial reasoning (decisions, conclusions)
+                // Short fragments like "Let me check..." are noise
                 const text = block.text.trim();
-                if (text.length > 50) {
+                if (text.length > 200) {
                   entries.push({ type: 'thinking', text: text.slice(0, 2000), timestamp: data.timestamp });
                 }
               }
@@ -194,10 +245,8 @@ export class Journalist {
           });
         }
       } catch {
-        // Not JSON — check for plain text signals
-        if (line.includes('Error') || line.includes('error')) {
-          entries.push({ type: 'error', text: line.trim().slice(0, 200) });
-        }
+        // Skip non-JSON lines entirely — transient stderr like ENOENT
+        // causes degradation when agents try to "fix" phantom errors
       }
     }
 
@@ -208,15 +257,11 @@ export class Journalist {
     if (!input) return '';
     switch (toolName) {
       case 'Write':
+        return input.file_path || input.path || '';
       case 'Edit':
         return input.file_path || input.path || '';
-      case 'Read':
-        return input.file_path || input.path || '';
       case 'Bash':
-        return (input.command || '').slice(0, 100);
-      case 'Glob':
-      case 'Grep':
-        return input.pattern || '';
+        return (input.command || '').slice(0, 150);
       default:
         return JSON.stringify(input).slice(0, 100);
     }
@@ -295,14 +340,16 @@ export class Journalist {
 
   formatEntry(entry) {
     switch (entry.type) {
-      case 'tool':
-        return `- [tool] ${entry.tool}: ${entry.input}`;
+      case 'tool': {
+        let line = `- [${entry.tool}] ${entry.input}`;
+        if (entry.diff) line += ` — changed: ${entry.diff}`;
+        if (entry.output) line += ` → ${entry.output.split('\n')[0]}`;
+        return line;
+      }
       case 'thinking':
-        return `- [thought] ${entry.text.slice(0, 200)}`;
+        return `- [thought] ${entry.text.slice(0, 300)}`;
       case 'result':
-        return `- [result] ${entry.text.slice(0, 200)} (${entry.turns} turns, ${entry.duration}ms)`;
-      case 'error':
-        return `- [error] ${entry.text}`;
+        return `- [result] ${entry.text.slice(0, 300)} (${entry.turns} turns, ${entry.duration}ms)`;
       default:
         return `- [${entry.type}] ${entry.text || ''}`;
     }
@@ -515,8 +562,25 @@ export class Journalist {
       existing = readFileSync(path, 'utf8').replace(/^# GROOVE Decisions Log[\s\S]*?\n\n/, '');
     }
 
+    // Deduplicate — skip if the new decisions are substantially similar to the most recent entry.
+    // Extract the last cycle's decisions text for comparison.
+    if (existing) {
+      const lastEntry = existing.match(/^## Cycle[\s\S]*?\n\n([\s\S]*?)(?=\n---|\n\n\*Auto|\n## Cycle|$)/);
+      if (lastEntry) {
+        const lastText = lastEntry[1].trim().toLowerCase().replace(/\s+/g, ' ');
+        const newText = decisions.trim().toLowerCase().replace(/\s+/g, ' ');
+        // If >60% of the new text appears in the last entry, skip (near-duplicate)
+        const newWords = newText.split(' ').filter((w) => w.length > 3);
+        const overlap = newWords.filter((w) => lastText.includes(w)).length;
+        if (newWords.length > 0 && overlap / newWords.length > 0.6) return;
+      }
+    }
+
     const entry = `## Cycle ${this.cycleCount} — ${new Date().toISOString()}\n\n${decisions}\n\n`;
-    writeFileSync(path, header + entry + existing);
+
+    // Keep last 20 entries max to prevent unbounded growth
+    const entries = (entry + existing).split(/(?=^## Cycle)/m).slice(0, 20).join('');
+    writeFileSync(path, header + entries);
   }
 
   writeAgentSessionLogs(agents, filteredLogs) {
@@ -722,6 +786,60 @@ export class Journalist {
     } catch {
       return '';
     }
+  }
+
+  // --- User Feedback Tracking ---
+
+  /**
+   * Record user feedback/messages sent to agents.
+   * This gets included in the project map and handoff briefs so future
+   * agents know what the user said about previous work.
+   */
+  recordUserFeedback(agent, message) {
+    if (!this._userFeedback) this._loadFeedback();
+    if (!this._userFeedback[agent.id]) this._userFeedback[agent.id] = [];
+    this._userFeedback[agent.id].push({
+      agentName: agent.name,
+      role: agent.role,
+      message: message.slice(0, 500),
+      timestamp: new Date().toISOString(),
+    });
+    // Keep last 20 per agent
+    if (this._userFeedback[agent.id].length > 20) {
+      this._userFeedback[agent.id] = this._userFeedback[agent.id].slice(-20);
+    }
+    this._saveFeedback();
+  }
+
+  _loadFeedback() {
+    const p = resolve(this.daemon.grooveDir, 'user-feedback.json');
+    try {
+      if (existsSync(p)) this._userFeedback = JSON.parse(readFileSync(p, 'utf8'));
+      else this._userFeedback = {};
+    } catch { this._userFeedback = {}; }
+  }
+
+  _saveFeedback() {
+    try {
+      writeFileSync(resolve(this.daemon.grooveDir, 'user-feedback.json'), JSON.stringify(this._userFeedback, null, 2));
+    } catch { /* non-fatal */ }
+  }
+
+  /**
+   * Get user feedback for an agent (or all agents in a team).
+   * Used by the introducer to give agents context about previous attempts.
+   */
+  getUserFeedback(agentOrTeamId) {
+    if (!this._userFeedback) this._loadFeedback();
+    if (!this._userFeedback) return [];
+    // Check if it's an agent ID
+    if (this._userFeedback[agentOrTeamId]) return this._userFeedback[agentOrTeamId];
+    // Check by team — collect feedback for all agents in the team
+    const all = [];
+    for (const [, entries] of Object.entries(this._userFeedback)) {
+      all.push(...entries);
+    }
+    return all.sort((a, b) => a.timestamp.localeCompare(b.timestamp)).slice(-30);
   }
 
   // --- Accessors ---

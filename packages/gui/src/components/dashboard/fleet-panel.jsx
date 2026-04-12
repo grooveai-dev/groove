@@ -25,7 +25,7 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
   const successRate = quality?.toolSuccessRate != null ? Math.round(quality.toolSuccessRate * 100) : null;
   const thresholdPct = agent.rotationThreshold ? Math.round(agent.rotationThreshold * 100) : null;
   const rc = roleColor(agent.role);
-  const barColor = contextPct > 80 ? HEX.danger : contextPct > 60 ? HEX.warning : isAlive ? HEX.accent : HEX.surface5;
+  const barColor = contextPct > 80 ? HEX.danger : contextPct > 60 ? HEX.warning : HEX.accent;
 
   return (
     <div className="px-3 pl-6 py-2 hover:bg-[rgba(51,175,188,0.06)] transition-colors space-y-1.5">

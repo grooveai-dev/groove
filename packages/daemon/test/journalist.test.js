@@ -52,13 +52,13 @@ describe('Journalist', () => {
       assert.equal(entries[0].input, 'src/api/auth.js');
     });
 
-    it('should extract errors from logs', () => {
+    it('should skip non-JSON lines (transient errors are noise)', () => {
       const { daemon } = createMockDaemon();
       const journalist = new Journalist(daemon);
 
+      // Non-JSON error lines are dropped to prevent context degradation
       const entries = journalist.filterLog('Error: something broke\nTypeError: undefined is not a function', {});
-      assert.equal(entries.length, 2);
-      assert.equal(entries[0].type, 'error');
+      assert.equal(entries.length, 0);
     });
 
     it('should extract result events', () => {

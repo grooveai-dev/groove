@@ -178,7 +178,7 @@
   {
     "id": "google-drive",
     "name": "Google Drive",
-    "description": "Search, read, and manage files in Google Drive",
+    "description": "Search and read files in Google Drive (read-only)",
     "category": "productivity",
     "icon": "drive",
     "tags": ["files", "documents", "sheets", "storage"],
@@ -301,7 +301,7 @@
   {
     "id": "google-docs",
     "name": "Google Docs",
-    "description": "Create, read, and edit Google Docs documents",
+    "description": "Search and read Google Docs documents (read-only via Drive API)",
     "category": "productivity",
     "icon": "docs",
     "tags": ["documents", "writing", "collaboration", "google"],
@@ -333,7 +333,7 @@
   {
     "id": "google-sheets",
     "name": "Google Sheets",
-    "description": "Read, create, and update Google Sheets spreadsheets and data",
+    "description": "Search and read Google Sheets spreadsheets (read-only via Drive API)",
     "category": "productivity",
     "icon": "sheets",
     "tags": ["spreadsheets", "data", "tables", "google"],
@@ -365,7 +365,7 @@
   {
     "id": "google-slides",
     "name": "Google Slides",
-    "description": "Create, read, and edit Google Slides presentations",
+    "description": "Search and read Google Slides presentations (read-only via Drive API)",
     "category": "productivity",
     "icon": "slides",
     "tags": ["presentations", "slides", "decks", "google"],

@@ -223,7 +223,7 @@ function AgentTreeInner() {
     // First pass: place agents with saved positions
     const pending = [];
     agents.forEach((agent, i) => {
-      const key = agent.id;
+      const key = agent.name || agent.id;
       if (saved[key]) {
         const pos = saved[key];
         occupied.add(posKey(pos.x, pos.y));
@@ -376,7 +376,8 @@ function AgentTreeInner() {
 
   const onNodeDragStop = useCallback((_e, node) => {
     const agent = agents.find((a) => a.id === node.id);
-    const key = node.id === ROOT_ID ? ROOT_ID : node.id;
+    // Save by agent name (stable across resumes/rotations) instead of ID (changes each session)
+    const key = node.id === ROOT_ID ? ROOT_ID : (agent?.name || node.id);
     const saved = loadPositions();
     saved[key] = node.position;
     savePositions(saved);

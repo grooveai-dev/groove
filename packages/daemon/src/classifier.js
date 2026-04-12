@@ -35,11 +35,9 @@ const LIGHT_SIGNALS = [
 ];
 
 export class TaskClassifier {
-  constructor(daemon = null) {
+  constructor() {
     this.windowSize = 200; // Large enough for quality signal extraction across tool calls
     this.agentWindows = {}; // for degradation detection and adaptive scoring
-    this.daemon = daemon; // optional — enables broadcast of classification updates
-    this._lastBroadcastCount = {}; // per-agent throttle
   }
 
   addEvent(agentId, event) {
@@ -77,23 +75,6 @@ export class TaskClassifier {
       window.push({ ...event, timestamp: event.timestamp || Date.now() });
     }
     while (window.length > this.windowSize) window.shift();
-
-    // Broadcast classification updates periodically. Enables GUI to surface
-    // downshift suggestions ("agent's been doing light work — switch to Haiku?").
-    // Requires 40+ events before any broadcast; throttles to every 20 events.
-    if (this.daemon?.broadcast && window.length >= 40) {
-      const lastBroadcast = this._lastBroadcastCount[agentId] || 0;
-      if (window.length - lastBroadcast >= 20) {
-        this._lastBroadcastCount[agentId] = window.length;
-        const tier = this.classify(agentId);
-        this.daemon.broadcast({
-          type: 'classifier:update',
-          agentId,
-          tier,
-          eventCount: window.length,
-        });
-      }
-    }
   }
 
   // Classify current activity for an agent

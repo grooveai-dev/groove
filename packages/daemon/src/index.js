@@ -122,7 +122,7 @@ export class Daemon {
     this.adaptive = new AdaptiveThresholds(this.grooveDir);
     this.teams = new Teams(this);
     this.credentials = new CredentialStore(this.grooveDir);
-    this.classifier = new TaskClassifier(this);
+    this.classifier = new TaskClassifier();
     this.router = new ModelRouter(this);
     this.pm = new ProjectManager(this);
     this.indexer = new CodebaseIndexer(this);

@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.27.7 — Revert classifier broadcast — was eating stdout events (2026-04-12)
+
+Planner was producing complete plans (confirmed in stream-json log: full result event, 1.9min, 10 turns, stop_reason end_turn), but the GUI wasn't rendering the final message. Last visible chat was an early exploration message; the plan and subsequent updates never reached the chat UI.
+
+**Root cause.** v0.27.5 added `classifier:update` broadcasts inside `classifier.addEvent()` — which runs synchronously on EVERY stdout event in `process.js` stdout handler, BEFORE the `agent:output` broadcast that actually delivers messages to the chat. Any throw in the added code path (classify iteration, broadcast JSON.stringify on large event contents) would kill the stdout handler for that chunk. The `agent:output` broadcast at line 644 never fires. The plan is silently lost mid-transit.
+
+The v0.26.39 classifier didn't broadcast — it just recorded events. That's why it worked. Shipping the revert.
+
+**Reverted**
+- `classifier.js` — full restore to v0.26.39. No `daemon` constructor arg, no `broadcast()` call, no `_lastBroadcastCount` throttle.
+- `index.js` — `new TaskClassifier()` (back to no-arg constructor).
+
+**Consequence**
+- GUI no longer gets mid-session `classifier:update` events. The downshift suggestion API (`GET /api/agents/:id/routing/suggestion`) still works, just won't push real-time updates. This was a Phase 5 enhancement that wasn't worth breaking message delivery for.
+
 ## v0.27.6 — Revert rotator safety triggers — kill switch was killing planners (2026-04-12)
 
 User noticed rotations happening at 25-35% context window — way below the 75% threshold. Root cause: quality-based rotation was firing during planner thinking phases. Chain:

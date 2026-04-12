@@ -134,8 +134,14 @@ echo -e "  ${GREEN}Published groove-dev@${VERSION}${RESET}"
 # ── Update global install ────────────────────────────────
 
 step "Update global install"
-# Pin to exact version — npm CDN can lag behind on @latest after publish
-npm i -g "groove-dev@${VERSION}"
+# Pin to exact version — npm CDN can lag behind after publish, retry until available
+for attempt in 1 2 3 4 5; do
+  if npm i -g "groove-dev@${VERSION}" 2>/dev/null; then
+    break
+  fi
+  echo -e "  ${DIM}Waiting for npm registry to sync... (attempt ${attempt}/5)${RESET}"
+  sleep 3
+done
 echo -e "  ${GREEN}Global updated to ${VERSION}${RESET}"
 
 echo ""

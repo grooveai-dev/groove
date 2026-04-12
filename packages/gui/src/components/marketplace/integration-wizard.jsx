@@ -424,15 +424,18 @@ export function IntegrationWizard({ integration, open, onClose }) {
   const [installing, setInstalling] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(true);
 
+  const integrationId = integration?.id;
+
   const fetchStatus = useCallback(async () => {
+    if (!integrationId) return;
     try {
-      const data = await api.get(`/integrations/${integration.id}/status`);
+      const data = await api.get(`/integrations/${integrationId}/status`);
       setStatus(data);
     } catch {
       setStatus(null);
     }
     setLoadingStatus(false);
-  }, [integration.id]);
+  }, [integrationId]);
 
   useEffect(() => {
     if (open && integration) {

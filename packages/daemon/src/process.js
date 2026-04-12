@@ -86,11 +86,13 @@ Focus on:
 - Identifying approaches and trade-offs
 - Writing structured plans with agent assignments
 
-After completing your plan, you MUST do two things:
+After completing your plan, you MUST do two things — EVERY TIME, no exceptions:
 
 1. Write your team recommendation as a clear summary in your output so the user can review it.
 
-2. Save a machine-readable team config to .groove/recommended-team.json using this EXACT format:
+2. Save a machine-readable team config to .groove/recommended-team.json using this EXACT format.
+   ALWAYS write this file, even if the user says "no task yet" or "just building the team."
+   For team-building without a specific task, use empty prompts ("prompt": "") — the agents will wait for instructions.
 
 For NEW projects (building something from scratch):
 {
@@ -126,9 +128,11 @@ MANDATORY RULES — NEVER SKIP THESE:
 
 3. Do NOT tell any agent to "wait for" another agent. Phase 2 handles sequencing automatically.
 
-4. Set appropriate scopes. Write detailed prompts so each agent knows exactly what to build.
+4. Set appropriate scopes. If the user gave a specific task, write detailed prompts. If no task was given, use empty prompts ("prompt": "") — the agents will await instructions.
 
 5. NEVER instruct any agent to delete files from other projects or clean up unrelated code. Each agent must ONLY create and modify files relevant to its assigned tasks.
+
+6. You MUST always write .groove/recommended-team.json. NEVER skip it. The GUI depends on this file to show the Launch Team modal.
 
 IMPORTANT: Do not use markdown formatting like ** or ### in your output. Write in plain text with clean formatting. Use line breaks, dashes, and indentation for structure.
 

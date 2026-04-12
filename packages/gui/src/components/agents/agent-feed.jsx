@@ -312,7 +312,7 @@ function ActivityGroup({ entries, isLive }) {
     const meta = activityMeta(last.text);
     const Icon = meta.icon;
     return (
-      <div className="ml-7 flex items-center gap-2 px-3 py-1 text-[10px] text-text-4 font-mono">
+      <div className="w-fit flex items-center gap-2 px-3 py-1 text-[10px] text-text-4 font-mono">
         <Icon size={10} className="opacity-50" />
         <span className="truncate">{entries.length} tool call{entries.length !== 1 ? 's' : ''}</span>
       </div>
@@ -323,7 +323,7 @@ function ActivityGroup({ entries, isLive }) {
   const display = current.text?.length > 60 ? current.text.slice(0, 60) + '...' : current.text;
 
   return (
-    <div className="ml-7 flex items-center gap-2 px-3 py-2 rounded-md bg-surface-3/50 border border-border-subtle/30">
+    <div className="w-fit flex items-center gap-2 px-3 py-2 rounded-md bg-surface-3/50 border border-border-subtle/30">
       <Loader2 size={11} className="text-accent animate-spin flex-shrink-0" />
       <span className="text-[11px] text-text-2 font-mono truncate flex-1 min-w-0 transition-opacity duration-300">
         {display}

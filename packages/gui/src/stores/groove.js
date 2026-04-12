@@ -136,15 +136,6 @@ export const useGrooveStore = create((set, get) => ({
         case 'agent:output': {
           const { agentId, data } = msg;
 
-          // Clear thinking indicator when agent responds
-          if (get().thinkingAgents.has(agentId)) {
-            set((s) => {
-              const next = new Set(s.thinkingAgents);
-              next.delete(agentId);
-              return { thinkingAgents: next };
-            });
-          }
-
           // Separate text content from tool calls
           let chatText = '';
           let activityText = '';
@@ -177,6 +168,15 @@ export const useGrooveStore = create((set, get) => ({
             (data.type === 'activity' && typeof data.data === 'string')
           );
           if (showAsChat) {
+            // Clear thinking indicator only when actual text renders as a chat bubble
+            if (get().thinkingAgents.has(agentId)) {
+              set((s) => {
+                const next = new Set(s.thinkingAgents);
+                next.delete(agentId);
+                return { thinkingAgents: next };
+              });
+            }
+
             const trimmed = chatText.trim();
             const history = { ...get().chatHistory };
             if (!history[agentId]) history[agentId] = [];
@@ -516,11 +516,35 @@ export const useGrooveStore = create((set, get) => ({
   async checkRecommendedTeam() {
     try {
       const data = await api.get('/recommended-team');
-      if (data && data.agents?.length) {
-        set({ recommendedTeam: data });
-      } else {
+      if (!data || !data.agents?.length) {
         set({ recommendedTeam: null });
+        return;
       }
+
+      // Check if all recommended roles already exist in the planner's team.
+      // If so, auto-delegate instead of showing the "Launch Team" modal.
+      const planners = get().agents.filter((a) => a.role === 'planner');
+      const planner = planners.sort((a, b) => (b.lastActivity || '').localeCompare(a.lastActivity || ''))[0];
+      const teamId = planner?.teamId;
+
+      if (teamId) {
+        const teamAgents = get().agents.filter((a) => a.teamId === teamId && a.role !== 'planner');
+        const phase1Roles = data.agents.filter((a) => !a.phase || a.phase === 1).map((a) => a.role);
+        const allExist = phase1Roles.every((role) => teamAgents.some((a) => a.role === role));
+
+        if (allExist && phase1Roles.length > 0) {
+          // Auto-delegate — all agents already exist in the team
+          set({ recommendedTeam: null });
+          const result = await api.post('/recommended-team/launch');
+          const names = result.agents?.map((a) => a.name).join(', ') || '';
+          get().addToast('success', 'Planner delegated work', names ? `→ ${names}` : undefined);
+          api.post('/cleanup').catch(() => {});
+          return;
+        }
+      }
+
+      // New agents needed — show the modal for approval
+      set({ recommendedTeam: data });
     } catch {
       set({ recommendedTeam: null });
     }

@@ -8,7 +8,7 @@ import chalk from 'chalk';
 import { runSetupWizard, saveKeysViaDaemon } from '../setup.js';
 
 export async function start(options) {
-  const grooveDir = resolve(process.cwd(), '.groove');
+  const grooveDir = process.env.GROOVE_DIR || resolve(process.cwd(), '.groove');
   const isFirstRun = !existsSync(resolve(grooveDir, 'config.json'));
 
   // ── First-run interactive wizard ────────────────────────────
@@ -34,6 +34,7 @@ export async function start(options) {
     const daemon = new Daemon({
       port: parseInt(options.port, 10),
       host: options.host,
+      grooveDir: process.env.GROOVE_DIR || undefined,
     });
 
     const shutdown = async () => {

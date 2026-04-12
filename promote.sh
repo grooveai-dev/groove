@@ -24,6 +24,7 @@ cleanup() {
   if [ -n "$STAGING_PID" ]; then
     kill $STAGING_PID 2>/dev/null || true
   fi
+  rm -rf "$PROJECT/.groove-staging" 2>/dev/null || true
   echo -e "\n${YELLOW}Aborted — nothing changed${RESET}"
   exit 0
 }
@@ -65,8 +66,11 @@ if [ ! -f ".groove/config.json" ]; then
   echo -e "  ${DIM}Created .groove/config.json (first-run skip)${RESET}"
 fi
 
-# Start staging daemon — redirect stdin so readline wizard can't block
-node packages/cli/bin/groove.js start --port $STAGING_PORT </dev/null &
+# Start staging daemon in an isolated groove dir so it doesn't kill the main daemon
+STAGING_DIR="$PROJECT/.groove-staging"
+mkdir -p "$STAGING_DIR"
+cp .groove/config.json "$STAGING_DIR/config.json" 2>/dev/null || echo '{"version":"0.1.0"}' > "$STAGING_DIR/config.json"
+GROOVE_DIR="$STAGING_DIR" node packages/cli/bin/groove.js start --port $STAGING_PORT </dev/null &
 STAGING_PID=$!
 
 # Wait for daemon to be ready
@@ -93,6 +97,7 @@ read -r
 # ── Cleanup staging ───────────────────────────────────────
 
 kill $STAGING_PID 2>/dev/null || true
+rm -rf "$STAGING_DIR" 2>/dev/null || true
 sleep 1
 
 # ── Version bump ──────────────────────────────────────────

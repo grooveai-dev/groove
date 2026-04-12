@@ -195,14 +195,14 @@ const AgentNode = memo(({ data, selected }) => {
           </div>
 
           {/* Context bar */}
-          <div className="mt-1.5 h-[2px] rounded-sm bg-[#262a32] overflow-hidden">
+          <div className="mt-1.5 h-[2px] rounded-sm bg-[#3e4451] overflow-hidden">
             <div
               className="h-full rounded-sm transition-all duration-700"
               style={{
                 width: `${Math.max(contextPct, 1)}%`,
-                background: contextPct > 80 ? '#e06c75'
-                  : contextPct > 60 ? '#e5c07b'
-                  : isAlive ? '#61afef' : '#333842',
+                background: contextPct > 80 ? 'var(--color-danger)'
+                  : contextPct > 60 ? 'var(--color-warning)'
+                  : isAlive ? 'var(--color-accent)' : '#3e4451',
               }}
             />
           </div>

@@ -98,6 +98,9 @@ export const useGrooveStore = create((set, get) => ({
   editorChangedFiles: {},
   editorRecentSaves: {},
 
+  // ── Onboarding ────────────────────────────────────────────
+  onboardingComplete: localStorage.getItem('groove:onboardingComplete') === 'true',
+
   // ── Connection ────────────────────────────────────────────
 
   connect() {
@@ -117,6 +120,7 @@ export const useGrooveStore = create((set, get) => ({
       get().fetchTeams();
       get().fetchApprovals();
       get().checkMarketplaceAuth();
+      if (!get().onboardingComplete) get().fetchOnboardingStatus();
     };
 
     ws.onmessage = (event) => {
@@ -663,7 +667,7 @@ export const useGrooveStore = create((set, get) => ({
         if (allExist && phase1Roles.length > 0) {
           // Auto-delegate — all agents already exist in the team
           set({ recommendedTeam: null });
-          const result = await api.post('/recommended-team/launch');
+          const result = await api.post('/recommended-team/launch', { teamId });
           const agents = result.agents || [];
           const names = agents.map((a) => a.name).join(', ') || '';
           get().addToast('success', 'Planner delegated work', names ? `→ ${names}` : undefined);
@@ -854,6 +858,48 @@ export const useGrooveStore = create((set, get) => ({
 
   async fetchProviders() {
     return api.get('/providers');
+  },
+
+  // ── Onboarding ────────────────────────────────────────────
+
+  async fetchOnboardingStatus() {
+    try {
+      const data = await api.get('/onboarding/status');
+      if (data?.complete) {
+        set({ onboardingComplete: true });
+        localStorage.setItem('groove:onboardingComplete', 'true');
+      }
+      return data;
+    } catch {
+      return null;
+    }
+  },
+
+  dismissOnboarding() {
+    set({ onboardingComplete: true });
+    localStorage.setItem('groove:onboardingComplete', 'true');
+    api.post('/onboarding/dismiss').catch(() => {});
+  },
+
+  async installProvider(providerId) {
+    try {
+      const data = await api.post('/onboarding/install-provider', { provider: providerId });
+      get().addToast('success', `${providerId} installed`);
+      return data;
+    } catch (err) {
+      get().addToast('error', `Install failed: ${providerId}`, err.message);
+      throw err;
+    }
+  },
+
+  async setDefaultProvider(provider, model) {
+    try {
+      await api.post('/onboarding/set-default', { provider, model });
+      get().addToast('success', `Default set to ${provider} (${model})`);
+    } catch (err) {
+      get().addToast('error', 'Failed to set default', err.message);
+      throw err;
+    }
   },
 
   // ── Chat ──────────────────────────────────────────────────

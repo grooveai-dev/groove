@@ -5,6 +5,7 @@ import express from 'express';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream, copyFileSync } from 'fs';
+import { spawn } from 'child_process';
 import { lookup as mimeLookup } from './mimetypes.js';
 import { listProviders, getProvider } from './providers/index.js';
 import { OllamaProvider } from './providers/ollama.js';
@@ -2212,19 +2213,27 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   // --- Recommended Team (from planner) ---
 
-  // Find recommended-team.json — check all agent working dirs, then daemon's grooveDir
+  // Find recommended-team.json — check planner agents first (they write the file),
+  // sorted by most recent activity so the latest planner's team wins.
   function findRecommendedTeam() {
-    // Check agent working dirs first (planner may have written there)
     const agents = daemon.registry.getAll();
-    for (const agent of agents) {
-      if (agent.workingDir) {
-        const p = resolve(agent.workingDir, '.groove', 'recommended-team.json');
-        if (existsSync(p)) return { path: p, teamId: agent.teamId || null, agentId: agent.id || null };
-      }
+    const planners = agents
+      .filter((a) => a.role === 'planner' && a.workingDir)
+      .sort((a, b) => (b.lastActivity || b.spawnedAt || '').localeCompare(a.lastActivity || a.spawnedAt || ''));
+
+    // Check planner workingDirs first — most recently active planner wins
+    for (const planner of planners) {
+      const p = resolve(planner.workingDir, '.groove', 'recommended-team.json');
+      if (existsSync(p)) return { path: p, teamId: planner.teamId || null, agentId: planner.id || null };
     }
-    // Fallback to daemon's .groove dir
+
+    // Fallback to daemon's .groove dir — try to attribute to most recent planner
     const p = resolve(daemon.grooveDir, 'recommended-team.json');
-    if (existsSync(p)) return { path: p, teamId: null, agentId: null };
+    if (existsSync(p)) {
+      const fallbackTeamId = planners[0]?.teamId || null;
+      const fallbackAgentId = planners[0]?.id || null;
+      return { path: p, teamId: fallbackTeamId, agentId: fallbackAgentId };
+    }
     return null;
   }
 
@@ -2931,6 +2940,148 @@ Keep responses concise. Help them think, don't lecture them about the system the
     res.json(s);
   });
 
+  // --- Onboarding (Electron wizard) ---
+
+  const INSTALLABLE_PROVIDERS = {
+    'claude-code': '@anthropic-ai/claude-code',
+    'codex': '@openai/codex',
+    'gemini': '@google/gemini-cli',
+  };
+
+  app.get('/api/onboarding/status', (req, res) => {
+    const providers = listProviders();
+    const enriched = providers.map((p) => {
+      const hasKey = daemon.credentials.hasKey(p.id);
+      let authStatus = 'not-configured';
+      if (p.authType === 'subscription') {
+        authStatus = p.installed ? 'authenticated' : 'not-configured';
+      } else if (p.authType === 'api-key') {
+        authStatus = hasKey ? 'key-set' : 'not-configured';
+        if (p.authStatus?.authenticated) authStatus = 'authenticated';
+      } else if (p.authType === 'local') {
+        authStatus = p.installed ? 'authenticated' : 'not-configured';
+      }
+      return {
+        id: p.id,
+        displayName: p.name,
+        installed: p.installed,
+        authType: p.authType,
+        authStatus,
+        hasKey,
+        models: p.models,
+        installCommand: p.installCommand,
+        installable: !!INSTALLABLE_PROVIDERS[p.id],
+      };
+    });
+
+    const dismissed = !!(daemon.config.onboardingDismissed);
+    const hasReadyProvider = enriched.some((p) =>
+      p.installed && (p.authStatus === 'authenticated' || p.authStatus === 'key-set'),
+    );
+
+    res.json({
+      complete: dismissed || hasReadyProvider,
+      dismissed,
+      providers: enriched,
+      defaultProvider: daemon.config.defaultProvider || 'claude-code',
+      defaultModel: daemon.config.defaultModel || null,
+    });
+  });
+
+  app.post('/api/onboarding/dismiss', async (req, res) => {
+    daemon.config.onboardingDismissed = true;
+    const { saveConfig } = await import('./firstrun.js');
+    saveConfig(daemon.grooveDir, daemon.config);
+    daemon.audit.log('onboarding.dismiss', {});
+    daemon.broadcast({ type: 'onboarding:dismissed' });
+    res.json({ ok: true });
+  });
+
+  app.post('/api/onboarding/install-provider', (req, res) => {
+    const { provider } = req.body;
+    if (!provider || typeof provider !== 'string') {
+      return res.status(400).json({ error: 'provider is required' });
+    }
+    const pkg = INSTALLABLE_PROVIDERS[provider];
+    if (!pkg) {
+      return res.status(400).json({ error: `Provider '${provider}' is not installable via npm. Valid: ${Object.keys(INSTALLABLE_PROVIDERS).join(', ')}` });
+    }
+
+    res.setHeader('Content-Type', 'application/x-ndjson');
+    res.setHeader('Transfer-Encoding', 'chunked');
+    res.setHeader('Cache-Control', 'no-cache');
+
+    const write = (obj) => {
+      try { res.write(JSON.stringify(obj) + '\n'); } catch { /* client disconnected */ }
+    };
+
+    write({ status: 'installing', output: `Installing ${pkg}...`, progress: 0 });
+
+    const proc = spawn('npm', ['install', '-g', pkg], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, NODE_ENV: undefined },
+    });
+
+    let output = '';
+    let errOutput = '';
+
+    proc.stdout.on('data', (data) => {
+      output += data.toString();
+      write({ status: 'installing', output: data.toString().trim(), progress: 50 });
+    });
+
+    proc.stderr.on('data', (data) => {
+      errOutput += data.toString();
+      const line = data.toString().trim();
+      if (line) write({ status: 'installing', output: line, progress: 50 });
+    });
+
+    proc.on('close', (code) => {
+      const providerObj = getProvider(provider);
+      const installed = providerObj ? providerObj.constructor.isInstalled() : false;
+
+      if (code === 0 && installed) {
+        write({ status: 'complete', output: `${pkg} installed successfully`, progress: 100, installed: true });
+        daemon.audit.log('onboarding.installProvider', { provider, pkg, success: true });
+        daemon.broadcast({ type: 'onboarding:provider-installed', provider });
+      } else {
+        const reason = code !== 0
+          ? (errOutput || output).slice(-500)
+          : 'Install succeeded but provider binary not found in PATH';
+        write({ status: 'error', output: reason, progress: 100, installed: false });
+        daemon.audit.log('onboarding.installProvider', { provider, pkg, success: false, code });
+      }
+      res.end();
+    });
+
+    proc.on('error', (err) => {
+      write({ status: 'error', output: `Failed to start npm: ${err.message}`, progress: 100, installed: false });
+      res.end();
+    });
+
+    req.on('close', () => {
+      try { proc.kill(); } catch { /* already exited */ }
+    });
+  });
+
+  app.post('/api/onboarding/set-default', async (req, res) => {
+    const { provider, model } = req.body;
+    const validProviders = ['claude-code', 'codex', 'gemini', 'ollama'];
+    if (!provider || !validProviders.includes(provider)) {
+      return res.status(400).json({ error: `Invalid provider. Valid: ${validProviders.join(', ')}` });
+    }
+
+    daemon.config.defaultProvider = provider;
+    if (model && typeof model === 'string' && model.length <= 100) {
+      daemon.config.defaultModel = model.trim();
+    }
+    const { saveConfig } = await import('./firstrun.js');
+    saveConfig(daemon.grooveDir, daemon.config);
+    daemon.audit.log('onboarding.setDefault', { provider, model: model || null });
+    daemon.broadcast({ type: 'onboarding:default-changed', provider, model });
+    res.json({ ok: true });
+  });
+
   // --- Config ---
 
   app.get('/api/config', (req, res) => {
@@ -2941,6 +3092,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     const ALLOWED_KEYS = [
       'port', 'journalistInterval', 'rotationThreshold', 'autoRotation',
       'qcThreshold', 'maxAgents', 'defaultProvider', 'defaultWorkingDir',
+      'onboardingDismissed', 'defaultModel',
     ];
     for (const key of Object.keys(req.body)) {
       if (!ALLOWED_KEYS.includes(key)) {

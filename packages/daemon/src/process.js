@@ -584,69 +584,7 @@ For normal file edits within your scope, proceed without review.
     // Capture stdout (stream-json from Claude Code)
     proc.stdout.on('data', (chunk) => {
       logStream.write(chunk);
-
-      const output = provider.parseOutput(chunk.toString());
-      if (output) {
-        // Feed to classifier for complexity tracking (informs model routing)
-        this.daemon.classifier.addEvent(agent.id, output);
-
-        const updates = { lastActivity: new Date().toISOString() };
-        // Capture session_id for --resume support (zero cold-start continuation)
-        if (output.sessionId) {
-          updates.sessionId = output.sessionId;
-        }
-        if (output.tokensUsed !== undefined && output.tokensUsed > 0) {
-          const current = registry.get(agent.id);
-          if (current) {
-            updates.tokensUsed = current.tokensUsed + output.tokensUsed;
-            // Feed token tracker with full breakdown for savings calculations
-            this.daemon.tokens.record(agent.id, {
-              tokens: output.tokensUsed,
-              inputTokens: output.inputTokens,
-              outputTokens: output.outputTokens,
-              cacheReadTokens: output.cacheReadTokens,
-              cacheCreationTokens: output.cacheCreationTokens,
-              model: output.model,
-              estimatedCostUsd: output.estimatedCostUsd,
-            });
-            // Feed router cost log for tier tracking
-            const tier = this.daemon.classifier.classify(agent.id);
-            this.daemon.router.recordUsage(agent.id, output.model || current.model, output.tokensUsed, tier);
-          }
-        }
-        // Record session result data (cost, duration, turns)
-        if (output.type === 'result') {
-          this.daemon.tokens.recordResult(agent.id, {
-            costUsd: output.cost, durationMs: output.duration, turns: output.turns,
-          });
-          const resultUpdates = {};
-          if (output.cost) resultUpdates.costUsd = (registry.get(agent.id)?.costUsd || 0) + output.cost;
-          if (output.duration) resultUpdates.durationMs = output.duration;
-          if (output.turns) resultUpdates.turns = output.turns;
-          if (Object.keys(resultUpdates).length > 0) registry.update(agent.id, resultUpdates);
-        }
-        if (output.contextUsage !== undefined) {
-          updates.contextUsage = output.contextUsage;
-
-          const peak = this.peakContextUsage.get(agent.id) || 0;
-          if (output.contextUsage > peak) {
-            this.peakContextUsage.set(agent.id, output.contextUsage);
-          } else if (peak >= COMPACTION_MIN_PEAK) {
-            const drop = peak - output.contextUsage;
-            if (drop >= COMPACTION_DROP_THRESHOLD * peak) {
-              this.daemon.rotator.recordNaturalCompaction(agent, peak, output.contextUsage);
-              this.peakContextUsage.set(agent.id, output.contextUsage);
-            }
-          }
-        }
-        registry.update(agent.id, updates);
-
-        this.daemon.broadcast({
-          type: 'agent:output',
-          agentId: agent.id,
-          data: output,
-        });
-      }
+      this._processStdoutChunk(agent.id, provider, chunk);
     });
 
     // Capture stderr — collect for crash reporting
@@ -763,6 +701,33 @@ For normal file edits within your scope, proceed without review.
    * Shared output handler for agent loop events.
    * Feeds registry, token tracker, classifier, router, and broadcasts to GUI.
    */
+  // Buffer stdout across chunks and parse each complete stream-json line
+  // separately. Two bugs this fixes:
+  //   1. A JSON line can span chunk boundaries — parsing each chunk in isolation
+  //      drops the partial line, so big assistant turns vanish.
+  //   2. A single assistant msg_id emits multiple JSON lines (thinking, text,
+  //      tool_use), and parseOutput merges all events in its input into one
+  //      output — keeping only the first activity's content. Text blocks after
+  //      a thinking block got silently dropped, which is why long planner
+  //      plans never reached chat.
+  _processStdoutChunk(agentId, provider, chunk) {
+    const handle = this.handles.get(agentId);
+    if (!handle) return;
+
+    handle.stdoutBuffer = (handle.stdoutBuffer || '') + chunk.toString();
+    const lastNewline = handle.stdoutBuffer.lastIndexOf('\n');
+    if (lastNewline === -1) return;
+
+    const complete = handle.stdoutBuffer.slice(0, lastNewline + 1);
+    handle.stdoutBuffer = handle.stdoutBuffer.slice(lastNewline + 1);
+
+    for (const line of complete.split('\n')) {
+      if (!line) continue;
+      const output = provider.parseOutput(line);
+      if (output) this._handleAgentOutput(agentId, output);
+    }
+  }
+
   _handleAgentOutput(agentId, output) {
     const { registry, tokens, classifier, router } = this.daemon;
     const agent = registry.get(agentId);
@@ -1079,40 +1044,7 @@ For normal file edits within your scope, proceed without review.
     // Same stdout/stderr/exit handling as spawn
     proc.stdout.on('data', (chunk) => {
       logStream.write(chunk);
-      const output = provider.parseOutput(chunk.toString());
-      if (output) {
-        this.daemon.classifier.addEvent(newAgent.id, output);
-        const updates = { lastActivity: new Date().toISOString() };
-        if (output.sessionId) updates.sessionId = output.sessionId;
-        if (output.tokensUsed !== undefined && output.tokensUsed > 0) {
-          const current = registry.get(newAgent.id);
-          if (current) {
-            updates.tokensUsed = current.tokensUsed + output.tokensUsed;
-            this.daemon.tokens.record(newAgent.id, {
-              tokens: output.tokensUsed,
-              inputTokens: output.inputTokens,
-              outputTokens: output.outputTokens,
-              cacheReadTokens: output.cacheReadTokens,
-              cacheCreationTokens: output.cacheCreationTokens,
-              model: output.model,
-              estimatedCostUsd: output.estimatedCostUsd,
-            });
-          }
-        }
-        if (output.type === 'result') {
-          this.daemon.tokens.recordResult(newAgent.id, {
-            costUsd: output.cost, durationMs: output.duration, turns: output.turns,
-          });
-          const resultUpdates = {};
-          if (output.cost) resultUpdates.costUsd = (registry.get(newAgent.id)?.costUsd || 0) + output.cost;
-          if (output.duration) resultUpdates.durationMs = output.duration;
-          if (output.turns) resultUpdates.turns = output.turns;
-          if (Object.keys(resultUpdates).length > 0) registry.update(newAgent.id, resultUpdates);
-        }
-        if (output.contextUsage !== undefined) updates.contextUsage = output.contextUsage;
-        registry.update(newAgent.id, updates);
-        this.daemon.broadcast({ type: 'agent:output', agentId: newAgent.id, data: output });
-      }
+      this._processStdoutChunk(newAgent.id, provider, chunk);
     });
 
     proc.stderr.on('data', (chunk) => { logStream.write(`[stderr] ${chunk}`); });

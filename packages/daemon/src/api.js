@@ -2143,16 +2143,21 @@ Keep responses concise. Help them think, don't lecture them about the system the
           !reused.some((r) => r.id === a.id)
         );
 
-        if (existing && prompt) {
-          // Reuse existing agent: kill the old process and spawn fresh with full context.
-          // This ensures the agent gets intro context, project map, and design system —
-          // resume() bypasses all of that and the agent spawns blind.
+        if (existing) {
+          // Role already exists in this team — never spawn a duplicate.
+          // With a prompt: kill+respawn with fresh context and the new task.
+          // Without a prompt: keep the existing agent as-is (the planner often
+          // emits Mode-1 shaped JSON with empty prompts on follow-up; if we
+          // let that fall through to "spawn new", we get 2 backends, 2 fronts).
+          if (!prompt) {
+            reused.push({ id: existing.id, name: existing.name, role: existing.role, reusedFrom: existing.name });
+            phase1Ids.push(existing.id);
+            continue;
+          }
           try {
-            // Kill old process if running
             if (existing.status === 'running' || existing.status === 'starting') {
               try { await daemon.processes.kill(existing.id); } catch { /* already dead */ }
             }
-            // Remove old entry
             daemon.registry.remove(existing.id);
             daemon.locks.release(existing.id);
 
@@ -2176,7 +2181,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
             failed.push({ role: config.role, error: `reuse failed: ${err.message}` });
           }
         } else {
-          // No matching idle agent — spawn a new one
+          // No matching agent — spawn a new one
           try {
             const validated = validateAgentConfig({
               role: config.role,

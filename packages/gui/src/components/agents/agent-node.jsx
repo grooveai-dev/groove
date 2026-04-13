@@ -1,6 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { memo, useState, useMemo, useRef, useEffect } from 'react';
+import { memo, useMemo, useRef, useEffect } from 'react';
 import { Handle, Position } from '@xyflow/react';
+import { Maximize2, X } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { statusColor } from '../../lib/status';
 import { fmtNum, fmtDollar, fmtUptime } from '../../lib/format';
@@ -58,13 +59,14 @@ const AgentNode = memo(({ data, selected }) => {
   const contextPct = Math.round((agent.contextUsage || 0) * 100);
   const sColor = statusColor(agent.status);
   const tokens = agent.tokensUsed || 0;
-  const [hovered, setHovered] = useState(false);
   const nodeRef = useRef(null);
+  const expanded = useGrooveStore((s) => !!s.expandedNodes[agent.id]);
+  const toggleExpanded = useGrooveStore((s) => s.toggleNodeExpanded);
 
   useEffect(() => {
     const rfNode = nodeRef.current?.closest('.react-flow__node');
-    if (rfNode) rfNode.style.zIndex = hovered ? '1000' : '';
-  }, [hovered]);
+    if (rfNode) rfNode.style.zIndex = expanded ? '1000' : '';
+  }, [expanded]);
 
   const activityLog = useGrooveStore((s) => s.activityLog[agent.id]) || EMPTY;
   const tokenTimeline = useGrooveStore((s) => s.tokenTimeline[agent.id]) || EMPTY;
@@ -84,18 +86,9 @@ const AgentNode = memo(({ data, selected }) => {
     : 0;
 
   return (
-    <div
-      ref={nodeRef}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
+    <div ref={nodeRef}>
       <div
-        className="w-[220px] overflow-hidden transition-all duration-200 ease-out"
-        style={{
-          background: hovered ? '#141720' : '#1c1f26',
-          border: `1px solid ${hovered ? '#2e3640' : selected ? '#2e323a' : '#262a32'}`,
-          borderRadius: 4,
-        }}
+        className={`w-[220px] overflow-hidden rounded-[4px] transition-all duration-200 ease-out bg-[#1c1f26] hover:bg-[#141720] border border-solid ${selected ? 'border-[#2e323a]' : 'border-[#262a32]'} hover:border-[#2e3640]`}
       >
         {/* Handles */}
         <Handle id="top" type="target" position={Position.Top} className="!w-1 !h-1 !bg-transparent !border-0" />
@@ -137,6 +130,12 @@ const AgentNode = memo(({ data, selected }) => {
             >
               {STATUS_SHORT[agent.status] || agent.status}
             </span>
+            <button
+              className="text-[#505862] hover:text-[#8b929e] cursor-pointer transition-colors flex-shrink-0"
+              onClick={(e) => { e.stopPropagation(); toggleExpanded(agent.id); }}
+            >
+              {expanded ? <X size={10} /> : <Maximize2 size={10} />}
+            </button>
           </div>
 
           <div className="flex items-center gap-1.5 mt-1.5">
@@ -169,10 +168,10 @@ const AgentNode = memo(({ data, selected }) => {
           </div>
         </div>
 
-        {/* ── Expanded stats (morphs on hover) ────────── */}
+        {/* ── Expanded stats (click-to-open) ─────────── */}
         <div
           className="grid transition-[grid-template-rows] duration-200 ease-out"
-          style={{ gridTemplateRows: hovered ? '1fr' : '0fr' }}
+          style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
         >
           <div className="overflow-hidden">
             <div className="mx-3 border-t border-white/[0.04]" />

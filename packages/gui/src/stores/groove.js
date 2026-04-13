@@ -47,6 +47,9 @@ export const useGrooveStore = create((set, get) => ({
   teamDetailPanels: {},            // { [teamId]: detailPanel } — persists panel state per team
   commandPaletteOpen: false,
 
+  // ── Node expansion (click-to-open persistent panels) ───────
+  expandedNodes: loadJSON('groove:expandedNodes'),
+
   // ── Layout persistence ────────────────────────────────────
   detailPanelWidth: Number(localStorage.getItem('groove:detailWidth')) || 480,
   terminalVisible: localStorage.getItem('groove:terminalVisible') === 'true',
@@ -473,6 +476,14 @@ export const useGrooveStore = create((set, get) => ({
     localStorage.setItem('groove:terminalHeight', String(h));
   },
   setTerminalFullHeight(v) { set({ terminalFullHeight: v }); },
+
+  toggleNodeExpanded(id) {
+    const expanded = { ...get().expandedNodes };
+    expanded[id] = !expanded[id];
+    if (!expanded[id]) delete expanded[id];
+    set({ expandedNodes: expanded });
+    persistJSON('groove:expandedNodes', expanded);
+  },
 
   // ── Toasts ────────────────────────────────────────────────
 

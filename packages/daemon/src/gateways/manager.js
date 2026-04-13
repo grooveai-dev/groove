@@ -816,18 +816,31 @@ export class GatewayManager {
 
       // Register phase 2 for auto-spawn
       if (phase2.length > 0 && phase1Ids.length > 0) {
-        this.daemon._pendingPhase2 = this.daemon._pendingPhase2 || [];
-        this.daemon._pendingPhase2.push({
-          waitFor: phase1Ids,
-          agents: phase2.map((c) => ({
-            role: c.role, scope: c.scope || [], prompt: c.prompt || '',
-            provider: c.provider || 'claude-code', model: c.model || 'auto',
-            permission: c.permission || 'auto',
-            workingDir: c.workingDir || defaultDir,
-            name: c.name || undefined,
-            teamId: defaultTeamId,
-          })),
-        });
+        // Dedup: if a running idle fullstack already exists in this team,
+        // skip the phase2 queue — _triggerIdleQC will notify it when phase 1 completes
+        const teamAgents = this.daemon.registry.getAll().filter((a) => a.teamId === defaultTeamId);
+        const existingQC = teamAgents.find((a) =>
+          a.role === 'fullstack' &&
+          (a.status === 'running' || a.status === 'starting')
+        );
+        const qcIsIdle = existingQC && (this.daemon.journalist?.getAgentFiles(existingQC) || []).length === 0;
+
+        if (existingQC && qcIsIdle) {
+          this.daemon.audit.log('phase2.skipQueue', { existingQC: existingQC.id, name: existingQC.name, reason: 'idle fullstack exists', source: 'gateway' });
+        } else {
+          this.daemon._pendingPhase2 = this.daemon._pendingPhase2 || [];
+          this.daemon._pendingPhase2.push({
+            waitFor: phase1Ids,
+            agents: phase2.map((c) => ({
+              role: c.role, scope: c.scope || [], prompt: c.prompt || '',
+              provider: c.provider || 'claude-code', model: c.model || 'auto',
+              permission: c.permission || 'auto',
+              workingDir: c.workingDir || defaultDir,
+              name: c.name || undefined,
+              teamId: defaultTeamId,
+            })),
+          });
+        }
       }
 
       this.daemon.audit.log('team.launch', {

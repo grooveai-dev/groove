@@ -19,7 +19,7 @@ function DashboardSkeleton() {
   return (
     <div className="flex-1 grid gap-px p-0" style={{
       gridTemplateRows: 'auto minmax(0, 1fr) minmax(0, 1fr)',
-      gridTemplateColumns: '3fr 1.5fr 1.5fr',
+      gridTemplateColumns: '2fr 2.5fr 1.5fr',
       background: '#282c34',
     }}>
       <div className="col-span-3"><Skeleton className="h-[72px] rounded-none" /></div>
@@ -114,7 +114,7 @@ export default function DashboardView() {
 
       <div className="flex-1 min-h-0 grid" style={{
         gridTemplateRows: 'minmax(0, 1fr) minmax(0, 1fr)',
-        gridTemplateColumns: '3fr 1.5fr 1.5fr',
+        gridTemplateColumns: '2fr 2.5fr 1.5fr',
         background: '#282c34',
         gap: '1px',
       }}>

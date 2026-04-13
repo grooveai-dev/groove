@@ -2206,18 +2206,30 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
       // Phase 2 agents also scoped to projectWorkingDir
       if (phase2.length > 0 && phase1Ids.length > 0) {
-        daemon._pendingPhase2 = daemon._pendingPhase2 || [];
-        daemon._pendingPhase2.push({
-          waitFor: phase1Ids,
-          agents: phase2.map((c) => ({
-            role: c.role, scope: c.scope || [], prompt: c.prompt || '',
-            provider: c.provider || undefined, model: c.model || 'auto',
-            permission: c.permission || 'auto',
-            workingDir: c.workingDir || projectWorkingDir,
-            name: c.name || undefined,
-            teamId: defaultTeamId,
-          })),
-        });
+        // Dedup: if a running idle fullstack already exists in this team,
+        // skip the phase2 queue — _triggerIdleQC will notify it when phase 1 completes
+        const existingQC = teamAgents.find((a) =>
+          a.role === 'fullstack' &&
+          (a.status === 'running' || a.status === 'starting')
+        );
+        const qcIsIdle = existingQC && (daemon.journalist?.getAgentFiles(existingQC) || []).length === 0;
+
+        if (existingQC && qcIsIdle) {
+          daemon.audit.log('phase2.skipQueue', { existingQC: existingQC.id, name: existingQC.name, reason: 'idle fullstack exists' });
+        } else {
+          daemon._pendingPhase2 = daemon._pendingPhase2 || [];
+          daemon._pendingPhase2.push({
+            waitFor: phase1Ids,
+            agents: phase2.map((c) => ({
+              role: c.role, scope: c.scope || [], prompt: c.prompt || '',
+              provider: c.provider || undefined, model: c.model || 'auto',
+              permission: c.permission || 'auto',
+              workingDir: c.workingDir || projectWorkingDir,
+              name: c.name || undefined,
+              teamId: defaultTeamId,
+            })),
+          });
+        }
       }
 
       daemon.audit.log('team.launch', {

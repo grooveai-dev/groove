@@ -827,6 +827,38 @@ For normal file edits within your scope, proceed without review.
         // so QC also waits for instructions instead of auditing nothing
         for (const config of group.agents) {
           if (phase1Idle) config.prompt = '';
+
+          // Dedup: check if team already has an agent with this role
+          const teamId = config.teamId || this.daemon.teams.getDefault()?.id || null;
+          const existing = teamId ? registry.getAll().find((a) =>
+            a.teamId === teamId && a.role === config.role && a.id !== undefined
+          ) : null;
+
+          if (existing && (existing.status === 'running' || existing.status === 'starting')) {
+            // Agent already active — reuse it instead of spawning a duplicate
+            if (config.prompt) {
+              this.sendMessage(existing.id, config.prompt).catch((err) => {
+                console.error(`[Groove] Phase 2 reuse message failed for ${existing.name}: ${err.message}`);
+              });
+            }
+            this.daemon.audit.log('phase2.reuse', { id: existing.id, name: existing.name, role: existing.role });
+            this.daemon.broadcast({
+              type: 'phase2:spawned',
+              agentId: existing.id,
+              name: existing.name,
+              role: existing.role,
+              reused: true,
+            });
+            continue;
+          }
+
+          if (existing && (existing.status === 'completed' || existing.status === 'stopped' || existing.status === 'crashed' || existing.status === 'killed')) {
+            // Previous agent finished — remove it and respawn with the same name
+            config.name = existing.name;
+            registry.remove(existing.id);
+            this.daemon.locks.release(existing.id);
+          }
+
           try {
             const validated = validateAgentConfig(config);
             if (!validated.teamId) validated.teamId = this.daemon.teams.getDefault()?.id || null;

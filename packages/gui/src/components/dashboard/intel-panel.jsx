@@ -118,7 +118,7 @@ function HealthTab({ tokens, rotation, agentBreakdown }) {
             Quality
             <InfoTip text="Average session quality score (0-100). Based on error rate, tool failures, repetitions, and file churn. Below 40 triggers auto-rotation to prevent wasted tokens." />
           </div>
-          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: qualityColor(avgQuality) }}>
+          <div className="text-base font-mono font-bold text-text-1 tabular-nums leading-none">
             {avgQuality ?? '—'}
           </div>
         </div>
@@ -127,7 +127,7 @@ function HealthTab({ tokens, rotation, agentBreakdown }) {
             Rotations
             <InfoTip text="Context rotations: quality-based (q), context threshold (c), and natural compactions (n) from provider-managed context resets. Each rotation preserves progress via a journalist handoff brief." />
           </div>
-          <div className="text-2xl font-mono font-bold text-text-0 tabular-nums leading-none">
+          <div className="text-base font-mono font-bold text-text-1 tabular-nums leading-none">
             {rotation?.totalRotations || 0}
           </div>
           {(rotation?.qualityRotations > 0 || rotation?.contextRotations > 0 || rotation?.naturalCompactions > 0) && (
@@ -141,7 +141,7 @@ function HealthTab({ tokens, rotation, agentBreakdown }) {
             Cache
             <InfoTip text="Prompt cache hit rate. Cache reads are ~90% cheaper than regular input tokens. Managed by your AI provider — GROOVE tracks it, doesn't control it." />
           </div>
-          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: HEX.accent }}>
+          <div className="text-base font-mono font-bold text-text-1 tabular-nums leading-none">
             {fmtPct((tokens?.cacheHitRate || 0) * 100)}
           </div>
         </div>
@@ -150,7 +150,7 @@ function HealthTab({ tokens, rotation, agentBreakdown }) {
             Success
             <InfoTip text="Agent completion rate. Completed agents vs. crashed agents. High success rate means agents are finishing tasks without errors." />
           </div>
-          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: completionRate >= 90 ? '#4ae168' : '#e5c07b' }}>
+          <div className="text-base font-mono font-bold text-text-1 tabular-nums leading-none">
             {completionRate}%
           </div>
         </div>

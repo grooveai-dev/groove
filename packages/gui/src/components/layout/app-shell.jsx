@@ -9,6 +9,7 @@ import { BreadcrumbBar } from './breadcrumb-bar';
 import { StatusBar } from './status-bar';
 import { DetailPanel } from './detail-panel';
 import { CommandPalette } from './command-palette';
+import { ApprovalModal } from '../ui/approval-modal';
 import { TeamTabBar } from '../../views/agents';
 
 export function AppShell({ children, detailContent, terminalContent }) {
@@ -113,6 +114,7 @@ export function AppShell({ children, detailContent, terminalContent }) {
         />
 
         <CommandPalette />
+        <ApprovalModal />
         <ToastContainer />
       </div>
     </TooltipProvider>

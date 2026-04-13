@@ -81,7 +81,7 @@ function ProgressBar({ label, value, total, color }) {
           <span className="text-2xs font-mono text-text-3 tabular-nums w-10 text-right">{fmtNum(value)}</span>
         </div>
       </div>
-      <div className="h-[7px] rounded-full overflow-hidden" style={{ background: 'rgba(51,175,188,0.08)' }}>
+      <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(51,175,188,0.08)' }}>
         <div
           className="h-full rounded-full transition-all duration-500"
           style={{ width: `${Math.min(pct, 100)}%`, background: color }}

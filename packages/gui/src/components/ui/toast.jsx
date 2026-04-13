@@ -78,7 +78,7 @@ export function ToastContainer() {
   const toasts = useGrooveStore((s) => s.toasts);
 
   return (
-    <div className="fixed bottom-4 right-4 z-[100] flex flex-col-reverse gap-2">
+    <div className="fixed bottom-10 left-[60px] z-[100] flex flex-col-reverse gap-2">
       <AnimatePresence mode="popLayout">
         {toasts.slice(-3).map((toast) => (
           <ToastItem key={toast.id} toast={toast} />

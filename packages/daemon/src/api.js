@@ -12,6 +12,35 @@ import { validateAgentConfig } from './validate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+async function _executeApprovalRetry(daemon, approval) {
+  const rp = approval.retryPayload;
+  if (!rp) return;
+  try {
+    let resultText;
+    if (rp.type === 'integration_exec') {
+      const result = await daemon.mcpManager.execTool(rp.integrationId, rp.tool, rp.params);
+      resultText = JSON.stringify(result).slice(0, 2000);
+      daemon.audit.log('approval.autoRetry', { type: rp.type, integrationId: rp.integrationId, tool: rp.tool, agentId: rp.agentId, approvalId: approval.id });
+    } else if (rp.type === 'google_drive_upload') {
+      const result = await daemon.integrations.uploadToGoogleDrive(rp.filePath, {
+        name: rp.name, folderId: rp.folderId, convert: rp.convert !== false,
+      });
+      resultText = JSON.stringify(result).slice(0, 2000);
+      daemon.audit.log('approval.autoRetry', { type: rp.type, filePath: rp.filePath, agentId: rp.agentId, approvalId: approval.id });
+    } else {
+      return;
+    }
+    if (rp.agentId) {
+      await daemon.processes.sendMessage(rp.agentId, `Your ${rp.type === 'integration_exec' ? 'integration action' : 'upload'} was approved and executed successfully. Result: ${resultText}`);
+    }
+  } catch (err) {
+    console.log(`[Groove] Auto-retry for approval ${approval.id} failed: ${err.message}`);
+    if (rp.agentId) {
+      daemon.processes.sendMessage(rp.agentId, `Your ${rp.type === 'integration_exec' ? 'integration action' : 'upload'} was approved but execution failed: ${err.message}`).catch(() => {});
+    }
+  }
+}
+
 export function createApi(app, daemon) {
   // CORS — restrict to localhost + bound interface origins
   app.use((req, res, next) => {
@@ -557,10 +586,15 @@ export function createApi(app, daemon) {
     });
   });
 
-  app.post('/api/approvals/:id/approve', (req, res) => {
+  app.post('/api/approvals/:id/approve', async (req, res) => {
     const result = daemon.supervisor.approve(req.params.id);
     if (!result) return res.status(404).json({ error: 'Approval not found' });
     daemon.audit.log('approval.approve', { id: req.params.id });
+    if (result.retryPayload) {
+      _executeApprovalRetry(daemon, result).catch((err) => {
+        console.log(`[Groove] Approval auto-retry failed: ${err.message}`);
+      });
+    }
     res.json(result);
   });
 
@@ -1336,6 +1370,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
             tool,
             params: paramsSummary,
             description: `${entry.name}: ${tool}`,
+          }, {
+            type: 'integration_exec',
+            integrationId,
+            tool,
+            params: params || {},
+            agentId: agentId || null,
           });
           daemon.audit.log('integration.exec.blocked', { integrationId, tool, approvalId: approval.id, agentId });
           return res.status(202).json({
@@ -1390,6 +1430,13 @@ Keep responses concise. Help them think, don't lecture them about the system the
             filePath,
             name: name || filePath.split('/').pop(),
             description: `Upload to Google Drive: ${name || filePath.split('/').pop()}`,
+          }, {
+            type: 'google_drive_upload',
+            filePath,
+            name: name || filePath.split('/').pop(),
+            folderId: folderId || null,
+            convert: convert !== false,
+            agentId: agentId || null,
           });
           daemon.audit.log('integration.upload.blocked', { filePath, approvalId: approval.id, agentId });
           return res.status(202).json({
@@ -2171,6 +2218,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
               permission: config.permission || existing.permission || 'auto',
               workingDir: existing.workingDir || projectWorkingDir,
               name: existing.name,
+              integrationApproval: config.integrationApproval || existing.integrationApproval || undefined,
             });
             validated.teamId = defaultTeamId;
             const newAgent = await daemon.processes.spawn(validated);
@@ -2192,6 +2240,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
               permission: config.permission || 'auto',
               workingDir: config.workingDir || projectWorkingDir,
               name: config.name || undefined,
+              integrationApproval: config.integrationApproval || undefined,
             });
             validated.teamId = defaultTeamId;
             const agent = await daemon.processes.spawn(validated);

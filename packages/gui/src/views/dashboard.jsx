@@ -112,54 +112,53 @@ export default function DashboardView() {
 
       <KpiStrip kpis={kpis} />
 
-      <div className="flex-1 min-h-0 grid" style={{
-        gridTemplateRows: 'minmax(0, 1fr) minmax(0, 1fr)',
-        gridTemplateColumns: '2fr 2.5fr 1.5fr',
-        background: '#282c34',
-        gap: '1px',
-      }}>
-        <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 relative">
-          <TokenChart data={snapshots} />
-        </div>
-
-        <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-l border-border">
-          <div className="px-3 pt-2.5 pb-1">
-            <span className="text-2xs font-mono text-text-3 uppercase tracking-widest">Cache Performance</span>
+      <div className="flex-1 min-h-0 flex flex-col" style={{ background: '#282c34', gap: '1px' }}>
+        <div className="min-h-0 flex-1 grid" style={{ gridTemplateColumns: '3fr 1.5fr 1.5fr', gap: '0 1px' }}>
+          <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 relative">
+            <TokenChart data={snapshots} />
           </div>
-          <CacheRing
-            cacheRead={tokens.cacheReadTokens}
-            cacheCreation={tokens.cacheCreationTokens}
-            totalInput={tokens.totalInputTokens}
-          />
-        </div>
 
-        <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-l border-border">
-          <div className="px-3 pt-2.5 pb-1">
-            <span className="text-2xs font-mono text-text-3 uppercase tracking-widest">Model Routing</span>
+          <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-l border-border">
+            <div className="px-3 pt-2.5 pb-1">
+              <span className="text-2xs font-mono text-text-3 uppercase tracking-widest">Cache Performance</span>
+            </div>
+            <CacheRing
+              cacheRead={tokens.cacheReadTokens}
+              cacheCreation={tokens.cacheCreationTokens}
+              totalInput={tokens.totalInputTokens}
+            />
           </div>
-          <RoutingChart routing={routing} agentBreakdown={agentBreakdown} />
-        </div>
 
-        <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-t border-border">
-          <div className="px-3 pt-2.5 pb-1 flex-shrink-0">
-            <span className="text-2xs font-mono text-text-3 uppercase tracking-widest">Agent Fleet</span>
+          <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-l border-border">
+            <div className="px-3 pt-2.5 pb-1">
+              <span className="text-2xs font-mono text-text-3 uppercase tracking-widest">Model Routing</span>
+            </div>
+            <RoutingChart routing={routing} agentBreakdown={agentBreakdown} />
           </div>
-          <FleetPanel agentBreakdown={agentBreakdown} rotating={rotating} teams={teams} />
         </div>
 
-        <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-t border-l border-border">
-          <IntelPanel
-            tokens={tokens}
-            rotation={rotation}
-            adaptive={adaptive}
-            journalist={journalist}
-            agentBreakdown={agentBreakdown}
-            memory={memory}
-          />
-        </div>
+        <div className="min-h-0 flex-1 grid" style={{ gridTemplateColumns: '2fr 2.5fr 1.5fr', gap: '0 1px' }}>
+          <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-t border-border">
+            <div className="px-3 pt-2.5 pb-1 flex-shrink-0">
+              <span className="text-2xs font-mono text-text-3 uppercase tracking-widest">Agent Fleet</span>
+            </div>
+            <FleetPanel agentBreakdown={agentBreakdown} rotating={rotating} teams={teams} />
+          </div>
 
-        <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-t border-l border-border">
-          <TeamBurnPanel teams={teamBurn} />
+          <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-t border-l border-border">
+            <IntelPanel
+              tokens={tokens}
+              rotation={rotation}
+              adaptive={adaptive}
+              journalist={journalist}
+              agentBreakdown={agentBreakdown}
+              memory={memory}
+            />
+          </div>
+
+          <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1 flex flex-col border-t border-l border-border">
+            <TeamBurnPanel teams={teamBurn} />
+          </div>
         </div>
       </div>
 

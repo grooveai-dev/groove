@@ -320,7 +320,6 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'approval:request':
           set((s) => ({ pendingApprovals: [...s.pendingApprovals, msg.data] }));
-          get().addToast('warning', `Approval needed: ${msg.data?.agentName || 'agent'}`, msg.data?.action?.description);
           break;
 
         case 'approval:resolved': {

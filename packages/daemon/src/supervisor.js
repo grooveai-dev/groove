@@ -18,7 +18,7 @@ export class Supervisor {
 
   // --- Approval System ---
 
-  requestApproval(agentId, action) {
+  requestApproval(agentId, action, retryPayload = null) {
     const id = `approval-${Date.now()}-${++this.counter}`;
     const agent = this.daemon.registry?.get(agentId);
 
@@ -30,6 +30,7 @@ export class Supervisor {
       status: 'pending',
       requestedAt: new Date().toISOString(),
     };
+    if (retryPayload) approval.retryPayload = retryPayload;
 
     this.pendingApprovals.set(id, approval);
     this.daemon.broadcast({ type: 'approval:request', data: approval });

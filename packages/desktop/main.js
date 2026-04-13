@@ -32,7 +32,8 @@ function startDaemon() {
     const guiPath = resolveResourcePath('gui');
     const daemonPath = resolveResourcePath('daemon', 'src', 'index.js');
 
-    daemonProcess = fork(bridgePath, [String(PORT), process.cwd()], {
+    const projectDir = app.isPackaged ? app.getPath('home') : process.cwd();
+    daemonProcess = fork(bridgePath, [String(PORT), projectDir], {
       stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
       env: {
         ...process.env,

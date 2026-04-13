@@ -2949,7 +2949,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
   });
 
   // Serve GUI static files (built GUI) — no-cache headers to prevent stale bundles
-  const guiPath = resolve(__dirname, '../../gui/dist');
+  const guiPath = process.env.GROOVE_GUI_PATH || resolve(__dirname, '../../gui/dist');
   app.use(express.static(guiPath, { etag: false, maxAge: 0, lastModified: false }));
   app.use((req, res, next) => {
     if (!req.path.startsWith('/api/')) {

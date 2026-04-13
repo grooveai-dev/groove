@@ -86,9 +86,9 @@ const RoutingChart = memo(function RoutingChart({ routing, agentBreakdown }) {
                     <span className="text-2xs font-mono text-text-3 tabular-nums">{usage.agents} agent{usage.agents !== 1 ? 's' : ''}</span>
                     <span className="text-xs font-mono text-text-1 tabular-nums">{fmtNum(usage.tokens)}</span>
                   </div>
-                  <div className="h-[3px] bg-surface-4 rounded-full overflow-hidden">
+                  <div className="h-0.5 bg-surface-4 rounded-sm overflow-hidden">
                     <div
-                      className="h-full rounded-full transition-all duration-500"
+                      className="h-full rounded-sm transition-all duration-500"
                       style={{ width: `${Math.max(barPct, 2)}%`, background: HEX.accent }}
                     />
                   </div>

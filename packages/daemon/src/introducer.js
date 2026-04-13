@@ -268,9 +268,9 @@ export class Introducer {
         lines.push('To discover available tools: `GET http://localhost:31415/api/integrations/{id}/tools`');
         lines.push('');
         lines.push('**Approval gates:** Some tools require human approval (e.g., sending emails, creating charges).');
-        lines.push('If you get a `requiresApproval: true` response with an `approvalId`, tell the user the action');
-        lines.push('needs approval in the GROOVE GUI. Do NOT retry until the user confirms it has been approved.');
-        lines.push('To retry: include `"approvalId": "<id>"` in your next exec request body.');
+        lines.push('If you get a `requiresApproval: true` response, the action has been queued for user approval.');
+        lines.push('GROOVE will show the user an approval modal and auto-execute the action once approved.');
+        lines.push('Do NOT tell the user to approve anything. Do NOT retry the request yourself. Just wait — you will receive a message confirming the result once the action is approved and executed.');
         lines.push('');
         lines.push(integrationSections.join('\n\n'));
       }

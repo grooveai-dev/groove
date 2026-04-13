@@ -808,7 +808,7 @@ export function createApi(app, daemon) {
         if (entry.endsWith('.md') && !entry.startsWith('.')) {
           const fullPath = resolve(dir, entry);
           if (statSync(fullPath).isFile()) {
-            files.push({ name: entry, path: entry, size: statSync(fullPath).size });
+            files.push({ name: entry, path: entry, size: statSync(fullPath).size, source: 'project' });
           }
         }
       }
@@ -818,12 +818,36 @@ export function createApi(app, daemon) {
           if (entry.endsWith('.md')) {
             const fullPath = resolve(grooveDir, entry);
             if (statSync(fullPath).isFile()) {
-              files.push({ name: entry, path: `.groove/${entry}`, size: statSync(fullPath).size });
+              files.push({ name: entry, path: `.groove/${entry}`, size: statSync(fullPath).size, source: 'project' });
             }
           }
         }
       }
     } catch { /* dir might not exist */ }
+
+    // Include personality file from .groove/personalities/
+    try {
+      const personalityFile = resolve(daemon.grooveDir, 'personalities', `${agent.name}.md`);
+      if (existsSync(personalityFile)) {
+        const size = statSync(personalityFile).size;
+        files.unshift({ name: 'personality.md', path: '__personality__', size, source: 'personality' });
+      }
+    } catch { /* ignore */ }
+
+    // Include user-created agent files from .groove/agent-files/<name>/
+    try {
+      const agentFilesDir = resolve(daemon.grooveDir, 'agent-files', agent.name);
+      if (existsSync(agentFilesDir)) {
+        for (const entry of readdirSync(agentFilesDir)) {
+          if (entry.endsWith('.md')) {
+            const fullPath = resolve(agentFilesDir, entry);
+            if (statSync(fullPath).isFile()) {
+              files.push({ name: entry, path: `__user__/${entry}`, size: statSync(fullPath).size, source: 'user' });
+            }
+          }
+        }
+      }
+    } catch { /* ignore */ }
 
     res.json({ files, workingDir: dir });
   });
@@ -836,6 +860,22 @@ export function createApi(app, daemon) {
     const dir = agent.workingDir || daemon.projectDir;
     const relPath = req.query.path;
     if (!relPath || relPath.includes('..')) return res.status(400).json({ error: 'Invalid path' });
+
+    if (relPath === '__personality__') {
+      const personalityFile = resolve(daemon.grooveDir, 'personalities', `${agent.name}.md`);
+      if (existsSync(personalityFile)) {
+        return res.json({ content: readFileSync(personalityFile, 'utf8') });
+      }
+      return res.json({ content: '' });
+    }
+
+    if (relPath.startsWith('__user__/')) {
+      const fileName = relPath.slice('__user__/'.length);
+      if (!fileName || fileName.includes('/') || fileName.includes('..')) return res.status(400).json({ error: 'Invalid path' });
+      const filePath = resolve(daemon.grooveDir, 'agent-files', agent.name, fileName);
+      if (existsSync(filePath)) return res.json({ content: readFileSync(filePath, 'utf8') });
+      return res.json({ content: '' });
+    }
 
     const fullPath = resolve(dir, relPath);
     if (!fullPath.startsWith(dir)) return res.status(400).json({ error: 'Path traversal' });
@@ -858,6 +898,24 @@ export function createApi(app, daemon) {
     if (!relPath || relPath.includes('..')) return res.status(400).json({ error: 'Invalid path' });
     if (typeof content !== 'string') return res.status(400).json({ error: 'Content required' });
 
+    if (relPath === '__personality__') {
+      const personalityDir = resolve(daemon.grooveDir, 'personalities');
+      mkdirSync(personalityDir, { recursive: true });
+      writeFileSync(resolve(personalityDir, `${agent.name}.md`), content || '', { mode: 0o600 });
+      daemon.audit.log('personality.update', { name: agent.name, agentId: agent.id });
+      return res.json({ saved: true });
+    }
+
+    if (relPath.startsWith('__user__/')) {
+      const fileName = relPath.slice('__user__/'.length);
+      if (!fileName || fileName.includes('/') || fileName.includes('..')) return res.status(400).json({ error: 'Invalid path' });
+      const agentFilesDir = resolve(daemon.grooveDir, 'agent-files', agent.name);
+      mkdirSync(agentFilesDir, { recursive: true });
+      writeFileSync(resolve(agentFilesDir, fileName), content || '', { mode: 0o600 });
+      daemon.audit.log('mdfile.write.user', { agentId: agent.id, name: fileName });
+      return res.json({ saved: true });
+    }
+
     const fullPath = resolve(dir, relPath);
     if (!fullPath.startsWith(dir)) return res.status(400).json({ error: 'Path traversal' });
 
@@ -868,6 +926,24 @@ export function createApi(app, daemon) {
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // Create a new MD file for an agent
+  app.post('/api/agents/:id/mdfiles/create', (req, res) => {
+    const agent = daemon.registry.get(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    let name = req.body?.name;
+    if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name required' });
+    name = name.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64);
+    if (!name) return res.status(400).json({ error: 'Invalid name' });
+    if (!name.endsWith('.md')) name += '.md';
+    const agentFilesDir = resolve(daemon.grooveDir, 'agent-files', agent.name);
+    mkdirSync(agentFilesDir, { recursive: true });
+    const filePath = resolve(agentFilesDir, name);
+    if (existsSync(filePath)) return res.status(409).json({ error: 'File already exists' });
+    writeFileSync(filePath, '', { mode: 0o600 });
+    daemon.audit.log('mdfile.create', { agentId: agent.id, name });
+    res.json({ name, path: `__user__/${name}` });
   });
 
   // Rotation stats
@@ -1381,7 +1457,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
           return res.status(202).json({
             requiresApproval: true,
             approvalId: approval.id,
-            message: `Tool "${tool}" requires approval. Retry with this approvalId once approved.`,
+            message: `Tool "${tool}" requires approval. The user will be prompted automatically. You will receive the result once approved — do not retry.`,
           });
         }
       }
@@ -1442,7 +1518,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
           return res.status(202).json({
             requiresApproval: true,
             approvalId: approval.id,
-            message: `Upload requires approval. Retry with this approvalId once approved.`,
+            message: `Upload requires approval. The user will be prompted automatically. You will receive the result once approved — do not retry.`,
           });
         }
       }

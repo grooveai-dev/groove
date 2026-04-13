@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
-import { FileText, Save, X, RefreshCw, ChevronLeft } from 'lucide-react';
+import { FileText, Save, X, RefreshCw, ChevronLeft, Plus } from 'lucide-react';
 
 export function AgentMdFiles({ agent }) {
   const addToast = useGrooveStore((s) => s.addToast);
@@ -13,6 +13,8 @@ export function AgentMdFiles({ agent }) {
   const [content, setContent] = useState('');
   const [original, setOriginal] = useState('');
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newFileName, setNewFileName] = useState('');
 
   async function fetchFiles() {
     try {
@@ -48,6 +50,20 @@ export function AgentMdFiles({ agent }) {
     setSaving(false);
   }
 
+  async function createFile() {
+    const name = newFileName.trim();
+    if (!name) return;
+    try {
+      await api.post(`/agents/${agent.id}/mdfiles/create`, { name });
+      setNewFileName('');
+      setCreating(false);
+      addToast('success', `Created ${name}.md`);
+      fetchFiles();
+    } catch (err) {
+      addToast('error', 'Create failed', err.message);
+    }
+  }
+
   const isDirty = content !== original;
 
   // File list view
@@ -57,6 +73,9 @@ export function AgentMdFiles({ agent }) {
         <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border-subtle">
           <FileText size={12} className="text-text-3" />
           <span className="text-2xs font-semibold text-text-2 font-sans uppercase tracking-wider flex-1">Markdown Files</span>
+          <button onClick={() => setCreating(true)} className="p-1 text-text-4 hover:text-accent cursor-pointer" title="Create file">
+            <Plus size={12} />
+          </button>
           <button onClick={fetchFiles} className="p-1 text-text-4 hover:text-text-1 cursor-pointer">
             <RefreshCw size={11} />
           </button>
@@ -65,6 +84,23 @@ export function AgentMdFiles({ agent }) {
         {workingDir && (
           <div className="px-4 py-1.5 text-[10px] text-text-4 font-mono truncate border-b border-border-subtle/50">
             {workingDir}
+          </div>
+        )}
+
+        {creating && (
+          <div className="flex items-center gap-1.5 px-4 py-2 border-b border-border-subtle bg-surface-0">
+            <FileText size={11} className="text-accent flex-shrink-0" />
+            <input
+              autoFocus
+              value={newFileName}
+              onChange={(e) => setNewFileName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') createFile(); if (e.key === 'Escape') { setCreating(false); setNewFileName(''); } }}
+              placeholder="filename"
+              className="flex-1 bg-transparent text-xs text-text-0 font-mono outline-none placeholder:text-text-4"
+            />
+            <span className="text-[10px] text-text-4 font-mono">.md</span>
+            <button onClick={createFile} className="p-0.5 text-accent hover:text-accent/80 cursor-pointer"><Save size={11} /></button>
+            <button onClick={() => { setCreating(false); setNewFileName(''); }} className="p-0.5 text-text-4 hover:text-text-1 cursor-pointer"><X size={11} /></button>
           </div>
         )}
 
@@ -91,6 +127,12 @@ export function AgentMdFiles({ agent }) {
                   <span className="text-[10px] text-text-4 font-mono flex-shrink-0">
                     {f.size > 1024 ? `${(f.size / 1024).toFixed(1)}K` : `${f.size}B`}
                   </span>
+                  {f.source === 'personality' && (
+                    <span className="text-[9px] font-mono text-purple bg-purple/10 px-1 py-px rounded flex-shrink-0">personality</span>
+                  )}
+                  {f.source === 'user' && (
+                    <span className="text-[9px] font-mono text-accent bg-accent/10 px-1 py-px rounded flex-shrink-0">custom</span>
+                  )}
                 </button>
               ))}
             </div>

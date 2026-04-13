@@ -94,16 +94,16 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
       {/* Context bar */}
       <div className="flex items-center gap-2">
         <div
-          className="relative flex-1 h-[4px] rounded-full overflow-visible"
+          className="relative flex-1 h-0.5 rounded-sm overflow-visible"
           style={{ background: hexAlpha(HEX.accent, 0.12) }}
         >
           <div
-            className="absolute inset-y-0 left-0 rounded-full transition-all duration-700"
+            className="absolute inset-y-0 left-0 rounded-sm transition-all duration-700"
             style={{ width: `${Math.max(contextPct, 1)}%`, background: barColor }}
           />
           {thresholdPct && (
             <div
-              className="absolute top-[-2px] w-px h-[8px]"
+              className="absolute top-[-1px] w-px h-[4px]"
               style={{ left: `${thresholdPct}%`, background: HEX.purple }}
               title={`Rotation at ${thresholdPct}%`}
             />

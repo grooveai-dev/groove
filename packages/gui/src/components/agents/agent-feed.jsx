@@ -369,9 +369,9 @@ function StreamingBar({ agent }) {
       <div className="flex items-center gap-3 flex-shrink-0">
         <span className="text-[10px] text-text-4 font-mono">{fmtTokens(agent.tokensUsed)}</span>
         <div className="flex items-center gap-1.5">
-          <div className="w-14 h-1 rounded-full bg-surface-4 overflow-hidden">
+          <div className="w-14 h-0.5 rounded-sm bg-surface-4 overflow-hidden">
             <div
-              className="h-full rounded-full transition-all duration-500"
+              className="h-full rounded-sm transition-all duration-500"
               style={{
                 width: `${ctxPct}%`,
                 background: ctxPct >= 75 ? 'var(--color-danger)' : ctxPct >= 50 ? 'var(--color-warning)' : 'var(--color-accent)',

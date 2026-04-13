@@ -1,8 +1,9 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { app, BrowserWindow, Tray, Menu, shell, nativeImage, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, Tray, Menu, shell, nativeImage, dialog, ipcMain, safeStorage } from 'electron';
 import { fork } from 'child_process';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { writeFileSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = 31415;
@@ -150,6 +151,35 @@ ipcMain.handle('get-version', () => app.getVersion());
 ipcMain.handle('open-external', (_event, url) => {
   if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
     return shell.openExternal(url);
+  }
+});
+
+app.setAsDefaultProtocolClient('groove');
+
+function handleAuthCallback(url) {
+  try {
+    const parsed = new URL(url);
+    const token = parsed.searchParams.get('token');
+    if (!token) return;
+    if (safeStorage.isEncryptionAvailable()) {
+      const encrypted = safeStorage.encryptString(token);
+      const tokenPath = join(app.getPath('userData'), 'auth-token');
+      writeFileSync(tokenPath, encrypted);
+    }
+    if (daemonProcess && daemonProcess.connected) {
+      daemonProcess.send({ type: 'auth-token', token });
+    }
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  } catch { /* invalid URL */ }
+}
+
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  if (url.startsWith('groove://auth/callback')) {
+    handleAuthCallback(url);
   }
 });
 

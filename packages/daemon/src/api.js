@@ -13,11 +13,21 @@ import { validateAgentConfig } from './validate.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const isPro = process.env.GROOVE_EDITION === 'pro';
 
+let _subscriptionCache = { active: true, checkedAt: 0 };
+
 function proOnly(req, res, next) {
   if (!isPro) {
     return res.status(403).json({
       error: 'Pro feature',
       edition: 'community',
+      upgrade: 'https://groovedev.ai/pro',
+    });
+  }
+  if (!_subscriptionCache.active) {
+    return res.status(403).json({
+      error: 'Pro subscription required',
+      edition: 'pro',
+      subscriptionActive: false,
       upgrade: 'https://groovedev.ai/pro',
     });
   }

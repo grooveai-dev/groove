@@ -700,6 +700,12 @@ For normal file edits within your scope, proceed without review.
         this.daemon.integrations.refreshMcpJson();
       }
 
+      // Extract recommended-team.json from planner text output if it wasn't written to disk.
+      // Non-Claude providers (Codex, Gemini) may embed the JSON in text rather than using Write.
+      if (finalStatus === 'completed' && agent.role === 'planner') {
+        this._extractRecommendedTeam(agent, logPath);
+      }
+
       // Trigger journalist synthesis immediately on completion so the project
       // map is fresh for the next agent that spawns (don't wait for 120s cycle)
       if (finalStatus === 'completed' && this.daemon.journalist) {
@@ -783,8 +789,12 @@ For normal file edits within your scope, proceed without review.
 
     for (const line of complete.split('\n')) {
       if (!line) continue;
-      const output = provider.parseOutput(line);
-      if (output) this._handleAgentOutput(agentId, output);
+      try {
+        const output = provider.parseOutput(line);
+        if (output) this._handleAgentOutput(agentId, output);
+      } catch (err) {
+        console.error(`[Groove] parseOutput error for ${agentId}: ${err.message}`);
+      }
     }
   }
 
@@ -847,6 +857,27 @@ For normal file edits within your scope, proceed without review.
 
     registry.update(agentId, updates);
     this.daemon.broadcast({ type: 'agent:output', agentId, data: output });
+  }
+
+  _extractRecommendedTeam(agent, logPath) {
+    try {
+      const workDir = agent.workingDir || this.daemon.projectDir;
+      const grooveDir = resolve(workDir, '.groove');
+      const targetPath = resolve(grooveDir, 'recommended-team.json');
+
+      if (existsSync(targetPath)) return;
+
+      const log = readFileSync(logPath, 'utf8');
+      const match = log.match(/\{[\s\S]*?"agents"\s*:\s*\[[\s\S]*?\]\s*\}/);
+      if (!match) return;
+
+      let parsed;
+      try { parsed = JSON.parse(match[0]); } catch { return; }
+      if (!parsed || !Array.isArray(parsed.agents) || parsed.agents.length === 0) return;
+
+      if (!existsSync(grooveDir)) mkdirSync(grooveDir, { recursive: true });
+      writeFileSync(targetPath, JSON.stringify(parsed, null, 2));
+    } catch { /* best effort */ }
   }
 
   /**

@@ -178,11 +178,11 @@ export class Introducer {
     lines.push(`If you see files that seem unrelated to your task, leave them alone — they belong to another project or agent.`);
 
     // Memory containment — prevent agents from reading/writing auto-memory
-    // which can contain stale context from unrelated sessions in the same dir
+    // GROOVE manages project memory automatically via Layer 7
     lines.push('');
     lines.push(`## Memory Policy`);
     lines.push('');
-    lines.push(`Ignore auto-memory. Do NOT read or write MEMORY.md or any files in the auto-memory directory.`);
+    lines.push(`GROOVE manages project memory automatically. Do not read or write MEMORY.md or .groove/memory/ files directly.`);
     lines.push(`GROOVE provides all your project context through handoff briefs, AGENTS_REGISTRY.md, and GROOVE_PROJECT_MAP.md.`);
     lines.push(`Do NOT save memories — your state is managed by GROOVE's rotation and handoff system.`);
 
@@ -333,7 +333,41 @@ export class Introducer {
       }
     } catch { /* credentials not available */ }
 
-    return lines.join('\n');
+    // --- Layer 7: Project Memory (injected at end, bounded) ---
+    let memorySection = '';
+    try {
+      if (this.daemon.memory) {
+        const parts = [];
+
+        const constraints = this.daemon.memory.getConstraintsMarkdown(2000);
+        if (constraints) {
+          parts.push(`### Constraints (read carefully)\n${constraints}`);
+        }
+
+        const discoveries = this.daemon.memory.getDiscoveriesMarkdown(newAgent.role, 15, 1000);
+        if (discoveries) {
+          parts.push(`### Known Fixes for ${newAgent.role} Role\n${discoveries}`);
+        }
+
+        const handoffs = this.daemon.memory.getRecentHandoffMarkdown(newAgent.role, 2, 1000);
+        if (handoffs) {
+          parts.push(`### Recent Handoff History\n${handoffs}`);
+        }
+
+        if (parts.length > 0) {
+          memorySection = `\n## Project Memory (auto-generated)\n\n${parts.join('\n\n')}\n`;
+          // Hard budget: 4K chars total
+          if (memorySection.length > 4000) {
+            memorySection = memorySection.slice(0, 3997) + '...';
+          }
+        }
+      }
+    } catch {
+      // Memory injection must never break agent spawn
+      memorySection = '';
+    }
+
+    return lines.join('\n') + memorySection;
   }
 
   loadArchitectureDoc() {
@@ -416,7 +450,7 @@ export class Introducer {
       '',
       `See AGENTS_REGISTRY.md for full agent state.`,
       '',
-      `**Memory policy:** Ignore auto-memory. Do not read or write MEMORY.md. GROOVE manages all context.`,
+      `**Memory policy:** GROOVE manages project memory automatically. Do not read or write MEMORY.md or .groove/memory/ files directly.`,
       '',
       GROOVE_SECTION_END,
     ].filter(Boolean).join('\n');

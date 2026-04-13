@@ -19,7 +19,7 @@ function persistJSON(key, value) {
 }
 
 // Clear stale persisted data on version change
-const STORE_VERSION = '0.22.27';
+const STORE_VERSION = '0.22.28';
 if (loadJSON('groove:storeVersion') !== STORE_VERSION) {
   localStorage.removeItem('groove:chatHistory');
   localStorage.removeItem('groove:activityLog');
@@ -77,6 +77,7 @@ export const useGrooveStore = create((set, get) => ({
   // ── Marketplace Auth ───────────────────────────────────────
   marketplaceUser: null,        // { id, displayName, avatar, ... } or null
   marketplaceAuthenticated: false,
+  subscription: null,
 
   // ── Toasts ────────────────────────────────────────────────
   toasts: [],
@@ -552,6 +553,10 @@ export const useGrooveStore = create((set, get) => ({
         marketplaceAuthenticated: data.authenticated || false,
         marketplaceUser: data.user || null,
       });
+      try {
+        const edition = await api.get('/edition');
+        set({ subscription: { active: edition.subscriptionActive !== false, plan: edition.plan || 'community', edition: edition.edition } });
+      } catch { /* edition endpoint may not exist */ }
     } catch {
       set({ marketplaceAuthenticated: false, marketplaceUser: null });
     }
@@ -569,6 +574,10 @@ export const useGrooveStore = create((set, get) => ({
             clearInterval(poll);
             set({ marketplaceAuthenticated: true, marketplaceUser: status.user });
             get().addToast('success', `Signed in as ${status.user?.displayName || status.user?.id || 'user'}`);
+            try {
+              const edition = await api.get('/edition');
+              set({ subscription: { active: edition.subscriptionActive !== false, plan: edition.plan || 'community', edition: edition.edition } });
+            } catch { /* edition endpoint may not exist */ }
           }
         } catch { /* keep polling */ }
       }, 2000);

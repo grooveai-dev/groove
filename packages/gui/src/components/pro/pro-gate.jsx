@@ -4,7 +4,7 @@ import { UpgradeCard } from './upgrade-card';
 
 export function ProGate({ feature, description, children }) {
   const authenticated = useGrooveStore((s) => s.marketplaceAuthenticated);
-  const user = useGrooveStore((s) => s.marketplaceUser);
+  const subscription = useGrooveStore((s) => s.subscription);
 
   if (__GROOVE_EDITION__ !== 'pro') {
     return <UpgradeCard feature={feature} description={description} variant="community" />;
@@ -14,7 +14,7 @@ export function ProGate({ feature, description, children }) {
     return <UpgradeCard feature={feature} description={description} variant="sign-in" />;
   }
 
-  if (!user?.subscription?.active) {
+  if (subscription && !subscription.active) {
     return <UpgradeCard feature={feature} description={description} variant="subscribe" />;
   }
 

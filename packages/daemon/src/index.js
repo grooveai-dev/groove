@@ -332,6 +332,19 @@ export class Daemon {
         this.gateways.start();
         this._startGarbageCollector();
 
+        // Classifier broadcasting — decoupled from stdout handler
+        // Runs every 30s, checks for classification changes, broadcasts to GUI
+        this._classifierInterval = setInterval(() => {
+          try {
+            const updates = this.classifier.getUpdates();
+            for (const update of updates) {
+              this.broadcast({ type: 'classifier:update', data: update });
+            }
+          } catch {
+            // Never let classifier broadcasting break the daemon
+          }
+        }, 30_000);
+
         // Scan codebase for workspace/structure awareness
         this.indexer.scan();
 
@@ -362,6 +375,11 @@ export class Daemon {
     // Run once on startup, then every 24 hours
     this._gc();
     this._gcInterval = setInterval(() => this._gc(), 24 * 60 * 60 * 1000);
+
+    // Periodic state save — crash protection (every 30s)
+    this._stateSaveInterval = setInterval(() => {
+      try { this.state.set('agents', this.registry.getAll()); this.state.save(); } catch {}
+    }, 30000);
   }
 
   _gc() {
@@ -449,6 +467,8 @@ export class Daemon {
     this.scheduler.stop();
     this.timeline.stop();
     if (this._gcInterval) clearInterval(this._gcInterval);
+    if (this._stateSaveInterval) clearInterval(this._stateSaveInterval);
+    if (this._classifierInterval) clearInterval(this._classifierInterval);
 
     // Clean up file watchers and terminal sessions
     this.fileWatcher.unwatchAll();

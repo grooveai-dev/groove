@@ -6,6 +6,7 @@ export class Provider {
   static displayName = 'Base Provider';
   static command = '';
   static authType = 'none'; // 'subscription' | 'api-key' | 'local' | 'none'
+  static managesOwnContext = false; // true if provider compacts context internally (e.g. Claude Code)
   static models = [];
 
   static isInstalled() {

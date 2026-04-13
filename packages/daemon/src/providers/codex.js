@@ -16,12 +16,12 @@ export class CodexProvider extends Provider {
   // Auth hint — Codex uses its own auth system, not just env vars
   static authHint = 'Codex requires `codex login` — run: echo "YOUR_KEY" | codex login --with-api-key';
   static models = [
-    { id: 'gpt-5.4-pro', name: 'GPT-5.4 Pro', tier: 'heavy', pricing: { input: 0.015, output: 0.06 } },
-    { id: 'gpt-5.4', name: 'GPT-5.4', tier: 'heavy', pricing: { input: 0.005, output: 0.02 } },
-    { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', tier: 'medium', pricing: { input: 0.001, output: 0.004 } },
-    { id: 'gpt-5.4-nano', name: 'GPT-5.4 Nano', tier: 'light', pricing: { input: 0.0004, output: 0.0016 } },
-    { id: 'gpt-5-mini', name: 'GPT-5 Mini', tier: 'medium', pricing: { input: 0.0005, output: 0.002 } },
-    { id: 'gpt-5-nano', name: 'GPT-5 Nano', tier: 'light', pricing: { input: 0.0001, output: 0.0004 } },
+    { id: 'gpt-5.4-pro', name: 'GPT-5.4 Pro', tier: 'heavy', maxContext: 200000, pricing: { input: 0.015, output: 0.06 } },
+    { id: 'gpt-5.4', name: 'GPT-5.4', tier: 'heavy', maxContext: 200000, pricing: { input: 0.005, output: 0.02 } },
+    { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', tier: 'medium', maxContext: 200000, pricing: { input: 0.001, output: 0.004 } },
+    { id: 'gpt-5.4-nano', name: 'GPT-5.4 Nano', tier: 'light', maxContext: 200000, pricing: { input: 0.0004, output: 0.0016 } },
+    { id: 'gpt-5-mini', name: 'GPT-5 Mini', tier: 'medium', maxContext: 200000, pricing: { input: 0.0005, output: 0.002 } },
+    { id: 'gpt-5-nano', name: 'GPT-5 Nano', tier: 'light', maxContext: 200000, pricing: { input: 0.0001, output: 0.0004 } },
   ];
 
   static isInstalled() {
@@ -83,15 +83,18 @@ export class CodexProvider extends Provider {
   }
 
   buildSpawnCommand(agent) {
-    // Use 'codex exec' for non-interactive (headless) operation
     const args = ['exec'];
 
     if (agent.model) args.push('--model', agent.model);
 
-    // Full autonomous operation — no approval prompts, no sandbox
+    args.push('--json');
     args.push('--dangerously-bypass-approvals-and-sandbox');
 
+    if (agent.workingDir) args.push('-C', agent.workingDir);
+
     if (agent.prompt) args.push(agent.prompt);
+
+    this._currentModel = agent.model;
 
     return {
       command: 'codex',
@@ -101,7 +104,7 @@ export class CodexProvider extends Provider {
   }
 
   buildHeadlessCommand(prompt, model) {
-    const args = ['exec', prompt];
+    const args = ['exec', '--json', prompt];
     if (model) args.push('--model', model);
     return { command: 'codex', args, env: {} };
   }
@@ -120,33 +123,126 @@ export class CodexProvider extends Provider {
   }
 
   parseOutput(line) {
-    // Codex outputs plain text and stderr logging
     const trimmed = line.trim();
     if (!trimmed) return null;
 
-    // Try to parse JSON (codex may output structured data in some modes)
+    let event;
     try {
-      const data = JSON.parse(trimmed);
-      if (data.usage?.total_tokens) {
-        const tokens = data.usage.total_tokens;
+      event = JSON.parse(trimmed);
+    } catch {
+      return { type: 'activity', data: trimmed };
+    }
+
+    switch (event.type) {
+      case 'thread.started':
+        return { type: 'activity', subtype: 'assistant', sessionId: event.thread_id, data: [{ type: 'text', text: '' }] };
+
+      case 'turn.started':
+        return null;
+
+      case 'item.started': {
+        const item = event.item || {};
+        if (item.type === 'command_execution') {
+          return {
+            type: 'activity', subtype: 'assistant',
+            data: [{ type: 'tool_use', id: item.id || 'exec', name: 'Bash', input: { command: item.command } }],
+          };
+        }
+        if (item.type === 'todo_list') {
+          const steps = (item.items || []).map((s) => s.text).join(', ');
+          return {
+            type: 'activity', subtype: 'assistant',
+            data: [{ type: 'tool_use', id: item.id || 'plan', name: 'Plan', input: { steps } }],
+          };
+        }
+        if (item.type === 'file_edit' || item.type === 'file_write') {
+          return {
+            type: 'activity', subtype: 'assistant',
+            data: [{ type: 'tool_use', id: item.id || 'edit', name: item.type === 'file_write' ? 'Write' : 'Edit', input: { path: item.path || item.file || '' } }],
+          };
+        }
+        if (item.type === 'file_read') {
+          return {
+            type: 'activity', subtype: 'assistant',
+            data: [{ type: 'tool_use', id: item.id || 'read', name: 'Read', input: { path: item.path || item.file || '' } }],
+          };
+        }
         return {
-          type: 'activity', data: trimmed, tokensUsed: tokens,
-          estimatedCostUsd: CodexProvider.estimateCost(tokens, data.model),
-          costSource: 'estimated',
+          type: 'activity', subtype: 'assistant',
+          data: [{ type: 'tool_use', id: item.id || 'tool', name: item.type || 'Tool', input: {} }],
         };
       }
-    } catch { /* plain text */ }
 
-    // Estimate tokens from text length (~4 chars per token)
-    // Not perfect but gives visibility into activity and burn rate
-    const estimatedTokens = Math.ceil(trimmed.length / 4);
+      case 'item.completed': {
+        const item = event.item || {};
+        if (item.type === 'agent_message') {
+          return {
+            type: 'activity', subtype: 'assistant',
+            data: [{ type: 'text', text: item.text || '' }],
+          };
+        }
+        if (item.type === 'command_execution') {
+          const output = (item.aggregated_output || '').slice(0, 2000);
+          return {
+            type: 'activity', subtype: 'assistant',
+            data: [
+              { type: 'tool_use', id: item.id || 'exec', name: 'Bash', input: { command: item.command } },
+              ...(output ? [{ type: 'text', text: output }] : []),
+            ],
+          };
+        }
+        if (item.type === 'todo_list') {
+          const steps = (item.items || []).map((s) => `${s.completed ? '✓' : '○'} ${s.text}`).join('\n');
+          return {
+            type: 'activity', subtype: 'assistant',
+            data: [{ type: 'text', text: steps }],
+          };
+        }
+        if (item.type === 'file_edit' || item.type === 'file_write' || item.type === 'file_read') {
+          return {
+            type: 'activity', subtype: 'assistant',
+            data: [{ type: 'tool_use', id: item.id || 'file', name: item.type === 'file_read' ? 'Read' : item.type === 'file_write' ? 'Write' : 'Edit', input: { path: item.path || item.file || '' } }],
+          };
+        }
+        return null;
+      }
 
-    return {
-      type: 'activity',
-      data: trimmed,
-      tokensUsed: estimatedTokens,
-      estimatedCostUsd: 0, // Can't estimate without knowing the model here
-      costSource: 'estimated',
-    };
+      case 'turn.completed': {
+        const usage = event.usage;
+        if (!usage) return null;
+
+        const inputTokens = usage.input_tokens || 0;
+        const outputTokens = usage.output_tokens || 0;
+        const cachedTokens = usage.cached_input_tokens || 0;
+        const totalTokens = inputTokens + outputTokens;
+
+        const model = CodexProvider.models.find((m) => m.id === this._currentModel);
+        const pricing = model?.pricing;
+        const maxContext = model?.maxContext || 200000;
+
+        let estimatedCostUsd = 0;
+        if (pricing) {
+          const newInput = inputTokens - cachedTokens;
+          estimatedCostUsd = (newInput / 1000) * pricing.input
+            + (cachedTokens / 1000) * pricing.input * 0.5
+            + (outputTokens / 1000) * pricing.output;
+        }
+
+        return {
+          type: 'activity', subtype: 'assistant',
+          data: [{ type: 'text', text: '' }],
+          tokensUsed: totalTokens,
+          inputTokens,
+          outputTokens,
+          cacheReadTokens: cachedTokens,
+          contextUsage: inputTokens / maxContext,
+          estimatedCostUsd,
+          costSource: pricing ? 'calculated' : 'estimated',
+        };
+      }
+
+      default:
+        return null;
+    }
   }
 }

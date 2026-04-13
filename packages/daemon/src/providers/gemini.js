@@ -11,11 +11,11 @@ export class GeminiProvider extends Provider {
   static authType = 'api-key';
   static envKey = 'GEMINI_API_KEY';
   static models = [
-    { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', tier: 'heavy', pricing: { input: 0.00125, output: 0.01 } },
-    { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', tier: 'medium', pricing: { input: 0.00015, output: 0.0006 } },
-    { id: 'gemini-3.1-flash-lite-preview', name: 'Gemini 3.1 Flash Lite', tier: 'light', pricing: { input: 0.000075, output: 0.0003 } },
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', tier: 'heavy', pricing: { input: 0.00125, output: 0.01 } },
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', tier: 'medium', pricing: { input: 0.00015, output: 0.0006 } },
+    { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', tier: 'heavy', maxContext: 1000000, pricing: { input: 0.00125, output: 0.01 } },
+    { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', tier: 'medium', maxContext: 1000000, pricing: { input: 0.00015, output: 0.0006 } },
+    { id: 'gemini-3.1-flash-lite-preview', name: 'Gemini 3.1 Flash Lite', tier: 'light', maxContext: 1000000, pricing: { input: 0.000075, output: 0.0003 } },
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', tier: 'heavy', maxContext: 1000000, pricing: { input: 0.00125, output: 0.01 } },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', tier: 'medium', maxContext: 1000000, pricing: { input: 0.00015, output: 0.0006 } },
   ];
 
   static isInstalled() {
@@ -36,12 +36,12 @@ export class GeminiProvider extends Provider {
 
     if (agent.model) args.push('--model', agent.model);
 
-    // YOLO mode — auto-approve all tool calls (file writes, shell commands)
-    // Without this, Gemini in headless mode can only output text
     args.push('--yolo');
+    args.push('--output-format', 'stream-json');
+    args.push('-p', '');
 
-    // Pass prompt via stdin to avoid OS arg length limits
-    // (intro context + role prompt + skill content can be very long)
+    this._currentModel = agent.model;
+
     return {
       command: 'gemini',
       args,
@@ -51,7 +51,7 @@ export class GeminiProvider extends Provider {
   }
 
   buildHeadlessCommand(prompt, model) {
-    const args = ['-p', prompt];
+    const args = ['--output-format', 'stream-json', '-p', prompt];
     if (model) args.push('--model', model);
     return { command: 'gemini', args, env: {} };
   }
@@ -71,12 +71,99 @@ export class GeminiProvider extends Provider {
   parseOutput(line) {
     const trimmed = line.trim();
     if (!trimmed) return null;
-    // Estimate tokens from output length (~4 chars per token)
-    const estimatedTokens = Math.ceil(trimmed.length / 4);
-    return {
-      type: 'activity', data: trimmed, tokensUsed: estimatedTokens,
-      estimatedCostUsd: 0,
-      costSource: 'estimated',
-    };
+
+    let event;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      return { type: 'activity', data: trimmed };
+    }
+
+    switch (event.type) {
+      case 'agent_start':
+        return { type: 'activity', subtype: 'assistant', sessionId: event.streamId, data: [{ type: 'text', text: '' }] };
+
+      case 'session_update':
+        return null;
+
+      case 'message': {
+        if (event.role === 'user') return null;
+        const raw = event.content;
+        const parts = Array.isArray(raw) ? raw : (typeof raw === 'string' ? [{ text: raw }] : raw ? [raw] : []);
+        const blocks = parts.map((p) => {
+          if (p.type === 'thought') return { type: 'text', text: p.thought || '' };
+          return { type: 'text', text: p.text || '' };
+        }).filter((b) => b.text);
+        if (!blocks.length) return null;
+        return { type: 'activity', subtype: 'assistant', data: blocks };
+      }
+
+      case 'tool_request': {
+        const toolName = (event.name || '').includes('shell') || (event.name || '').includes('exec')
+          ? 'Bash' : event.name || 'Tool';
+        const input = event.name === 'Bash' || (event.name || '').includes('shell')
+          ? { command: typeof event.args === 'string' ? event.args : JSON.stringify(event.args || {}) }
+          : (event.args || {});
+        return {
+          type: 'activity', subtype: 'assistant',
+          data: [{ type: 'tool_use', id: event.requestId || 'tool', name: toolName, input }],
+        };
+      }
+
+      case 'tool_response': {
+        const rawContent = event.content;
+        const contentParts = Array.isArray(rawContent) ? rawContent : (typeof rawContent === 'string' ? [{ text: rawContent }] : rawContent ? [rawContent] : []);
+        const content = contentParts.map((p) => p.text || '').join('').slice(0, 2000);
+        const toolName = (event.name || '').includes('shell') || (event.name || '').includes('exec')
+          ? 'Bash' : event.name || 'Tool';
+        return {
+          type: 'activity', subtype: 'assistant',
+          data: [
+            { type: 'tool_use', id: event.requestId || 'tool', name: toolName, input: {} },
+            ...(content ? [{ type: 'text', text: content }] : []),
+          ],
+        };
+      }
+
+      case 'usage': {
+        const inputTokens = event.inputTokens || 0;
+        const outputTokens = event.outputTokens || 0;
+        const cachedTokens = event.cachedTokens || 0;
+        const totalTokens = inputTokens + outputTokens;
+
+        const model = GeminiProvider.models.find((m) => m.id === this._currentModel);
+        const pricing = model?.pricing;
+        const maxContext = model?.maxContext || 1000000;
+
+        let estimatedCostUsd = 0;
+        if (pricing) {
+          const newInput = inputTokens - cachedTokens;
+          estimatedCostUsd = (newInput / 1000) * pricing.input
+            + (cachedTokens / 1000) * pricing.input * 0.5
+            + (outputTokens / 1000) * pricing.output;
+        }
+
+        return {
+          type: 'activity', subtype: 'assistant',
+          data: [{ type: 'text', text: '' }],
+          tokensUsed: totalTokens,
+          inputTokens,
+          outputTokens,
+          cacheReadTokens: cachedTokens,
+          contextUsage: inputTokens / maxContext,
+          estimatedCostUsd,
+          costSource: pricing ? 'calculated' : 'estimated',
+        };
+      }
+
+      case 'agent_end':
+        return { type: 'activity', subtype: 'assistant', data: [{ type: 'text', text: '' }] };
+
+      case 'error':
+        return { type: 'activity', subtype: 'assistant', data: [{ type: 'text', text: `Error: ${event.message || 'unknown'}` }] };
+
+      default:
+        return null;
+    }
   }
 }

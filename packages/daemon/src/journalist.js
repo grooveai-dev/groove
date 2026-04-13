@@ -92,6 +92,10 @@ export class Journalist {
       this.writeDecisionsLog(synthesis.decisions);
       this.writeAgentSessionLogs(activeAgents, filteredLogs);
 
+      // Post-synthesis: extract Layer 7 memory from agent logs
+      this._extractDiscoveries(filteredLogs);
+      this._extractConstraints(filteredLogs);
+
       this.lastSynthesis = synthesis;
       this.history.push({
         cycle: this.cycleCount,
@@ -965,6 +969,82 @@ export class Journalist {
       all.push(...entries);
     }
     return all.sort((a, b) => a.timestamp.localeCompare(b.timestamp)).slice(-30);
+  }
+
+  // --- Layer 7 Memory Extraction ---
+
+  _extractDiscoveries(filteredLogs) {
+    if (!this.daemon.memory) return;
+
+    try {
+      for (const [agentId, data] of Object.entries(filteredLogs)) {
+        const { agent, entries } = data;
+        if (!entries || entries.length === 0) continue;
+
+        // Look for error entries followed by successful tool calls
+        for (let i = 0; i < entries.length - 1; i++) {
+          const entry = entries[i];
+          if (entry.type !== 'error' && !(entry.type === 'tool' && entry.output?.includes('Error'))) continue;
+
+          // Look ahead for a fix (successful edit/write within next 5 entries)
+          for (let j = i + 1; j < Math.min(i + 6, entries.length); j++) {
+            const next = entries[j];
+            if (next.type === 'tool' && (next.tool === 'Edit' || next.tool === 'Write' || next.tool === 'Bash')) {
+              const trigger = entry.type === 'error' ? entry.text : (entry.output || entry.input || '');
+              const fix = next.input || '';
+              if (trigger && fix && trigger.length > 10 && fix.length > 10) {
+                this.daemon.memory.addDiscovery({
+                  agentId: agent.id,
+                  role: agent.role,
+                  trigger: trigger.slice(0, 300),
+                  fix: fix.slice(0, 500),
+                  outcome: 'success',
+                });
+                break; // One discovery per error
+              }
+            }
+          }
+        }
+      }
+    } catch { /* Memory extraction must never break journalist cycle */ }
+  }
+
+  _extractConstraints(filteredLogs) {
+    if (!this.daemon.memory) return;
+
+    try {
+      for (const [agentId, data] of Object.entries(filteredLogs)) {
+        const { agent, entries } = data;
+        if (!entries || entries.length === 0) continue;
+
+        // Look for reasoning entries that mention constraints
+        for (const entry of entries) {
+          if (entry.type !== 'thinking') continue;
+          const text = entry.text || '';
+
+          // Match patterns like "must always", "never do", "do not", "avoid", "required"
+          const constraintPatterns = [
+            /(?:must always|always must|critical:?)\s+(.{20,200})/i,
+            /(?:never|do not|don't|avoid)\s+(.{20,200})/i,
+            /(?:required|mandatory):?\s+(.{20,200})/i,
+          ];
+
+          for (const pattern of constraintPatterns) {
+            const match = text.match(pattern);
+            if (match) {
+              const constraintText = match[0].slice(0, 300).trim();
+              // Only add if it looks like a project-specific constraint, not general coding advice
+              if (constraintText.includes('/') || constraintText.includes('.js') || constraintText.includes('.ts') || constraintText.includes('config') || constraintText.includes('package')) {
+                this.daemon.memory.addConstraint({
+                  text: constraintText,
+                  category: 'discovered',
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch { /* Memory extraction must never break journalist cycle */ }
   }
 
   // --- Accessors ---

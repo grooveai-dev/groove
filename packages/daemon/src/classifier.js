@@ -38,6 +38,7 @@ export class TaskClassifier {
   constructor() {
     this.windowSize = 200; // Large enough for quality signal extraction across tool calls
     this.agentWindows = {}; // for degradation detection and adaptive scoring
+    this._lastBroadcast = {};
   }
 
   addEvent(agentId, event) {
@@ -148,7 +149,30 @@ export class TaskClassifier {
     return { model: fallback, tier, reason: `No ${tier} model available, using ${fallback?.tier || 'default'}` };
   }
 
+  // Returns agents with significant classification changes since last poll.
+  // Called by the daemon's 30s broadcast timer — keeps classification
+  // completely decoupled from the stdout hot path.
+  getUpdates() {
+    const updates = [];
+    for (const [agentId, events] of Object.entries(this.agentWindows)) {
+      if (events.length < 40) continue; // Not enough data
+
+      const tier = this.classify(agentId);
+      const eventCount = events.length;
+      const lastBroadcast = this._lastBroadcast[agentId];
+
+      // Only report if classification changed or this is the first report
+      if (!lastBroadcast || lastBroadcast.tier !== tier ||
+          Math.abs(lastBroadcast.eventCount - eventCount) >= 20) {
+        updates.push({ agentId, tier, eventCount });
+        this._lastBroadcast[agentId] = { tier, eventCount };
+      }
+    }
+    return updates;
+  }
+
   clearAgent(agentId) {
     delete this.agentWindows[agentId];
+    delete this._lastBroadcast[agentId];
   }
 }

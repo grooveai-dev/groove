@@ -4,14 +4,23 @@
 import { EventEmitter } from 'events';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
+import { getProvider } from './providers/index.js';
 
-const DEFAULT_THRESHOLD = 0.75;
-const HARD_CEILING = 0.85;  // Force rotate at 85% — no idle check, prevents compaction
+const DEFAULT_THRESHOLD = 0.65;      // For non-self-managing providers (was 0.75)
+const HARD_CEILING = 0.80;           // Force rotate (was 0.85) — only for non-self-managing
 const CHECK_INTERVAL = 15_000;
 const QUALITY_THRESHOLD = 40;   // Score below this triggers quality rotation
 const MIN_EVENTS = 10;          // Minimum classifier events before scoring
 const MIN_AGE_SEC = 120;        // Minimum agent age before quality rotation
 const SCORE_HISTORY_MAX = 40;   // ~10 min at 15s intervals
+const COOLDOWN_MS = 5 * 60 * 1000;   // 5 minutes between rotations per agent
+const TOKEN_CEILING = 5_000_000;     // 5M tokens per agent (non-self-managing only)
+const ROLE_MULTIPLIERS = {
+  planner: 10,
+  fullstack: 4,
+  security: 4,
+  analyst: 5,
+};
 
 export class Rotator extends EventEmitter {
   constructor(daemon) {
@@ -20,6 +29,7 @@ export class Rotator extends EventEmitter {
     this.interval = null;
     this.rotationHistory = [];
     this.rotating = new Set();
+    this.lastRotationTime = new Map(); // agentId -> timestamp of last rotation
     this.enabled = false;
     this.liveScores = {};
     this.scoreHistory = {};
@@ -91,6 +101,17 @@ export class Rotator extends EventEmitter {
     this.enabled = false;
   }
 
+  _isOnCooldown(agentId) {
+    const lastTime = this.lastRotationTime.get(agentId);
+    if (!lastTime) return false;
+    return (Date.now() - lastTime) < COOLDOWN_MS;
+  }
+
+  _getTokenCeiling(agent) {
+    const multiplier = ROLE_MULTIPLIERS[agent.role] || 1;
+    return TOKEN_CEILING * multiplier;
+  }
+
   _idleMs(agent) {
     return agent.lastActivity
       ? Date.now() - new Date(agent.lastActivity).getTime()
@@ -131,27 +152,49 @@ export class Rotator extends EventEmitter {
     for (const agent of running) {
       if (this.rotating.has(agent.id)) continue;
 
-      // Hard ceiling — force rotate to prevent compaction, even if agent is busy
-      if (agent.contextUsage >= HARD_CEILING) {
-        console.log(`  Rotator: ${agent.name} at ${Math.round(agent.contextUsage * 100)}% — FORCE rotating (hard ceiling)`);
-        await this.rotate(agent.id, { reason: 'hard_ceiling' });
-        continue;
-      }
+      // Determine if provider manages its own context (e.g. Claude Code compacts internally)
+      const providerInstance = getProvider(agent.provider);
+      const selfManagesContext = providerInstance?.constructor?.managesOwnContext ?? false;
 
-      const threshold = this.daemon.adaptive
-        ? this.daemon.adaptive.getThreshold(agent.provider, agent.role)
-        : DEFAULT_THRESHOLD;
+      if (!selfManagesContext) {
+        // Non-Claude: threshold + ceiling + quality rotation
+        // These providers fill up linearly and degrade without external rotation
 
-      // Context-based rotation (original)
-      if (agent.contextUsage >= threshold) {
-        if (this._idleMs(agent) > 10_000) {
-          console.log(`  Rotator: ${agent.name} at ${Math.round(agent.contextUsage * 100)}% — rotating (context)`);
-          await this.rotate(agent.id, { reason: 'context_threshold' });
+        // Hard ceiling — force rotate, no idle check, bypasses cooldown (safety override)
+        if (agent.contextUsage >= HARD_CEILING) {
+          console.log(`  Rotator: ${agent.name} at ${Math.round(agent.contextUsage * 100)}% — FORCE rotating (hard ceiling)`);
+          await this.rotate(agent.id, { reason: 'hard_ceiling' });
           continue;
+        }
+
+        // Token ceiling — force rotate when total tokens exceed ceiling, bypasses cooldown
+        const tokenCeiling = this._getTokenCeiling(agent);
+        if (agent.tokensUsed >= tokenCeiling) {
+          console.log(`  Rotator: ${agent.name} at ${(agent.tokensUsed || 0).toLocaleString()} tokens — FORCE rotating (token ceiling ${tokenCeiling.toLocaleString()})`);
+          await this.rotate(agent.id, { reason: 'token_ceiling', tokensUsed: agent.tokensUsed, ceiling: tokenCeiling });
+          continue;
+        }
+
+        // Cooldown — skip threshold/quality rotation if recently rotated
+        if (this._isOnCooldown(agent.id)) continue;
+
+        // Context threshold — rotate when idle
+        const threshold = this.daemon.adaptive
+          ? this.daemon.adaptive.getThreshold(agent.provider, agent.role)
+          : DEFAULT_THRESHOLD;
+        if (agent.contextUsage >= threshold) {
+          if (this._idleMs(agent) > 10_000) {
+            console.log(`  Rotator: ${agent.name} at ${Math.round(agent.contextUsage * 100)}% — rotating (context)`);
+            await this.rotate(agent.id, { reason: 'context_threshold' });
+            continue;
+          }
         }
       }
 
-      // Quality-based rotation — detects degradation before tokens are wasted
+      // Cooldown — skip quality rotation for self-managing providers if recently rotated
+      if (this._isOnCooldown(agent.id)) continue;
+
+      // All providers: quality-based rotation — detects degradation before tokens are wasted
       const quality = this.scoreLiveSession(agent);
       if (quality.hasEnoughData && quality.score < QUALITY_THRESHOLD) {
         if (this._idleMs(agent) > 10_000) {
@@ -254,6 +297,7 @@ export class Rotator extends EventEmitter {
 
       record.newAgentId = newAgent.id;
       record.newTokens = 0;
+      this.lastRotationTime.set(agentId, Date.now());
       this.rotationHistory.push(record);
 
       if (this.rotationHistory.length > 100) {
@@ -358,6 +402,7 @@ export class Rotator extends EventEmitter {
     const contextRotations = this.rotationHistory.filter((r) => r.reason === 'context_threshold').length;
     const naturalCompactions = this.rotationHistory.filter((r) => r.reason === 'natural_compaction').length;
     const hardCeilingRotations = this.rotationHistory.filter((r) => r.reason === 'hard_ceiling').length;
+    const tokenCeilingRotations = this.rotationHistory.filter((r) => r.reason === 'token_ceiling').length;
     return {
       enabled: this.enabled,
       totalRotations,
@@ -366,9 +411,16 @@ export class Rotator extends EventEmitter {
       contextRotations,
       naturalCompactions,
       hardCeilingRotations,
+      tokenCeilingRotations,
       rotating: Array.from(this.rotating),
       liveScores: this.liveScores,
       scoreHistory: this.scoreHistory,
+      defaultThreshold: DEFAULT_THRESHOLD,
+      hardCeiling: HARD_CEILING,
+      qualityThreshold: QUALITY_THRESHOLD,
+      cooldownMs: COOLDOWN_MS,
+      tokenCeiling: TOKEN_CEILING,
+      roleMultipliers: ROLE_MULTIPLIERS,
     };
   }
 }

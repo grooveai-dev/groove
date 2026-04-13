@@ -546,7 +546,11 @@ export function createApi(app, daemon) {
 
   // Edition
   app.get('/api/edition', (req, res) => {
-    res.json({ edition: isPro ? 'pro' : 'community' });
+    res.json({
+      edition: isPro ? 'pro' : 'community',
+      plan: isPro ? 'pro' : 'community',
+      subscriptionActive: isPro ? _subscriptionCache.active : false,
+    });
   });
 
   // Daemon status
@@ -2268,7 +2272,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
         return res.status(400).json({ error: 'Recommended team is empty' });
       }
 
-      const baseDir = daemon.config?.defaultWorkingDir || daemon.projectDir;
+      // Resolve base directory from the planner that wrote the file, not the daemon root
+      const plannerAgent = found.agentId ? daemon.registry.get(found.agentId) : null;
+      const baseDir = plannerAgent?.workingDir || daemon.config?.defaultWorkingDir || daemon.projectDir;
 
       // Use the planner's teamId so launched agents join the correct team.
       // Priority: explicit from frontend > agent that wrote the file > most recent planner > default

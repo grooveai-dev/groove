@@ -10,7 +10,7 @@ import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil } from 'lucide-react';
+import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const NODE_TYPES = { agentNode: AgentNode, rootNode: RootNode };
 const NODE_W = 220;
@@ -72,6 +72,29 @@ export function TeamTabBar() {
   const submitting = useRef(false);
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
+  const scrollRef = useRef(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 0);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    checkScroll();
+    el.addEventListener('scroll', checkScroll);
+    const ro = new ResizeObserver(checkScroll);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', checkScroll);
+      ro.disconnect();
+    };
+  }, [checkScroll, teams.length]);
 
   function handleCreate() {
     const name = newName.trim();
@@ -79,7 +102,10 @@ export function TeamTabBar() {
     submitting.current = true;
     setNewName('');
     setCreating(false);
-    createTeam(name).finally(() => { submitting.current = false; });
+    createTeam(name).finally(() => {
+      submitting.current = false;
+      setTimeout(() => { if (scrollRef.current) scrollRef.current.scrollTo({ left: scrollRef.current.scrollWidth, behavior: 'smooth' }); }, 100);
+    });
   }
 
   function startRename(team) {
@@ -95,7 +121,20 @@ export function TeamTabBar() {
   }
 
   return (
-    <div className="flex items-end px-0 pt-0 pb-0 bg-surface-1 border-b border-border gap-0 flex-shrink-0">
+    <div className="flex items-end px-0 pt-0 pb-0 bg-surface-1 border-b border-border gap-0 flex-shrink-0 overflow-hidden">
+      {canScrollLeft && (
+        <button
+          onClick={() => scrollRef.current?.scrollBy({ left: -300, behavior: 'smooth' })}
+          className="w-6 h-9 flex items-center justify-center bg-accent/15 text-accent hover:bg-accent/25 transition-colors flex-shrink-0 cursor-pointer"
+        >
+          <ChevronLeft size={14} />
+        </button>
+      )}
+      <div
+        ref={scrollRef}
+        className="flex items-end flex-1 min-w-0 overflow-x-auto gap-0"
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+      >
       {teams.map((team) => {
         const count = agents.filter((a) => a.teamId === team.id).length;
         const isActive = team.id === activeTeamId;
@@ -122,7 +161,7 @@ export function TeamTabBar() {
             onClick={() => !isRenaming && switchTeam(team.id)}
             onDoubleClick={() => startRename(team)}
             className={cn(
-              'group relative flex items-center gap-2 px-4 h-9 text-xs font-sans cursor-pointer select-none transition-colors',
+              'group relative flex items-center gap-2 px-4 h-9 text-xs font-sans cursor-pointer select-none transition-colors flex-shrink-0',
               isActive
                 ? 'text-text-0 font-semibold border-x border-x-border bg-[#242830]'
                 : 'text-text-3 hover:text-text-1 hover:bg-surface-3/50',
@@ -202,9 +241,10 @@ export function TeamTabBar() {
         );
       })}
 
-      {/* Create new team */}
+      </div>
+      {/* Create new team — pinned outside scroll area */}
       {creating ? (
-        <div className="flex items-center gap-1.5 px-3 h-9 bg-surface-3/50">
+        <div className="flex items-center gap-1.5 px-3 h-9 bg-surface-3/50 flex-shrink-0">
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -227,10 +267,18 @@ export function TeamTabBar() {
       ) : (
         <button
           onClick={() => setCreating(true)}
-          className="flex items-center justify-center w-9 h-9 text-text-4 hover:text-text-1 hover:bg-surface-3/50 cursor-pointer transition-colors"
+          className="flex items-center justify-center w-9 h-9 bg-accent/15 text-accent hover:bg-accent/25 cursor-pointer transition-colors flex-shrink-0"
           title="New team"
         >
           <Plus size={14} />
+        </button>
+      )}
+      {canScrollRight && (
+        <button
+          onClick={() => scrollRef.current?.scrollBy({ left: 300, behavior: 'smooth' })}
+          className="w-6 h-9 flex items-center justify-center bg-accent/15 text-accent hover:bg-accent/25 transition-colors flex-shrink-0 cursor-pointer"
+        >
+          <ChevronRight size={14} />
         </button>
       )}
     </div>

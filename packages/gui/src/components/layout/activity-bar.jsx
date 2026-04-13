@@ -21,7 +21,7 @@ export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel
   return (
     <nav className="w-12 flex-shrink-0 flex flex-col bg-surface-3 border-r border-border">
       {/* Main nav */}
-      <div className="flex flex-col items-center gap-0.5 pt-2">
+      <div className="flex flex-col items-center gap-1.5 pt-3">
         {NAV_ITEMS.map((item) => (
           <Tooltip key={item.id} content={item.label} side="right">
             <button
@@ -43,7 +43,7 @@ export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel
       <div className="flex-1" />
 
       {/* Utility nav */}
-      <div className="flex flex-col items-center gap-0.5 pb-2">
+      <div className="flex flex-col items-center gap-1.5 pb-3">
         {UTIL_ITEMS.map((item) => {
           const isActive = item.panel
             ? detailPanel?.type === item.id

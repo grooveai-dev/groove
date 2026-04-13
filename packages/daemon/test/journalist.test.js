@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { Journalist } from '../src/journalist.js';
 import { Registry } from '../src/registry.js';
 import { StateManager } from '../src/state.js';
+import { MemoryStore } from '../src/memory.js';
 import { mkdtempSync, writeFileSync, existsSync, readFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -250,6 +251,124 @@ describe('Journalist', () => {
       journalist.stop();
       status = journalist.getStatus();
       assert.equal(status.running, false);
+    });
+  });
+
+  describe('_extractDiscoveries', () => {
+    it('should extract error→fix pairs from filtered logs', () => {
+      const { daemon, grooveDir } = createMockDaemon();
+      daemon.memory = new MemoryStore(grooveDir);
+      const journalist = new Journalist(daemon);
+
+      const filteredLogs = {
+        a1: {
+          agent: { id: 'a1', role: 'backend' },
+          entries: [
+            { type: 'tool', tool: 'Bash', input: 'npm run build', output: 'Error: Cannot find module gray-matter' },
+            { type: 'tool', tool: 'Edit', input: 'package.json — added gray-matter dependency' },
+          ],
+          explorationEntries: [],
+        },
+      };
+
+      journalist._extractDiscoveries(filteredLogs);
+
+      const discoveries = daemon.memory.listDiscoveries();
+      assert.equal(discoveries.length, 1);
+      assert.ok(discoveries[0].trigger.includes('Cannot find module'));
+      assert.ok(discoveries[0].fix.includes('package.json'));
+    });
+
+    it('should not crash when memory is unavailable', () => {
+      const { daemon } = createMockDaemon();
+      daemon.memory = null;
+      const journalist = new Journalist(daemon);
+
+      // Should not throw
+      journalist._extractDiscoveries({
+        a1: { agent: { id: 'a1', role: 'backend' }, entries: [], explorationEntries: [] },
+      });
+    });
+
+    it('should skip entries without error signals', () => {
+      const { daemon, grooveDir } = createMockDaemon();
+      daemon.memory = new MemoryStore(grooveDir);
+      const journalist = new Journalist(daemon);
+
+      const filteredLogs = {
+        a1: {
+          agent: { id: 'a1', role: 'backend' },
+          entries: [
+            { type: 'tool', tool: 'Write', input: 'src/index.js' },
+            { type: 'tool', tool: 'Edit', input: 'src/api.js' },
+          ],
+          explorationEntries: [],
+        },
+      };
+
+      journalist._extractDiscoveries(filteredLogs);
+      assert.equal(daemon.memory.listDiscoveries().length, 0);
+    });
+  });
+
+  describe('_extractConstraints', () => {
+    it('should extract project-specific constraints from thinking entries', () => {
+      const { daemon, grooveDir } = createMockDaemon();
+      daemon.memory = new MemoryStore(grooveDir);
+      const journalist = new Journalist(daemon);
+
+      const filteredLogs = {
+        a1: {
+          agent: { id: 'a1', role: 'backend' },
+          entries: [
+            {
+              type: 'thinking',
+              text: 'I should never modify packages/daemon/index.js directly because it is auto-generated from the template',
+            },
+          ],
+          explorationEntries: [],
+        },
+      };
+
+      journalist._extractConstraints(filteredLogs);
+
+      const constraints = daemon.memory.listConstraints();
+      assert.equal(constraints.length, 1);
+      assert.ok(constraints[0].text.includes('packages/daemon/index.js'));
+      assert.equal(constraints[0].category, 'discovered');
+    });
+
+    it('should skip non-project-specific constraints', () => {
+      const { daemon, grooveDir } = createMockDaemon();
+      daemon.memory = new MemoryStore(grooveDir);
+      const journalist = new Journalist(daemon);
+
+      const filteredLogs = {
+        a1: {
+          agent: { id: 'a1', role: 'backend' },
+          entries: [
+            {
+              type: 'thinking',
+              text: 'I must always write clean code and follow best practices for readability',
+            },
+          ],
+          explorationEntries: [],
+        },
+      };
+
+      journalist._extractConstraints(filteredLogs);
+      // Generic advice should be skipped (no file/config references)
+      assert.equal(daemon.memory.listConstraints().length, 0);
+    });
+
+    it('should not crash when memory is unavailable', () => {
+      const { daemon } = createMockDaemon();
+      daemon.memory = null;
+      const journalist = new Journalist(daemon);
+
+      journalist._extractConstraints({
+        a1: { agent: { id: 'a1', role: 'backend' }, entries: [], explorationEntries: [] },
+      });
     });
   });
 });

@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { Introducer } from '../src/introducer.js';
 import { Registry } from '../src/registry.js';
 import { StateManager } from '../src/state.js';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'fs';
+import { MemoryStore } from '../src/memory.js';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -89,6 +90,76 @@ describe('Introducer', () => {
 
       const content = readFileSync(join(tmpDir, 'AGENTS_REGISTRY.md'), 'utf8');
       assert.equal(content, '');
+    });
+  });
+
+  describe('Layer 7 memory injection', () => {
+    it('should append memory section at end of context when memory exists', () => {
+      const grooveDir = join(tmpDir, '.groove');
+      mkdirSync(grooveDir, { recursive: true });
+      const memory = new MemoryStore(grooveDir);
+      memory.addConstraint({ text: 'Never modify packages/daemon/index.js directly', category: 'hard' });
+      memory.addDiscovery({ role: 'backend', trigger: 'Cannot find module X', fix: 'npm install X', outcome: 'success' });
+
+      const daemon = { registry, projectDir: tmpDir, grooveDir, memory };
+      const intro = new Introducer(daemon);
+
+      const agent = registry.add({ role: 'backend', scope: ['src/api/**'] });
+      const ctx = intro.generateContext(agent);
+
+      assert.ok(ctx.includes('## Project Memory (auto-generated)'));
+      assert.ok(ctx.includes('Constraints (read carefully)'));
+      assert.ok(ctx.includes('Never modify packages/daemon/index.js'));
+      assert.ok(ctx.includes('Known Fixes for backend Role'));
+      assert.ok(ctx.includes('Cannot find module X'));
+    });
+
+    it('should not inject memory section when memory is empty', () => {
+      const grooveDir = join(tmpDir, '.groove');
+      mkdirSync(grooveDir, { recursive: true });
+      const memory = new MemoryStore(grooveDir);
+
+      const daemon = { registry, projectDir: tmpDir, grooveDir, memory };
+      const intro = new Introducer(daemon);
+
+      const agent = registry.add({ role: 'backend', scope: [] });
+      const ctx = intro.generateContext(agent);
+
+      assert.ok(!ctx.includes('## Project Memory'));
+    });
+
+    it('should not break spawn when memory is unavailable', () => {
+      const daemon = { registry, projectDir: tmpDir, grooveDir: tmpDir, memory: null };
+      const intro = new Introducer(daemon);
+
+      const agent = registry.add({ role: 'backend', scope: [] });
+      const ctx = intro.generateContext(agent);
+
+      // Should produce valid context without memory section
+      assert.ok(ctx.includes('backend'));
+      assert.ok(!ctx.includes('## Project Memory'));
+    });
+
+    it('should enforce 4K character budget on memory section', () => {
+      const grooveDir = join(tmpDir, '.groove');
+      mkdirSync(grooveDir, { recursive: true });
+      const memory = new MemoryStore(grooveDir);
+      // Add many constraints to exceed budget
+      for (let i = 0; i < 40; i++) {
+        memory.addConstraint({ text: `Rule ${i}: never touch file-${i}.config.js in the project root directory`, category: 'hard' });
+      }
+
+      const daemon = { registry, projectDir: tmpDir, grooveDir, memory };
+      const intro = new Introducer(daemon);
+
+      const agent = registry.add({ role: 'backend', scope: [] });
+      const ctx = intro.generateContext(agent);
+
+      // Memory section should exist but be truncated
+      const memStart = ctx.indexOf('## Project Memory');
+      assert.ok(memStart !== -1);
+      const memSection = ctx.slice(memStart);
+      assert.ok(memSection.length <= 4003); // 4000 + "..." adjustment
     });
   });
 

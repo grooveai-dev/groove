@@ -27,13 +27,13 @@ export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel
             <button
               onClick={() => onNavigate(item.id)}
               className={cn(
-                'w-10 h-10 flex items-center justify-center rounded-md transition-colors cursor-pointer',
+                'w-8 h-8 flex items-center justify-center rounded-md transition-colors cursor-pointer',
                 activeView === item.id
                   ? 'text-text-0 bg-surface-5'
                   : 'text-text-3 hover:text-text-1 hover:bg-surface-4',
               )}
             >
-              <item.icon size={18} strokeWidth={activeView === item.id ? 2 : 1.5} />
+              <item.icon size={16} strokeWidth={activeView === item.id ? 2 : 1.5} />
             </button>
           </Tooltip>
         ))}
@@ -53,13 +53,13 @@ export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel
               <button
                 onClick={() => item.panel ? onTogglePanel(item.id) : onNavigate(item.id)}
                 className={cn(
-                  'w-10 h-10 flex items-center justify-center rounded-md transition-colors cursor-pointer',
+                  'w-8 h-8 flex items-center justify-center rounded-md transition-colors cursor-pointer',
                   isActive
                     ? 'text-text-0 bg-surface-5'
                     : 'text-text-3 hover:text-text-1 hover:bg-surface-4',
                 )}
               >
-                <item.icon size={18} strokeWidth={isActive ? 2 : 1.5} />
+                <item.icon size={16} strokeWidth={isActive ? 2 : 1.5} />
               </button>
             </Tooltip>
           );

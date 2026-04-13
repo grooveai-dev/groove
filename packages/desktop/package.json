@@ -9,7 +9,9 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "prebuild": "node bundle-daemon.js",
     "build": "electron-builder",
+    "predist": "node bundle-daemon.js",
     "dist": "electron-builder --mac --win --linux"
   },
   "dependencies": {
@@ -32,12 +34,8 @@
     ],
     "extraResources": [
       {
-        "from": "../daemon",
-        "to": "daemon",
-        "filter": [
-          "src/**",
-          "package.json"
-        ]
+        "from": ".daemon-bundle",
+        "to": "daemon"
       },
       {
         "from": "../gui/dist",

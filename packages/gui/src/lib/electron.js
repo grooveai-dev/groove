@@ -15,3 +15,11 @@ export function openExternal(url) {
     window.open(url, '_blank');
   }
 }
+
+export const electronAuth = {
+  login: () => window.groove?.auth?.login(),
+  logout: () => window.groove?.auth?.logout(),
+  status: () => window.groove?.auth?.status(),
+  onChanged: (cb) => window.groove?.auth?.onChanged(cb),
+  onSubscriptionStatus: (cb) => window.groove?.auth?.onSubscriptionStatus(cb),
+};

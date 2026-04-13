@@ -1,18 +1,23 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { app, BrowserWindow, Tray, Menu, shell, nativeImage, dialog, ipcMain, safeStorage } from 'electron';
+import { randomBytes } from 'crypto';
 import { fork } from 'child_process';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { writeFileSync } from 'fs';
+import { writeFileSync, readFileSync, unlinkSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = 31415;
 const IS_MAC = process.platform === 'darwin';
+const STUDIO_URL = 'https://studio.groovedev.ai';
+const SUBSCRIPTION_POLL_MS = 5 * 60 * 1000;
 
 let mainWindow = null;
 let tray = null;
 let daemonProcess = null;
 let isQuitting = false;
+let pendingAuthState = null;
+let subscriptionTimer = null;
 
 function resolveResourcePath(...segments) {
   if (app.isPackaged) {
@@ -154,22 +159,73 @@ ipcMain.handle('open-external', (_event, url) => {
   }
 });
 
+// --- Auth flow ---
+
 app.setAsDefaultProtocolClient('groove');
+
+function tokenPath() {
+  return join(app.getPath('userData'), 'auth-token');
+}
+
+function storeToken(jwt) {
+  if (safeStorage.isEncryptionAvailable()) {
+    writeFileSync(tokenPath(), safeStorage.encryptString(jwt), { mode: 0o600 });
+  }
+  if (daemonProcess && daemonProcess.connected) {
+    daemonProcess.send({ type: 'auth-token', token: jwt });
+  }
+}
+
+function loadStoredToken() {
+  try {
+    const buf = readFileSync(tokenPath());
+    if (safeStorage.isEncryptionAvailable()) {
+      return safeStorage.decryptString(buf);
+    }
+  } catch { /* no stored token */ }
+  return null;
+}
+
+function clearStoredToken() {
+  try { unlinkSync(tokenPath()); } catch { /* already gone */ }
+  if (daemonProcess && daemonProcess.connected) {
+    daemonProcess.send({ type: 'auth-token', token: null });
+  }
+}
+
+ipcMain.handle('auth-login', () => {
+  pendingAuthState = randomBytes(32).toString('hex');
+  const url = `${STUDIO_URL}/#/login?return=electron&outer_state=${pendingAuthState}`;
+  shell.openExternal(url);
+  return { state: pendingAuthState };
+});
+
+ipcMain.handle('auth-logout', () => {
+  clearStoredToken();
+  stopSubscriptionPoll();
+  return { ok: true };
+});
+
+ipcMain.handle('auth-status', () => {
+  const token = loadStoredToken();
+  return { authenticated: !!token };
+});
 
 function handleAuthCallback(url) {
   try {
     const parsed = new URL(url);
     const token = parsed.searchParams.get('token');
-    if (!token) return;
-    if (safeStorage.isEncryptionAvailable()) {
-      const encrypted = safeStorage.encryptString(token);
-      const tokenPath = join(app.getPath('userData'), 'auth-token');
-      writeFileSync(tokenPath, encrypted);
+    const state = parsed.searchParams.get('state');
+    if (!token || !state) return;
+    if (state !== pendingAuthState) {
+      console.error('[auth] state mismatch — possible CSRF, rejecting callback');
+      return;
     }
-    if (daemonProcess && daemonProcess.connected) {
-      daemonProcess.send({ type: 'auth-token', token });
-    }
+    pendingAuthState = null;
+    storeToken(token);
+    startSubscriptionPoll();
     if (mainWindow) {
+      mainWindow.webContents.send('auth-changed', { authenticated: true });
       mainWindow.show();
       mainWindow.focus();
     }
@@ -183,11 +239,43 @@ app.on('open-url', (event, url) => {
   }
 });
 
+// --- Subscription polling ---
+
+async function checkSubscription() {
+  try {
+    const resp = await fetch(`http://localhost:${PORT}/api/auth/validate`, { method: 'POST' });
+    const data = await resp.json();
+    if (!data.authenticated) {
+      if (mainWindow) {
+        mainWindow.webContents.send('subscription-status', { active: false });
+      }
+    }
+  } catch { /* daemon unreachable, skip */ }
+}
+
+function startSubscriptionPoll() {
+  stopSubscriptionPoll();
+  checkSubscription();
+  subscriptionTimer = setInterval(checkSubscription, SUBSCRIPTION_POLL_MS);
+}
+
+function stopSubscriptionPoll() {
+  if (subscriptionTimer) {
+    clearInterval(subscriptionTimer);
+    subscriptionTimer = null;
+  }
+}
+
 app.whenReady().then(async () => {
   try {
     const port = await startDaemon();
     createWindow(port);
     createTray();
+    const stored = loadStoredToken();
+    if (stored) {
+      storeToken(stored);
+      startSubscriptionPoll();
+    }
   } catch (err) {
     dialog.showErrorBox('Groove Failed to Start', err.message);
     app.quit();
@@ -210,6 +298,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
   isQuitting = true;
+  stopSubscriptionPoll();
   if (daemonProcess && !daemonProcess.killed) {
     daemonProcess.kill('SIGTERM');
     await new Promise((resolve) => {

@@ -27,6 +27,7 @@
 # But still ignore generated/installed stuff inside packages
 packages/gui/dist/
 packages/desktop/dist/
+packages/desktop/.daemon-bundle/
 **/node_modules/
 **/*.log
 **/*.pid

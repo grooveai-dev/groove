@@ -114,7 +114,7 @@ export function CommandPalette() {
               value={query}
               onChange={(e) => { setQuery(e.target.value); setSelectedIndex(0); }}
               placeholder="Type a command..."
-              className="flex-1 bg-transparent text-sm text-text-0 font-sans placeholder:text-text-4 focus:outline-none"
+              className="flex-1 bg-transparent text-xs text-text-0 font-sans placeholder:text-text-4 focus:outline-none"
             />
           </div>
 

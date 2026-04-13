@@ -7,6 +7,7 @@ import { api } from '../lib/api';
 const WS_URL = `ws://${window.location.hostname}:${window.location.port || 31415}`;
 
 let toastCounter = 0;
+let plannerPollInterval = null;
 
 function loadJSON(key, fallback = {}) {
   try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); }
@@ -141,6 +142,22 @@ export const useGrooveStore = create((set, get) => ({
               || p.contextUsage !== a.contextUsage || p.name !== a.name || p.model !== a.model;
           });
           set({ agents: changed ? msg.data : prev, tokenTimeline: timeline, hydrated: true });
+
+          // Poll for recommended-team.json while a planner is running
+          const hasRunningPlanner = msg.data.some((a) => a.role === 'planner' && a.status === 'running');
+          if (hasRunningPlanner && !plannerPollInterval && !get().recommendedTeam) {
+            plannerPollInterval = setInterval(() => {
+              if (get().recommendedTeam) {
+                clearInterval(plannerPollInterval);
+                plannerPollInterval = null;
+                return;
+              }
+              get().checkRecommendedTeam();
+            }, 3000);
+          } else if ((!hasRunningPlanner || get().recommendedTeam) && plannerPollInterval) {
+            clearInterval(plannerPollInterval);
+            plannerPollInterval = null;
+          }
           break;
         }
 
@@ -381,6 +398,10 @@ export const useGrooveStore = create((set, get) => ({
     };
 
     ws.onclose = () => {
+      if (plannerPollInterval) {
+        clearInterval(plannerPollInterval);
+        plannerPollInterval = null;
+      }
       set({ connected: false, hydrated: false, ws: null, daemonHost: null, tunneled: false });
       setTimeout(() => get().connect(), 2000);
     };

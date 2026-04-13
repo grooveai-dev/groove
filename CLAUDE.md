@@ -269,7 +269,7 @@ Audit-driven release. Multi-agent orchestration system with 7 coordination layer
 Active agents: 1
 | Name | Role | Scope |
 |------|------|-------|
-| fullstack-18 | fullstack | - |
+| fullstack-12 | fullstack | - |
 See AGENTS_REGISTRY.md for full agent state.
 **Memory policy:** Ignore auto-memory. Do not read or write MEMORY.md. GROOVE manages all context.
 <!-- GROOVE:END -->

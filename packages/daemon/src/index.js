@@ -38,6 +38,7 @@ import { GatewayManager } from './gateways/manager.js';
 import { McpManager } from './mcp-manager.js';
 import { ModelManager } from './model-manager.js';
 import { LlamaServerManager } from './llama-server.js';
+import { RepoImporter } from './repo-import.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 
 const DEFAULT_PORT = 31415;
@@ -137,6 +138,7 @@ export class Daemon {
     this.modelManager = new ModelManager(this);
     this.llamaServer = new LlamaServerManager(this);
     this.mcpManager = new McpManager(this);
+    this.repoImporter = new RepoImporter(this);
 
     // HTTP + WebSocket server
     this.app = express();

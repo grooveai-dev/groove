@@ -37,6 +37,17 @@ export class Introducer {
       lines.push(`You have no file scope restrictions.`);
     }
 
+    // Sandbox boundary for imported repos
+    if (newAgent.workingDir) {
+      const sandboxPath = resolve(newAgent.workingDir, '.groove', 'sandbox.json');
+      if (existsSync(sandboxPath)) {
+        lines.push('');
+        lines.push(`## HARD BOUNDARY`);
+        lines.push('');
+        lines.push(`You MUST NOT read, write, or modify ANY file outside \`${newAgent.workingDir}/\`. This is a sandboxed imported repo. If setup instructions require changes outside this directory, ask the user first.`);
+      }
+    }
+
     lines.push('');
 
     if (others.length === 0) {

@@ -2083,27 +2083,27 @@ Keep responses concise. Help them think, don't lecture them about the system the
     for (const agent of agents) {
       if (agent.workingDir) {
         const p = resolve(agent.workingDir, '.groove', 'recommended-team.json');
-        if (existsSync(p)) return p;
+        if (existsSync(p)) return { path: p, teamId: agent.teamId || null, agentId: agent.id || null };
       }
     }
     // Fallback to daemon's .groove dir
     const p = resolve(daemon.grooveDir, 'recommended-team.json');
-    if (existsSync(p)) return p;
+    if (existsSync(p)) return { path: p, teamId: null, agentId: null };
     return null;
   }
 
   app.get('/api/recommended-team', (req, res) => {
-    const teamPath = findRecommendedTeam();
-    if (!teamPath) {
+    const found = findRecommendedTeam();
+    if (!found) {
       return res.json({ exists: false, agents: [] });
     }
     try {
-      const raw = JSON.parse(readFileSync(teamPath, 'utf8'));
+      const raw = JSON.parse(readFileSync(found.path, 'utf8'));
       // Support both old format (bare array) and new format ({ projectDir, agents })
       if (Array.isArray(raw)) {
-        res.json({ exists: true, agents: raw });
+        res.json({ exists: true, agents: raw, teamId: found.teamId });
       } else if (raw && Array.isArray(raw.agents)) {
-        res.json({ exists: true, agents: raw.agents, projectDir: raw.projectDir || null });
+        res.json({ exists: true, agents: raw.agents, projectDir: raw.projectDir || null, teamId: found.teamId });
       } else {
         res.json({ exists: false, agents: [] });
       }
@@ -2113,12 +2113,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
   });
 
   app.post('/api/recommended-team/launch', async (req, res) => {
-    const teamPath = findRecommendedTeam();
-    if (!teamPath) {
+    const found = findRecommendedTeam();
+    if (!found) {
       return res.status(404).json({ error: 'No recommended team found. Run a planner first.' });
     }
     try {
-      const raw = JSON.parse(readFileSync(teamPath, 'utf8'));
+      const raw = JSON.parse(readFileSync(found.path, 'utf8'));
 
       // Support both old format (bare array) and new format ({ projectDir, agents })
       let agentConfigs;
@@ -2139,8 +2139,8 @@ Keep responses concise. Help them think, don't lecture them about the system the
       const baseDir = daemon.config?.defaultWorkingDir || daemon.projectDir;
 
       // Use the planner's teamId so launched agents join the correct team.
-      // Accept explicit teamId from request body, or find the most recent planner agent.
-      let launchTeamId = req.body?.teamId || null;
+      // Priority: explicit from frontend > agent that wrote the file > most recent planner > default
+      let launchTeamId = req.body?.teamId || found.teamId || null;
       if (!launchTeamId) {
         const planners = daemon.registry.getAll()
           .filter((a) => a.role === 'planner')
@@ -2537,6 +2537,124 @@ Keep responses concise. Help them think, don't lecture them about the system the
   app.get('/api/audit', (req, res) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 500);
     res.json(daemon.audit.recent(limit));
+  });
+
+  // --- Repo Import ---
+
+  app.post('/api/repos/preview', async (req, res) => {
+    try {
+      const { repoUrl } = req.body;
+      if (!repoUrl || typeof repoUrl !== 'string') {
+        return res.status(400).json({ error: 'repoUrl is required (string)' });
+      }
+      const result = await daemon.repoImporter.preview(repoUrl);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/repos/import', async (req, res) => {
+    try {
+      const { repoUrl, targetPath, createTeam, teamName } = req.body;
+      if (!repoUrl || typeof repoUrl !== 'string') {
+        return res.status(400).json({ error: 'repoUrl is required (string)' });
+      }
+      if (!targetPath || typeof targetPath !== 'string') {
+        return res.status(400).json({ error: 'targetPath is required (string)' });
+      }
+
+      // Resolve shell shortcuts — GUI sends ~/... and ./...
+      let resolvedPath = targetPath;
+      if (resolvedPath.startsWith('~/') || resolvedPath === '~') {
+        resolvedPath = resolve(process.env.HOME || '/tmp', resolvedPath.slice(2));
+      } else if (!resolvedPath.startsWith('/')) {
+        resolvedPath = resolve(daemon.projectDir, resolvedPath);
+      }
+
+      const result = await daemon.repoImporter.import(repoUrl, resolvedPath, {});
+
+      let teamId = null;
+      if (createTeam) {
+        try {
+          const team = daemon.teams.create(teamName || result.stackInfo?.name || 'imported-repo');
+          teamId = team.id;
+          const manifest = daemon.repoImporter.getImport(result.importId);
+          if (manifest) {
+            manifest.teamId = teamId;
+            daemon.repoImporter._saveManifest(manifest);
+          }
+        } catch { /* team creation is optional */ }
+      }
+
+      // Spawn setup agent
+      let agentId = null;
+      try {
+        const setupPrompt = daemon.repoImporter.generateSetupPrompt(resolvedPath, result.stackInfo, '');
+        const agent = await daemon.processes.spawn({
+          role: 'fullstack',
+          name: `setup-${result.importId.slice(0, 4)}`,
+          workingDir: resolvedPath,
+          prompt: setupPrompt,
+          provider: daemon.config?.defaultProvider || 'claude-code',
+        });
+        agentId = agent.id;
+        const manifest = daemon.repoImporter.getImport(result.importId);
+        if (manifest) {
+          manifest.agents.push(agentId);
+          daemon.repoImporter._saveManifest(manifest);
+        }
+      } catch { /* agent spawn is best-effort */ }
+
+      res.json({ importId: result.importId, path: result.path, agentId, teamId });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/repos/imported', (req, res) => {
+    res.json(daemon.repoImporter.getImported());
+  });
+
+  app.get('/api/repos/:id', (req, res) => {
+    const manifest = daemon.repoImporter.getImport(req.params.id);
+    if (!manifest) return res.status(404).json({ error: 'Import not found' });
+    res.json(manifest);
+  });
+
+  app.get('/api/repos/:id/sandbox', (req, res) => {
+    const manifest = daemon.repoImporter.getImport(req.params.id);
+    if (!manifest) return res.status(404).json({ error: 'Import not found' });
+    res.json(manifest);
+  });
+
+  app.post('/api/repos/:id/process', (req, res) => {
+    try {
+      const { pid, command } = req.body;
+      daemon.repoImporter.recordProcess(req.params.id, pid, command);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/repos/:id/remove', async (req, res) => {
+    try {
+      await daemon.repoImporter.softRemove(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/repos/:id/nuke', async (req, res) => {
+    try {
+      const deleteFiles = req.query.deleteFiles !== 'false';
+      await daemon.repoImporter.hardNuke(req.params.id, { deleteFiles });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
   });
 
   // --- Config ---

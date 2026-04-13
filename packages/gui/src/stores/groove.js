@@ -79,6 +79,10 @@ export const useGrooveStore = create((set, get) => ({
   // ── Toasts ────────────────────────────────────────────────
   toasts: [],
 
+  // ── GitHub Repo Import ────────────────────────────────────
+  importedRepos: [],
+  importInProgress: false,
+
   // ── Editor state ──────────────────────────────────────────
   editorFiles: {},
   editorActiveFile: null,
@@ -595,9 +599,7 @@ export const useGrooveStore = create((set, get) => ({
 
       // Check if all recommended roles already exist in the planner's team.
       // If so, auto-delegate instead of showing the "Launch Team" modal.
-      const planners = get().agents.filter((a) => a.role === 'planner');
-      const planner = planners.sort((a, b) => (b.lastActivity || '').localeCompare(a.lastActivity || ''))[0];
-      const teamId = planner?.teamId;
+      const teamId = data.teamId || null;
 
       if (teamId) {
         const teamAgents = get().agents.filter((a) => a.teamId === teamId && a.role !== 'planner');
@@ -623,7 +625,7 @@ export const useGrooveStore = create((set, get) => ({
       }
 
       // New agents needed — show the modal for approval
-      set({ recommendedTeam: data });
+      set({ recommendedTeam: { ...data, teamId: data.teamId || null } });
     } catch {
       set({ recommendedTeam: null });
     }
@@ -631,9 +633,10 @@ export const useGrooveStore = create((set, get) => ({
 
   async launchRecommendedTeam(modifiedAgents) {
     try {
+      const teamId = get().recommendedTeam?.teamId || null;
       set({ recommendedTeam: null }); // Dismiss modal immediately
       get().addToast('info', 'Launching team...');
-      const body = modifiedAgents ? { agents: modifiedAgents } : undefined;
+      const body = { ...(modifiedAgents && { agents: modifiedAgents }), ...(teamId && { teamId }) };
       const result = await api.post('/recommended-team/launch', body);
       const sub = [
         result.phase2Pending ? `${result.phase2Pending} QC queued` : '',
@@ -654,6 +657,40 @@ export const useGrooveStore = create((set, get) => ({
       get().addToast('error', 'Launch failed', err.message);
       throw err;
     }
+  },
+
+  // ── GitHub Repo Import ────────────────────────────────────
+
+  async fetchImportedRepos() {
+    try {
+      const repos = await api.get('/repos/imported');
+      set({ importedRepos: repos });
+    } catch { /* ignore */ }
+  },
+
+  async previewRepo(repoUrl) {
+    return api.post('/repos/preview', { repoUrl });
+  },
+
+  async importRepo(repoUrl, targetPath, createTeam, teamName) {
+    set({ importInProgress: true });
+    try {
+      const result = await api.post('/repos/import', { repoUrl, targetPath, createTeam, teamName });
+      get().fetchImportedRepos();
+      return result;
+    } finally {
+      set({ importInProgress: false });
+    }
+  },
+
+  async softRemoveRepo(importId) {
+    await api.delete('/repos/' + importId + '/remove');
+    get().fetchImportedRepos();
+  },
+
+  async hardNukeRepo(importId, deleteFiles = true) {
+    await api.delete('/repos/' + importId + '/nuke?deleteFiles=' + deleteFiles);
+    get().fetchImportedRepos();
   },
 
   // ── Journalist ────────────────────────────────────────────

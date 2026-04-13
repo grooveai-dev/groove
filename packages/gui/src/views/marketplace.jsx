@@ -18,9 +18,13 @@ import { useToast } from '../lib/hooks/use-toast';
 import { fmtNum, timeAgo } from '../lib/format';
 import { useGrooveStore } from '../stores/groove';
 import { IntegrationWizard, GoogleWorkspaceWizard } from '../components/marketplace/integration-wizard';
+import { RepoImport } from '../components/marketplace/repo-import';
+import { RepoCard } from '../components/marketplace/repo-card';
+import { RepoNukeDialog } from '../components/marketplace/repo-nuke-dialog';
 import {
   ChevronLeft, ChevronDown, Sparkles, Plug, LogIn, LogOut,
   User, Upload, Package, Download, ShoppingBag, RefreshCw, Trash2,
+  GitBranch,
 } from 'lucide-react';
 
 // ── Skill Detail ─────────────────────────────────────────
@@ -623,6 +627,82 @@ function AuthArea() {
   );
 }
 
+// ── GitHub Browse ───────────────────────────────────────
+function GitHubBrowse() {
+  const importedRepos = useGrooveStore((s) => s.importedRepos);
+  const fetchImportedRepos = useGrooveStore((s) => s.fetchImportedRepos);
+  const softRemoveRepo = useGrooveStore((s) => s.softRemoveRepo);
+  const hardNukeRepo = useGrooveStore((s) => s.hardNukeRepo);
+  const toast = useToast();
+
+  const [nukeTarget, setNukeTarget] = useState(null);
+
+  useEffect(() => { fetchImportedRepos(); }, []);
+
+  async function handleRemove(repo) {
+    try {
+      await softRemoveRepo(repo.id);
+      toast.success(`Removed ${repo.repoName || repo.name}`);
+    } catch (err) {
+      toast.error('Remove failed', err.message);
+    }
+  }
+
+  async function handleNukeConfirm(deleteFiles) {
+    if (!nukeTarget) return;
+    try {
+      if (deleteFiles) {
+        await hardNukeRepo(nukeTarget.id);
+      } else {
+        await softRemoveRepo(nukeTarget.id);
+      }
+      toast.success(`${deleteFiles ? 'Nuked' : 'Removed'} ${nukeTarget.name || nukeTarget.repo}`);
+    } catch (err) {
+      toast.error('Nuke failed', err.message);
+    }
+    setNukeTarget(null);
+  }
+
+  return (
+    <ScrollArea className="h-full">
+      <div className="px-5 py-4 space-y-5">
+        <RepoImport />
+
+        {importedRepos.length > 0 && (
+          <div>
+            <h3 className="text-xs font-semibold text-text-2 font-sans uppercase tracking-wider mb-3">
+              Recently Imported
+            </h3>
+            <div className="space-y-2">
+              {(Array.isArray(importedRepos) ? importedRepos : []).map((repo) => (
+                <RepoCard
+                  key={repo.id}
+                  repo={repo}
+                  onRemove={() => handleRemove(repo)}
+                  onNuke={() => setNukeTarget(repo)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {importedRepos.length === 0 && (
+          <div className="text-center py-16 text-text-4 font-sans text-sm">
+            No repos imported yet. Paste a GitHub URL above to get started.
+          </div>
+        )}
+      </div>
+
+      <RepoNukeDialog
+        repo={nukeTarget}
+        open={!!nukeTarget}
+        onClose={() => setNukeTarget(null)}
+        onConfirm={handleNukeConfirm}
+      />
+    </ScrollArea>
+  );
+}
+
 // ── Main ─────────────────────────────────────────────────
 export default function MarketplaceView() {
   const [tab, setTab] = useState('skills');
@@ -630,6 +710,7 @@ export default function MarketplaceView() {
   const tabs = [
     { id: 'skills', label: 'Skills', icon: Sparkles },
     { id: 'integrations', label: 'Integrations', icon: Plug },
+    { id: 'github', label: 'GitHub', icon: GitBranch },
     { id: 'library', label: 'My Library', icon: Package },
   ];
 
@@ -662,6 +743,7 @@ export default function MarketplaceView() {
       <div className="flex-1 min-h-0">
         {tab === 'skills' && <SkillsBrowse />}
         {tab === 'integrations' && <IntegrationsBrowse />}
+        {tab === 'github' && <GitHubBrowse />}
         {tab === 'library' && <MyLibrary />}
       </div>
     </div>

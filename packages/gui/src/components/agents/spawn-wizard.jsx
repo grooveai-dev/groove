@@ -11,7 +11,7 @@ import {
   Server, Monitor, Code2, TestTube, Cloud, FileText,
   Shield, Database, Megaphone, Calculator, UserCheck,
   Headphones, BarChart3, Rocket, ChevronDown, Pen, Presentation,
-  Sparkles, X, Search, AlertTriangle, Plug,
+  Sparkles, X, Search, AlertTriangle, Plug, MessageCircle,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Dialog, DialogContent } from '../ui/dialog';
@@ -53,6 +53,7 @@ const INTEGRATION_LOGOS = {
 };
 
 const ROLE_PRESETS = [
+  { id: 'chat',      label: 'Chat',       desc: 'Companion, assistant, conversation', icon: MessageCircle, tier: 'Medium' },
   { id: 'planner',   label: 'Planner',    desc: 'Plans the team and tasks',       icon: Rocket,     tier: 'Heavy' },
   { id: 'backend',   label: 'Backend',    desc: 'APIs, services, databases',       icon: Server,     tier: 'Medium' },
   { id: 'frontend',  label: 'Frontend',   desc: 'UI, components, styling',         icon: Monitor,    tier: 'Medium' },
@@ -103,6 +104,9 @@ export function SpawnWizard() {
   const [integrationModalOpen, setIntegrationModalOpen] = useState(false);
   const [integrationSearch, setIntegrationSearch] = useState('');
   const [integrationApproval, setIntegrationApproval] = useState('manual');
+  const [personalities, setPersonalities] = useState([]);
+  const [selectedPersonality, setSelectedPersonality] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [spawning, setSpawning] = useState(false);
 
   useEffect(() => {
@@ -124,10 +128,15 @@ export function SpawnWizard() {
       api.get('/integrations/installed').then((data) => {
         setInstalledIntegrations(Array.isArray(data) ? data : []);
       }).catch(() => {});
+      api.get('/personalities').then((data) => {
+        setPersonalities(Array.isArray(data) ? data : data.personalities || []);
+      }).catch(() => {});
       setRole(''); setCustomRole(''); setName(''); setProvider(''); setModel(''); setPrompt('');
       setSelectedSkills([]);
       setSelectedIntegrations([]);
       setIntegrationApproval('manual');
+      setSelectedPersonality('');
+      setShowAdvanced(false);
     }
   }, [open, fetchProviders]);
 
@@ -149,6 +158,7 @@ export function SpawnWizard() {
         ...(selectedSkills.length > 0 && { skills: selectedSkills }),
         ...(selectedIntegrations.length > 0 && { integrations: selectedIntegrations }),
         ...(selectedIntegrations.length > 0 && { integrationApproval }),
+        ...(selectedPersonality && { personality: selectedPersonality }),
       };
       await spawnAgent(config);
       closeDetail();
@@ -537,6 +547,36 @@ export function SpawnWizard() {
                       </button>
                     </div>
                   </div>
+                )}
+
+                {/* Personality — shown for chat role, or via Advanced toggle for others */}
+                {(role === 'chat' || showAdvanced) && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-text-2 font-sans">Personality</label>
+                    <div className="relative">
+                      <select
+                        value={selectedPersonality}
+                        onChange={(e) => setSelectedPersonality(e.target.value)}
+                        className="w-full h-8 px-3 pr-8 text-sm rounded-md bg-surface-1 border border-border text-text-0 font-sans appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
+                      >
+                        <option value="">None (blank)</option>
+                        {personalities.map((p) => (
+                          <option key={p.name || p} value={p.name || p}>{p.name || p}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none" />
+                    </div>
+                    <p className="text-2xs text-text-4 font-sans">Personality is injected into every prompt for this agent.</p>
+                  </div>
+                )}
+
+                {role !== 'chat' && !showAdvanced && (
+                  <button
+                    onClick={() => setShowAdvanced(true)}
+                    className="text-2xs text-text-3 hover:text-accent font-sans transition-colors cursor-pointer"
+                  >
+                    + Advanced options
+                  </button>
                 )}
 
               </div>

@@ -4,7 +4,7 @@
 import express from 'express';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream, copyFileSync } from 'fs';
 import { lookup as mimeLookup } from './mimetypes.js';
 import { listProviders, getProvider } from './providers/index.js';
 import { OllamaProvider } from './providers/ollama.js';
@@ -2655,6 +2655,53 @@ Keep responses concise. Help them think, don't lecture them about the system the
     } catch (err) {
       res.status(400).json({ error: err.message });
     }
+  });
+
+  // --- Personalities ---
+
+  app.get('/api/personalities', (req, res) => {
+    const dir = resolve(daemon.grooveDir, 'personalities');
+    mkdirSync(dir, { recursive: true });
+    try {
+      const files = readdirSync(dir).filter(f => f.endsWith('.md'));
+      const personalities = files.map(f => ({
+        name: f.replace(/\.md$/, ''),
+      }));
+      res.json({ personalities });
+    } catch {
+      res.json({ personalities: [] });
+    }
+  });
+
+  app.get('/api/personalities/:name', (req, res) => {
+    const name = req.params.name.replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!name) return res.status(400).json({ error: 'Invalid name' });
+    const file = resolve(daemon.grooveDir, 'personalities', `${name}.md`);
+    if (!existsSync(file)) return res.status(404).json({ error: 'Personality not found' });
+    res.json({ name, content: readFileSync(file, 'utf8') });
+  });
+
+  app.put('/api/personalities/:name', (req, res) => {
+    const name = req.params.name.replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!name) return res.status(400).json({ error: 'Invalid name' });
+    const content = typeof req.body?.content === 'string' ? req.body.content.slice(0, 10000) : '';
+    const dir = resolve(daemon.grooveDir, 'personalities');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(resolve(dir, `${name}.md`), content, { mode: 0o600 });
+    daemon.audit.log('personality.update', { name });
+    res.json({ name, content });
+  });
+
+  app.post('/api/personalities/:name/clone', (req, res) => {
+    const source = req.params.name.replace(/[^a-zA-Z0-9_-]/g, '');
+    const target = (req.body?.name || '').replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!source || !target) return res.status(400).json({ error: 'Source and target name required' });
+    const dir = resolve(daemon.grooveDir, 'personalities');
+    const sourceFile = resolve(dir, `${source}.md`);
+    if (!existsSync(sourceFile)) return res.status(404).json({ error: 'Source personality not found' });
+    copyFileSync(sourceFile, resolve(dir, `${target}.md`));
+    daemon.audit.log('personality.clone', { source, target });
+    res.json({ name: target, clonedFrom: source });
   });
 
   // --- Config ---

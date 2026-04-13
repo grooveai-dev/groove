@@ -18,7 +18,7 @@ export const TeamBurnPanel = memo(function TeamBurnPanel({ teams = [] }) {
         {teams.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-text-3 font-mono">No team activity yet</div>
         ) : (
-          <div className="px-3 pb-2 space-y-1.5">
+          <div className="px-3 py-3 space-y-3">
             {teams.map((t) => {
               const pct = maxTokens > 0 ? (t.totalTokens / maxTokens) * 100 : 0;
               return (

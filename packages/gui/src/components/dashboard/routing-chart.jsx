@@ -34,7 +34,7 @@ const RoutingChart = memo(function RoutingChart({ routing, agentBreakdown }) {
             <span className="text-2xs font-mono text-text-4 ml-auto tabular-nums">{fmtNum(total)} decisions</span>
           </div>
           {/* Stacked horizontal bar */}
-          <div className="h-[6px] bg-surface-4 rounded-full overflow-hidden flex">
+          <div className="h-0.5 bg-surface-2 rounded-sm overflow-hidden flex">
             {tiers.map((tier) => {
               const count = byTier[tier] || 0;
               if (count === 0) return null;

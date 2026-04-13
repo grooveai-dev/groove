@@ -61,8 +61,8 @@ function QualityBar({ score }) {
   const pct = Math.max(0, Math.min(100, score || 0));
   const color = qualityColor(score);
   return (
-    <div className="h-1 rounded-full overflow-hidden flex-1" style={{ background: 'rgba(51,175,188,0.08)' }}>
-      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
+    <div className="h-0.5 rounded-sm overflow-hidden flex-1" style={{ background: 'rgba(51,175,188,0.08)' }}>
+      <div className="h-full rounded-sm transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
     </div>
   );
 }
@@ -81,9 +81,9 @@ function ProgressBar({ label, value, total, color }) {
           <span className="text-2xs font-mono text-text-3 tabular-nums w-10 text-right">{fmtNum(value)}</span>
         </div>
       </div>
-      <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(51,175,188,0.08)' }}>
+      <div className="h-0.5 rounded-sm overflow-hidden" style={{ background: 'rgba(51,175,188,0.08)' }}>
         <div
-          className="h-full rounded-full transition-all duration-500"
+          className="h-full rounded-sm transition-all duration-500"
           style={{ width: `${Math.min(pct, 100)}%`, background: color }}
         />
       </div>

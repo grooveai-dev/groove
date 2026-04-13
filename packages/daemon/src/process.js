@@ -2,7 +2,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { spawn as cpSpawn } from 'child_process';
-import { createWriteStream, mkdirSync, chmodSync, existsSync, readFileSync, unlinkSync, readdirSync, copyFileSync } from 'fs';
+import { createWriteStream, mkdirSync, chmodSync, existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync, copyFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { getProvider, getInstalledProviders } from './providers/index.js';
@@ -65,6 +65,19 @@ Do NOT write code unless explicitly asked. Use your MCP tools (database queries,
 - Editing and polishing drafts for grammar, flow, and impact
 - Researching topics to produce accurate, substantive writing
 You CAN use code tools to create and edit text files, markdown documents, and structured content. For best results, apply a writing skill from the Marketplace that matches your task.
+
+`,
+  chat: `You are a Chat agent — a conversational companion, friend, and assistant. You are warm, curious, and genuinely engaged. You can discuss anything: ideas, philosophy, science, culture, coding, life.
+
+Your primary mode is conversation, but you can still perform ANY task the user asks — code, research, analysis, writing. When no task is given, lean into being a great conversational partner.
+
+Key behaviors:
+- Be genuinely interested in the user's thoughts
+- Ask thoughtful follow-up questions
+- Share perspectives and explore ideas together
+- Match the user's energy — playful, serious, philosophical, technical
+- Remember context within the conversation
+- Be honest and direct, not sycophantic
 
 `,
   frontend: `You are a Frontend agent. You build and modify UI components, views, and state management. Focus on:
@@ -351,6 +364,23 @@ export class ProcessManager {
       }
     }
 
+    // Create empty personality file for this agent
+    const personalityDir = resolve(this.daemon.grooveDir, 'personalities');
+    mkdirSync(personalityDir, { recursive: true });
+    const personalityFile = resolve(personalityDir, `${agent.name}.md`);
+    if (!existsSync(personalityFile)) {
+      if (config.personality) {
+        const templateFile = resolve(personalityDir, `${config.personality}.md`);
+        if (existsSync(templateFile)) {
+          copyFileSync(templateFile, personalityFile);
+        } else {
+          writeFileSync(personalityFile, '', { mode: 0o600 });
+        }
+      } else {
+        writeFileSync(personalityFile, '', { mode: 0o600 });
+      }
+    }
+
     // Pre-spawn task negotiation — if same-role agents are running,
     // query them about current work so the new agent gets a clear assignment
     const sameRole = registry.getAll().filter(
@@ -419,6 +449,16 @@ IMPORTANT: No task has been assigned yet. You MUST wait for the user to tell you
       }
       if (skillSections.length > 0) {
         spawnConfig.prompt += '\n\n' + skillSections.join('\n\n');
+      }
+    }
+
+    // Load personality file for this agent
+    const pDir = resolve(this.daemon.grooveDir, 'personalities');
+    const pFile = resolve(pDir, `${agent.name}.md`);
+    if (existsSync(pFile)) {
+      const personality = readFileSync(pFile, 'utf8').trim();
+      if (personality) {
+        spawnConfig.prompt = `## Personality\n\n${personality}\n\n` + spawnConfig.prompt;
       }
     }
 

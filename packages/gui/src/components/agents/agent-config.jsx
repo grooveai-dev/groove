@@ -5,7 +5,7 @@ import {
   Gauge, FolderSearch, Key, Check, Eye, EyeOff,
   AlertCircle, Layers, Activity,
   RotateCw, Skull, Copy, Trash2,
-  Sparkles, Calendar, Plug,
+  Sparkles, Calendar, Plug, MessageCircle, Save,
 } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { Badge } from '../ui/badge';
@@ -159,6 +159,10 @@ export function AgentConfig({ agent }) {
   const [scheduleUnit, setScheduleUnit] = useState('hr');
   const [scheduleCount, setScheduleCount] = useState('1');
   const [scheduling, setScheduling] = useState(false);
+  const [personalityContent, setPersonalityContent] = useState('');
+  const [personalityLoaded, setPersonalityLoaded] = useState(false);
+  const [personalities, setPersonalities] = useState([]);
+  const [savingPersonality, setSavingPersonality] = useState(false);
 
   const isAlive = agent.status === 'running' || agent.status === 'starting';
 
@@ -180,6 +184,20 @@ export function AgentConfig({ agent }) {
       setRoutingMode(data?.mode || 'fixed');
     }).catch(() => {});
   }, [agent.id, agent.model]);
+
+  useEffect(() => {
+    setPersonalityLoaded(false);
+    api.get(`/personalities/${agent.name}`).then((data) => {
+      setPersonalityContent(data?.content || '');
+      setPersonalityLoaded(true);
+    }).catch(() => {
+      setPersonalityContent('');
+      setPersonalityLoaded(true);
+    });
+    api.get('/personalities').then((data) => {
+      setPersonalities(Array.isArray(data) ? data : data.personalities || []);
+    }).catch(() => {});
+  }, [agent.id, agent.name]);
 
   const currentProvider = providers.find((p) => p.id === agent.provider);
 
@@ -683,6 +701,61 @@ export function AgentConfig({ agent }) {
             <Calendar size={10} />
             {scheduling ? '...' : 'Set'}
           </Button>
+        </div>
+      </ConfigSection>
+
+      {/* ── Personality ──────────────────────────────────── */}
+      <ConfigSection label="Personality" icon={MessageCircle} description="Injected into every prompt. Changes apply on next spawn or rotation.">
+        <textarea
+          value={personalityContent}
+          onChange={(e) => setPersonalityContent(e.target.value)}
+          placeholder={personalityLoaded ? 'Describe this agent\'s personality, tone, and behavior...' : 'Loading...'}
+          rows={4}
+          className="w-full min-h-[4rem] max-h-[10rem] resize-y bg-surface-0 border border-border-subtle rounded-md p-2 text-xs font-mono text-text-1 placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+        />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={savingPersonality}
+            onClick={async () => {
+              setSavingPersonality(true);
+              try {
+                await api.put(`/personalities/${agent.name}`, { content: personalityContent });
+                addToast('success', 'Personality saved');
+              } catch (err) {
+                addToast('error', 'Save failed', err.message);
+              }
+              setSavingPersonality(false);
+            }}
+            className="h-7 px-3 text-2xs gap-1"
+          >
+            <Save size={10} />
+            {savingPersonality ? 'Saving...' : 'Save'}
+          </Button>
+          {personalities.length > 0 && (
+            <div className="relative">
+              <select
+                value=""
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  const p = personalities.find((x) => (x.name || x) === e.target.value);
+                  if (p) {
+                    api.get(`/personalities/${p.name || p}`).then((data) => {
+                      if (data?.content) setPersonalityContent(data.content);
+                    }).catch(() => {});
+                  }
+                }}
+                className="h-7 px-2 pr-7 text-2xs rounded-md bg-surface-1 border border-border-subtle text-text-2 font-sans appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
+              >
+                <option value="">Clone from...</option>
+                {personalities.filter((p) => (p.name || p) !== agent.name).map((p) => (
+                  <option key={p.name || p} value={p.name || p}>{p.name || p}</option>
+                ))}
+              </select>
+              <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-4 pointer-events-none" />
+            </div>
+          )}
         </div>
       </ConfigSection>
 

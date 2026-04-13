@@ -79,6 +79,8 @@ export function validateAgentConfig(config) {
   const validApprovalModes = ['auto', 'manual'];
   const integrationApproval = validApprovalModes.includes(config.integrationApproval) ? config.integrationApproval : 'manual';
 
+  const personality = (typeof config.personality === 'string' && config.personality.length > 0 && config.personality.length <= 64 && NAME_PATTERN.test(config.personality)) ? config.personality : undefined;
+
   // Return sanitized config (only known fields)
   return {
     role: config.role,
@@ -93,6 +95,7 @@ export function validateAgentConfig(config) {
     skills,
     integrations,
     integrationApproval,
+    personality,
   };
 }
 

@@ -26,9 +26,12 @@ describe('Rotator', () => {
         async spawn(config) { return { id: 'new-' + config.role, name: config.name, ...config }; },
       },
       journalist: {
-        async generateHandoffBrief(agent) {
+        async generateHandoffBrief(agent, options = {}) {
           return `Handoff brief for ${agent.name}`;
         },
+      },
+      memory: {
+        appendHandoffBrief() { return true; },
       },
       adaptive: {
         extractSignals() { return { errorCount: 0, repetitions: 0, scopeViolations: 0, toolCalls: 0, toolFailures: 0, filesWritten: 0 }; },

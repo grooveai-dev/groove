@@ -1,7 +1,9 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useCallback } from 'react';
-import { Search, GitBranch, Star, ExternalLink, Loader2, FolderOpen, Check } from 'lucide-react';
-import { Input } from '../ui/input';
+import {
+  Search, GitBranch, Star, ExternalLink, Loader2, Check,
+  FolderOpen, HardDrive, Package, PenLine, Users, ArrowLeft, Download,
+} from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { cn } from '../../lib/cn';
@@ -67,177 +69,295 @@ export function RepoImport() {
     }
   }, [preview, pathOption, customPath, url, createTeam, teamName, importRepo, toast]);
 
+  // ── Step 1: URL Input ──────────────────────────────────
+  if (step === 'input') {
+    return (
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-4 pointer-events-none" />
+        <input
+          type="text"
+          value={url}
+          onChange={handleUrlChange}
+          placeholder="Paste a GitHub URL..."
+          className={cn(
+            'w-full h-9 rounded-lg pl-9 pr-20 text-sm font-sans',
+            'bg-surface-1 border border-border text-text-0',
+            'placeholder:text-text-4',
+            'focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent',
+            'transition-colors duration-100',
+          )}
+        />
+        <Button
+          variant="primary"
+          size="sm"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2"
+          onClick={() => doPreview(url)}
+          disabled={!GITHUB_RE.test(url) || loading}
+        >
+          {loading ? <Loader2 size={12} className="animate-spin" /> : 'Preview'}
+        </Button>
+      </div>
+    );
+  }
+
+  // ── Step 2: Preview ────────────────────────────────────
   if (step === 'preview' && preview) {
     return (
-      <div className="rounded-lg border border-border-subtle bg-surface-2 p-4 space-y-3">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-lg bg-surface-4 flex items-center justify-center flex-shrink-0">
-            <GitBranch size={18} className="text-text-2" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-text-0 font-sans">{preview.name}</span>
-              <span className="text-2xs text-text-3 font-sans">{preview.owner}</span>
+      <div className="space-y-4">
+        <div className="rounded-lg border border-border-subtle bg-surface-2 p-5">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 rounded-xl bg-accent/8 flex items-center justify-center flex-shrink-0">
+              <GitBranch size={22} className="text-accent" />
             </div>
-            {preview.description && (
-              <p className="text-xs text-text-2 font-sans mt-0.5 line-clamp-2">{preview.description}</p>
-            )}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2.5 mb-1">
+                <span className="text-lg font-bold text-text-0 font-sans">{preview.name}</span>
+                <span className="text-xs text-text-4 font-sans">{preview.owner}</span>
+              </div>
+              <div className="flex items-center gap-3 text-2xs text-text-3 font-sans">
+                {preview.language && <Badge variant="outline" className="text-2xs">{preview.language}</Badge>}
+                {preview.stars != null && (
+                  <span className="flex items-center gap-1">
+                    <Star size={10} className="text-warning" fill="currentColor" />
+                    {fmtNum(preview.stars)}
+                  </span>
+                )}
+                {preview.license && <span>{preview.license}</span>}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Button variant="primary" size="sm" onClick={() => setStep('configure')} className="h-8 text-xs gap-1.5 px-4">
+                <FolderOpen size={13} />
+                Clone & Setup
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => window.open(url.startsWith('http') ? url : `https://${url}`, '_blank')}
+                className="h-8 text-xs gap-1.5"
+              >
+                <ExternalLink size={12} />
+                GitHub
+              </Button>
+              <button
+                onClick={() => { setStep('input'); setPreview(null); }}
+                className="text-2xs text-text-4 font-sans hover:text-text-2 cursor-pointer bg-transparent border-0 ml-1"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 text-2xs text-text-3 font-sans">
-          {preview.language && <Badge variant="outline" className="text-2xs">{preview.language}</Badge>}
-          {preview.stars != null && (
-            <span className="flex items-center gap-1">
-              <Star size={10} className="text-warning" fill="currentColor" />
-              {fmtNum(preview.stars)}
-            </span>
-          )}
-          {preview.license && <span>{preview.license}</span>}
-        </div>
-
-        {preview.detectedFiles?.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {preview.detectedFiles.map((f) => (
-              <span key={f} className="text-2xs font-mono text-text-3 px-1.5 py-0.5 rounded bg-surface-4">{f}</span>
-            ))}
+        {preview.description && (
+          <div className="rounded-lg border border-border-subtle bg-surface-1 px-5 py-4">
+            <h4 className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider mb-2">About</h4>
+            <p className="text-sm text-text-1 font-sans leading-relaxed">{preview.description}</p>
           </div>
         )}
 
         {preview.readmePreview && (
-          <div className="max-h-32 overflow-y-auto rounded bg-surface-1 border border-border-subtle p-3">
-            <p className="text-xs text-text-2 font-sans whitespace-pre-wrap">{preview.readmePreview}</p>
+          <div className="rounded-lg border border-border-subtle bg-surface-1 px-5 py-4">
+            <h4 className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider mb-3">README</h4>
+            <div className="text-sm text-text-2 font-sans leading-relaxed whitespace-pre-wrap">{preview.readmePreview}</div>
           </div>
         )}
-
-        <div className="flex items-center gap-2 pt-1">
-          <Button variant="primary" size="sm" onClick={() => setStep('configure')}>
-            <FolderOpen size={12} />
-            Clone & Setup
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => window.open(url.startsWith('http') ? url : `https://${url}`, '_blank')}
-          >
-            <ExternalLink size={12} />
-            View on GitHub
-          </Button>
-          <div className="flex-1" />
-          <button
-            onClick={() => { setStep('input'); setPreview(null); }}
-            className="text-2xs text-text-4 font-sans hover:text-text-2 cursor-pointer bg-transparent border-0"
-          >
-            Cancel
-          </button>
-        </div>
       </div>
     );
   }
 
+  // ── Step 3: Configure ──────────────────────────────────
   if (step === 'configure' && preview) {
+    const pathOptions = [
+      {
+        id: 'standalone',
+        icon: HardDrive,
+        title: 'Standalone project',
+        description: 'Clone to its own directory, separate from this workspace',
+        path: `~/Projects/${preview.name}`,
+      },
+      {
+        id: 'subdirectory',
+        icon: Package,
+        title: 'Workspace package',
+        description: 'Add as a package inside this project\'s monorepo',
+        path: `./packages/${preview.name}`,
+      },
+      {
+        id: 'custom',
+        icon: PenLine,
+        title: 'Custom location',
+        description: 'Choose your own path',
+        path: null,
+      },
+    ];
+
     return (
-      <div className="rounded-lg border border-border-subtle bg-surface-2 p-4 space-y-4">
-        <div className="flex items-center gap-2">
-          <GitBranch size={14} className="text-accent" />
-          <span className="text-sm font-semibold text-text-0 font-sans">Clone {preview.name}</span>
+      <div className="rounded-xl border border-border-subtle bg-surface-2 overflow-hidden">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-border-subtle bg-surface-3/50">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
+              <Download size={16} className="text-accent" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-text-0 font-sans">
+                Clone {preview.name}
+              </h3>
+              <p className="text-2xs text-text-4 font-sans mt-0.5">
+                {preview.owner}/{preview.name} — configure where to install
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <span className="text-xs font-medium text-text-2 font-sans">Where to clone?</span>
-          {[
-            { id: 'standalone', label: `Standalone: ~/Projects/${preview.name}` },
-            { id: 'subdirectory', label: `Project subdirectory: ./packages/${preview.name}` },
-            { id: 'custom', label: 'Custom path:' },
-          ].map((opt) => (
-            <label key={opt.id} className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="path-option"
-                checked={pathOption === opt.id}
-                onChange={() => setPathOption(opt.id)}
-                className="accent-[var(--color-accent)]"
-              />
-              <span className="text-xs text-text-1 font-sans">{opt.label}</span>
+        <div className="px-5 py-4 space-y-5">
+          {/* Location picker */}
+          <div>
+            <label className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider mb-2.5 block">
+              Install location
             </label>
-          ))}
-          {pathOption === 'custom' && (
-            <Input
-              value={customPath}
-              onChange={(e) => setCustomPath(e.target.value)}
-              placeholder="/path/to/directory"
-              mono
-              className="ml-5 text-xs"
-            />
-          )}
+            <div className="space-y-2">
+              {pathOptions.map((opt) => {
+                const Icon = opt.icon;
+                const selected = pathOption === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => setPathOption(opt.id)}
+                    className={cn(
+                      'w-full text-left rounded-lg border p-3.5 transition-all duration-150 cursor-pointer',
+                      selected
+                        ? 'border-accent bg-accent/5 ring-1 ring-accent/30'
+                        : 'border-border-subtle bg-surface-1 hover:border-border hover:bg-surface-1/80',
+                    )}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={cn(
+                        'w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5',
+                        selected ? 'bg-accent/15 text-accent' : 'bg-surface-3 text-text-4',
+                      )}>
+                        <Icon size={15} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            'text-xs font-semibold font-sans',
+                            selected ? 'text-text-0' : 'text-text-2',
+                          )}>
+                            {opt.title}
+                          </span>
+                          {selected && (
+                            <div className="w-4 h-4 rounded-full bg-accent flex items-center justify-center">
+                              <Check size={10} className="text-white" />
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-2xs text-text-4 font-sans mt-0.5 leading-relaxed">
+                          {opt.description}
+                        </p>
+                        {opt.path && selected && (
+                          <code className="text-2xs text-accent/80 font-mono mt-1.5 block truncate">
+                            {opt.path}
+                          </code>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Custom path input */}
+            {pathOption === 'custom' && (
+              <div className="mt-2.5 ml-11">
+                <input
+                  value={customPath}
+                  onChange={(e) => setCustomPath(e.target.value)}
+                  placeholder="/path/to/clone"
+                  autoFocus
+                  className={cn(
+                    'w-full h-9 px-3 text-xs font-mono rounded-md',
+                    'bg-surface-0 border border-border text-text-0',
+                    'placeholder:text-text-4',
+                    'focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent',
+                    'transition-colors',
+                  )}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Team toggle */}
+          <div className="border-t border-border-subtle pt-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-md bg-surface-3 flex items-center justify-center">
+                  <Users size={14} className="text-text-4" />
+                </div>
+                <div>
+                  <span className="text-xs font-semibold text-text-2 font-sans block">Create a team</span>
+                  <span className="text-2xs text-text-4 font-sans">Organize agents working on this repo into their own team</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setCreateTeam(!createTeam)}
+                className={cn(
+                  'w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer flex-shrink-0',
+                  createTeam ? 'bg-accent' : 'bg-surface-5',
+                )}
+              >
+                <div className={cn(
+                  'w-4 h-4 rounded-full bg-white shadow-sm transition-transform',
+                  createTeam ? 'translate-x-4' : 'translate-x-0',
+                )} />
+              </button>
+            </div>
+            {createTeam && (
+              <div className="mt-2.5 ml-11">
+                <input
+                  value={teamName}
+                  onChange={(e) => setTeamName(e.target.value)}
+                  placeholder="Team name"
+                  className={cn(
+                    'w-full h-9 px-3 text-xs font-sans rounded-md',
+                    'bg-surface-0 border border-border text-text-0',
+                    'placeholder:text-text-4',
+                    'focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent',
+                    'transition-colors',
+                  )}
+                />
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={createTeam}
-              onChange={(e) => setCreateTeam(e.target.checked)}
-              className="accent-[var(--color-accent)]"
-            />
-            <span className="text-xs text-text-1 font-sans">Create team for this repo</span>
-          </label>
-          {createTeam && (
-            <Input
-              value={teamName}
-              onChange={(e) => setTeamName(e.target.value)}
-              placeholder="Team name"
-              className="ml-5 text-xs"
-            />
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 pt-1">
+        {/* Footer */}
+        <div className="px-5 py-3.5 border-t border-border-subtle bg-surface-3/30 flex items-center justify-between">
+          <button
+            onClick={() => setStep('preview')}
+            className="flex items-center gap-1.5 text-2xs text-text-4 font-sans hover:text-text-2 cursor-pointer bg-transparent border-0 transition-colors"
+          >
+            <ArrowLeft size={11} />
+            Back
+          </button>
           <Button
             variant="primary"
             size="sm"
             onClick={handleImport}
-            disabled={importInProgress || (pathOption === 'custom' && !customPath)}
+            disabled={importInProgress || (pathOption === 'custom' && !customPath.trim())}
+            className="h-8 text-xs gap-1.5 px-5"
           >
-            {importInProgress ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-            {importInProgress ? 'Importing...' : 'Start Import'}
+            {importInProgress ? (
+              <><Loader2 size={12} className="animate-spin" /> Importing...</>
+            ) : (
+              <><Download size={12} /> Clone & Setup</>
+            )}
           </Button>
-          <button
-            onClick={() => setStep('preview')}
-            className="text-2xs text-text-4 font-sans hover:text-text-2 cursor-pointer bg-transparent border-0"
-          >
-            Back
-          </button>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="relative">
-      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-4 pointer-events-none" />
-      <input
-        type="text"
-        value={url}
-        onChange={handleUrlChange}
-        placeholder="Paste a GitHub URL..."
-        className={cn(
-          'w-full h-9 rounded-lg pl-9 pr-20 text-sm font-sans',
-          'bg-surface-1 border border-border text-text-0',
-          'placeholder:text-text-4',
-          'focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent',
-          'transition-colors duration-100',
-        )}
-      />
-      <Button
-        variant="primary"
-        size="sm"
-        className="absolute right-1.5 top-1/2 -translate-y-1/2"
-        onClick={() => doPreview(url)}
-        disabled={!GITHUB_RE.test(url) || loading}
-      >
-        {loading ? <Loader2 size={12} className="animate-spin" /> : 'Preview'}
-      </Button>
-    </div>
-  );
+  return null;
 }

@@ -1,0 +1,71 @@
+{
+  "name": "@groove-dev/desktop",
+  "version": "0.27.8",
+  "description": "Groove Desktop — one-click install for non-technical users",
+  "license": "FSL-1.1-Apache-2.0",
+  "type": "module",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "dist": "electron-builder --mac --win --linux"
+  },
+  "dependencies": {
+    "@groove-dev/daemon": "*"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "electron-updater": "^6.0.0"
+  },
+  "build": {
+    "appId": "ai.groovedev.groove",
+    "productName": "Groove",
+    "asar": true,
+    "files": [
+      "main.js",
+      "preload.cjs",
+      "daemon-bridge.js",
+      "assets/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../daemon",
+        "to": "daemon",
+        "filter": [
+          "src/**",
+          "package.json"
+        ]
+      },
+      {
+        "from": "../gui/dist",
+        "to": "gui"
+      }
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.developer-tools",
+      "icon": "assets/icon.svg"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.svg"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Development",
+      "icon": "assets/icon.svg"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    },
+    "dmg": {
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    }
+  }
+}

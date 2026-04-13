@@ -11,7 +11,7 @@ import {
   Server, Monitor, Code2, TestTube, Cloud, FileText,
   Shield, Database, Megaphone, Calculator, UserCheck,
   Headphones, BarChart3, Rocket, ChevronDown, Pen, Presentation,
-  Sparkles, X, Search, AlertTriangle, Plug, MessageCircle,
+  Sparkles, X, Search, AlertTriangle, Plug, MessageCircle, GitBranch,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Dialog, DialogContent } from '../ui/dialog';
@@ -104,6 +104,10 @@ export function SpawnWizard() {
   const [integrationModalOpen, setIntegrationModalOpen] = useState(false);
   const [integrationSearch, setIntegrationSearch] = useState('');
   const [integrationApproval, setIntegrationApproval] = useState('manual');
+  const [importedRepos, setImportedRepos] = useState([]);
+  const [selectedRepos, setSelectedRepos] = useState([]);
+  const [repoModalOpen, setRepoModalOpen] = useState(false);
+  const [repoSearch, setRepoSearch] = useState('');
   const [personalities, setPersonalities] = useState([]);
   const [selectedPersonality, setSelectedPersonality] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -128,6 +132,9 @@ export function SpawnWizard() {
       api.get('/integrations/installed').then((data) => {
         setInstalledIntegrations(Array.isArray(data) ? data : []);
       }).catch(() => {});
+      api.get('/repos/imported').then((data) => {
+        setImportedRepos((Array.isArray(data) ? data : []).filter((r) => r.status === 'active'));
+      }).catch(() => {});
       api.get('/personalities').then((data) => {
         setPersonalities(Array.isArray(data) ? data : data.personalities || []);
       }).catch(() => {});
@@ -135,6 +142,7 @@ export function SpawnWizard() {
       setSelectedSkills([]);
       setSelectedIntegrations([]);
       setIntegrationApproval('manual');
+      setSelectedRepos([]);
       setSelectedPersonality('');
       setShowAdvanced(false);
     }
@@ -158,6 +166,7 @@ export function SpawnWizard() {
         ...(selectedSkills.length > 0 && { skills: selectedSkills }),
         ...(selectedIntegrations.length > 0 && { integrations: selectedIntegrations }),
         ...(selectedIntegrations.length > 0 && { integrationApproval }),
+        ...(selectedRepos.length > 0 && { repos: selectedRepos }),
         ...(selectedPersonality && { personality: selectedPersonality }),
       };
       await spawnAgent(config);
@@ -548,6 +557,97 @@ export function SpawnWizard() {
                     </div>
                   </div>
                 )}
+
+                {/* Repos */}
+                {importedRepos.length > 0 && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-text-2 font-sans">Repos</label>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {selectedRepos.map((importId) => {
+                        const repo = importedRepos.find((r) => r.id === importId);
+                        return (
+                          <span
+                            key={importId}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-accent/12 text-accent border border-accent/25 text-2xs font-sans"
+                          >
+                            <GitBranch size={9} />
+                            {repo?.name || importId}
+                            <button
+                              onClick={() => setSelectedRepos((prev) => prev.filter((r) => r !== importId))}
+                              className="ml-0.5 hover:text-text-0 cursor-pointer"
+                            >
+                              <X size={9} />
+                            </button>
+                          </span>
+                        );
+                      })}
+                      <button
+                        onClick={() => { setRepoModalOpen(true); setRepoSearch(''); }}
+                        className={cn(
+                          'inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-2xs font-sans transition-colors cursor-pointer',
+                          'bg-surface-0 text-text-2 border border-border-subtle hover:border-border hover:text-text-0',
+                        )}
+                      >
+                        <GitBranch size={10} />
+                        {selectedRepos.length > 0 ? 'Add repo' : 'Attach repo'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Repo picker modal */}
+                <Dialog open={repoModalOpen} onOpenChange={setRepoModalOpen}>
+                  <DialogContent title="Select Repository" className="max-w-sm">
+                    <div className="space-y-3 p-4">
+                      {importedRepos.length > 1 && (
+                        <div className="relative">
+                          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-4" />
+                          <input
+                            value={repoSearch}
+                            onChange={(e) => setRepoSearch(e.target.value)}
+                            placeholder="Search repos..."
+                            autoFocus
+                            className="w-full h-8 pl-8 pr-3 text-xs rounded-md bg-surface-0 border border-border text-text-0 font-sans focus:outline-none focus:ring-1 focus:ring-accent"
+                          />
+                        </div>
+                      )}
+                      <div className="max-h-64 overflow-y-auto space-y-1">
+                        {importedRepos
+                          .filter((r) => {
+                            if (!repoSearch) return true;
+                            const q = repoSearch.toLowerCase();
+                            return (r.name || r.repo || r.id).toLowerCase().includes(q);
+                          })
+                          .map((repo) => {
+                            const active = selectedRepos.includes(repo.id);
+                            return (
+                              <button
+                                key={repo.id}
+                                onClick={() => {
+                                  setSelectedRepos((prev) =>
+                                    active ? prev.filter((r) => r !== repo.id) : [...prev, repo.id]
+                                  );
+                                }}
+                                className={cn(
+                                  'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left transition-colors cursor-pointer',
+                                  active
+                                    ? 'bg-accent/10 border border-accent/25'
+                                    : 'hover:bg-surface-3 border border-transparent',
+                                )}
+                              >
+                                <GitBranch size={12} className={active ? 'text-accent' : 'text-text-3'} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs font-semibold text-text-0 font-sans truncate">{repo.name || repo.repo}</div>
+                                  <div className="text-2xs text-text-4 font-mono truncate">{repo.clonedTo}</div>
+                                </div>
+                                {active && <CheckMark />}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
 
                 {/* Personality — shown for chat role, or via Advanced toggle for others */}
                 {(role === 'chat' || showAdvanced) && (

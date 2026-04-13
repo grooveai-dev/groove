@@ -138,7 +138,7 @@ export class Journalist {
     for (const agent of agents) {
       const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.name}.log`);
       if (!existsSync(logPath)) {
-        result[agent.id] = { agent, entries: [] };
+        result[agent.id] = { agent, entries: [], explorationEntries: [] };
         continue;
       }
 
@@ -147,10 +147,10 @@ export class Journalist {
         const size = Buffer.byteLength(content);
         this.lastLogSizes[agent.id] = size;
 
-        const entries = this.filterLog(content, agent);
-        result[agent.id] = { agent, entries };
+        const { entries, explorationEntries } = this.filterLog(content, agent);
+        result[agent.id] = { agent, entries, explorationEntries };
       } catch {
-        result[agent.id] = { agent, entries: [] };
+        result[agent.id] = { agent, entries: [], explorationEntries: [] };
       }
     }
 
@@ -160,7 +160,9 @@ export class Journalist {
   filterLog(rawLog, agent) {
     // Parse stream-json lines and extract meaningful events.
     // Focus on PROGRESS (writes, edits, commands with results) not EXPLORATION (reads, greps).
+    // Exploration tools are tracked separately so handoff briefs can include what was examined.
     const entries = [];
+    const explorationEntries = [];
     const lines = rawLog.split('\n');
     const toolResults = new Map(); // tool_use_id -> result text
 
@@ -198,8 +200,17 @@ export class Journalist {
               if (block.type === 'tool_use') {
                 const tool = block.name;
 
-                // Skip exploration tools — reads/searches are noise for synthesis
-                if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') continue;
+                // Track exploration tools separately — they're noise for synthesis
+                // but valuable for handoff briefs (what files/patterns were examined)
+                if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') {
+                  explorationEntries.push({
+                    type: 'exploration',
+                    tool,
+                    input: this.summarizeToolInput(tool, block.input),
+                    timestamp: data.timestamp,
+                  });
+                  continue;
+                }
 
                 const entry = {
                   type: 'tool',
@@ -223,10 +234,11 @@ export class Journalist {
 
                 entries.push(entry);
               } else if (block.type === 'text' && block.text) {
-                // Only keep substantial reasoning (decisions, conclusions)
-                // Short fragments like "Let me check..." are noise
+                // Keep reasoning that contains decisions or conclusions.
+                // Under 50 chars is noise ("Let me check...", "OK"), but 50-200
+                // often contains key decisions like "Using X instead of Y".
                 const text = block.text.trim();
-                if (text.length > 200) {
+                if (text.length > 50) {
                   entries.push({ type: 'thinking', text: text.slice(0, 2000), timestamp: data.timestamp });
                 }
               }
@@ -250,7 +262,7 @@ export class Journalist {
       }
     }
 
-    return entries;
+    return { entries, explorationEntries };
   }
 
   summarizeToolInput(toolName, input) {
@@ -260,6 +272,12 @@ export class Journalist {
         return input.file_path || input.path || '';
       case 'Edit':
         return input.file_path || input.path || '';
+      case 'Read':
+        return input.file_path || input.path || '';
+      case 'Grep':
+        return `${input.pattern || ''}${input.path ? ' in ' + input.path : ''}`;
+      case 'Glob':
+        return input.pattern || '';
       case 'Bash':
         return (input.command || '').slice(0, 150);
       default:
@@ -653,10 +671,11 @@ export class Journalist {
 
   // --- Handoff Brief for Context Rotation ---
 
-  async generateHandoffBrief(agent) {
+  async generateHandoffBrief(agent, options = {}) {
     const filteredLogs = this.collectFilteredLogs([agent]);
     const agentLog = filteredLogs[agent.id];
     const entries = agentLog?.entries || [];
+    const explorationEntries = agentLog?.explorationEntries || [];
 
     // Get current project map — scoped to agent's workspace if applicable
     const mapPath = resolve(this.daemon.projectDir, 'GROOVE_PROJECT_MAP.md');
@@ -684,6 +703,33 @@ export class Journalist {
       .slice(-3)
       .join('\n');
 
+    // Build exploration summary — what files/patterns were examined
+    const explorationSummary = explorationEntries
+      .map((e) => `- ${e.tool}: ${e.input}`)
+      .slice(-20)
+      .join('\n');
+
+    // Build file changes section — group Edit/Write operations by file path
+    const fileChanges = {};
+    for (const e of entries.filter((e) => e.type === 'tool' && (e.tool === 'Edit' || e.tool === 'Write'))) {
+      const file = e.input || 'unknown';
+      if (!fileChanges[file]) fileChanges[file] = [];
+      if (e.diff) fileChanges[file].push(e.diff);
+      else fileChanges[file].push(e.tool === 'Write' ? 'created' : 'modified');
+    }
+    const fileChangesSummary = Object.entries(fileChanges)
+      .map(([file, changes]) => `- **${file}**: ${changes.slice(0, 3).join('; ')}`)
+      .slice(0, 20)
+      .join('\n');
+
+    // Layer 7 memory: discoveries, constraints, specializations
+    const discoveries = this.daemon.memory?.getDiscoveriesMarkdown(agent.role, 10, 2000) || '';
+    const constraints = this.daemon.memory?.getConstraintsMarkdown(2000) || '';
+    const specialization = this.daemon.memory?.getSpecialization(agent.id);
+    const specLine = specialization?.avgQualityScore != null
+      ? `- Quality profile: ${specialization.avgQualityScore}/100 across ${specialization.sessionCount} sessions`
+      : '';
+
     // Pull recent rotation history from persistent memory (Layer 7).
     // Gives the new agent causal continuity: what the last 3 agents struggled
     // with, decided, and solved — not just what the current session did.
@@ -700,11 +746,15 @@ export class Journalist {
       ? agentFeedback.map((fb) => `- "${fb.message}"`).join('\n')
       : '';
 
+    // Rotation reason for the new agent
+    const rotationTrigger = `- Rotation trigger: ${options.reason || 'manual'}${options.qualityScore ? ` (quality: ${options.qualityScore}/100)` : ''}`;
+
     return [
       `# Session Continuation`,
       ``,
       `You are **${agent.name}** (role: ${agent.role}). This is an internal context refresh — `,
       `the conversation with the user is ongoing and must feel seamless to them. They cannot see this brief.`,
+      rotationTrigger,
       ``,
       `## CRITICAL: Finish What You Were Doing`,
       ``,
@@ -729,6 +779,7 @@ export class Journalist {
       `- Scope: ${agent.scope?.join(', ') || 'unrestricted'}`,
       `- Provider: ${agent.provider}`,
       agent.workingDir ? `- Working directory: ${agent.workingDir}` : '',
+      specLine,
       ``,
       `## Session State`,
       `- Tokens used before refresh: ${agent.tokensUsed}`,
@@ -737,6 +788,10 @@ export class Journalist {
       toolSummary ? `### Recent tool calls (what you were doing)\n${toolSummary}\n` : '',
       resultSummary ? `### Last results\n${resultSummary}\n` : '',
       errorSummary ? `### Unresolved errors\n${errorSummary}\n` : '',
+      fileChangesSummary ? `## Files Modified\n\n${fileChangesSummary}\n` : '',
+      explorationSummary ? `## Exploration Context\n\n${explorationSummary}\n` : '',
+      discoveries ? `## Known Issues & Fixes\n\n${discoveries}\n` : '',
+      constraints ? `## Project Constraints\n\n${constraints}\n` : '',
       `## Current Project State`,
       ``,
       projectMap ? projectMap.slice(0, 10000) : 'No project map available yet.',

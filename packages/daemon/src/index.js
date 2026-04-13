@@ -36,6 +36,7 @@ import { MemoryStore } from './memory.js';
 import { TerminalManager } from './terminal-pty.js';
 import { GatewayManager } from './gateways/manager.js';
 import { McpManager } from './mcp-manager.js';
+import { TunnelManager } from './tunnel-manager.js';
 import { ModelManager } from './model-manager.js';
 import { LlamaServerManager } from './llama-server.js';
 import { RepoImporter } from './repo-import.js';
@@ -138,6 +139,7 @@ export class Daemon {
     this.modelManager = new ModelManager(this);
     this.llamaServer = new LlamaServerManager(this);
     this.mcpManager = new McpManager(this);
+    this.tunnelManager = new TunnelManager(this);
     this.repoImporter = new RepoImporter(this);
 
     // HTTP + WebSocket server
@@ -451,6 +453,9 @@ export class Daemon {
     // Clean up file watchers and terminal sessions
     this.fileWatcher.unwatchAll();
     this.terminalManager.killAll();
+
+    // Disconnect all SSH tunnels
+    this.tunnelManager.shutdown();
 
     // Kill all agent processes, stop MCP servers, and stop inference servers
     await this.processes.killAll();

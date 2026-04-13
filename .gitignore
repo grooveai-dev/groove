@@ -21,6 +21,8 @@
 !packages/cli/**
 !packages/gui/
 !packages/gui/**
+!packages/desktop/
+!packages/desktop/**
 
 # But still ignore generated/installed stuff inside packages
 packages/gui/dist/

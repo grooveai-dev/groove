@@ -99,7 +99,20 @@ function LoadingScreen() {
 export default function App() {
   const connect = useGrooveStore((s) => s.connect);
   const hydrated = useGrooveStore((s) => s.hydrated);
+  const tunneled = useGrooveStore((s) => s.tunneled);
   useEffect(() => { connect(); }, [connect]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const instance = params.get('instance');
+    if (instance) {
+      document.title = `${instance} — Groove`;
+    } else if (tunneled) {
+      document.title = 'Remote — Groove';
+    } else {
+      document.title = 'Groove';
+    }
+  }, [tunneled]);
 
   if (!hydrated) return <LoadingScreen />;
 

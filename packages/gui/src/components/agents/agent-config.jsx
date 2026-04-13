@@ -5,7 +5,7 @@ import {
   Gauge, FolderSearch, Key, Check, Eye, EyeOff,
   AlertCircle, Layers, Activity,
   RotateCw, Skull, Copy, Trash2,
-  Sparkles, Calendar, Plug, MessageCircle, Save,
+  Sparkles, Calendar, Plug, MessageCircle, Save, GitBranch,
 } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { Badge } from '../ui/badge';
@@ -156,6 +156,7 @@ export function AgentConfig({ agent }) {
   const [expandedProvider, setExpandedProvider] = useState(null);
   const [routingMode, setRoutingMode] = useState(agent.routingMode || 'auto');
   const [installedSkills, setInstalledSkills] = useState([]);
+  const [importedRepos, setImportedRepos] = useState([]);
   const [scheduleUnit, setScheduleUnit] = useState('hr');
   const [scheduleCount, setScheduleCount] = useState('1');
   const [scheduling, setScheduling] = useState(false);
@@ -169,6 +170,7 @@ export function AgentConfig({ agent }) {
   useEffect(() => {
     loadProviders();
     api.get('/skills/installed').then((data) => setInstalledSkills(Array.isArray(data) ? data : data.skills || [])).catch(() => {});
+    api.get('/repos/imported').then((data) => setImportedRepos((Array.isArray(data) ? data : []).filter((r) => r.status === 'active'))).catch(() => {});
     function onChanged() { loadProviders(); }
     window.addEventListener('groove:providers-changed', onChanged);
     return () => window.removeEventListener('groove:providers-changed', onChanged);
@@ -629,6 +631,60 @@ export function AgentConfig({ agent }) {
           )}
         </div>
       </ConfigSection>
+
+      {/* ── Repos ─────────────────────────────────────────── */}
+      {importedRepos.length > 0 && (
+        <ConfigSection label="Repos" icon={GitBranch} description="Attach imported repos so this agent knows where they are.">
+          <div className="flex flex-wrap gap-1.5">
+            {(agent.repos || []).map((importId) => {
+              const repo = importedRepos.find((r) => r.id === importId);
+              return (
+                <Badge key={importId} variant="accent" className="font-mono text-xs gap-1.5 px-2.5 py-1">
+                  {repo?.name || importId}
+                  <button
+                    onClick={async () => {
+                      try {
+                        await api.delete(`/agents/${agent.id}/repos/${importId}`);
+                        addToast('success', `Detached ${repo?.name || importId}`);
+                      } catch (err) { addToast('error', 'Detach failed', err.message); }
+                    }}
+                    className="hover:text-danger cursor-pointer"
+                  >
+                    <X size={10} />
+                  </button>
+                </Badge>
+              );
+            })}
+            {importedRepos.filter((r) => !(agent.repos || []).includes(r.id)).length > 0 && (
+              <div className="relative group">
+                <button className="w-7 h-7 flex items-center justify-center rounded-md bg-surface-4 border border-border-subtle text-text-3 hover:text-accent cursor-pointer transition-colors">
+                  <Plus size={12} />
+                </button>
+                <div className="absolute top-full left-0 mt-1 z-20 hidden group-hover:block bg-surface-2 border border-border-subtle rounded-lg shadow-xl py-1 min-w-[200px]">
+                  {importedRepos.filter((r) => !(agent.repos || []).includes(r.id)).map((repo) => (
+                    <button
+                      key={repo.id}
+                      onClick={async () => {
+                        try {
+                          await api.post(`/agents/${agent.id}/repos/${repo.id}`);
+                          addToast('success', `Attached ${repo.name || repo.id}`);
+                        } catch (err) { addToast('error', 'Attach failed', err.message); }
+                      }}
+                      className="w-full text-left px-3 py-1.5 text-xs font-sans text-text-1 hover:bg-surface-4 cursor-pointer transition-colors"
+                    >
+                      <div className="font-semibold">{repo.name || repo.repo}</div>
+                      <div className="text-2xs text-text-4 font-mono truncate">{repo.clonedTo}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(agent.repos || []).length === 0 && (
+              <span className="text-2xs text-text-4 font-sans">No repos attached — import one from the Marketplace</span>
+            )}
+          </div>
+        </ConfigSection>
+      )}
 
       {/* ── Schedule ──────────────────────────────────────── */}
       <ConfigSection label="Schedule" icon={Calendar} description="Run this agent on a recurring schedule.">

@@ -1,6 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { Search, Plus, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { isElectron, getPlatform } from '../../lib/electron';
 
 const VIEW_LABELS = {
   agents: 'Agents',
@@ -23,17 +24,34 @@ export function BreadcrumbBar({
     crumbs.push(editorActiveFile.split('/').pop());
   }
 
+  const electron = isElectron();
+  const darwinDrag = electron && getPlatform() === 'darwin';
+
   return (
-    <header className="h-11 flex-shrink-0 flex items-center gap-3 px-4 bg-surface-3 border-b border-border">
+    <header
+      className={cn(
+        'h-11 flex-shrink-0 flex items-center gap-3 px-4 bg-surface-3 border-b border-border',
+        darwinDrag && 'pl-20 electron-drag electron-no-drag-children',
+      )}
+    >
       {/* Logo */}
       <img src="/favicon.png" alt="Groove" className="h-7 w-7 rounded-full flex-shrink-0" />
 
-      {/* Host badge */}
-      {daemonHost && (
-        <span className="text-2xs font-mono font-semibold text-text-3 bg-surface-5 px-1.5 py-0.5 rounded flex-shrink-0">
-          {daemonHost}
-        </span>
-      )}
+      {/* Host badge — show instance name from ?instance= or raw host */}
+      {(() => {
+        const instance = new URLSearchParams(window.location.search).get('instance');
+        if (instance) return (
+          <span className="text-2xs font-mono font-semibold text-accent bg-accent/10 px-1.5 py-0.5 rounded flex-shrink-0">
+            {instance}
+          </span>
+        );
+        if (daemonHost) return (
+          <span className="text-2xs font-mono font-semibold text-text-3 bg-surface-5 px-1.5 py-0.5 rounded flex-shrink-0">
+            {daemonHost}
+          </span>
+        );
+        return null;
+      })()}
 
       <div className="flex-1 min-w-4" />
 

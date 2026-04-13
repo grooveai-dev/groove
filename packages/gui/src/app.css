@@ -201,6 +201,20 @@ html {
   filter: drop-shadow(0 0 4px rgba(97, 175, 239, 0.4));
 }
 
+/* ── Electron Desktop App ────────────────────────────────── */
+
+.electron-drag {
+  -webkit-app-region: drag;
+}
+
+.electron-no-drag-children button,
+.electron-no-drag-children input,
+.electron-no-drag-children a,
+.electron-no-drag-children kbd,
+.electron-no-drag-children select {
+  -webkit-app-region: no-drag;
+}
+
 /* ── React Flow Overrides ─────────────────────────────────── */
 
 /* Suppress node fly-in animation — nodes appear in position instantly */

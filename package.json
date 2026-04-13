@@ -43,7 +43,8 @@
   "workspaces": [
     "packages/daemon",
     "packages/cli",
-    "packages/gui"
+    "packages/gui",
+    "packages/desktop"
   ],
   "engines": {
     "node": ">=20.0.0"
@@ -52,6 +53,10 @@
     "dev:daemon": "npm run dev -w packages/daemon",
     "dev:gui": "npm run dev -w packages/gui",
     "build": "npm run build -w packages/gui",
+    "build:pro": "GROOVE_EDITION=pro npm run build -w packages/gui",
+    "start:desktop": "npm run start -w packages/desktop",
+    "build:desktop": "npm run build -w packages/desktop",
+    "dist:desktop": "npm run build:pro && npm run dist -w packages/desktop",
     "test": "node --test packages/daemon/test/*.test.js",
     "prepublishOnly": "npm run build"
   },

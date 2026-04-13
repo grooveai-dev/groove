@@ -4,7 +4,7 @@ import { useGrooveStore } from '../../stores/groove';
 import {
   Network, Code2, ChartSpline, Puzzle, Users, Plus,
   RotateCw, Skull, MessageSquare, Terminal, Newspaper,
-  Search,
+  Search, Radio, ExternalLink,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -26,6 +26,7 @@ export function CommandPalette() {
   const open = useGrooveStore((s) => s.commandPaletteOpen);
   const toggle = useGrooveStore((s) => s.toggleCommandPalette);
   const agents = useGrooveStore((s) => s.agents);
+  const savedTunnels = useGrooveStore((s) => s.savedTunnels);
   const store = useGrooveStore;
 
   const [query, setQuery] = useState('');
@@ -41,8 +42,17 @@ export function CommandPalette() {
         { id: `kill:${a.id}`, label: `Kill ${a.name}`, icon: Skull, category: 'Agents', action: (s) => { s.killAgent(a.id); } },
       ] : []),
     ]);
-    return [...STATIC_COMMANDS, ...agentCommands];
-  }, [agents]);
+    const tunnelCommands = [
+      { id: 'action:quickconnect', label: 'Quick Connect', icon: Radio, category: 'Remote', action: (s) => { s.toggleQuickConnect(); } },
+      ...savedTunnels.map((t) => t.active
+        ? { id: `tunnel:open:${t.id}`, label: `Open ${t.name}`, icon: ExternalLink, category: 'Remote', action: () => {
+            window.open(`http://localhost:${t.localPort}?instance=${encodeURIComponent(t.name)}`, '_blank');
+          }}
+        : { id: `tunnel:connect:${t.id}`, label: `Connect to ${t.name}`, icon: Radio, category: 'Remote', action: (s) => { s.connectTunnel(t.id); } }
+      ),
+    ];
+    return [...STATIC_COMMANDS, ...agentCommands, ...tunnelCommands];
+  }, [agents, savedTunnels]);
 
   // Filter
   const filtered = useMemo(() => {

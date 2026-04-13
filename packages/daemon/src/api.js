@@ -11,6 +11,18 @@ import { OllamaProvider } from './providers/ollama.js';
 import { validateAgentConfig } from './validate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const isPro = process.env.GROOVE_EDITION === 'pro';
+
+function proOnly(req, res, next) {
+  if (!isPro) {
+    return res.status(403).json({
+      error: 'Pro feature',
+      edition: 'community',
+      upgrade: 'https://groovedev.ai/pro',
+    });
+  }
+  next();
+}
 
 async function _executeApprovalRetry(daemon, approval) {
   const rp = approval.retryPayload;
@@ -522,6 +534,11 @@ export function createApi(app, daemon) {
     res.json(suggestion);
   });
 
+  // Edition
+  app.get('/api/edition', (req, res) => {
+    res.json({ edition: isPro ? 'pro' : 'community' });
+  });
+
   // Daemon status
   app.get('/api/status', (req, res) => {
     res.json({
@@ -532,6 +549,7 @@ export function createApi(app, daemon) {
       host: daemon.host,
       port: daemon.port,
       projectDir: daemon.projectDir,
+      edition: isPro ? 'pro' : 'community',
     });
   });
 
@@ -1253,6 +1271,34 @@ Keep responses concise. Help them think, don't lecture them about the system the
     daemon.registry.update(agent.id, { skills });
     daemon.audit.log('skill.detach', { agentId: agent.id, skillId: req.params.skillId });
     res.json({ id: agent.id, skills });
+  });
+
+  // --- Agent Repos (attach/detach) ---
+
+  app.post('/api/agents/:agentId/repos/:importId', (req, res) => {
+    const agent = daemon.registry.get(req.params.agentId);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    const importId = req.params.importId;
+    const manifest = daemon.repoImporter.getImport(importId);
+    if (!manifest || manifest.status !== 'active') {
+      return res.status(400).json({ error: 'Repo not found or not active' });
+    }
+    const repos = agent.repos || [];
+    if (repos.includes(importId)) {
+      return res.json({ id: agent.id, repos });
+    }
+    daemon.registry.update(agent.id, { repos: [...repos, importId] });
+    daemon.audit.log('repo.attach', { agentId: agent.id, importId });
+    res.json({ id: agent.id, repos: [...repos, importId] });
+  });
+
+  app.delete('/api/agents/:agentId/repos/:importId', (req, res) => {
+    const agent = daemon.registry.get(req.params.agentId);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    const repos = (agent.repos || []).filter((r) => r !== req.params.importId);
+    daemon.registry.update(agent.id, { repos });
+    daemon.audit.log('repo.detach', { agentId: agent.id, importId: req.params.importId });
+    res.json({ id: agent.id, repos });
   });
 
   // --- Integrations ---
@@ -2537,17 +2583,17 @@ Keep responses concise. Help them think, don't lecture them about the system the
   // --- Federation ---
 
   // Federation status
-  app.get('/api/federation', (req, res) => {
+  app.get('/api/federation', proOnly, (req, res) => {
     res.json(daemon.federation.getStatus());
   });
 
   // List peers
-  app.get('/api/federation/peers', (req, res) => {
+  app.get('/api/federation/peers', proOnly, (req, res) => {
     res.json(daemon.federation.getPeers());
   });
 
   // Initiate pairing (local CLI calls this with the remote URL)
-  app.post('/api/federation/initiate', async (req, res) => {
+  app.post('/api/federation/initiate', proOnly, async (req, res) => {
     try {
       const { remoteUrl } = req.body;
       if (!remoteUrl || typeof remoteUrl !== 'string') {
@@ -2561,7 +2607,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
   });
 
   // Accept pairing (remote daemon calls this during key exchange)
-  app.post('/api/federation/pair', (req, res) => {
+  app.post('/api/federation/pair', proOnly, (req, res) => {
     try {
       const result = daemon.federation.acceptPairing(req.body);
       res.json(result);
@@ -2571,7 +2617,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
   });
 
   // Unpair a peer
-  app.delete('/api/federation/peers/:id', (req, res) => {
+  app.delete('/api/federation/peers/:id', proOnly, (req, res) => {
     try {
       daemon.federation.unpair(req.params.id);
       res.json({ ok: true });
@@ -2581,7 +2627,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
   });
 
   // Receive a signed contract from a peer
-  app.post('/api/federation/contract', (req, res) => {
+  app.post('/api/federation/contract', proOnly, (req, res) => {
     try {
       const { senderId, payload, signature } = req.body;
       if (!senderId || !payload || !signature) {
@@ -2595,7 +2641,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
   });
 
   // Send a contract to a peer (local agents call this)
-  app.post('/api/federation/contract/send', async (req, res) => {
+  app.post('/api/federation/contract/send', proOnly, async (req, res) => {
     try {
       const { peerId, contract } = req.body;
       if (!peerId || !contract) {
@@ -2778,6 +2824,95 @@ Keep responses concise. Help them think, don't lecture them about the system the
     copyFileSync(sourceFile, resolve(dir, `${target}.md`));
     daemon.audit.log('personality.clone', { source, target });
     res.json({ name: target, clonedFrom: source });
+  });
+
+  // --- Tunnels (Remote Access) ---
+
+  app.get('/api/tunnels', proOnly, (req, res) => {
+    res.json(daemon.tunnelManager.getSaved());
+  });
+
+  app.post('/api/tunnels', proOnly, (req, res) => {
+    try {
+      const { name, host, user, port, sshKeyPath, autoStart, autoConnect } = req.body;
+      if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name is required (string)' });
+      if (!host || typeof host !== 'string') return res.status(400).json({ error: 'host is required (string)' });
+      const result = daemon.tunnelManager.save({ name, host, user, port, sshKeyPath, autoStart, autoConnect });
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/tunnels/:id', proOnly, (req, res) => {
+    try {
+      const result = daemon.tunnelManager.update(req.params.id, req.body);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/tunnels/:id', proOnly, (req, res) => {
+    try {
+      daemon.tunnelManager.delete(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/tunnels/:id/test', proOnly, async (req, res) => {
+    try {
+      const result = await daemon.tunnelManager.test(req.params.id);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/tunnels/:id/connect', proOnly, async (req, res) => {
+    try {
+      const result = await daemon.tunnelManager.connect(req.params.id);
+      res.json(result);
+    } catch (err) {
+      const body = { error: err.message };
+      if (err.testResult) body.testResult = err.testResult;
+      res.status(400).json(body);
+    }
+  });
+
+  app.post('/api/tunnels/:id/disconnect', proOnly, async (req, res) => {
+    try {
+      await daemon.tunnelManager.disconnect(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/tunnels/:id/install', proOnly, async (req, res) => {
+    try {
+      const result = await daemon.tunnelManager.remoteInstall(req.params.id);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/tunnels/:id/start', proOnly, async (req, res) => {
+    try {
+      await daemon.tunnelManager.autoStart(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/tunnels/:id/status', proOnly, (req, res) => {
+    const s = daemon.tunnelManager.getStatus(req.params.id);
+    if (!s) return res.status(404).json({ error: 'Remote not found' });
+    res.json(s);
   });
 
   // --- Config ---

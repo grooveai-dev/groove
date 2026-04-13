@@ -1,8 +1,10 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Terminal, BookOpen } from 'lucide-react';
+import { Terminal, BookOpen, Radio, Plug } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/status-dot';
 import { fmtUptime } from '../../lib/format';
+import { useGrooveStore } from '../../stores/groove';
+import { isElectron, openExternal } from '../../lib/electron';
 
 export function StatusBar({
   connected,
@@ -12,6 +14,10 @@ export function StatusBar({
   terminalVisible,
   onToggleTerminal,
 }) {
+  const savedTunnels = useGrooveStore((s) => s.savedTunnels);
+  const activeTunnel = savedTunnels.find((t) => t.active);
+  const electron = isElectron();
+
   return (
     <footer className="h-6 flex-shrink-0 flex items-center px-3 bg-surface-3 border-t border-border text-2xs font-sans select-none">
       {/* Left: connection + stats */}
@@ -19,7 +25,7 @@ export function StatusBar({
         <div className="flex items-center gap-1.5">
           <StatusDot status={connected ? 'running' : 'crashed'} size="sm" />
           <span className={connected ? 'text-text-2' : 'text-danger'}>
-            {connected ? 'Connected' : 'Offline'}
+            {connected ? (electron ? 'Desktop' : 'Connected') : 'Offline'}
           </span>
         </div>
         {connected && uptime > 0 && (
@@ -28,20 +34,49 @@ export function StatusBar({
         {connected && agentCount > 0 && (
           <span className="text-text-4">{runningCount}/{agentCount} agents</span>
         )}
+        {activeTunnel ? (
+          <button
+            onClick={() => {
+              const port = activeTunnel.localPort;
+              const name = encodeURIComponent(activeTunnel.name);
+              openExternal(`http://localhost:${port}?instance=${name}`);
+            }}
+            className="flex items-center gap-1.5 text-text-3 hover:text-text-1 cursor-pointer transition-colors"
+            title="Open remote GUI"
+          >
+            <Radio size={10} className="text-success" />
+            <span>{activeTunnel.name}</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-success" />
+            {activeTunnel.latencyMs != null && (
+              <span className="text-text-4">{activeTunnel.latencyMs}ms</span>
+            )}
+          </button>
+        ) : savedTunnels.length > 0 && (
+          <button
+            onClick={() => useGrooveStore.getState().toggleQuickConnect()}
+            className="flex items-center gap-1.5 text-text-4 hover:text-text-1 cursor-pointer transition-colors"
+            title="Quick Connect to remote server"
+          >
+            <Plug size={10} />
+            <span>Connect</span>
+          </button>
+        )}
       </div>
 
       <div className="flex-1" />
 
       {/* Right: docs + terminal toggle */}
-      <a
-        href="https://docs.groovedev.ai"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex items-center gap-1.5 px-2 h-full text-text-3 hover:text-text-1 hover:bg-surface-5 transition-colors no-underline"
-      >
-        <BookOpen size={12} />
-        <span>Docs</span>
-      </a>
+      {!electron && (
+        <a
+          href="https://docs.groovedev.ai"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 px-2 h-full text-text-3 hover:text-text-1 hover:bg-surface-5 transition-colors no-underline"
+        >
+          <BookOpen size={12} />
+          <span>Docs</span>
+        </a>
+      )}
       <button
         onClick={onToggleTerminal}
         className={cn(

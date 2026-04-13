@@ -2,6 +2,8 @@
 import { useMemo } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { useKeyboard } from '../../lib/hooks/use-keyboard';
+import { isElectron } from '../../lib/electron';
+import { cn } from '../../lib/cn';
 import { TooltipProvider } from '../ui/tooltip';
 import { ToastContainer } from '../ui/toast';
 import { ActivityBar } from './activity-bar';
@@ -10,6 +12,7 @@ import { StatusBar } from './status-bar';
 import { DetailPanel } from './detail-panel';
 import { CommandPalette } from './command-palette';
 import { ApprovalModal } from '../ui/approval-modal';
+import { QuickConnect } from '../settings/quick-connect';
 import { TeamTabBar } from '../../views/agents';
 
 export function AppShell({ children, detailContent, terminalContent }) {
@@ -56,7 +59,7 @@ export function AppShell({ children, detailContent, terminalContent }) {
 
   return (
     <TooltipProvider>
-      <div className="w-full h-full flex flex-col bg-surface-2 text-text-1 font-sans">
+      <div className={cn('w-full h-full flex flex-col bg-surface-2 text-text-1 font-sans', isElectron() && 'electron-app')}>
         <BreadcrumbBar
           activeView={activeView}
           connected={connected}
@@ -114,6 +117,7 @@ export function AppShell({ children, detailContent, terminalContent }) {
         />
 
         <CommandPalette />
+        <QuickConnect />
         <ApprovalModal />
         <ToastContainer />
       </div>

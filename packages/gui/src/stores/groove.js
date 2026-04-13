@@ -46,6 +46,7 @@ export const useGrooveStore = create((set, get) => ({
   detailPanel: null,              // null | { type: 'agent', agentId } | { type: 'spawn' } | { type: 'journalist' }
   teamDetailPanels: {},            // { [teamId]: detailPanel } — persists panel state per team
   commandPaletteOpen: false,
+  quickConnectOpen: false,
 
   // ── Node expansion (click-to-open persistent panels) ───────
   expandedNodes: loadJSON('groove:expandedNodes'),
@@ -78,6 +79,10 @@ export const useGrooveStore = create((set, get) => ({
 
   // ── Toasts ────────────────────────────────────────────────
   toasts: [],
+
+  // ── Tunnels ────────────────────────────────────────────────
+  savedTunnels: [],
+  activeTunnelId: null,
 
   // ── GitHub Repo Import ────────────────────────────────────
   importedRepos: [],
@@ -354,6 +359,24 @@ export const useGrooveStore = create((set, get) => ({
         case 'gateway:status':
           set({ gateways: msg.data || [] });
           break;
+
+        case 'tunnel.connected':
+          set({ activeTunnelId: msg.data?.id || null });
+          get().fetchTunnels();
+          break;
+
+        case 'tunnel.disconnected':
+          set({ activeTunnelId: null });
+          get().fetchTunnels();
+          break;
+
+        case 'tunnel.health': {
+          const tunnels = get().savedTunnels.map((t) =>
+            t.id === msg.data?.id ? { ...t, latencyMs: msg.data.latencyMs, healthy: msg.data.healthy } : t,
+          );
+          set({ savedTunnels: tunnels });
+          break;
+        }
       }
     };
 
@@ -465,6 +488,7 @@ export const useGrooveStore = create((set, get) => ({
     set((s) => ({ detailPanel: null, teamDetailPanels: { ...s.teamDetailPanels, [tid]: null } }));
   },
   toggleCommandPalette() { set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })); },
+  toggleQuickConnect() { set((s) => ({ quickConnectOpen: !s.quickConnectOpen })); },
 
   setDetailPanelWidth(w) {
     set({ detailPanelWidth: w });
@@ -691,6 +715,58 @@ export const useGrooveStore = create((set, get) => ({
   async hardNukeRepo(importId, deleteFiles = true) {
     await api.delete('/repos/' + importId + '/nuke?deleteFiles=' + deleteFiles);
     get().fetchImportedRepos();
+  },
+
+  // ── Tunnels ──────────────────────────────────────────────
+
+  async fetchTunnels() {
+    try {
+      const tunnels = await api.get('/tunnels');
+      set({ savedTunnels: Array.isArray(tunnels) ? tunnels : [] });
+    } catch {}
+  },
+
+  async saveTunnel(config) {
+    const result = await api.post('/tunnels', config);
+    get().fetchTunnels();
+    return result;
+  },
+
+  async updateTunnel(id, config) {
+    const result = await api.patch('/tunnels/' + id, config);
+    get().fetchTunnels();
+    return result;
+  },
+
+  async deleteTunnel(id) {
+    await api.delete('/tunnels/' + id);
+    get().fetchTunnels();
+  },
+
+  async testTunnel(id) {
+    return api.post('/tunnels/' + id + '/test');
+  },
+
+  async connectTunnel(id) {
+    const result = await api.post('/tunnels/' + id + '/connect');
+    set({ activeTunnelId: id });
+    get().fetchTunnels();
+    if (result.url) window.open(result.url, '_blank');
+    return result;
+  },
+
+  async disconnectTunnel(id) {
+    await api.post('/tunnels/' + id + '/disconnect');
+    set({ activeTunnelId: null });
+    get().fetchTunnels();
+  },
+
+  async installTunnel(id) {
+    return api.post('/tunnels/' + id + '/install');
+  },
+
+  async startTunnel(id) {
+    return api.post('/tunnels/' + id + '/start');
   },
 
   // ── Journalist ────────────────────────────────────────────

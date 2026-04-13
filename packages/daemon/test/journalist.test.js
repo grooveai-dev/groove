@@ -45,11 +45,12 @@ describe('Journalist', () => {
         },
       });
 
-      const entries = journalist.filterLog(logLine, { name: 'test' });
+      const { entries, explorationEntries } = journalist.filterLog(logLine, { name: 'test' });
       assert.equal(entries.length, 1);
       assert.equal(entries[0].type, 'tool');
       assert.equal(entries[0].tool, 'Write');
       assert.equal(entries[0].input, 'src/api/auth.js');
+      assert.equal(explorationEntries.length, 0);
     });
 
     it('should skip non-JSON lines (transient errors are noise)', () => {
@@ -57,7 +58,7 @@ describe('Journalist', () => {
       const journalist = new Journalist(daemon);
 
       // Non-JSON error lines are dropped to prevent context degradation
-      const entries = journalist.filterLog('Error: something broke\nTypeError: undefined is not a function', {});
+      const { entries } = journalist.filterLog('Error: something broke\nTypeError: undefined is not a function', {});
       assert.equal(entries.length, 0);
     });
 
@@ -73,7 +74,7 @@ describe('Journalist', () => {
         total_cost_usd: 0.15,
       });
 
-      const entries = journalist.filterLog(logLine, {});
+      const { entries } = journalist.filterLog(logLine, {});
       assert.equal(entries.length, 1);
       assert.equal(entries[0].type, 'result');
       assert.ok(entries[0].text.includes('Task completed'));
@@ -84,7 +85,7 @@ describe('Journalist', () => {
       const { daemon } = createMockDaemon();
       const journalist = new Journalist(daemon);
 
-      const entries = journalist.filterLog(
+      const { entries } = journalist.filterLog(
         '[2026-04-04] GROOVE spawning: claude ...\n\nnot json\n',
         {}
       );

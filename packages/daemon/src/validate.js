@@ -75,6 +75,15 @@ export function validateAgentConfig(config) {
     integrations = config.integrations.filter((s) => typeof s === 'string' && s.length > 0 && s.length <= 100);
   }
 
+  // Validate repos (array of import IDs)
+  let repos = [];
+  if (config.repos !== undefined && config.repos !== null) {
+    if (!Array.isArray(config.repos)) {
+      throw new Error('Repos must be an array');
+    }
+    repos = config.repos.filter((s) => typeof s === 'string' && s.length > 0 && s.length <= 100);
+  }
+
   // Validate integration approval mode
   const validApprovalModes = ['auto', 'manual'];
   const integrationApproval = validApprovalModes.includes(config.integrationApproval) ? config.integrationApproval : 'manual';
@@ -95,6 +104,7 @@ export function validateAgentConfig(config) {
     skills,
     integrations,
     integrationApproval,
+    repos,
     personality,
   };
 }

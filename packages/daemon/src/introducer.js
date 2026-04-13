@@ -260,7 +260,13 @@ export class Introducer {
         lines.push('');
         lines.push(`## Integrations (${integrationSections.length} connected)`);
         lines.push('');
-        lines.push('You have integrations connected via GROOVE. To use them, make HTTP POST requests:');
+        lines.push('These integrations are ALREADY INSTALLED, AUTHENTICATED, AND READY TO USE. You do NOT need to:');
+        lines.push('- Ask the user for any API keys, OAuth tokens, or credentials for these services');
+        lines.push('- Set up authentication or run any auth flows');
+        lines.push('- Direct the user to any external auth pages');
+        lines.push('The user has already configured everything. Just use the tools.');
+        lines.push('');
+        lines.push('To use them, make HTTP POST requests:');
         lines.push('```');
         lines.push('POST http://localhost:31415/api/integrations/{id}/exec');
         lines.push('Body: {"tool": "tool_name", "params": {...}}');
@@ -275,6 +281,57 @@ export class Introducer {
         lines.push(integrationSections.join('\n\n'));
       }
     }
+
+    // GitHub repo import — teach agents to use the tracked import API
+    // Attached repos — only inject repos explicitly attached to this agent
+    if (newAgent.repos && newAgent.repos.length > 0 && this.daemon.repoImporter) {
+      const repoSections = [];
+      for (const importId of newAgent.repos) {
+        const manifest = this.daemon.repoImporter.getImport(importId);
+        if (manifest && manifest.status === 'active') {
+          const stack = manifest.stackInfo ? ` (${manifest.stackInfo.runtime || 'unknown'})` : '';
+          repoSections.push(`- **${manifest.name || manifest.repo}**${stack}: \`${manifest.clonedTo}\` — import ID: ${manifest.id}`);
+        }
+      }
+      if (repoSections.length > 0) {
+        lines.push('');
+        lines.push(`## Attached Repositories (${repoSections.length})`);
+        lines.push('');
+        lines.push('These repos are cloned and attached to you. Use the paths below — do NOT re-clone them:');
+        lines.push(...repoSections);
+        lines.push('');
+        lines.push('If you spawn processes or modify config files for these repos, register them:');
+        lines.push('- `POST http://localhost:31415/api/repos/{importId}/process` with `{ "pid": <number>, "command": "description" }`');
+      }
+    }
+
+    // Lightweight import API reference for cloning new repos
+    lines.push('');
+    lines.push('## GitHub Repo Import');
+    lines.push('');
+    lines.push('To clone a NEW GitHub repo, use: `POST http://localhost:31415/api/repos/import` with `{ "repoUrl": "...", "targetPath": "~/Projects/name", "createTeam": true }`. Do NOT run `git clone` directly.');
+
+    // Surface stored API keys so agents know what's available in their environment
+    const KEY_MAP = { codex: 'OPENAI_API_KEY', gemini: 'GEMINI_API_KEY', ollama: 'OLLAMA_API_KEY' };
+    try {
+      const credProviders = this.daemon.credentials?.listProviders() || [];
+      if (credProviders.length > 0) {
+        lines.push('');
+        lines.push('## Available API Keys');
+        lines.push('');
+        lines.push('GROOVE has API keys stored and injected into your environment. Do NOT ask the user for these:');
+        for (const cp of credProviders) {
+          const envVar = KEY_MAP[cp.provider];
+          if (envVar) {
+            lines.push(`- **${cp.provider}**: available as \`${envVar}\` in your environment`);
+          } else {
+            lines.push(`- **${cp.provider}**: stored in GROOVE credentials`);
+          }
+        }
+        lines.push('');
+        lines.push('If a third-party tool needs one of these keys, it is already in your environment — do not ask the user to provide it.');
+      }
+    } catch { /* credentials not available */ }
 
     return lines.join('\n');
   }

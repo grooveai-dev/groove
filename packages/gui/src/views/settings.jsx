@@ -12,6 +12,9 @@ import { Sheet, SheetContent } from '../components/ui/sheet';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { fmtUptime } from '../lib/format';
+import { RemoteServerCard } from '../components/settings/remote-server-card';
+import { ServerDialog } from '../components/settings/server-dialog';
+import { ProGate } from '../components/pro/pro-gate';
 import {
   Key, Eye, EyeOff, Check, Cpu, ChevronDown,
   FolderOpen, FolderSearch, RotateCw, Users, Gauge, Zap,
@@ -974,6 +977,9 @@ export default function SettingsView() {
   const [gwList, setGwList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [folderBrowserOpen, setFolderBrowserOpen] = useState(false);
+  const [serverDialogOpen, setServerDialogOpen] = useState(false);
+  const [editingServer, setEditingServer] = useState(null);
+  const savedTunnels = useGrooveStore((s) => s.savedTunnels);
   const addToast = useGrooveStore((s) => s.addToast);
   const marketplaceUser = useGrooveStore((s) => s.marketplaceUser);
   const marketplaceAuthenticated = useGrooveStore((s) => s.marketplaceAuthenticated);
@@ -992,6 +998,7 @@ export default function SettingsView() {
     Promise.all([api.get('/providers'), api.get('/config'), api.get('/status'), api.get('/gateways')])
       .then(([p, c, s, g]) => { setProviders(Array.isArray(p) ? p : []); setConfig(c); setDaemonInfo(s); setGwList(Array.isArray(g) ? g : []); setLoading(false); })
       .catch(() => setLoading(false));
+    useGrooveStore.getState().fetchTunnels();
   }, []);
 
   async function addGateway(type) {
@@ -1221,8 +1228,67 @@ export default function SettingsView() {
               </div>
             </div>
           )}
+
+          {/* ═══════ REMOTE SERVERS ═══════ */}
+          <div>
+            <div className="flex items-center gap-2 mb-2.5 px-0.5">
+              <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Remote Servers</span>
+              <div className="flex-1 h-px bg-border-subtle" />
+            </div>
+            <ProGate feature="Remote Access" description="Connect to remote servers via SSH tunnel and manage agents across machines">
+              <div>
+                <div className="flex justify-end mb-2.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { setEditingServer(null); setServerDialogOpen(true); }}
+                    className="h-6 text-2xs gap-1 text-text-3 hover:text-accent"
+                  >
+                    <Plus size={11} /> Add Server
+                  </Button>
+                </div>
+                {savedTunnels.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border-subtle bg-surface-1/50 px-4 py-6 text-center">
+                    <Radio size={20} className="text-text-4 mx-auto mb-2" />
+                    <p className="text-xs text-text-3 font-sans">No remote servers configured.</p>
+                    <p className="text-2xs text-text-4 font-sans mt-1">Add one to connect to a VPS or remote machine.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {savedTunnels.map((server) => (
+                      <RemoteServerCard
+                        key={server.id}
+                        server={server}
+                        onConnect={() => useGrooveStore.getState().connectTunnel(server.id)}
+                        onDisconnect={() => useGrooveStore.getState().disconnectTunnel(server.id)}
+                        onTest={() => useGrooveStore.getState().testTunnel(server.id)}
+                        onEdit={(s) => { setEditingServer(s); setServerDialogOpen(true); }}
+                        onDelete={(id) => useGrooveStore.getState().deleteTunnel(id)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </ProGate>
+          </div>
+
         </div>
       </ScrollArea>
+
+      {/* Server Dialog */}
+      <ServerDialog
+        open={serverDialogOpen}
+        onOpenChange={setServerDialogOpen}
+        server={editingServer}
+        onSave={async (data) => {
+          if (data.id) {
+            await useGrooveStore.getState().updateTunnel(data.id, data);
+          } else {
+            await useGrooveStore.getState().saveTunnel(data);
+          }
+          addToast('success', data.id ? 'Server updated' : 'Server added');
+        }}
+      />
 
       {/* Folder Browser Modal */}
       <FolderBrowser

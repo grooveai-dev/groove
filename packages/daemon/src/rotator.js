@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
 const DEFAULT_THRESHOLD = 0.75;
+const HARD_CEILING = 0.85;  // Force rotate at 85% — no idle check, prevents compaction
 const CHECK_INTERVAL = 15_000;
 const QUALITY_THRESHOLD = 40;   // Score below this triggers quality rotation
 const MIN_EVENTS = 10;          // Minimum classifier events before scoring
@@ -130,6 +131,13 @@ export class Rotator extends EventEmitter {
     for (const agent of running) {
       if (this.rotating.has(agent.id)) continue;
 
+      // Hard ceiling — force rotate to prevent compaction, even if agent is busy
+      if (agent.contextUsage >= HARD_CEILING) {
+        console.log(`  Rotator: ${agent.name} at ${Math.round(agent.contextUsage * 100)}% — FORCE rotating (hard ceiling)`);
+        await this.rotate(agent.id, { reason: 'hard_ceiling' });
+        continue;
+      }
+
       const threshold = this.daemon.adaptive
         ? this.daemon.adaptive.getThreshold(agent.provider, agent.role)
         : DEFAULT_THRESHOLD;
@@ -185,10 +193,27 @@ export class Rotator extends EventEmitter {
       delete this.liveScores[agentId];
       delete this.scoreHistory[agentId];
 
-      let brief = await journalist.generateHandoffBrief(agent);
+      let brief = await journalist.generateHandoffBrief(agent, {
+        reason: options.reason,
+        qualityScore: options.qualityScore,
+        signals: options.signals,
+      });
 
       if (options.additionalPrompt) {
         brief = brief + '\n\n## User Instruction\n\n' + options.additionalPrompt;
+      }
+
+      // Persist to Layer 7 handoff chain so future rotations have causal continuity
+      if (this.daemon.memory) {
+        this.daemon.memory.appendHandoffBrief(agent.role, {
+          timestamp: new Date().toISOString(),
+          agentId: agent.id,
+          newAgentId: null, // filled after respawn completes
+          reason: options.reason || 'manual',
+          oldTokens: agent.tokensUsed,
+          contextUsage: agent.contextUsage,
+          brief: brief.slice(0, 4000),
+        });
       }
 
       const record = {
@@ -332,6 +357,7 @@ export class Rotator extends EventEmitter {
     const qualityRotations = this.rotationHistory.filter((r) => r.reason === 'quality_degradation').length;
     const contextRotations = this.rotationHistory.filter((r) => r.reason === 'context_threshold').length;
     const naturalCompactions = this.rotationHistory.filter((r) => r.reason === 'natural_compaction').length;
+    const hardCeilingRotations = this.rotationHistory.filter((r) => r.reason === 'hard_ceiling').length;
     return {
       enabled: this.enabled,
       totalRotations,
@@ -339,6 +365,7 @@ export class Rotator extends EventEmitter {
       qualityRotations,
       contextRotations,
       naturalCompactions,
+      hardCeilingRotations,
       rotating: Array.from(this.rotating),
       liveScores: this.liveScores,
       scoreHistory: this.scoreHistory,

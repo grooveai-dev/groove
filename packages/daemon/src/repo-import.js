@@ -263,7 +263,7 @@ export class RepoImporter {
     }
     if (targetPath.includes('..')) throw new Error('Path traversal not allowed');
     const parentDir = dirname(targetPath);
-    if (!existsSync(parentDir)) throw new Error(`Parent directory does not exist: ${parentDir}`);
+    if (!existsSync(parentDir)) mkdirSync(parentDir, { recursive: true });
     if (existsSync(targetPath)) throw new Error(`Target path already exists: ${targetPath}`);
 
     // Check for duplicate import

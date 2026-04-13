@@ -595,12 +595,17 @@ For normal file edits within your scope, proceed without review.
     const spawnLine = `[${new Date().toISOString()}] GROOVE spawning: ${command} [${safeArgs.length} args]\n`;
     logStream.write(spawnLine);
 
-    // Inject API key from credential store if the provider needs one
-    const providerMeta = getProvider(agent.provider);
-    if (providerMeta?.constructor?.envKey) {
-      const storedKey = this.daemon.credentials.getKey(agent.provider);
-      if (storedKey) {
-        env[providerMeta.constructor.envKey] = storedKey;
+    // Inject ALL stored API keys — agents may need keys from other providers
+    // (e.g., an EA agent on claude-code may need OPENAI_API_KEY for a third-party tool)
+    if (this.daemon.credentials) {
+      for (const cp of this.daemon.credentials.listProviders()) {
+        const meta = getProvider(cp.provider);
+        if (meta?.constructor?.envKey) {
+          const storedKey = this.daemon.credentials.getKey(cp.provider);
+          if (storedKey) {
+            env[meta.constructor.envKey] = storedKey;
+          }
+        }
       }
     }
 

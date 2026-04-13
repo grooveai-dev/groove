@@ -61,7 +61,7 @@ export function BreadcrumbBar({
         className={cn(
           'flex items-center gap-2.5 h-8 px-4 rounded-full w-full max-w-md',
           'bg-surface-1 border border-border-subtle',
-          'text-sm text-text-4 font-sans',
+          'text-xs text-text-4 font-sans',
           'hover:border-border hover:text-text-3 transition-colors cursor-pointer',
         )}
       >

@@ -33,7 +33,7 @@ export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel
                   : 'text-text-3 hover:text-text-1 hover:bg-surface-4',
               )}
             >
-              <item.icon size={20} strokeWidth={activeView === item.id ? 2 : 1.5} />
+              <item.icon size={18} strokeWidth={activeView === item.id ? 2 : 1.5} />
             </button>
           </Tooltip>
         ))}
@@ -59,7 +59,7 @@ export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel
                     : 'text-text-3 hover:text-text-1 hover:bg-surface-4',
                 )}
               >
-                <item.icon size={20} strokeWidth={isActive ? 2 : 1.5} />
+                <item.icon size={18} strokeWidth={isActive ? 2 : 1.5} />
               </button>
             </Tooltip>
           );

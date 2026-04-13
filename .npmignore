@@ -18,8 +18,16 @@ GROOVE_AGENT_LOGS/
 GROVE_*.md
 AGENTS_REGISTRY.md
 
-# Dev files
+# Desktop app (distributed separately via GitHub Releases, not npm)
+packages/desktop/
+
+# Internal planning docs (not in git, but npm sees them)
+integrations/
+onboarding-flow/
+
+# Dev/test files
 example/
+test-*
 *.log
 *.sh
 .DS_Store

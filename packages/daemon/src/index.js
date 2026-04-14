@@ -171,9 +171,11 @@ export class Daemon {
       }
       if (req.url?.startsWith('/ws/federation')) {
         const daemonId = req.headers['x-groove-daemonid'];
+        const signatureHeader = req.headers['x-groove-signature'] || '';
+        const callerIp = req.socket?.remoteAddress?.replace('::ffff:', '') || '';
         if (!daemonId) { socket.destroy(); return; }
         this.federationWss.handleUpgrade(req, socket, head, (ws) => {
-          this.federation.handleWsUpgrade(ws, daemonId);
+          this.federation.handleWsUpgrade(ws, daemonId, callerIp, signatureHeader);
         });
       } else {
         this.wss.handleUpgrade(req, socket, head, (ws) => {

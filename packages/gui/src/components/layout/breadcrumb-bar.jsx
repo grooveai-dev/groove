@@ -1,8 +1,123 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useState, useEffect } from 'react';
-import { Search, Plus, ChevronRight, FolderOpen } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Search, Plus, ChevronRight, FolderOpen, LogIn, LogOut, User, ExternalLink, BookOpen, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { useGrooveStore } from '../../stores/groove';
 import { isElectron, getPlatform } from '../../lib/electron';
+
+function ProfilePic({ user, size = 24 }) {
+  const [broken, setBroken] = useState(false);
+  const src = user?.avatar || user?.picture || user?.photoURL || user?.photo;
+
+  if (src && !broken) {
+    return (
+      <img
+        src={src}
+        alt=""
+        className="rounded-full"
+        style={{ width: size, height: size }}
+        referrerPolicy="no-referrer"
+        crossOrigin="anonymous"
+        onError={() => setBroken(true)}
+      />
+    );
+  }
+
+  return (
+    <div
+      className="rounded-full bg-accent/10 flex items-center justify-center"
+      style={{ width: size, height: size }}
+    >
+      <User size={Math.round(size * 0.5)} className="text-accent" />
+    </div>
+  );
+}
+
+function UserMenu() {
+  const authenticated = useGrooveStore((s) => s.marketplaceAuthenticated);
+  const user = useGrooveStore((s) => s.marketplaceUser);
+  const login = useGrooveStore((s) => s.marketplaceLogin);
+  const logout = useGrooveStore((s) => s.marketplaceLogout);
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  if (!authenticated) {
+    return (
+      <button
+        onClick={login}
+        className="flex items-center gap-1.5 h-7 px-3 rounded-md bg-surface-1 border border-border-subtle text-xs font-semibold font-sans text-text-2 hover:text-text-0 hover:border-border transition-colors cursor-pointer select-none flex-shrink-0"
+      >
+        <LogIn size={12} />
+        Sign in
+      </button>
+    );
+  }
+
+  return (
+    <div ref={ref} className="relative flex-shrink-0">
+      <button
+        onClick={() => setOpen(!open)}
+        className={cn(
+          'flex items-center gap-2 h-7 pl-1 pr-2 rounded-md transition-colors cursor-pointer select-none',
+          open ? 'bg-surface-1 border border-border' : 'hover:bg-surface-1 border border-transparent',
+        )}
+      >
+        <ProfilePic user={user} size={20} />
+        <span className="text-xs text-text-1 font-sans font-medium max-w-[100px] truncate">
+          {user?.displayName || user?.id || 'Account'}
+        </span>
+        <ChevronDown size={10} className={cn('text-text-4 transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-48 py-1 rounded-md bg-surface-1 border border-border shadow-lg z-50">
+          <div className="px-3 py-2 border-b border-border-subtle">
+            <p className="text-xs font-medium text-text-0 font-sans truncate">{user?.displayName || 'Account'}</p>
+            {user?.email && <p className="text-2xs text-text-4 font-sans truncate">{user.email}</p>}
+          </div>
+          <a
+            href="https://docs.groovedev.ai"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs text-text-2 hover:text-text-0 hover:bg-surface-3 font-sans cursor-pointer transition-colors"
+          >
+            <BookOpen size={12} />
+            Docs
+            <ExternalLink size={9} className="ml-auto text-text-4" />
+          </a>
+          <a
+            href="https://groovedev.ai"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs text-text-2 hover:text-text-0 hover:bg-surface-3 font-sans cursor-pointer transition-colors"
+          >
+            <ExternalLink size={12} />
+            groovedev.ai
+          </a>
+          <div className="my-1 h-px bg-border-subtle" />
+          <button
+            onClick={() => { setOpen(false); logout(); }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-3 hover:text-danger hover:bg-surface-3 font-sans cursor-pointer transition-colors"
+          >
+            <LogOut size={12} />
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const VIEW_LABELS = {
   agents: 'Agents',
@@ -117,6 +232,8 @@ export function BreadcrumbBar({
           Spawn
         </button>
       )}
+
+      <UserMenu />
     </header>
   );
 }

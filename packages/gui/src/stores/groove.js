@@ -88,6 +88,7 @@ export const useGrooveStore = create((set, get) => ({
   // ── Marketplace Auth ───────────────────────────────────────
   marketplaceUser: null,        // { id, displayName, avatar, ... } or null
   marketplaceAuthenticated: false,
+  edition: 'community',         // 'community' | 'pro' — runtime edition from /edition
   subscription: {
     plan: 'community',
     status: 'none',
@@ -460,9 +461,28 @@ export const useGrooveStore = create((set, get) => ({
           break;
         }
 
-        case 'subscription:updated':
-          set({ subscription: msg.data });
+        case 'subscription:updated': {
+          const subUpdate = { subscription: msg.data };
+          if (msg.data?.active === true && !get().marketplaceAuthenticated) {
+            subUpdate.marketplaceAuthenticated = true;
+          }
+          set(subUpdate);
+          api.get('/edition').then((ed) => {
+            set({
+              edition: ed.edition || 'community',
+              subscription: {
+                plan: ed.plan || 'community',
+                status: ed.status || (ed.subscriptionActive ? 'active' : 'none'),
+                active: ed.subscriptionActive !== false,
+                features: ed.features || [],
+                seats: ed.seats || 1,
+                periodEnd: ed.periodEnd || null,
+                cancelAtPeriodEnd: ed.cancelAtPeriodEnd || false,
+              },
+            });
+          }).catch(() => {});
           break;
+        }
 
         case 'auth:expired':
           set({ marketplaceAuthenticated: false, marketplaceUser: null });
@@ -630,6 +650,7 @@ export const useGrooveStore = create((set, get) => ({
       try {
         const edition = await api.get('/edition');
         set({
+          edition: edition.edition || 'community',
           subscription: {
             plan: edition.plan || 'community',
             status: edition.status || (edition.subscriptionActive ? 'active' : 'none'),
@@ -661,6 +682,7 @@ export const useGrooveStore = create((set, get) => ({
             try {
               const edition = await api.get('/edition');
               set({
+                edition: edition.edition || 'community',
                 subscription: {
                   plan: edition.plan || 'community',
                   status: edition.status || (edition.subscriptionActive ? 'active' : 'none'),
@@ -672,6 +694,23 @@ export const useGrooveStore = create((set, get) => ({
                 },
               });
             } catch { /* edition endpoint may not exist */ }
+            setTimeout(async () => {
+              try {
+                const e = await api.get('/edition');
+                set({
+                  edition: e.edition || 'community',
+                  subscription: {
+                    plan: e.plan || 'community',
+                    status: e.status || (e.subscriptionActive ? 'active' : 'none'),
+                    active: e.subscriptionActive !== false,
+                    features: e.features || [],
+                    seats: e.seats || 1,
+                    periodEnd: e.periodEnd || null,
+                    cancelAtPeriodEnd: e.cancelAtPeriodEnd || false,
+                  },
+                });
+              } catch { /* delayed re-fetch may fail */ }
+            }, 2000);
           }
         } catch { /* keep polling */ }
       }, 2000);
@@ -1290,9 +1329,9 @@ export const useGrooveStore = create((set, get) => ({
     } catch { return null; }
   },
 
-  async addToWhitelist(ip, port = 31415) {
+  async addToWhitelist(ip, port = 31415, name) {
     try {
-      await api.post('/federation/whitelist', { ip, port });
+      await api.post('/federation/whitelist', { ip, port, ...(name && { name }) });
       get().addToast('success', `Added ${ip} to whitelist`);
       get().fetchFederationStatus();
     } catch (err) {

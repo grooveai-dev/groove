@@ -22,8 +22,8 @@ import { RepoImport } from '../components/marketplace/repo-import';
 import { RepoCard } from '../components/marketplace/repo-card';
 import { RepoNukeDialog } from '../components/marketplace/repo-nuke-dialog';
 import {
-  ChevronLeft, ChevronDown, Sparkles, Plug, LogIn, LogOut,
-  User, Upload, Package, Download, ShoppingBag, RefreshCw, Trash2,
+  ChevronLeft, ChevronDown, Sparkles, Plug, LogIn,
+  Upload, Package, Download, ShoppingBag, RefreshCw, Trash2,
   GitBranch,
 } from 'lucide-react';
 
@@ -588,45 +588,6 @@ function MyLibrary() {
   );
 }
 
-// ── Auth Area (header right) ─────────────────────────────
-function AuthArea() {
-  const authenticated = useGrooveStore((s) => s.marketplaceAuthenticated);
-  const user = useGrooveStore((s) => s.marketplaceUser);
-  const login = useGrooveStore((s) => s.marketplaceLogin);
-  const logout = useGrooveStore((s) => s.marketplaceLogout);
-
-  if (authenticated) {
-    return (
-      <div className="flex items-center gap-1">
-        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-surface-3 border border-border-subtle">
-          <div className="w-4 h-4 rounded-full bg-accent/20 flex items-center justify-center">
-            <User size={9} className="text-accent" />
-          </div>
-          <span className="text-xs text-text-0 font-sans font-medium max-w-[120px] truncate">
-            {user?.displayName || user?.id || 'Account'}
-          </span>
-        </div>
-        <button
-          onClick={logout}
-          className="flex items-center gap-1 px-2 py-1.5 rounded text-xs text-text-3 hover:text-text-0 hover:bg-surface-3 font-sans cursor-pointer transition-colors"
-        >
-          <LogOut size={11} />
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <button
-      onClick={login}
-      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold font-sans text-text-0 bg-accent/15 border border-accent/25 rounded hover:bg-accent/25 cursor-pointer transition-colors"
-    >
-      <LogIn size={12} />
-      Sign in
-    </button>
-  );
-}
-
 // ── GitHub Browse ───────────────────────────────────────
 function GitHubBrowse() {
   const importedRepos = useGrooveStore((s) => s.importedRepos);
@@ -735,7 +696,6 @@ export default function MarketplaceView() {
             })}
           </div>
           <div className="flex-1" />
-          <AuthArea />
         </div>
       </div>
 

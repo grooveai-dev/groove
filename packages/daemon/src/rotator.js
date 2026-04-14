@@ -308,7 +308,7 @@ export class Rotator extends EventEmitter {
 
       record.newAgentId = newAgent.id;
       record.newTokens = 0;
-      this.lastRotationTime.set(agentId, Date.now());
+      this.lastRotationTime.set(newAgent.id, Date.now());
       this.rotationHistory.push(record);
 
       if (this.rotationHistory.length > 100) {

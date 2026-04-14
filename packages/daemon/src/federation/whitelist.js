@@ -57,7 +57,7 @@ export class WhitelistManager extends EventEmitter {
     writeFileSync(this.filePath, JSON.stringify(Array.from(this.entries.values()), null, 2), { mode: 0o600 });
   }
 
-  add(ip, port = 31415) {
+  add(ip, port = 31415, name = '') {
     const validated = validateIp(ip);
     if (this.entries.has(validated)) {
       throw new Error(`IP already whitelisted: ${validated}`);
@@ -66,6 +66,7 @@ export class WhitelistManager extends EventEmitter {
     const entry = {
       ip: validated,
       port: typeof port === 'number' ? port : 31415,
+      name: typeof name === 'string' ? name.trim().slice(0, 128) : '',
       status: 'waiting',
       addedAt: new Date().toISOString(),
       lastProbe: null,

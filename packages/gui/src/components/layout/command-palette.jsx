@@ -4,7 +4,7 @@ import { useGrooveStore } from '../../stores/groove';
 import {
   Network, Code2, ChartSpline, Puzzle, Users, Plus,
   RotateCw, Skull, MessageSquare, Terminal, Newspaper,
-  Search, Radio, ExternalLink, FolderOpen,
+  Search, Radio, ExternalLink, FolderOpen, Globe,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -15,6 +15,7 @@ const STATIC_COMMANDS = [
   { id: 'nav:dashboard',   label: 'Go to Dashboard',   icon: ChartSpline, category: 'Navigation', action: (s) => { s.setActiveView('dashboard'); } },
   { id: 'nav:marketplace', label: 'Go to Marketplace', icon: Puzzle,     category: 'Navigation', action: (s) => { s.setActiveView('marketplace'); } },
   { id: 'nav:teams',       label: 'Go to Teams',       icon: Users,      category: 'Navigation', action: (s) => { s.setActiveView('teams'); } },
+  { id: 'nav:federation', label: 'Go to Federation',  icon: Globe,      category: 'Navigation', action: (s) => { s.setActiveView('federation'); } },
   { id: 'action:spawn',    label: 'Spawn Agent',       icon: Plus,       category: 'Actions',    action: (s) => { s.openDetail({ type: 'spawn' }); } },
   { id: 'action:terminal', label: 'Toggle Terminal',   icon: Terminal,   category: 'Actions',    action: (s) => { s.setTerminalVisible(!s.terminalVisible); }, shortcut: 'Cmd+J' },
   { id: 'action:journalist', label: 'Toggle Journalist', icon: Newspaper, category: 'Actions',  action: (s) => {

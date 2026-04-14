@@ -20,7 +20,7 @@ import { SubscriptionPanel } from './subscription-panel';
 import {
   Key, Eye, EyeOff, Check, Cpu, ChevronDown,
   FolderOpen, FolderSearch, RotateCw, Users, Gauge, Zap,
-  LogIn, LogOut, User, ShieldCheck, Settings,
+  ShieldCheck, Settings,
   Newspaper, Layers, Radio, Send, MessageSquare, MessageCircle,
   Plus, Trash2, Plug, PlugZap, TestTube, X, HelpCircle, ExternalLink, ChevronRight,
 } from 'lucide-react';
@@ -41,32 +41,6 @@ function Toggle({ value, onChange }) {
         value ? 'translate-x-4' : 'translate-x-0',
       )} />
     </button>
-  );
-}
-
-/* ── Profile Pic ──────────────────────────────────────────── */
-
-function ProfilePic({ user }) {
-  const [broken, setBroken] = useState(false);
-  const src = user?.avatar || user?.picture || user?.photoURL || user?.photo;
-
-  if (src && !broken) {
-    return (
-      <img
-        src={src}
-        alt=""
-        className="w-6 h-6 rounded-full"
-        referrerPolicy="no-referrer"
-        crossOrigin="anonymous"
-        onError={() => setBroken(true)}
-      />
-    );
-  }
-
-  return (
-    <div className="w-6 h-6 rounded-full bg-accent/10 flex items-center justify-center">
-      <User size={12} className="text-accent" />
-    </div>
   );
 }
 
@@ -983,10 +957,6 @@ export default function SettingsView() {
   const [editingServer, setEditingServer] = useState(null);
   const savedTunnels = useGrooveStore((s) => s.savedTunnels);
   const addToast = useGrooveStore((s) => s.addToast);
-  const marketplaceUser = useGrooveStore((s) => s.marketplaceUser);
-  const marketplaceAuthenticated = useGrooveStore((s) => s.marketplaceAuthenticated);
-  const marketplaceLogin = useGrooveStore((s) => s.marketplaceLogin);
-  const marketplaceLogout = useGrooveStore((s) => s.marketplaceLogout);
 
   function loadProviders() {
     api.get('/providers').then((d) => setProviders(Array.isArray(d) ? d : [])).catch(() => {});
@@ -1057,22 +1027,6 @@ export default function SettingsView() {
           {daemonInfo?.port && <span>:{daemonInfo.port}</span>}
           {daemonInfo?.uptime > 0 && <span>Up {fmtUptime(daemonInfo.uptime)}</span>}
         </div>
-
-        <div className="w-px h-4 bg-border-subtle" />
-
-        {marketplaceAuthenticated ? (
-          <div className="flex items-center gap-2.5">
-            <ProfilePic user={marketplaceUser} />
-            <span className="text-xs font-medium text-text-0 font-sans">{marketplaceUser?.displayName || 'User'}</span>
-            <button onClick={marketplaceLogout} className="text-2xs text-text-4 hover:text-text-1 cursor-pointer font-sans flex items-center gap-1">
-              <LogOut size={10} /> Sign out
-            </button>
-          </div>
-        ) : (
-          <Button variant="ghost" size="sm" onClick={marketplaceLogin} className="h-7 text-2xs gap-1.5 text-text-3">
-            <LogIn size={11} /> Sign in
-          </Button>
-        )}
 
         <StatusDot status="running" size="sm" />
       </div>

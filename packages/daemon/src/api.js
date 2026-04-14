@@ -572,6 +572,7 @@ export function createApi(app, daemon) {
       seats: sub.seats || 1,
       periodEnd: sub.periodEnd || null,
       cancelAtPeriodEnd: sub.cancelAtPeriodEnd || false,
+      status: sub.status || 'none',
     });
   });
 
@@ -1107,6 +1108,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
 
     const user = await daemon.skills.setAuth(token);
+    if (user) daemon.setAuthToken(token);
     if (!user) {
       return res.send(`<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Groove — Login Failed</title>
@@ -1142,19 +1144,18 @@ Keep responses concise. Help them think, don't lecture them about the system the
   h2{font-size:16px;font-weight:600;color:#e6e6e6;margin-bottom:6px}
   .user{font-size:13px;color:#33afbc;margin-bottom:16px}
   p{font-size:13px;color:#505862;line-height:1.5}
-  .bar{width:120px;height:2px;background:#2c313a;border-radius:1px;margin:20px auto 0;overflow:hidden}
-  .bar span{display:block;height:100%;background:#33afbc;border-radius:1px;animation:close 3s linear forwards}
-  @keyframes close{from{width:100%}to{width:0%}}
+  .btn{display:inline-block;margin-top:20px;padding:8px 20px;font-size:13px;font-weight:500;color:#e6e6e6;background:#2c313a;border:1px solid #3a3f48;border-radius:999px;cursor:pointer;transition:background 0.15s}
+  .btn:hover{background:#33afbc;border-color:#33afbc;color:#1a1e25}
 </style>
 </head><body>
 <div class="card">
   <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
   <h2>Connected to Groove</h2>
   ${displayName ? `<div class="user">${displayName}</div>` : ''}
-  <p>This tab will close automatically.</p>
-  <div class="bar"><span></span></div>
+  <p id="msg">You can close this tab and return to Groove.</p>
+  <button class="btn" onclick="window.close()">Close tab</button>
 </div>
-<script>setTimeout(()=>window.close(),3000)</script>
+<script>setTimeout(()=>{try{window.close()}catch(e){}setTimeout(()=>{document.getElementById('msg').textContent='Return to the Groove app to continue.'},500)},3000)</script>
 </body></html>`);
   });
 

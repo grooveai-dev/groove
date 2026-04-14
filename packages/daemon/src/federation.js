@@ -220,7 +220,12 @@ export class Federation {
    * @param {object} remoteInfo — { id, name, host, port, publicKey }
    * @returns {object} our info + public key for the remote to store
    */
-  acceptPairing(remoteInfo) {
+  acceptPairing(remoteInfo, callerIp) {
+    // Gate: caller IP must be whitelisted (bi-directional requirement)
+    if (!callerIp || !this.whitelist?.isWhitelisted(callerIp)) {
+      throw new Error('Pairing rejected: caller IP not whitelisted');
+    }
+
     if (!remoteInfo.id || !remoteInfo.publicKey) {
       throw new Error('Invalid pairing request: missing id or publicKey');
     }
@@ -238,13 +243,13 @@ export class Federation {
     this._savePeer({
       id: remoteInfo.id,
       name: remoteInfo.name || remoteInfo.id,
-      host: remoteInfo.host,
+      host: callerIp,
       port: remoteInfo.port,
       publicKey: remoteInfo.publicKey,
       pairedAt: new Date().toISOString(),
     });
 
-    this.daemon.audit.log('federation.pair', { peerId: remoteInfo.id, peerHost: remoteInfo.host });
+    this.daemon.audit.log('federation.pair', { peerId: remoteInfo.id, peerHost: callerIp });
 
     // Return our info so the remote can store us
     const localInfo = this._localInfo();
@@ -406,9 +411,14 @@ export class Federation {
     console.log(`[federation] v1 initialized — daemon ${this._daemonId()}`);
   }
 
-  handleKnock(senderId, publicKey, payload, signature) {
+  handleKnock(senderId, publicKey, payload, signature, callerIp) {
     if (!senderId || !publicKey || !payload || !signature) {
       throw new Error('Missing knock fields');
+    }
+
+    // Gate: caller IP must be in our whitelist (bi-directional requirement)
+    if (!callerIp || !this.whitelist?.isWhitelisted(callerIp)) {
+      throw new Error('Knock rejected: caller IP not whitelisted');
     }
 
     validatePeerId(senderId);
@@ -419,12 +429,12 @@ export class Federation {
       throw new Error('Invalid public key in knock');
     }
 
-    // Auto-register peer if not known yet
+    // Register peer key only after whitelist gate passes
     if (!this.peers.has(senderId)) {
       this._savePeer({
         id: senderId,
         name: senderId,
-        host: null,
+        host: callerIp,
         port: null,
         publicKey,
         pairedAt: new Date().toISOString(),
@@ -435,7 +445,7 @@ export class Federation {
       throw new Error('Knock signature verification failed');
     }
 
-    this.daemon.audit.log('federation.knock', { senderId });
+    this.daemon.audit.log('federation.knock', { senderId, callerIp });
 
     return {
       accepted: true,
@@ -445,11 +455,34 @@ export class Federation {
     };
   }
 
-  handleWsUpgrade(ws, daemonId) {
+  handleWsUpgrade(ws, daemonId, callerIp, signatureHeader) {
+    // Gate: caller IP must be whitelisted (bi-directional requirement)
+    if (!callerIp || !this.whitelist?.isWhitelisted(callerIp)) {
+      ws.close(4001, 'IP not whitelisted');
+      return;
+    }
+
     if (!daemonId || !this.peers.has(daemonId)) {
       ws.close(4001, 'Unknown daemon');
       return;
     }
+
+    // Verify the cryptographic signature header
+    if (!signatureHeader) {
+      ws.close(4003, 'Missing signature');
+      return;
+    }
+    try {
+      const decoded = JSON.parse(Buffer.from(signatureHeader, 'base64').toString());
+      if (!decoded.payload || !decoded.signature || !this.verify(daemonId, decoded.payload, decoded.signature)) {
+        ws.close(4003, 'Signature verification failed');
+        return;
+      }
+    } catch {
+      ws.close(4003, 'Malformed signature header');
+      return;
+    }
+
     this.connections.handleInboundConnection(ws, daemonId);
     this.daemon.broadcast({ type: 'federation:whitelist', data: this.whitelist?.list() || [] });
   }

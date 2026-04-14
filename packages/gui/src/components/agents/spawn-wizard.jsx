@@ -11,7 +11,7 @@ import {
   Server, Monitor, Code2, TestTube, Cloud, FileText,
   Shield, Database, Megaphone, Calculator, UserCheck,
   Headphones, BarChart3, Rocket, ChevronDown, Pen, Presentation,
-  Sparkles, X, Search, AlertTriangle, Plug, MessageCircle, GitBranch,
+  Sparkles, X, Search, AlertTriangle, Plug, MessageCircle, GitBranch, Globe,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Dialog, DialogContent } from '../ui/dialog';
@@ -70,6 +70,7 @@ const ROLE_PRESETS = [
   { id: 'analyst',   label: 'Analyst',    desc: 'Data analysis, insights',         icon: BarChart3,  tier: 'Medium' },
   { id: 'creative',  label: 'Writer',     desc: 'Copy, articles, proposals',       icon: Pen,        tier: 'Heavy',  skillHint: true },
   { id: 'slides',    label: 'Slides',     desc: 'Pitch decks, presentations',      icon: Presentation, tier: 'Heavy', skillHint: true },
+  { id: 'ambassador', label: 'Ambassador', desc: 'Bridge to federated server',     icon: Globe,        tier: 'Light' },
 ];
 
 function CheckMark() {
@@ -112,6 +113,8 @@ export function SpawnWizard() {
   const [selectedPersonality, setSelectedPersonality] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [spawning, setSpawning] = useState(false);
+  const [selectedPeerId, setSelectedPeerId] = useState('');
+  const federation = useGrooveStore((s) => s.federation);
 
   useEffect(() => {
     if (open) {
@@ -144,6 +147,7 @@ export function SpawnWizard() {
       setIntegrationApproval('manual');
       setSelectedRepos([]);
       setSelectedPersonality('');
+      setSelectedPeerId('');
       setShowAdvanced(false);
     }
   }, [open, fetchProviders]);
@@ -168,6 +172,7 @@ export function SpawnWizard() {
         ...(selectedIntegrations.length > 0 && { integrationApproval }),
         ...(selectedRepos.length > 0 && { repos: selectedRepos }),
         ...(selectedPersonality && { personality: selectedPersonality }),
+        ...(selectedRole === 'ambassador' && selectedPeerId && { peerId: selectedPeerId }),
       };
       await spawnAgent(config);
       closeDetail();
@@ -231,6 +236,42 @@ export function SpawnWizard() {
                 />
               </div>
             </div>
+
+            {/* Ambassador server picker */}
+            {selectedRole === 'ambassador' && (() => {
+              const eligible = federation.whitelist.filter((e) => typeof e === 'object' && (e.status === 'mutual' || e.status === 'connected'));
+              if (eligible.length === 0) {
+                return (
+                  <div className="rounded-lg border border-dashed border-border-subtle bg-surface-1/50 px-4 py-4 text-center">
+                    <Globe size={18} className="text-text-4 mx-auto mb-1.5" />
+                    <p className="text-2xs text-text-3 font-sans mb-2">No federated servers connected. Add one in the Federation view.</p>
+                    <Button variant="ghost" size="sm" className="text-2xs text-accent" onClick={() => { closeDetail(); useGrooveStore.getState().setActiveView('federation'); }}>
+                      Go to Federation
+                    </Button>
+                  </div>
+                );
+              }
+              return (
+                <div>
+                  <label className="text-xs font-semibold text-text-2 font-sans uppercase tracking-wider block mb-2">
+                    Target Server
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedPeerId}
+                      onChange={(e) => setSelectedPeerId(e.target.value)}
+                      className="w-full h-8 px-3 pr-8 text-sm rounded-md bg-surface-1 border border-border text-text-0 font-sans appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
+                    >
+                      <option value="">Select a server...</option>
+                      {eligible.map((e) => (
+                        <option key={e.ip} value={e.ip}>{e.name || `${e.ip}:${e.port || 31415}`}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none" />
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Section 2: Configuration */}
             {selectedRole && (

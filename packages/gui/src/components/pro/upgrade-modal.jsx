@@ -69,8 +69,8 @@ export function UpgradeModal() {
       <DialogContent title="Upgrade to Pro" className="max-w-[440px]">
         <div className="px-6 py-5">
           <div className="text-center mb-6">
-            <div className="mx-auto mb-3 w-12 h-12 rounded-full bg-purple/10 flex items-center justify-center">
-              <Sparkles size={22} className="text-purple" />
+            <div className="mx-auto mb-3 w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center">
+              <Sparkles size={22} className="text-accent" />
             </div>
             <h2 className="text-lg font-bold text-text-0">Upgrade to Groove Pro</h2>
             <p className="text-sm text-text-2 mt-1">Unlock powerful features for your AI workflow</p>
@@ -126,7 +126,7 @@ export function UpgradeModal() {
             type="button"
             onClick={handleSubscribe}
             disabled={loading}
-            className="w-full h-10 rounded-lg bg-purple text-white font-semibold text-sm hover:bg-purple/90 transition-colors cursor-pointer disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
+            className="w-full h-10 rounded-lg bg-accent text-white font-semibold text-sm hover:bg-accent/90 transition-colors cursor-pointer disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
           >
             {loading ? (
               'Processing...'

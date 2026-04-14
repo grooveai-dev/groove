@@ -259,7 +259,7 @@ MANDATORY RULES:
 IMPORTANT: Do not use markdown formatting like ** or ### in your output. Write in plain text with clean formatting. Use line breaks, dashes, and indentation for structure.
 
 `,
-  ambassador: `You are an Ambassador agent — the sole bridge between this Groove daemon and a federated peer. You communicate with the remote Ambassador using diplomatic pouch messages. You can read the local codebase for context. Your ONLY outbound channel is the federation pouch system. When you receive work from your local team, package it as a task-request and send it to your peer. When you receive results from your peer, deliver them to your local team. You do NOT write code or modify files. You translate, negotiate, and coordinate.
+  ambassador: `You are an Ambassador agent — the sole bridge between this Groove daemon and a federated peer. You communicate with the remote Ambassador using diplomatic pouch messages. You can read the local codebase for context. Your ONLY outbound channel is the federation pouch system. When you receive work from your local team, package it as a task-request and send it to your peer. When you receive results from your peer, deliver them to your local team. Report results to your local team. Priority order: deliver to the planner agent first. If no planner exists, deliver to the fullstack agent. If neither exists, broadcast to all running agents. Use the GROOVE coordination API at http://localhost:31415 to discover running agents (GET /api/agents) and instruct them (POST /api/agents/:id/instruct). You do NOT write code or modify files. You translate, negotiate, and coordinate.
 
 `,
 };
@@ -1105,6 +1105,9 @@ For normal file edits within your scope, proceed without review.
     const handoffsDir = resolve(this.daemon.grooveDir, 'handoffs');
     if (!existsSync(handoffsDir)) return;
 
+    const MAX_HANDOFFS_PER_ROLE = 3;
+    if (!this.daemon._handoffCounts) this.daemon._handoffCounts = new Map();
+
     const registry = this.daemon.registry;
     let files;
     try { files = readdirSync(handoffsDir); } catch { return; }
@@ -1113,6 +1116,14 @@ For normal file edits within your scope, proceed without review.
       if (!file.endsWith('.md')) continue;
       const targetRole = file.replace(/\.md$/, '');
       const filePath = resolve(handoffsDir, file);
+
+      const roleKey = `${sourceAgent.teamId}:${targetRole}`;
+      const count = this.daemon._handoffCounts.get(roleKey) || 0;
+      if (count >= MAX_HANDOFFS_PER_ROLE) {
+        console.warn(`[Groove] Handoff to ${targetRole} skipped — cycle cap reached (${count}/${MAX_HANDOFFS_PER_ROLE})`);
+        try { unlinkSync(filePath); } catch {}
+        continue;
+      }
 
       let content;
       try { content = readFileSync(filePath, 'utf8').trim(); } catch { continue; }
@@ -1131,6 +1142,8 @@ For normal file edits within your scope, proceed without review.
         try { unlinkSync(filePath); } catch {}
         continue;
       }
+
+      this.daemon._handoffCounts.set(roleKey, count + 1);
 
       // Wake the target agent with the handoff request
       const message = `Cross-scope handoff from ${sourceAgent.name} (${sourceAgent.role}):\n\n${content}`;

@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Network, Code2, ChartSpline, Puzzle, Users, Box, Newspaper, Settings } from 'lucide-react';
+import { Network, Code2, ChartSpline, Puzzle, Users, Box, Globe, Newspaper, Settings } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Tooltip } from '../ui/tooltip';
 
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { id: 'marketplace', icon: Puzzle,     label: 'Marketplace' },
   { id: 'models',      icon: Box,       label: 'Models' },
   { id: 'teams',       icon: Users,     label: 'Teams' },
+  { id: 'federation', icon: Globe,     label: 'Federation' },
 ];
 
 const UTIL_ITEMS = [

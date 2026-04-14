@@ -344,13 +344,13 @@ export default function TeamsView() {
         </TabsList>
       </div>
 
-      <TabsContent value="dashboard" className="flex-1 min-h-0">
+      <TabsContent value="dashboard" className="flex flex-col min-h-0">
         <TeamsDashboard />
       </TabsContent>
-      <TabsContent value="approvals" className="flex-1 min-h-0">
+      <TabsContent value="approvals" className="flex flex-col min-h-0">
         <ApprovalsTab />
       </TabsContent>
-      <TabsContent value="schedules" className="flex-1 min-h-0">
+      <TabsContent value="schedules" className="flex flex-col min-h-0">
         <SchedulesTab />
       </TabsContent>
     </Tabs>

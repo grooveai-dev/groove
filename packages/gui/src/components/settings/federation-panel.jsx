@@ -29,6 +29,7 @@ export function FederationPanel() {
 
   const [ip, setIp] = useState('');
   const [port, setPort] = useState('31415');
+  const [serverName, setServerName] = useState('');
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
@@ -41,9 +42,10 @@ export function FederationPanel() {
     if (!ip.trim()) return;
     setAdding(true);
     try {
-      await addToWhitelist(ip.trim(), parseInt(port, 10) || 31415);
+      await addToWhitelist(ip.trim(), parseInt(port, 10) || 31415, serverName.trim() || undefined);
       setIp('');
       setPort('31415');
+      setServerName('');
     } catch {}
     setAdding(false);
   }
@@ -61,25 +63,36 @@ export function FederationPanel() {
           )}
         </div>
 
-        <form onSubmit={handleAdd} className="flex items-center gap-2 mb-2.5">
-          <input
-            type="text"
-            placeholder="IP address"
-            value={ip}
-            onChange={(e) => setIp(e.target.value)}
-            className="flex-1 h-7 px-2.5 text-xs font-mono bg-surface-1 border border-border-subtle rounded-md text-text-0 placeholder:text-text-4 focus:outline-none focus:border-accent"
-          />
-          <input
-            type="text"
-            placeholder="Port"
-            value={port}
-            onChange={(e) => setPort(e.target.value)}
-            className="w-20 h-7 px-2.5 text-xs font-mono bg-surface-1 border border-border-subtle rounded-md text-text-0 placeholder:text-text-4 focus:outline-none focus:border-accent"
-          />
-          <Button type="submit" variant="primary" size="sm" disabled={adding || !ip.trim()} className="h-7 text-2xs gap-1">
-            {adding ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
-            Add
-          </Button>
+        <form onSubmit={handleAdd} className="space-y-2 mb-2.5">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Server name"
+              value={serverName}
+              onChange={(e) => setServerName(e.target.value)}
+              className="flex-1 h-7 px-2.5 text-xs font-sans bg-surface-1 border border-border-subtle rounded-md text-text-0 placeholder:text-text-4 focus:outline-none focus:border-accent"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="IP address"
+              value={ip}
+              onChange={(e) => setIp(e.target.value)}
+              className="flex-1 h-7 px-2.5 text-xs font-mono bg-surface-1 border border-border-subtle rounded-md text-text-0 placeholder:text-text-4 focus:outline-none focus:border-accent"
+            />
+            <input
+              type="text"
+              placeholder="Port"
+              value={port}
+              onChange={(e) => setPort(e.target.value)}
+              className="w-20 h-7 px-2.5 text-xs font-mono bg-surface-1 border border-border-subtle rounded-md text-text-0 placeholder:text-text-4 focus:outline-none focus:border-accent"
+            />
+            <Button type="submit" variant="primary" size="sm" disabled={adding || !ip.trim()} className="h-7 text-2xs gap-1">
+              {adding ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
+              Add
+            </Button>
+          </div>
         </form>
 
         {federation.whitelist.length === 0 ? (
@@ -91,10 +104,14 @@ export function FederationPanel() {
           <div className="space-y-1.5">
             {federation.whitelist.map((entry) => {
               const key = typeof entry === 'string' ? entry : entry.ip;
+              const entryName = typeof entry === 'object' ? entry.name : null;
               const status = typeof entry === 'object' ? entry.status : 'waiting';
               return (
                 <div key={key} className="flex items-center gap-2 rounded-md border border-border-subtle bg-surface-1 px-3 py-2">
-                  <span className="text-xs font-mono text-text-1 flex-1 truncate">{key}{typeof entry === 'object' && entry.port ? `:${entry.port}` : ''}</span>
+                  <div className="flex-1 min-w-0">
+                    {entryName && <span className="text-xs font-sans font-medium text-text-0 block truncate">{entryName}</span>}
+                    <span className={cn('text-xs font-mono truncate block', entryName ? 'text-2xs text-text-3' : 'text-text-1')}>{key}{typeof entry === 'object' && entry.port ? `:${entry.port}` : ''}</span>
+                  </div>
                   {statusBadge(status)}
                   <button
                     onClick={() => removeFromWhitelist(key)}

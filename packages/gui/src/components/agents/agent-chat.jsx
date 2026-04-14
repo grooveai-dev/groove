@@ -251,7 +251,7 @@ export function AgentChat({ agent }) {
               'w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer',
               'disabled:opacity-20 disabled:cursor-not-allowed',
               input.trim()
-                ? 'bg-accent text-surface-0 hover:bg-accent/90 shadow-lg shadow-accent/20'
+                ? 'bg-accent/15 text-accent hover:bg-accent/25 border border-accent/25'
                 : 'bg-surface-4 text-text-4',
             )}
           >

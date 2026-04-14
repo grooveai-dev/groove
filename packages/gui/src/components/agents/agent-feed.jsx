@@ -755,8 +755,8 @@ export function AgentFeed({ agent }) {
                 'disabled:opacity-15 disabled:cursor-not-allowed',
                 input.trim()
                   ? mode === 'query'
-                    ? 'bg-info text-white hover:bg-info/85'
-                    : 'bg-accent text-white hover:bg-accent/85'
+                    ? 'bg-info/15 text-info hover:bg-info/25 border border-info/25'
+                    : 'bg-accent/15 text-accent hover:bg-accent/25 border border-accent/25'
                   : 'bg-transparent text-text-4',
               )}
             >

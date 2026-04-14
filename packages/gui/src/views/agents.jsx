@@ -241,10 +241,8 @@ export function TeamTabBar() {
         );
       })}
 
-      </div>
-      {/* Create new team — pinned outside scroll area */}
       {creating ? (
-        <div className="flex items-center gap-1.5 px-3 h-9 bg-surface-3/50 flex-shrink-0">
+        <div className="flex items-center gap-1.5 px-3 h-9 flex-shrink-0">
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -267,12 +265,14 @@ export function TeamTabBar() {
       ) : (
         <button
           onClick={() => setCreating(true)}
-          className="flex items-center justify-center w-9 h-9 bg-accent/15 text-accent hover:bg-accent/25 cursor-pointer transition-colors flex-shrink-0"
+          className="flex items-center justify-center w-6 h-6 my-auto mx-2 rounded-full bg-accent/15 text-accent hover:bg-accent/25 cursor-pointer transition-colors flex-shrink-0"
           title="New team"
         >
-          <Plus size={14} />
+          <Plus size={12} />
         </button>
       )}
+
+      </div>
       {canScrollRight && (
         <button
           onClick={() => scrollRef.current?.scrollBy({ left: 300, behavior: 'smooth' })}

@@ -342,10 +342,11 @@ describe('Rotator', () => {
 
     assert.equal(rotator.lastRotationTime.has('a3'), false);
 
-    await rotator.rotate('a3');
+    const newAgent = await rotator.rotate('a3');
 
-    assert.equal(rotator.lastRotationTime.has('a3'), true);
-    const elapsed = Date.now() - rotator.lastRotationTime.get('a3');
+    assert.equal(rotator.lastRotationTime.has('a3'), false);
+    assert.equal(rotator.lastRotationTime.has(newAgent.id), true);
+    const elapsed = Date.now() - rotator.lastRotationTime.get(newAgent.id);
     assert.ok(elapsed < 1000); // Should be very recent
   });
 });

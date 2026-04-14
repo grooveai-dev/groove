@@ -2511,6 +2511,13 @@ Keep responses concise. Help them think, don't lecture them about the system the
         }];
       }
 
+      // Reset handoff cycle counters for this team so a fresh launch starts clean
+      if (daemon._handoffCounts) {
+        for (const key of [...daemon._handoffCounts.keys()]) {
+          if (key.startsWith(`${defaultTeamId}:`)) daemon._handoffCounts.delete(key);
+        }
+      }
+
       // Spawn phase 1 agents — reuse idle team members with matching roles when possible
       const spawned = [];
       const reused = [];
@@ -2841,11 +2848,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   app.post('/api/federation/whitelist', proOnly, (req, res) => {
     try {
-      const { ip, port } = req.body;
+      const { ip, port, name } = req.body;
       if (!ip || typeof ip !== 'string') {
         return res.status(400).json({ error: 'ip is required (string)' });
       }
-      const entry = daemon.federation.whitelist.add(ip, port);
+      const entry = daemon.federation.whitelist.add(ip, port, name);
       daemon.broadcast({ type: 'federation:whitelist', data: daemon.federation.whitelist.list() });
       res.json(entry);
     } catch (err) {
@@ -2865,12 +2872,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   // Probe endpoint — remote daemons hit this to check if they are whitelisted
   app.get('/api/federation/whitelist-check', (req, res) => {
-    const remoteId = req.headers['x-groove-daemonid'] || '';
     const ip = req.ip?.replace('::ffff:', '') || req.socket?.remoteAddress?.replace('::ffff:', '') || '';
     const whitelisted = daemon.federation.isWhitelisted(ip);
     res.json({
       whitelisted,
-      daemonId: daemon.federation._daemonId(),
+      ...(whitelisted ? { daemonId: daemon.federation._daemonId() } : {}),
     });
   });
 
@@ -2878,11 +2884,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   app.post('/api/federation/knock', (req, res) => {
     try {
+      const callerIp = req.ip?.replace('::ffff:', '') || req.socket?.remoteAddress?.replace('::ffff:', '') || '';
       const { senderId, publicKey, payload, signature } = req.body;
       if (!senderId || !publicKey || !payload || !signature) {
         return res.status(400).json({ error: 'senderId, publicKey, payload, and signature are required' });
       }
-      const result = daemon.federation.handleKnock(senderId, publicKey, payload, signature);
+      const result = daemon.federation.handleKnock(senderId, publicKey, payload, signature, callerIp);
       res.json(result);
     } catch (err) {
       res.status(403).json({ error: err.message });
@@ -2899,6 +2906,10 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   app.post('/api/federation/pouch', (req, res) => {
     try {
+      const callerIp = req.ip?.replace('::ffff:', '') || req.socket?.remoteAddress?.replace('::ffff:', '') || '';
+      if (!callerIp || !daemon.federation.isWhitelisted(callerIp)) {
+        return res.status(403).json({ error: 'Caller IP not whitelisted' });
+      }
       const { senderId, payload, signature } = req.body;
       if (!senderId || !payload || !signature) {
         return res.status(400).json({ error: 'senderId, payload, and signature are required' });
@@ -2932,20 +2943,25 @@ Keep responses concise. Help them think, don't lecture them about the system the
   // Accept incoming pairing request from a remote daemon
   app.post('/api/federation/pair', (req, res) => {
     try {
-      const { id, name, host, port, publicKey } = req.body;
+      const callerIp = req.ip?.replace('::ffff:', '') || req.socket?.remoteAddress?.replace('::ffff:', '') || '';
+      const { id, name, port, publicKey } = req.body;
       if (!id || !publicKey) {
         return res.status(400).json({ error: 'id and publicKey are required' });
       }
-      const result = daemon.federation.acceptPairing({ id, name, host, port, publicKey });
+      const result = daemon.federation.acceptPairing({ id, name, port, publicKey }, callerIp);
       res.json(result);
     } catch (err) {
-      res.status(400).json({ error: err.message });
+      res.status(403).json({ error: err.message });
     }
   });
 
   // Legacy contract endpoints (kept for backward compat)
-  app.post('/api/federation/contract', proOnly, (req, res) => {
+  app.post('/api/federation/contract', (req, res) => {
     try {
+      const callerIp = req.ip?.replace('::ffff:', '') || req.socket?.remoteAddress?.replace('::ffff:', '') || '';
+      if (!callerIp || !daemon.federation.isWhitelisted(callerIp)) {
+        return res.status(403).json({ error: 'Caller IP not whitelisted' });
+      }
       const { senderId, payload, signature } = req.body;
       if (!senderId || !payload || !signature) {
         return res.status(400).json({ error: 'senderId, payload, and signature are required' });

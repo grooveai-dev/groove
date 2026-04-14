@@ -17,6 +17,7 @@ import TeamsView from './views/teams';
 import SettingsView from './views/settings';
 import ModelsView from './views/models';
 import FederationView from './views/federation';
+import ToysView from './views/toys';
 
 // Agent components
 import { AgentPanel } from './components/agents/agent-panel';
@@ -61,6 +62,7 @@ function ViewRouter() {
     case 'editor':      content = <EditorView />;      break;
     case 'dashboard':   content = <DashboardView />;   break;
     case 'marketplace': content = <MarketplaceView />; break;
+    case 'toys':        content = <ToysView />;        break;
     case 'teams':       content = <TeamsView />;       break;
     case 'models':      content = <ModelsView />;      break;
     case 'federation':  content = <FederationView />;  break;

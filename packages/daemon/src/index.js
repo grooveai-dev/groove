@@ -40,6 +40,7 @@ import { TunnelManager } from './tunnel-manager.js';
 import { ModelManager } from './model-manager.js';
 import { LlamaServerManager } from './llama-server.js';
 import { RepoImporter } from './repo-import.js';
+import { Toys } from './toys.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 
 const DEFAULT_PORT = 31415;
@@ -141,6 +142,7 @@ export class Daemon {
     this.mcpManager = new McpManager(this);
     this.tunnelManager = new TunnelManager(this);
     this.repoImporter = new RepoImporter(this);
+    this.toys = new Toys(this);
 
     // Subscription state (populated by Electron IPC or direct auth)
     this.authToken = null;

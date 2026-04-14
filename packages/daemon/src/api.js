@@ -3435,6 +3435,33 @@ Keep responses concise. Help them think, don't lecture them about the system the
     res.json(daemon.config);
   });
 
+  // --- Toys ---
+
+  app.get('/api/toys', (req, res) => {
+    const category = req.query.category;
+    if (category && (typeof category !== 'string' || category.length > 30)) {
+      return res.status(400).json({ error: 'Invalid category' });
+    }
+    res.json(daemon.toys.list(category || undefined));
+  });
+
+  app.get('/api/toys/:id', (req, res) => {
+    const toy = daemon.toys.get(req.params.id);
+    if (!toy) return res.status(404).json({ error: 'Toy not found' });
+    res.json(toy);
+  });
+
+  app.post('/api/toys/:id/launch', async (req, res) => {
+    try {
+      const { apiKey, starterPrompt } = req.body || {};
+      const result = await daemon.toys.launch(req.params.id, { apiKey, starterPrompt });
+      daemon.audit.log('toy.launch', { toyId: req.params.id, teamId: result.team.id });
+      res.status(201).json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // Serve GUI static files (built GUI) — no-cache headers to prevent stale bundles
   const guiPath = process.env.GROOVE_GUI_PATH || resolve(__dirname, '../../gui/dist');
   app.use(express.static(guiPath, { etag: false, maxAge: 0, lastModified: false }));

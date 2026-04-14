@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Network, Code2, ChartSpline, Puzzle, Users, Box, Globe, Newspaper, Settings } from 'lucide-react';
+import { Network, Code2, ChartSpline, Puzzle, Gamepad2, Users, Box, Globe, Newspaper, Settings } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Tooltip } from '../ui/tooltip';
 import { isElectron, getPlatform } from '../../lib/electron';
@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { id: 'editor',      icon: Code2,     label: 'Editor' },
   { id: 'dashboard',   icon: ChartSpline, label: 'Dashboard' },
   { id: 'marketplace', icon: Puzzle,     label: 'Marketplace' },
+  { id: 'toys',        icon: Gamepad2,  label: 'Toys' },
   { id: 'models',      icon: Box,       label: 'Models' },
   { id: 'teams',       icon: Users,     label: 'Teams' },
   { id: 'federation', icon: Globe,     label: 'Federation' },

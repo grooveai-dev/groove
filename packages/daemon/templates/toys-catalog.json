@@ -1,0 +1,242 @@
+[
+  {
+    "id": "nasa-eonet",
+    "name": "NASA Earth Observatory",
+    "description": "Track natural events on Earth in real-time — wildfires, storms, volcanic eruptions, and more from NASA's EONET feed.",
+    "category": "space",
+    "icon": "Globe",
+    "docsUrl": "https://eonet.gsfc.nasa.gov/docs/v3",
+    "baseUrl": "https://eonet.gsfc.nasa.gov/api/v3",
+    "authType": "apiKey",
+    "keyHeader": "api_key",
+    "sampleEndpoints": [
+      "GET /events",
+      "GET /events?status=open",
+      "GET /categories",
+      "GET /events?category=wildfires"
+    ],
+    "starterPrompts": [
+      "Build a live wildfire tracker with map visualization",
+      "Create a natural disaster dashboard with event timelines",
+      "Build an alert system for volcanic eruptions near populated areas",
+      "Visualize storm patterns across the globe over the last 30 days"
+    ],
+    "difficulty": "intermediate"
+  },
+  {
+    "id": "nasa-apod",
+    "name": "NASA Astronomy Picture of the Day",
+    "description": "Access NASA's iconic daily astronomy images and explanations — one stunning space photo every day since 1995.",
+    "category": "space",
+    "icon": "Globe",
+    "docsUrl": "https://api.nasa.gov",
+    "baseUrl": "https://api.nasa.gov/planetary",
+    "authType": "apiKey",
+    "keyHeader": "api_key",
+    "sampleEndpoints": [
+      "GET /apod?api_key=DEMO_KEY",
+      "GET /apod?date=2024-01-01",
+      "GET /apod?start_date=2024-01-01&end_date=2024-01-07",
+      "GET /apod?count=5"
+    ],
+    "starterPrompts": [
+      "Build a space photo gallery with daily updates",
+      "Create a screensaver app that cycles through APOD images",
+      "Build a quiz game using astronomy photo descriptions",
+      "Make a calendar app with a space photo for each day"
+    ],
+    "difficulty": "beginner"
+  },
+  {
+    "id": "openweathermap",
+    "name": "OpenWeatherMap",
+    "description": "Get current weather, forecasts, and historical data for any location on Earth with this popular weather API.",
+    "category": "weather",
+    "icon": "Cloud",
+    "docsUrl": "https://openweathermap.org/api",
+    "baseUrl": "https://api.openweathermap.org/data/2.5",
+    "authType": "apiKey",
+    "keyHeader": "appid",
+    "sampleEndpoints": [
+      "GET /weather?q=London&appid=KEY",
+      "GET /forecast?q=Tokyo&appid=KEY",
+      "GET /weather?lat=40.7&lon=-74.0&appid=KEY",
+      "GET /air_pollution?lat=50&lon=50&appid=KEY"
+    ],
+    "starterPrompts": [
+      "Build a weather dashboard with 5-day forecasts",
+      "Create a travel planner that suggests destinations by weather",
+      "Build an air quality monitor for major cities",
+      "Make a weather comparison tool for two cities side by side"
+    ],
+    "difficulty": "beginner"
+  },
+  {
+    "id": "coingecko",
+    "name": "CoinGecko",
+    "description": "Free crypto market data — prices, market caps, volumes, and trending coins across thousands of cryptocurrencies.",
+    "category": "finance",
+    "icon": "Coins",
+    "docsUrl": "https://docs.coingecko.com/v3",
+    "baseUrl": "https://api.coingecko.com/api/v3",
+    "authType": "none",
+    "keyHeader": null,
+    "sampleEndpoints": [
+      "GET /simple/price?ids=bitcoin&vs_currencies=usd",
+      "GET /coins/markets?vs_currency=usd&order=market_cap_desc",
+      "GET /search/trending",
+      "GET /coins/bitcoin/market_chart?vs_currency=usd&days=30"
+    ],
+    "starterPrompts": [
+      "Build a crypto portfolio tracker with live prices",
+      "Create a trending coins dashboard with price charts",
+      "Build a price alert system for your favorite coins",
+      "Make a crypto market overview with top gainers and losers"
+    ],
+    "difficulty": "beginner"
+  },
+  {
+    "id": "alpha-vantage",
+    "name": "Alpha Vantage",
+    "description": "Stock market data, forex, and crypto through a powerful financial API — real-time and historical time series.",
+    "category": "finance",
+    "icon": "Coins",
+    "docsUrl": "https://www.alphavantage.co/documentation",
+    "baseUrl": "https://www.alphavantage.co",
+    "authType": "apiKey",
+    "keyHeader": "apikey",
+    "sampleEndpoints": [
+      "GET /query?function=TIME_SERIES_DAILY&symbol=AAPL&apikey=KEY",
+      "GET /query?function=GLOBAL_QUOTE&symbol=MSFT&apikey=KEY",
+      "GET /query?function=SYMBOL_SEARCH&keywords=tesla&apikey=KEY",
+      "GET /query?function=NEWS_SENTIMENT&tickers=AAPL&apikey=KEY"
+    ],
+    "starterPrompts": [
+      "Build a stock screener with technical indicators",
+      "Create a portfolio analyzer with historical performance charts",
+      "Build a stock news sentiment tracker",
+      "Make a comparison tool for multiple stocks over time"
+    ],
+    "difficulty": "intermediate"
+  },
+  {
+    "id": "pokeapi",
+    "name": "PokeAPI",
+    "description": "The complete Pokemon encyclopedia API — every Pokemon, move, ability, and item from all generations.",
+    "category": "fun",
+    "icon": "Gamepad2",
+    "docsUrl": "https://pokeapi.co/docs/v2",
+    "baseUrl": "https://pokeapi.co/api/v2",
+    "authType": "none",
+    "keyHeader": null,
+    "sampleEndpoints": [
+      "GET /pokemon/pikachu",
+      "GET /pokemon?limit=20&offset=0",
+      "GET /type/fire",
+      "GET /ability/overgrow"
+    ],
+    "starterPrompts": [
+      "Build a Pokedex with search and type filtering",
+      "Create a Pokemon battle simulator",
+      "Build a team builder that suggests balanced teams",
+      "Make a Pokemon quiz game with sprites and stats"
+    ],
+    "difficulty": "beginner"
+  },
+  {
+    "id": "open-trivia-db",
+    "name": "Open Trivia DB",
+    "description": "Free trivia question database with thousands of questions across dozens of categories and difficulty levels.",
+    "category": "fun",
+    "icon": "Gamepad2",
+    "docsUrl": "https://opentdb.com/api_config.php",
+    "baseUrl": "https://opentdb.com",
+    "authType": "none",
+    "keyHeader": null,
+    "sampleEndpoints": [
+      "GET /api.php?amount=10",
+      "GET /api.php?amount=10&category=9&difficulty=easy",
+      "GET /api_category.php",
+      "GET /api.php?amount=10&type=multiple"
+    ],
+    "starterPrompts": [
+      "Build a multiplayer trivia game with scoreboards",
+      "Create a daily trivia challenge with streaks",
+      "Build a study tool that quizzes you on specific topics",
+      "Make a trivia night host app with rounds and scoring"
+    ],
+    "difficulty": "beginner"
+  },
+  {
+    "id": "nominatim-osm",
+    "name": "Nominatim / OpenStreetMap",
+    "description": "Free geocoding and reverse geocoding powered by OpenStreetMap — turn addresses into coordinates and back.",
+    "category": "maps",
+    "icon": "Map",
+    "docsUrl": "https://nominatim.org/release-docs/develop/api/Overview",
+    "baseUrl": "https://nominatim.openstreetmap.org",
+    "authType": "none",
+    "keyHeader": null,
+    "sampleEndpoints": [
+      "GET /search?q=London&format=json",
+      "GET /reverse?lat=51.5&lon=-0.1&format=json",
+      "GET /search?q=restaurants+near+times+square&format=json",
+      "GET /lookup?osm_ids=R146656&format=json"
+    ],
+    "starterPrompts": [
+      "Build a location search tool with map preview",
+      "Create a distance calculator between any two places",
+      "Build a geocoding batch tool for CSV address lists",
+      "Make a neighborhood explorer that shows nearby points of interest"
+    ],
+    "difficulty": "beginner"
+  },
+  {
+    "id": "jsonplaceholder",
+    "name": "JSONPlaceholder",
+    "description": "A free fake REST API for testing and prototyping — perfect for learning HTTP requests with realistic data.",
+    "category": "data",
+    "icon": "Database",
+    "docsUrl": "https://jsonplaceholder.typicode.com/guide",
+    "baseUrl": "https://jsonplaceholder.typicode.com",
+    "authType": "none",
+    "keyHeader": null,
+    "sampleEndpoints": [
+      "GET /posts",
+      "GET /users/1",
+      "GET /posts/1/comments",
+      "POST /posts"
+    ],
+    "starterPrompts": [
+      "Build a social media feed with posts and comments",
+      "Create a user directory with profile cards",
+      "Build a todo app backed by the API",
+      "Make a blog engine with CRUD operations"
+    ],
+    "difficulty": "beginner"
+  },
+  {
+    "id": "the-dog-api",
+    "name": "The Dog API",
+    "description": "Browse every dog breed with images, temperaments, and stats — a fun API for dog lovers and quick prototypes.",
+    "category": "fun",
+    "icon": "Gamepad2",
+    "docsUrl": "https://docs.thedogapi.com",
+    "baseUrl": "https://api.thedogapi.com/v1",
+    "authType": "none",
+    "keyHeader": null,
+    "sampleEndpoints": [
+      "GET /breeds",
+      "GET /images/search?limit=10",
+      "GET /breeds/search?q=labrador",
+      "GET /breeds?limit=10&page=0"
+    ],
+    "starterPrompts": [
+      "Build a dog breed encyclopedia with photos",
+      "Create a random dog image gallery",
+      "Build a dog breed quiz — guess the breed from the photo",
+      "Make a dog breed comparison tool with stats and images"
+    ],
+    "difficulty": "beginner"
+  }
+]

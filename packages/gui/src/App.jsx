@@ -4,6 +4,7 @@
 import React, { useEffect } from 'react';
 import { useGrooveStore } from './stores/groove';
 import { AppShell } from './components/layout/app-shell';
+import { SetupWizard } from './components/onboarding/setup-wizard';
 
 // Views
 import AgentsView from './views/agents';
@@ -100,6 +101,7 @@ export default function App() {
   const connect = useGrooveStore((s) => s.connect);
   const hydrated = useGrooveStore((s) => s.hydrated);
   const tunneled = useGrooveStore((s) => s.tunneled);
+  const onboardingComplete = useGrooveStore((s) => s.onboardingComplete);
   useEffect(() => { connect(); }, [connect]);
 
   useEffect(() => {
@@ -118,7 +120,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <ViewRouter />
+      {onboardingComplete ? <ViewRouter /> : <SetupWizard />}
     </ErrorBoundary>
   );
 }

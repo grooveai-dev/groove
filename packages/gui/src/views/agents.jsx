@@ -295,7 +295,9 @@ function AgentTreeInner() {
   const closeDetail = useGrooveStore((s) => s.closeDetail);
 
   const agents = useMemo(
-    () => allAgents.filter((a) => a.teamId === activeTeamId),
+    () => allAgents
+      .filter((a) => a.teamId === activeTeamId)
+      .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)),
     [allAgents, activeTeamId],
   );
 
@@ -329,7 +331,7 @@ function AgentTreeInner() {
 
     // First pass: place agents with saved positions
     const pending = [];
-    agents.forEach((agent, i) => {
+    agents.forEach((agent) => {
       const key = agent.name || agent.id;
       if (saved[key]) {
         const pos = saved[key];
@@ -340,29 +342,36 @@ function AgentTreeInner() {
           draggable: true, selectable: true,
         });
       } else {
-        pending.push({ agent, index: i });
+        pending.push(agent);
       }
     });
 
-    // Second pass: place new agents in non-overlapping positions
-    for (const { agent, index } of pending) {
-      const row = Math.floor(index / MAX_PER_ROW);
-      const col = index % MAX_PER_ROW;
-      const totalInRow = Math.min(agents.length - row * MAX_PER_ROW, MAX_PER_ROW);
+    // Second pass: place new agents in non-overlapping positions using sequential index
+    const newPositions = {};
+    pending.forEach((agent, idx) => {
+      const row = Math.floor(idx / MAX_PER_ROW);
+      const col = idx % MAX_PER_ROW;
+      const totalInRow = Math.min(pending.length - row * MAX_PER_ROW, MAX_PER_ROW);
       const offsetX = -((totalInRow - 1) * NODE_X_GAP) / 2;
       let pos = { x: offsetX + col * NODE_X_GAP, y: NODE_Y_GAP + row * NODE_Y_GAP };
 
-      // If position is occupied, shift down until we find empty space
       while (occupied.has(posKey(pos.x, pos.y))) {
         pos = { x: pos.x, y: pos.y + NODE_Y_GAP };
       }
       occupied.add(posKey(pos.x, pos.y));
 
+      const key = agent.name || agent.id;
+      newPositions[key] = pos;
       nodes.push({
         id: agent.id, type: 'agentNode', position: pos,
         data: { agent, timeline: tokenTimeline[agent.id] || [] },
         draggable: true, selectable: true,
       });
+    });
+
+    // Auto-save positions for newly placed nodes so they survive team switches
+    if (Object.keys(newPositions).length > 0) {
+      savePositions({ ...saved, ...newPositions });
     }
 
     return nodes;
@@ -412,7 +421,6 @@ function AgentTreeInner() {
   useEffect(() => {
     setNodes((current) => {
       const currentMap = new Map(current.map((n) => [n.id, n]));
-      const newIds = new Set(targetNodes.map((n) => n.id));
 
       return targetNodes.map((tn) => {
         const existing = currentMap.get(tn.id);

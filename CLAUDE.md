@@ -266,11 +266,10 @@ Audit-driven release. Multi-agent orchestration system with 7 coordination layer
 
 <!-- GROOVE:START -->
 ## GROOVE Orchestration (auto-injected)
-Active agents: 2
+Active agents: 1
 | Name | Role | Scope |
 |------|------|-------|
-| fullstack-20 | fullstack | - |
-| planner-5 | planner | - |
+| fullstack-10 | fullstack | - |
 See AGENTS_REGISTRY.md for full agent state.
 **Memory policy:** GROOVE manages project memory automatically. Do not read or write MEMORY.md or .groove/memory/ files directly.
 <!-- GROOVE:END -->

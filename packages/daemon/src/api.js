@@ -1103,7 +1103,8 @@ Keep responses concise. Help them think, don't lecture them about the system the
 </body></html>`);
     }
 
-    const displayName = user?.displayName || user?.id || '';
+    const rawName = user?.displayName || user?.id || '';
+    const displayName = rawName.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
     res.send(`<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Groove — Signed In</title>
 <link rel="icon" href="/favicon.png">

@@ -201,6 +201,13 @@ html {
   filter: drop-shadow(0 0 4px rgba(97, 175, 239, 0.4));
 }
 
+/* ── Onboarding Wizard ───────────────────────────────────── */
+
+@keyframes wizard-checkmark {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
+}
+
 /* ── Electron Desktop App ────────────────────────────────── */
 
 .electron-drag {

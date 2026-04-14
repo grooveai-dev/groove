@@ -7,7 +7,6 @@ import { isElectron } from '../../lib/electron';
 import { cn } from '../../lib/cn';
 import { ProviderCard } from './provider-card';
 import { Badge } from '../ui/badge';
-import { Input } from '../ui/input';
 import {
   ChevronRight, ChevronLeft, Eye, EyeOff, Check, Sparkles, ArrowRight,
 } from 'lucide-react';
@@ -70,13 +69,13 @@ const transition = { duration: 0.25, ease: [0.4, 0, 0.2, 1] };
 
 function StepDots({ current, total }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2.5">
       {Array.from({ length: total }, (_, i) => (
         <div
           key={i}
           className={cn(
-            'h-1.5 rounded-full transition-all duration-300',
-            i === current ? 'w-6 bg-accent' : i < current ? 'w-1.5 bg-accent/50' : 'w-1.5 bg-surface-5',
+            'h-2 rounded-full transition-all duration-300',
+            i === current ? 'w-7 bg-accent' : i < current ? 'w-2 bg-accent/50' : 'w-2 bg-surface-5',
           )}
         />
       ))}
@@ -127,18 +126,18 @@ function WelcomeStep({ onNext, onSkip }) {
 
 // ── Step 2: Install Providers ───────────────────────────────
 
-function InstallStep({ providerStatus, selected, onToggle, onInstall, installing }) {
-  const hasInstalled = PROVIDERS.some((p) => providerStatus[p.id]?.installed);
-  const hasSelected = selected.length > 0;
+function InstallStep({ providerStatus, selected, onInstall, installing, statusChecking }) {
+  const installedCount = PROVIDERS.filter((p) => providerStatus[p.id]?.installed).length;
+  const allInstalled = installedCount === PROVIDERS.length;
 
   return (
-    <div className="flex flex-col items-center max-w-3xl mx-auto w-full">
-      <div className="text-center mb-8">
-        <h2 className="text-xl font-bold text-text-0 mb-2">Choose your AI providers</h2>
-        <p className="text-sm text-text-3">Install the coding tools you want to use. You can always add more later.</p>
+    <div className="flex flex-col items-center max-w-4xl mx-auto w-full">
+      <div className="text-center mb-10">
+        <h2 className="text-2xl font-bold text-text-0 mb-2">Choose your AI providers</h2>
+        <p className="text-sm text-text-2">Install the coding tools you want to use. You can always add more later.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 w-full mb-8">
         {PROVIDERS.map((p) => (
           <ProviderCard
             key={p.id}
@@ -147,16 +146,21 @@ function InstallStep({ providerStatus, selected, onToggle, onInstall, installing
             installing={installing[p.id]}
             failed={providerStatus[p.id]?.failed}
             selected={selected.includes(p.id)}
-            onToggle={onToggle}
             onInstall={onInstall}
+            statusChecking={statusChecking}
           />
         ))}
       </div>
 
-      <p className="text-2xs text-text-4 text-center">
-        {hasInstalled
-          ? 'At least one provider is installed — you can continue.'
-          : 'Select and install at least one provider to continue.'}
+      <p className={cn(
+        'text-xs text-center',
+        allInstalled ? 'text-success' : installedCount > 0 ? 'text-text-2' : 'text-text-4',
+      )}>
+        {allInstalled
+          ? 'All providers installed — you\'re ready to go!'
+          : installedCount > 0
+            ? `${installedCount} of ${PROVIDERS.length} providers installed`
+            : 'Click Install to set up a provider'}
       </p>
     </div>
   );
@@ -317,8 +321,8 @@ function AuthStep({ providerStatus, installedIds, onSaveKey, onSubscriptionLogin
   return (
     <div className="flex flex-col items-center max-w-2xl mx-auto w-full">
       <div className="text-center mb-8">
-        <h2 className="text-xl font-bold text-text-0 mb-2">Connect your accounts</h2>
-        <p className="text-sm text-text-3">Add credentials for your installed providers.</p>
+        <h2 className="text-2xl font-bold text-text-0 mb-2">Connect your accounts</h2>
+        <p className="text-sm text-text-2">Add credentials for your installed providers.</p>
       </div>
 
       <div className="flex flex-col gap-4 w-full mb-6">
@@ -350,8 +354,8 @@ function DefaultModelStep({ providerStatus, installedIds, defaultProvider, defau
   return (
     <div className="flex flex-col items-center max-w-2xl mx-auto w-full">
       <div className="text-center mb-8">
-        <h2 className="text-xl font-bold text-text-0 mb-2">Set your default</h2>
-        <p className="text-sm text-text-3">Choose which provider and model to use by default. You can switch per-agent anytime.</p>
+        <h2 className="text-2xl font-bold text-text-0 mb-2">Set your default</h2>
+        <p className="text-sm text-text-2">Choose which provider and model to use by default. You can switch per-agent anytime.</p>
       </div>
 
       <div className="flex flex-col gap-3 w-full max-w-md mb-6">
@@ -481,35 +485,67 @@ export function SetupWizard() {
   const [providerStatus, setProviderStatus] = useState({});
   const [defaultProv, setDefaultProv] = useState(null);
   const [defaultMod, setDefaultMod] = useState(null);
+  const [statusChecking, setStatusChecking] = useState(true);
   const containerRef = useRef(null);
 
   useEffect(() => {
-    async function fetchStatus() {
+    let cancelled = false;
+
+    async function fetchOnce() {
       try {
         const data = await fetch('/api/onboarding/status').then((r) => r.ok ? r.json() : null);
         if (data?.providers) {
           const status = {};
+          const installedIds = [];
           for (const p of data.providers) {
             const authed = p.authStatus === 'authenticated' || p.authStatus === 'key-set';
             status[p.id] = { installed: p.installed, authenticated: authed };
+            if (p.installed) installedIds.push(p.id);
           }
-          setProviderStatus(status);
-          return;
+          return { status, installedIds };
         }
       } catch { /* fallback */ }
       try {
         const data = await fetch('/api/providers').then((r) => r.ok ? r.json() : null);
         if (data) {
           const status = {};
+          const installedIds = [];
           const list = Array.isArray(data) ? data : data.providers || [];
           for (const p of list) {
-            status[p.id] = { installed: p.installed || false, authenticated: p.authenticated || false };
+            const isInstalled = p.installed || p.authStatus === 'authenticated' || p.authStatus === 'key-set' || false;
+            status[p.id] = { installed: isInstalled, authenticated: p.authenticated || false };
+            if (isInstalled) installedIds.push(p.id);
           }
-          setProviderStatus(status);
+          return { status, installedIds };
         }
       } catch { /* ignore */ }
+      return null;
+    }
+
+    async function fetchStatus() {
+      setStatusChecking(true);
+      let result = await fetchOnce();
+      if (!cancelled && result && result.installedIds.length === 0) {
+        for (let retry = 0; retry < 2; retry++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          if (cancelled) return;
+          result = await fetchOnce();
+          if (result && result.installedIds.length > 0) break;
+        }
+      }
+      if (!cancelled && result) {
+        setProviderStatus(result.status);
+        if (result.installedIds.length > 0) {
+          setSelected((prev) => {
+            const merged = new Set([...prev, ...result.installedIds]);
+            return [...merged];
+          });
+        }
+      }
+      if (!cancelled) setStatusChecking(false);
     }
     fetchStatus();
+    return () => { cancelled = true; };
   }, [step]);
 
   const goNext = useCallback(() => {
@@ -534,22 +570,18 @@ export function SetupWizard() {
     dismissOnboarding();
   }, [dismissOnboarding]);
 
-  const handleToggleProvider = useCallback((id) => {
-    setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
-  }, []);
-
   const handleInstall = useCallback(async (id) => {
     setInstalling((prev) => ({ ...prev, [id]: true }));
     try {
       await installProvider(id);
       setProviderStatus((prev) => ({ ...prev, [id]: { ...prev[id], installed: true } }));
-      if (!selected.includes(id)) setSelected((s) => [...s, id]);
+      setSelected((s) => s.includes(id) ? s : [...s, id]);
     } catch {
       setProviderStatus((prev) => ({ ...prev, [id]: { ...prev[id], failed: true } }));
     } finally {
       setInstalling((prev) => ({ ...prev, [id]: false }));
     }
-  }, [installProvider, selected]);
+  }, [installProvider]);
 
   const handleSaveKey = useCallback(async (providerId, key) => {
     try {
@@ -593,7 +625,7 @@ export function SetupWizard() {
   const hasAuthenticated = PROVIDERS.some((p) => providerStatus[p.id]?.authenticated);
   const canContinue =
     step === 0 ? true :
-    step === 1 ? hasInstalled || selected.length > 0 :
+    step === 1 ? hasInstalled :
     step === 2 ? hasAuthenticated :
     step === 3 ? !!defaultProv :
     false;
@@ -613,9 +645,9 @@ export function SetupWizard() {
       key="install"
       providerStatus={providerStatus}
       selected={selected}
-      onToggle={handleToggleProvider}
       onInstall={handleInstall}
       installing={installing}
+      statusChecking={statusChecking}
     />,
     <AuthStep
       key="auth"
@@ -644,7 +676,7 @@ export function SetupWizard() {
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 z-50 bg-surface-0 flex flex-col font-sans overflow-hidden"
+      className="fixed inset-0 z-50 bg-gradient-to-b from-surface-0 to-surface-1 flex flex-col font-sans overflow-hidden"
     >
       {/* Title bar drag region for Electron */}
       {isElectron() && <div className="h-8 w-full electron-drag shrink-0" />}
@@ -683,11 +715,11 @@ export function SetupWizard() {
 
       {/* Bottom navigation */}
       {step > 0 && step < TOTAL_STEPS - 1 && (
-        <div className="flex items-center justify-between px-8 py-6 shrink-0">
+        <div className="flex items-center justify-between px-8 py-8 shrink-0">
           <button
             type="button"
             onClick={goBack}
-            className="h-9 px-4 rounded-md text-sm text-text-2 hover:text-text-0 bg-surface-3 hover:bg-surface-4 transition-colors duration-100 cursor-pointer flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            className="h-10 px-6 rounded-md text-sm text-text-2 hover:text-text-0 bg-surface-3 hover:bg-surface-4 transition-colors duration-100 cursor-pointer flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
           >
             <ChevronLeft className="w-4 h-4" />
             Back
@@ -696,7 +728,7 @@ export function SetupWizard() {
             type="button"
             onClick={goNext}
             disabled={!canContinue}
-            className="h-9 px-6 rounded-md text-sm font-medium bg-accent text-surface-0 hover:bg-accent/80 transition-colors duration-100 cursor-pointer disabled:opacity-40 disabled:pointer-events-none flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            className="h-10 px-8 rounded-md text-sm font-medium bg-accent text-surface-0 hover:bg-accent/80 transition-colors duration-100 cursor-pointer disabled:opacity-40 disabled:pointer-events-none flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
           >
             {step === 3 ? 'Finish Setup' : 'Continue'}
             <ChevronRight className="w-4 h-4" />

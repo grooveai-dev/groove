@@ -118,7 +118,8 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       const instance = params.get('instance');
       if (instance) {
-        document.title = `${instance} — Groove`;
+        const sanitized = instance.replace(/[\x00-\x1F]/g, '').slice(0, 50);
+        document.title = `${sanitized} — Groove`;
       } else if (tunneled) {
         document.title = 'Remote — Groove';
       } else {

@@ -34,16 +34,41 @@ const grooveTheme = EditorView.theme({
   '.cm-activeLineGutter': { backgroundColor: '#2c313a' },
   '.cm-activeLine': { backgroundColor: 'rgba(44, 49, 58, 0.5)' },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'rgba(51, 175, 188, 0.15)' },
+  // Search panel styling
+  '.cm-panels': { backgroundColor: '#24282f', borderBottom: '1px solid #3e4451' },
+  '.cm-panels.cm-panels-top': { borderBottom: '1px solid #3e4451' },
+  '.cm-panels.cm-panels-bottom': { borderTop: '1px solid #3e4451' },
+  '.cm-search': { padding: '6px 8px', gap: '4px', fontFamily: 'var(--font-sans)', fontSize: '12px', display: 'flex', flexWrap: 'wrap', alignItems: 'center' },
+  '.cm-search label': { display: 'flex', alignItems: 'center', gap: '4px', color: '#8b929e', fontSize: '11px' },
+  '.cm-search input, .cm-search .cm-textfield': {
+    backgroundColor: '#1a1e25', border: '1px solid #2c313a', borderRadius: '4px', color: '#e6e6e6',
+    padding: '2px 6px', fontSize: '12px', fontFamily: 'var(--font-mono)', outline: 'none',
+  },
+  '.cm-search input:focus, .cm-search .cm-textfield:focus': { borderColor: '#33afbc' },
+  '.cm-search .cm-button, .cm-button': {
+    backgroundColor: '#2c313a', border: '1px solid #3e4451', borderRadius: '4px', color: '#bcc2cd',
+    padding: '2px 8px', fontSize: '11px', fontFamily: 'var(--font-sans)', cursor: 'pointer',
+    backgroundImage: 'none',
+  },
+  '.cm-search .cm-button:hover, .cm-button:hover': { backgroundColor: '#333842', color: '#e6e6e6' },
+  '.cm-search .cm-button:active': { backgroundColor: '#3a3f4b' },
+  '.cm-search br': { display: 'none' },
+  '.cm-panel.cm-search [name=close]': { color: '#6e7681', cursor: 'pointer', padding: '0 4px' },
+  '.cm-panel.cm-search [name=close]:hover': { color: '#e6e6e6' },
+  '.cm-searchMatch': { backgroundColor: 'rgba(51, 175, 188, 0.2)', outline: '1px solid rgba(51, 175, 188, 0.4)' },
+  '.cm-searchMatch-selected': { backgroundColor: 'rgba(51, 175, 188, 0.35)' },
 }, { dark: true });
 
-export function CodeEditor({ content, language, onChange, onSave }) {
+export function CodeEditor({ content, language, onChange, onSave, onCursorChange, viewRef: externalViewRef }) {
   const containerRef = useRef(null);
   const viewRef = useRef(null);
   const langCompartment = useRef(new Compartment());
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
+  const onCursorChangeRef = useRef(onCursorChange);
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
+  onCursorChangeRef.current = onCursorChange;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -74,14 +99,20 @@ export function CodeEditor({ content, language, onChange, onSave }) {
           if (update.docChanged) {
             onChangeRef.current?.(update.state.doc.toString());
           }
+          if (update.selectionSet || update.docChanged) {
+            const pos = update.state.selection.main.head;
+            const line = update.state.doc.lineAt(pos);
+            onCursorChangeRef.current?.({ line: line.number, col: pos - line.from + 1 });
+          }
         }),
       ],
     });
 
     const view = new EditorView({ state, parent: containerRef.current });
     viewRef.current = view;
+    if (externalViewRef) externalViewRef.current = view;
 
-    return () => { view.destroy(); viewRef.current = null; };
+    return () => { view.destroy(); viewRef.current = null; if (externalViewRef) externalViewRef.current = null; };
   }, []); // mount once
 
   // Update content when file changes externally

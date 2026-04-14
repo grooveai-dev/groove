@@ -282,6 +282,15 @@ export class ProcessManager {
   async spawn(config) {
     const { registry, locks, introducer } = this.daemon;
 
+    // Validate workingDir is within the project directory
+    if (config.workingDir) {
+      const resolved = resolve(config.workingDir);
+      const projResolved = resolve(this.daemon?.projectDir || process.cwd());
+      if (!resolved.startsWith(projResolved)) {
+        throw new Error('workingDir must be within project directory');
+      }
+    }
+
     // Clean stale recommended-team.json when spawning a new planner
     if (config.role === 'planner') {
       const dirs = [this.daemon.grooveDir];
@@ -596,13 +605,14 @@ For normal file edits within your scope, proceed without review.
     const spawnLine = `[${new Date().toISOString()}] GROOVE spawning: ${command} [${safeArgs.length} args]\n`;
     logStream.write(spawnLine);
 
-    // Inject ALL stored API keys — agents may need keys from other providers
-    // (e.g., an EA agent on claude-code may need OPENAI_API_KEY for a third-party tool)
+    // Inject only the API key for the agent's own provider — least-privilege principle
+    // (avoids leaking unrelated credentials into agent environments)
     if (this.daemon.credentials) {
-      for (const cp of this.daemon.credentials.listProviders()) {
-        const meta = getProvider(cp.provider);
+      const agentProvider = agent.provider || config.provider;
+      if (agentProvider) {
+        const meta = getProvider(agentProvider);
         if (meta?.constructor?.envKey) {
-          const storedKey = this.daemon.credentials.getKey(cp.provider);
+          const storedKey = this.daemon.credentials.getKey(agentProvider);
           if (storedKey) {
             env[meta.constructor.envKey] = storedKey;
           }

@@ -4,8 +4,8 @@
 import express from 'express';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream, copyFileSync } from 'fs';
-import { spawn } from 'child_process';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream, copyFileSync, realpathSync } from 'fs';
+import { spawn, execFile } from 'child_process';
 import { lookup as mimeLookup } from './mimetypes.js';
 import { listProviders, getProvider } from './providers/index.js';
 import { OllamaProvider } from './providers/ollama.js';
@@ -85,6 +85,15 @@ export function createApi(app, daemon) {
     res.header('Access-Control-Allow-Headers', 'Content-Type');
     res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, PATCH');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+  });
+
+  // Security headers
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '0');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
     next();
   });
 
@@ -816,8 +825,8 @@ export function createApi(app, daemon) {
     const { filename, content } = req.body;
     if (!filename || !content) return res.status(400).json({ error: 'filename and content required' });
 
-    // Sanitize filename — no path traversal
-    const safeName = String(filename).replace(/[/\\]/g, '_').replace(/\.\./g, '');
+    // Sanitize filename — strict allowlist, no path traversal
+    const safeName = String(filename).replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^\.+/, '');
     if (!safeName) return res.status(400).json({ error: 'Invalid filename' });
 
     const dir = agent.workingDir || daemon.projectDir;
@@ -1992,6 +2001,16 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
     const fullPath = resolve(projectDir, relPath);
     if (!fullPath.startsWith(projectDir)) return { error: 'Path outside project' };
+    // Symlink resolution — ensure real path is also within project
+    try {
+      const realPath = realpathSync(fullPath);
+      const realBase = realpathSync(projectDir);
+      if (!realPath.startsWith(realBase)) {
+        return { error: 'Path outside project (symlink)' };
+      }
+    } catch {
+      // File may not exist yet (for writes) — path prefix check is sufficient
+    }
     return { fullPath };
   }
 
@@ -2247,6 +2266,88 @@ Keep responses concise. Help them think, don't lecture them about the system the
       res.setHeader('Content-Length', stat.size);
       res.setHeader('Cache-Control', 'no-cache');
       createReadStream(result.fullPath).pipe(res);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Git status — returns modified/added/deleted/untracked files
+  app.get('/api/files/git-status', (req, res) => {
+    const rootDir = getEditorRoot();
+    if (!rootDir) return res.status(400).json({ error: 'Editor root not set' });
+
+    execFile('git', ['status', '--porcelain'], { cwd: rootDir, timeout: 10000 }, (err, stdout) => {
+      if (err) {
+        // Not a git repo or git not installed — return empty
+        return res.json({ entries: [] });
+      }
+      const STATUS_MAP = { 'M': 'M', 'A': 'A', '?': '?', 'D': 'D', 'R': 'R', 'U': 'U' };
+      const entries = [];
+      for (const line of stdout.split('\n')) {
+        if (!line.trim()) continue;
+        const code = line[0] === ' ' ? line[1] : line[0];
+        const filePath = line.slice(3).trim();
+        if (!filePath) continue;
+        entries.push({ path: filePath, status: STATUS_MAP[code] || code });
+      }
+      res.json({ entries });
+    });
+  });
+
+  // Git branch — returns the current branch name
+  app.get('/api/files/git-branch', (req, res) => {
+    const rootDir = getEditorRoot();
+    if (!rootDir) return res.status(400).json({ error: 'Editor root not set' });
+
+    execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: rootDir, timeout: 5000 }, (err, stdout) => {
+      if (err) {
+        return res.json({ branch: null });
+      }
+      res.json({ branch: stdout.trim() });
+    });
+  });
+
+  // File search — fuzzy filename matching for quick-open (Ctrl+P)
+  app.get('/api/files/search', (req, res) => {
+    const query = req.query.q;
+    if (!query || typeof query !== 'string') return res.status(400).json({ error: 'q parameter is required' });
+    if (query.length > 200) return res.status(400).json({ error: 'Query too long' });
+
+    const maxResults = Math.min(parseInt(req.query.maxResults, 10) || 50, 200);
+    const rootDir = getEditorRoot();
+    if (!rootDir) return res.status(400).json({ error: 'Editor root not set' });
+
+    const lowerQuery = query.toLowerCase();
+    const results = [];
+
+    function fuzzyMatch(name) {
+      const lower = name.toLowerCase();
+      let qi = 0;
+      for (let i = 0; i < lower.length && qi < lowerQuery.length; i++) {
+        if (lower[i] === lowerQuery[qi]) qi++;
+      }
+      return qi === lowerQuery.length;
+    }
+
+    function walk(dir, rel) {
+      if (results.length >= maxResults) return;
+      let entries;
+      try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) {
+        if (results.length >= maxResults) return;
+        if (IGNORED_NAMES.has(entry.name) || entry.name.startsWith('.')) continue;
+        const childRel = rel ? `${rel}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) {
+          walk(resolve(dir, entry.name), childRel);
+        } else if (entry.isFile() && fuzzyMatch(entry.name)) {
+          results.push({ path: childRel, name: entry.name });
+        }
+      }
+    }
+
+    try {
+      walk(rootDir, '');
+      res.json({ files: results });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

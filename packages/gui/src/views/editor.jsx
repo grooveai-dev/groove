@@ -1,10 +1,13 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGrooveStore } from '../stores/groove';
 import { FileTree } from '../components/editor/file-tree';
 import { EditorTabs } from '../components/editor/editor-tabs';
 import { CodeEditor } from '../components/editor/code-editor';
 import { MediaViewer, isMediaFile } from '../components/editor/media-viewer';
+import { EditorStatusBar } from '../components/editor/editor-status-bar';
+import { GotoLine } from '../components/editor/goto-line';
+import { Breadcrumbs } from '../components/editor/breadcrumbs';
 import { Code2, AlertTriangle, RefreshCw, X, Eye, FileCode } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
@@ -15,6 +18,10 @@ function isHtmlFile(path) {
   return ext === 'html' || ext === 'htm';
 }
 
+const SIDEBAR_DEFAULT = 240;
+const SIDEBAR_MIN = 160;
+const SIDEBAR_MAX = 400;
+
 export default function EditorView() {
   const activeFile = useGrooveStore((s) => s.editorActiveFile);
   const files = useGrooveStore((s) => s.editorFiles);
@@ -23,10 +30,19 @@ export default function EditorView() {
   const saveFile = useGrooveStore((s) => s.saveFile);
   const reloadFile = useGrooveStore((s) => s.reloadFile);
   const dismissFileChange = useGrooveStore((s) => s.dismissFileChange);
+  const sidebarWidth = useGrooveStore((s) => s.editorSidebarWidth);
+  const setSidebarWidth = useGrooveStore((s) => s.setEditorSidebarWidth);
 
   const [rootDir, setRootDir] = useState('');
   const [previewMode, setPreviewMode] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
+  const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
+  const [showGotoLine, setShowGotoLine] = useState(false);
+
+  const editorViewRef = useRef(null);
+  const dragging = useRef(false);
+  const startX = useRef(0);
+  const startW = useRef(0);
 
   // Fetch root dir
   useEffect(() => {
@@ -36,6 +52,53 @@ export default function EditorView() {
   // Reset preview mode when switching files
   useEffect(() => { setPreviewMode(false); }, [activeFile]);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'g') {
+        e.preventDefault();
+        setShowGotoLine(true);
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Sidebar resize handlers
+  const onSidebarMouseDown = useCallback((e) => {
+    e.preventDefault();
+    dragging.current = true;
+    startX.current = e.clientX;
+    startW.current = sidebarWidth;
+
+    function onMouseMove(e) {
+      if (!dragging.current) return;
+      const delta = e.clientX - startX.current;
+      const newW = Math.min(Math.max(startW.current + delta, SIDEBAR_MIN), SIDEBAR_MAX);
+      setSidebarWidth(newW);
+    }
+
+    function onMouseUp() {
+      dragging.current = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [sidebarWidth, setSidebarWidth]);
+
+  function handleGoto(line) {
+    const view = editorViewRef.current;
+    if (!view) return;
+    const docLine = view.state.doc.line(Math.min(line, view.state.doc.lines));
+    view.dispatch({
+      selection: { anchor: docLine.from },
+      scrollIntoView: true,
+    });
+    view.focus();
+  }
+
   const file = activeFile ? files[activeFile] : null;
   const isMedia = activeFile && isMediaFile(activeFile);
   const isHtml = activeFile && isHtmlFile(activeFile);
@@ -44,8 +107,14 @@ export default function EditorView() {
   return (
     <div className="flex h-full">
       {/* File tree sidebar */}
-      <div className="w-60 flex-shrink-0 border-r border-border">
+      <div className="flex-shrink-0 border-r border-border relative" style={{ width: sidebarWidth }}>
         <FileTree rootDir={rootDir} />
+        {/* Drag handle */}
+        <div
+          className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/30 transition-colors z-10"
+          onMouseDown={onSidebarMouseDown}
+          onDoubleClick={() => setSidebarWidth(SIDEBAR_DEFAULT)}
+        />
       </div>
 
       {/* Editor area */}
@@ -53,8 +122,20 @@ export default function EditorView() {
         {/* Tab bar */}
         <EditorTabs />
 
+        {/* Breadcrumbs */}
+        {activeFile && !isMedia && <Breadcrumbs path={activeFile} />}
+
         {/* Content */}
         <div className="flex-1 relative min-h-0">
+          {/* Go to line dialog */}
+          {showGotoLine && (
+            <GotoLine
+              currentLine={cursorPos.line}
+              onGoto={handleGoto}
+              onClose={() => setShowGotoLine(false)}
+            />
+          )}
+
           {/* External change banner */}
           {hasExternalChange && (
             <div className="absolute top-0 left-0 right-0 z-10 flex items-center gap-2 px-4 py-2 bg-warning/10 border-b border-warning/20">
@@ -120,6 +201,8 @@ export default function EditorView() {
                     language={file.language}
                     onChange={(content) => updateFileContent(activeFile, content)}
                     onSave={() => saveFile(activeFile)}
+                    onCursorChange={setCursorPos}
+                    viewRef={editorViewRef}
                   />
                 )
               )}
@@ -132,9 +215,16 @@ export default function EditorView() {
               language={file.language}
               onChange={(content) => updateFileContent(activeFile, content)}
               onSave={() => saveFile(activeFile)}
+              onCursorChange={setCursorPos}
+              viewRef={editorViewRef}
             />
           )}
         </div>
+
+        {/* Status bar */}
+        {activeFile && !isMedia && (
+          <EditorStatusBar cursorPos={cursorPos} language={file?.language} />
+        )}
       </div>
     </div>
   );

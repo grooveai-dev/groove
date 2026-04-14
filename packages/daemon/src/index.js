@@ -207,16 +207,31 @@ export class Daemon {
       ws.on('message', (raw) => {
         try {
           const msg = JSON.parse(raw);
+
+          // Validate message type against whitelist
+          const VALID_WS_TYPES = new Set([
+            'terminal:spawn', 'terminal:resize', 'terminal:input', 'terminal:close', 'terminal:kill', 'terminal:rename',
+            'editor:watch', 'editor:unwatch', 'editor:save',
+            'ping'
+          ]);
+          if (!msg || typeof msg !== 'object' || !VALID_WS_TYPES.has(msg.type)) return;
+          if ('__proto__' in msg || 'constructor' in msg) return;
+
           switch (msg.type) {
             // File editor
             case 'editor:watch':
-              if (msg.path) { this.fileWatcher.watch(msg.path); watchedFiles.add(msg.path); }
+              if (msg.path && typeof msg.path === 'string' && !msg.path.includes('..')) {
+                this.fileWatcher.watch(msg.path); watchedFiles.add(msg.path);
+              }
               break;
             case 'editor:unwatch':
               if (msg.path) { this.fileWatcher.unwatch(msg.path); watchedFiles.delete(msg.path); }
               break;
             // Terminal
             case 'terminal:spawn': {
+              if (typeof msg.cwd !== 'string' || msg.cwd.includes('..')) break;
+              if (msg.cols !== undefined && (typeof msg.cols !== 'number' || msg.cols < 1 || msg.cols > 500)) break;
+              if (msg.rows !== undefined && (typeof msg.rows !== 'number' || msg.rows < 1 || msg.rows > 200)) break;
               const id = this.terminalManager.spawn(ws, { cwd: msg.cwd, cols: msg.cols, rows: msg.rows });
               ws.send(JSON.stringify({ type: 'terminal:spawned', id }));
               break;
@@ -229,6 +244,13 @@ export class Daemon {
               break;
             case 'terminal:kill':
               if (msg.id) this.terminalManager.kill(msg.id);
+              break;
+            case 'terminal:rename':
+              if (msg.id && typeof msg.label === 'string') {
+                if (this.terminalManager.rename(msg.id, msg.label)) {
+                  this.broadcast({ type: 'terminal:renamed', id: msg.id, label: msg.label });
+                }
+              }
               break;
           }
         } catch { /* ignore malformed messages */ }

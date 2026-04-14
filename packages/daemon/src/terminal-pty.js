@@ -115,7 +115,7 @@ export class TerminalManager {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    const session = { proc, ws, id };
+    const session = { proc, ws, id, label: options.label || '' };
     this.sessions.set(id, session);
 
     proc.stdout.on('data', (data) => {
@@ -158,6 +158,14 @@ export class TerminalManager {
     if (!session || !session.proc.stdin.writable) return;
     // Send resize command via the custom escape sequence
     session.proc.stdin.write(`\x1b]7;${rows};${cols}\x07`);
+  }
+
+  rename(id, label) {
+    const session = this.sessions.get(id);
+    if (!session) return false;
+    if (typeof label !== 'string' || label.length > 100) return false;
+    session.label = label;
+    return true;
   }
 
   kill(id) {

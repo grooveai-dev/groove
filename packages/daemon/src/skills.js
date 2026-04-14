@@ -37,6 +37,9 @@ export class SkillStore {
 
     // Fetch full registry from live API in background
     this._refreshRegistry();
+
+    // Sync subscription cache from stored user on startup
+    this._syncSubscriptionCache(this.getUser());
   }
 
   // --- Auth ---
@@ -77,7 +80,23 @@ export class SkillStore {
     const { saveConfig } = await import('./firstrun.js');
     saveConfig(this.daemon.grooveDir, this.daemon.config);
     this.daemon.audit.log('marketplace.login', { userId: user?.id });
+    this._syncSubscriptionCache(user);
     return user;
+  }
+
+  _syncSubscriptionCache(user) {
+    const sub = user?.subscription;
+    if (!sub || !this.daemon) return;
+    this.daemon.subscriptionCache = {
+      plan: sub.plan || 'community',
+      status: sub.status || (sub.plan !== 'community' ? 'active' : 'none'),
+      active: sub.status === 'active' || (sub.plan && sub.plan !== 'community'),
+      features: sub.features || [],
+      seats: sub.seats || 1,
+      periodEnd: sub.periodEnd || null,
+      cancelAtPeriodEnd: sub.cancelAtPeriodEnd || false,
+      validatedAt: Date.now(),
+    };
   }
 
   /** Clear stored auth */
@@ -85,6 +104,7 @@ export class SkillStore {
     delete this.daemon.config.marketplace;
     const { saveConfig } = await import('./firstrun.js');
     saveConfig(this.daemon.grooveDir, this.daemon.config);
+    this.daemon.subscriptionCache = { plan: 'community', status: 'none', features: [], active: false, validatedAt: 0 };
     this.daemon.audit.log('marketplace.logout');
   }
 
@@ -98,7 +118,11 @@ export class SkillStore {
         headers: { 'Authorization': `Bearer ${token}` },
         signal: AbortSignal.timeout(8000),
       });
-      if (res.ok) return await res.json();
+      if (res.ok) {
+        const user = await res.json();
+        this._syncSubscriptionCache(user);
+        return user;
+      }
     } catch { /* offline — assume valid */ return this.getUser(); }
 
     // 401 — token expired, clear it

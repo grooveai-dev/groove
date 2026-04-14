@@ -662,7 +662,7 @@ export function SetupWizard() {
 
   const handleSaveKey = useCallback(async (providerId, key) => {
     try {
-      const res = await fetch(`/api/credentials/${providerId}`, {
+      const res = await fetch(`/api/credentials/${encodeURIComponent(providerId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key }),

@@ -11,6 +11,7 @@ const SALT_PREFIX = 'groove-v1';
 
 export class CredentialStore {
   constructor(grooveDir) {
+    this.grooveDir = grooveDir;
     this.path = resolve(grooveDir, 'credentials.json');
     this.data = {};
     this.encryptionKey = this.deriveKey();
@@ -21,7 +22,15 @@ export class CredentialStore {
   // Not unbreakable, but much better than base64 — credentials file is
   // meaningless if copied to another machine or read without this process.
   deriveKey() {
-    const machineId = `${SALT_PREFIX}:${homedir()}:${hostname()}`;
+    const seedPath = resolve(this.grooveDir, '.credential-seed');
+    let seed = '';
+    try {
+      seed = readFileSync(seedPath, 'utf8');
+    } catch {
+      seed = randomBytes(32).toString('hex');
+      writeFileSync(seedPath, seed, { mode: 0o600 });
+    }
+    const machineId = `${SALT_PREFIX}:${seed}:${homedir()}:${hostname()}`;
     return scryptSync(machineId, 'groove-credential-salt', 32);
   }
 
@@ -101,7 +110,8 @@ export class CredentialStore {
   decrypt(encoded) {
     const parts = encoded.split(':');
     if (parts.length !== 3) {
-      // Legacy base64 format — migrate on read
+      // Legacy base64 format — migration path: decoded plaintext will be
+      // re-encrypted with AES-256-GCM on the next setKey call
       return Buffer.from(encoded, 'base64').toString('utf8');
     }
     const [ivHex, authTagHex, ciphertext] = parts;

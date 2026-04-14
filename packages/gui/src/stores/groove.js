@@ -106,6 +106,7 @@ export const useGrooveStore = create((set, get) => ({
   editorTreeCache: {},
   editorChangedFiles: {},
   editorRecentSaves: {},
+  editorSidebarWidth: Number(localStorage.getItem('groove:editorSidebarWidth')) || 240,
 
   // ── Onboarding ────────────────────────────────────────────
   onboardingComplete: localStorage.getItem('groove:onboardingComplete') === 'true',
@@ -140,6 +141,7 @@ export const useGrooveStore = create((set, get) => ({
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
+      if (!msg || typeof msg !== 'object' || Object.hasOwn(msg, '__proto__') || Object.hasOwn(msg, 'constructor')) return;
       switch (msg.type) {
         case 'state': {
           const timeline = { ...get().tokenTimeline };
@@ -503,7 +505,7 @@ export const useGrooveStore = create((set, get) => ({
     const team = get().teams.find((t) => t.id === id);
     if (team?.isDefault) { get().addToast('warning', 'Cannot delete the default team'); return; }
     try {
-      await api.delete(`/teams/${id}`);
+      await api.delete(`/teams/${encodeURIComponent(id)}`);
       // WS team:deleted handler removes from array and switches activeTeamId
       get().addToast('info', `Team "${team?.name}" deleted`);
     } catch (err) {
@@ -521,7 +523,7 @@ export const useGrooveStore = create((set, get) => ({
 
   async renameTeam(id, name) {
     try {
-      const team = await api.patch(`/teams/${id}`, { name });
+      const team = await api.patch(`/teams/${encodeURIComponent(id)}`, { name });
       set((s) => ({ teams: s.teams.map((t) => (t.id === id ? team : t)) }));
       return team;
     } catch (err) {
@@ -740,7 +742,7 @@ export const useGrooveStore = create((set, get) => ({
 
   async approveRequest(id) {
     try {
-      await api.post(`/approvals/${id}/approve`);
+      await api.post(`/approvals/${encodeURIComponent(id)}/approve`);
       set((s) => ({ pendingApprovals: s.pendingApprovals.filter((a) => a.id !== id) }));
       get().addToast('success', 'Approved');
     } catch (err) {
@@ -750,7 +752,7 @@ export const useGrooveStore = create((set, get) => ({
 
   async rejectRequest(id, reason = '') {
     try {
-      await api.post(`/approvals/${id}/reject`, { reason });
+      await api.post(`/approvals/${encodeURIComponent(id)}/reject`, { reason });
       set((s) => ({ pendingApprovals: s.pendingApprovals.filter((a) => a.id !== id) }));
       get().addToast('info', 'Rejected');
     } catch (err) {
@@ -855,12 +857,12 @@ export const useGrooveStore = create((set, get) => ({
   },
 
   async softRemoveRepo(importId) {
-    await api.delete('/repos/' + importId + '/remove');
+    await api.delete(`/repos/${encodeURIComponent(importId)}/remove`);
     get().fetchImportedRepos();
   },
 
   async hardNukeRepo(importId, deleteFiles = true) {
-    await api.delete('/repos/' + importId + '/nuke?deleteFiles=' + deleteFiles);
+    await api.delete(`/repos/${encodeURIComponent(importId)}/nuke?deleteFiles=${deleteFiles}`);
     get().fetchImportedRepos();
   },
 
@@ -880,22 +882,22 @@ export const useGrooveStore = create((set, get) => ({
   },
 
   async updateTunnel(id, config) {
-    const result = await api.patch('/tunnels/' + id, config);
+    const result = await api.patch(`/tunnels/${encodeURIComponent(id)}`, config);
     get().fetchTunnels();
     return result;
   },
 
   async deleteTunnel(id) {
-    await api.delete('/tunnels/' + id);
+    await api.delete(`/tunnels/${encodeURIComponent(id)}`);
     get().fetchTunnels();
   },
 
   async testTunnel(id) {
-    return api.post('/tunnels/' + id + '/test');
+    return api.post(`/tunnels/${encodeURIComponent(id)}/test`);
   },
 
   async connectTunnel(id) {
-    const result = await api.post('/tunnels/' + id + '/connect');
+    const result = await api.post(`/tunnels/${encodeURIComponent(id)}/connect`);
     set({ activeTunnelId: id });
     get().fetchTunnels();
     if (result.url) window.open(result.url, '_blank');
@@ -903,17 +905,17 @@ export const useGrooveStore = create((set, get) => ({
   },
 
   async disconnectTunnel(id) {
-    await api.post('/tunnels/' + id + '/disconnect');
+    await api.post(`/tunnels/${encodeURIComponent(id)}/disconnect`);
     set({ activeTunnelId: null });
     get().fetchTunnels();
   },
 
   async installTunnel(id) {
-    return api.post('/tunnels/' + id + '/install');
+    return api.post(`/tunnels/${encodeURIComponent(id)}/install`);
   },
 
   async startTunnel(id) {
-    return api.post('/tunnels/' + id + '/start');
+    return api.post(`/tunnels/${encodeURIComponent(id)}/start`);
   },
 
   // ── Journalist ────────────────────────────────────────────
@@ -954,7 +956,7 @@ export const useGrooveStore = create((set, get) => ({
 
   async killAgent(id, purge = false) {
     try {
-      await api.delete(`/agents/${id}?purge=${purge}`);
+      await api.delete(`/agents/${encodeURIComponent(id)}?purge=${purge}`);
     } catch (err) {
       get().addToast('error', 'Kill failed', err.message);
     }
@@ -962,7 +964,7 @@ export const useGrooveStore = create((set, get) => ({
 
   async rotateAgent(id) {
     try {
-      return await api.post(`/agents/${id}/rotate`);
+      return await api.post(`/agents/${encodeURIComponent(id)}/rotate`);
     } catch (err) {
       get().addToast('error', 'Rotation failed', err.message);
       throw err;
@@ -1032,7 +1034,7 @@ export const useGrooveStore = create((set, get) => ({
 
   async stopAgent(id) {
     try {
-      await api.post(`/agents/${id}/stop`);
+      await api.post(`/agents/${encodeURIComponent(id)}/stop`);
       // Clear thinking indicator
       set((s) => {
         const next = new Set(s.thinkingAgents);
@@ -1049,7 +1051,7 @@ export const useGrooveStore = create((set, get) => ({
     get().addChatMessage(id, 'user', message, false);
     set((s) => ({ thinkingAgents: new Set([...s.thinkingAgents, id]) }));
     try {
-      const data = await api.post(`/agents/${id}/instruct`, { message });
+      const data = await api.post(`/agents/${encodeURIComponent(id)}/instruct`, { message });
 
       // Agent loop: message sent directly to running agent — response comes via WebSocket
       if (data.status === 'message_sent') {
@@ -1088,7 +1090,7 @@ export const useGrooveStore = create((set, get) => ({
   async queryAgent(id, message) {
     get().addChatMessage(id, 'user', message, true);
     try {
-      const data = await api.post(`/agents/${id}/query`, { message });
+      const data = await api.post(`/agents/${encodeURIComponent(id)}/query`, { message });
       get().addChatMessage(id, 'agent', data.response);
       return data;
     } catch (err) {
@@ -1147,6 +1149,11 @@ export const useGrooveStore = create((set, get) => ({
   },
 
   setActiveFile(path) { set({ editorActiveFile: path }); },
+
+  setEditorSidebarWidth(width) {
+    set({ editorSidebarWidth: width });
+    localStorage.setItem('groove:editorSidebarWidth', String(width));
+  },
 
   updateFileContent(path, content) {
     set((s) => ({ editorFiles: { ...s.editorFiles, [path]: { ...s.editorFiles[path], content } } }));

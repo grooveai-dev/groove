@@ -86,7 +86,7 @@ function ProviderCard({ provider, onKeyChange }) {
   async function handleSetKey() {
     if (!keyInput.trim()) return;
     try {
-      await api.post(`/credentials/${provider.id}`, { key: keyInput.trim() });
+      await api.post(`/credentials/${encodeURIComponent(provider.id)}`, { key: keyInput.trim() });
       addToast('success', `API key set for ${provider.name}`);
       setKeyInput('');
       setSettingKey(false);
@@ -98,7 +98,7 @@ function ProviderCard({ provider, onKeyChange }) {
 
   async function handleDeleteKey() {
     try {
-      await api.delete(`/credentials/${provider.id}`);
+      await api.delete(`/credentials/${encodeURIComponent(provider.id)}`);
       addToast('info', `Removed ${provider.name} key`);
       if (onKeyChange) onKeyChange();
     } catch (err) {
@@ -578,7 +578,7 @@ function GatewayCard({ gateway, onRefresh }) {
   // Fetch channels when connected Slack gateway has no chatId
   useEffect(() => {
     if (gateway.connected && !gateway.chatId && gateway.type === 'slack') {
-      api.get(`/gateways/${gateway.id}/channels`).then((ch) => setChannels(Array.isArray(ch) ? ch : [])).catch(() => {});
+      api.get(`/gateways/${encodeURIComponent(gateway.id)}/channels`).then((ch) => setChannels(Array.isArray(ch) ? ch : [])).catch(() => {});
     }
   }, [gateway.connected, gateway.chatId, gateway.id, gateway.type]);
 
@@ -588,9 +588,9 @@ function GatewayCard({ gateway, onRefresh }) {
   async function handleSaveToken() {
     if (!tokenInput.trim()) return;
     try {
-      await api.post(`/gateways/${gateway.id}/credentials`, { key: 'bot_token', value: tokenInput.trim() });
+      await api.post(`/gateways/${encodeURIComponent(gateway.id)}/credentials`, { key: 'bot_token', value: tokenInput.trim() });
       if (isSlack && appTokenInput.trim()) {
-        await api.post(`/gateways/${gateway.id}/credentials`, { key: 'app_token', value: appTokenInput.trim() });
+        await api.post(`/gateways/${encodeURIComponent(gateway.id)}/credentials`, { key: 'app_token', value: appTokenInput.trim() });
       }
       addToast('success', `Token saved — connecting...`);
       setTokenInput('');
@@ -598,7 +598,7 @@ function GatewayCard({ gateway, onRefresh }) {
       setSettingToken(false);
       // Auto-connect after saving tokens
       try {
-        await api.post(`/gateways/${gateway.id}/connect`);
+        await api.post(`/gateways/${encodeURIComponent(gateway.id)}/connect`);
         addToast('success', `${GATEWAY_LABELS[gateway.type]} connected!`);
       } catch (connErr) {
         addToast('error', 'Token saved but connect failed', connErr.message);
@@ -612,7 +612,7 @@ function GatewayCard({ gateway, onRefresh }) {
   async function handleTest() {
     setTesting(true);
     try {
-      await api.post(`/gateways/${gateway.id}/test`);
+      await api.post(`/gateways/${encodeURIComponent(gateway.id)}/test`);
       addToast('success', 'Test message sent!');
     } catch (err) {
       addToast('error', 'Test failed', err.message);
@@ -624,10 +624,10 @@ function GatewayCard({ gateway, onRefresh }) {
     setConnecting(true);
     try {
       if (gateway.connected) {
-        await api.post(`/gateways/${gateway.id}/disconnect`);
+        await api.post(`/gateways/${encodeURIComponent(gateway.id)}/disconnect`);
         addToast('info', `${GATEWAY_LABELS[gateway.type]} disconnected`);
       } else {
-        await api.post(`/gateways/${gateway.id}/connect`);
+        await api.post(`/gateways/${encodeURIComponent(gateway.id)}/connect`);
         addToast('success', `${GATEWAY_LABELS[gateway.type]} connected!`);
       }
       onRefresh();
@@ -639,7 +639,7 @@ function GatewayCard({ gateway, onRefresh }) {
 
   async function handleToggleEnabled(enabled) {
     try {
-      await api.patch(`/gateways/${gateway.id}`, { enabled });
+      await api.patch(`/gateways/${encodeURIComponent(gateway.id)}`, { enabled });
       onRefresh();
     } catch (err) {
       addToast('error', 'Update failed', err.message);
@@ -648,7 +648,7 @@ function GatewayCard({ gateway, onRefresh }) {
 
   async function handlePresetChange(preset) {
     try {
-      await api.patch(`/gateways/${gateway.id}`, { notifications: { preset } });
+      await api.patch(`/gateways/${encodeURIComponent(gateway.id)}`, { notifications: { preset } });
       onRefresh();
     } catch (err) {
       addToast('error', 'Update failed', err.message);
@@ -657,7 +657,7 @@ function GatewayCard({ gateway, onRefresh }) {
 
   async function handlePermissionChange(perm) {
     try {
-      await api.patch(`/gateways/${gateway.id}`, { commandPermission: perm });
+      await api.patch(`/gateways/${encodeURIComponent(gateway.id)}`, { commandPermission: perm });
       onRefresh();
     } catch (err) {
       addToast('error', 'Update failed', err.message);
@@ -666,7 +666,7 @@ function GatewayCard({ gateway, onRefresh }) {
 
   async function handleDelete() {
     try {
-      await api.delete(`/gateways/${gateway.id}`);
+      await api.delete(`/gateways/${encodeURIComponent(gateway.id)}`);
       addToast('info', `${GATEWAY_LABELS[gateway.type]} gateway removed`);
       onRefresh();
     } catch (err) {
@@ -719,7 +719,7 @@ function GatewayCard({ gateway, onRefresh }) {
                   </code>
                   <button
                     onClick={async () => {
-                      try { await api.patch(`/gateways/${gateway.id}`, { chatId: null }); onRefresh(); }
+                      try { await api.patch(`/gateways/${encodeURIComponent(gateway.id)}`, { chatId: null }); onRefresh(); }
                       catch (err) { addToast('error', 'Failed', err.message); }
                     }}
                     className="text-2xs text-text-4 hover:text-text-1 cursor-pointer font-sans"
@@ -730,7 +730,7 @@ function GatewayCard({ gateway, onRefresh }) {
                   onChange={async (e) => {
                     if (!e.target.value) return;
                     try {
-                      await api.patch(`/gateways/${gateway.id}`, { chatId: e.target.value });
+                      await api.patch(`/gateways/${encodeURIComponent(gateway.id)}`, { chatId: e.target.value });
                       onRefresh();
                     } catch (err) { addToast('error', 'Failed to set channel', err.message); }
                   }}
@@ -753,7 +753,7 @@ function GatewayCard({ gateway, onRefresh }) {
                     onKeyDown={async (e) => {
                       if (e.key === 'Enter' && e.target.value.trim()) {
                         try {
-                          await api.patch(`/gateways/${gateway.id}`, { chatId: e.target.value.trim() });
+                          await api.patch(`/gateways/${encodeURIComponent(gateway.id)}`, { chatId: e.target.value.trim() });
                           onRefresh();
                         } catch (err) { addToast('error', 'Failed to set channel', err.message); }
                       }

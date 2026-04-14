@@ -37,6 +37,17 @@ class WorkspaceManager {
     return createHash('sha256').update(projectDir).digest('hex').slice(0, 8);
   }
 
+  _rejectIfUnsafe(projectDir) {
+    if (!projectDir || typeof projectDir !== 'string') return 'Invalid folder path.';
+    const dir = resolve(projectDir);
+    const home = app.getPath('home');
+    const forbidden = new Set([home, '/', '/Users', '/Applications', '/System', '/Library', '/private', '/var', '/tmp', '/etc', '/usr', '/opt', '/bin', '/sbin', app.getPath('desktop'), app.getPath('documents'), app.getPath('downloads')]);
+    if (forbidden.has(dir)) {
+      return `Groove cannot open "${dir}" as a project — it's a system or top-level folder. Choose a specific project directory instead.`;
+    }
+    return null;
+  }
+
   _loadRecents() {
     try {
       const p = join(app.getPath('userData'), 'recent-projects.json');
@@ -60,6 +71,11 @@ class WorkspaceManager {
   }
 
   async open(projectDir) {
+    const forbidden = this._rejectIfUnsafe(projectDir);
+    if (forbidden) {
+      dialog.showErrorBox('Cannot open this folder', forbidden);
+      throw new Error(forbidden);
+    }
     const id = this._instanceId(projectDir);
 
     if (this.instances.has(id)) {
@@ -182,15 +198,23 @@ class WorkspaceManager {
 
     win.loadURL(`http://localhost:${port}?instance=${encodeURIComponent(name)}`);
     win.once('ready-to-show', () => win.show());
-    win.webContents.on('console-message', (_e, level, msg, line, src) => {
-      if (level >= 2) process.stderr.write(`[renderer:${level}] ${msg} (${src}:${line})\n`);
+    win.webContents.on('console-message', (event) => {
+      const { level, message, lineNumber, sourceId } = event;
+      if (level === 'error' || level === 'warning') {
+        process.stderr.write(`[renderer:${level}] ${message} (${sourceId}:${lineNumber})\n`);
+      }
     });
     win.webContents.on('render-process-gone', (_e, details) => {
       process.stderr.write(`[renderer-gone] ${JSON.stringify(details)}\n`);
     });
 
     win.webContents.setWindowOpenHandler(({ url }) => {
-      shell.openExternal(url);
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+          shell.openExternal(url);
+        }
+      } catch {}
       return { action: 'deny' };
     });
 
@@ -312,17 +336,30 @@ ipcMain.handle('subscription-check', async (event) => {
 });
 
 ipcMain.handle('open-external', (_event, url) => {
-  if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return;
+    const allowed = ['groovedev.ai', 'studio.groovedev.ai', 'github.com', 'checkout.stripe.com', 'billing.stripe.com', 'appleid.apple.com'];
+    if (!allowed.some(d => parsed.hostname === d || parsed.hostname.endsWith('.' + d))) return;
     return shell.openExternal(url);
+  } catch {
+    return;
   }
 });
 
 ipcMain.handle('select-folder', async (event, options = {}) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) return null;
+  let defaultPath = app.getPath('home');
+  if (options.defaultPath && typeof options.defaultPath === 'string') {
+    const resolved = resolve(options.defaultPath);
+    if (!resolved.includes('..')) {
+      defaultPath = resolved;
+    }
+  }
   const result = await dialog.showOpenDialog(win, {
     title: options.title || 'Select Folder',
-    defaultPath: options.defaultPath || app.getPath('home'),
+    defaultPath,
     properties: ['openDirectory', 'createDirectory'],
   });
   if (result.canceled || !result.filePaths.length) return null;
@@ -354,9 +391,11 @@ function tokenPath() {
 }
 
 function storeToken(jwt) {
-  if (safeStorage.isEncryptionAvailable()) {
-    writeFileSync(tokenPath(), safeStorage.encryptString(jwt), { mode: 0o600 });
+  if (!safeStorage.isEncryptionAvailable()) {
+    console.error('[security] Cannot store token — encryption unavailable');
+    return;
   }
+  writeFileSync(tokenPath(), safeStorage.encryptString(jwt), { mode: 0o600 });
   if (workspaces) {
     for (const inst of workspaces.instances.values()) {
       if (inst.daemon && inst.daemon.connected) {
@@ -368,12 +407,13 @@ function storeToken(jwt) {
 
 function loadStoredToken() {
   try {
-    const buf = readFileSync(tokenPath());
-    if (safeStorage.isEncryptionAvailable()) {
-      return safeStorage.decryptString(buf);
+    if (!safeStorage.isEncryptionAvailable()) {
+      console.error('[security] Cannot load token — encryption unavailable');
+      return null;
     }
-  } catch {}
-  return null;
+    const buf = readFileSync(tokenPath());
+    return safeStorage.decryptString(buf);
+  } catch { return null; }
 }
 
 function clearStoredToken() {
@@ -389,6 +429,7 @@ function clearStoredToken() {
 
 ipcMain.handle('auth-login', () => {
   pendingAuthState = randomBytes(32).toString('hex');
+  setTimeout(() => { if (pendingAuthState) pendingAuthState = null; }, 10 * 60 * 1000);
   const url = `${STUDIO_URL}/#/login?return=electron&outer_state=${pendingAuthState}`;
   shell.openExternal(url);
   return { state: pendingAuthState };
@@ -425,7 +466,7 @@ function handleAuthCallback(url) {
       visible.window.show();
       visible.window.focus();
     }
-  } catch {}
+  } catch (err) { console.error('[auth] Callback failed:', err.message); }
 }
 
 app.on('open-url', (event, url) => {
@@ -490,20 +531,17 @@ function createTray() {
 
 app.whenReady().then(async () => {
   workspaces = new WorkspaceManager();
-  const lastProject = workspaces.recentProjects[0]?.dir || (app.isPackaged ? app.getPath('home') : process.cwd());
-  try {
-    await workspaces.open(lastProject);
-  } catch (err) {
-    dialog.showErrorBox('Groove Failed to Start', err.message);
-    app.quit();
-    return;
-  }
   createTray();
   const stored = loadStoredToken();
   if (stored) {
     storeToken(stored);
     startSubscriptionPoll();
   }
+  const lastProject = workspaces.recentProjects[0]?.dir;
+  if (lastProject && !workspaces._rejectIfUnsafe(lastProject)) {
+    try { await workspaces.open(lastProject); return; } catch { /* fall through to picker */ }
+  }
+  await workspaces._openFolderDialog();
 });
 
 app.on('activate', () => {

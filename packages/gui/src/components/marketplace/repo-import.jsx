@@ -133,7 +133,15 @@ export function RepoImport() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => window.open(url.startsWith('http') ? url : `https://${url}`, '_blank')}
+                onClick={() => {
+                  try {
+                    const fullUrl = url.startsWith('http') ? url : `https://${url}`;
+                    const parsed = new URL(fullUrl);
+                    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+                      window.open(fullUrl, '_blank');
+                    }
+                  } catch {}
+                }}
                 className="h-8 text-xs gap-1.5"
               >
                 <ExternalLink size={12} />

@@ -170,9 +170,9 @@ function PricingCard({ name, plan, price, interval, features, onUpgrade, highlig
         size="sm"
         onClick={onUpgrade}
         className={cn(
-          'h-7 text-xs font-semibold w-full',
+          'h-8 text-xs font-semibold w-full',
           highlighted
-            ? 'bg-accent text-white hover:bg-accent/90'
+            ? 'bg-accent/15 text-accent hover:bg-accent/25'
             : 'bg-purple/15 text-purple hover:bg-purple/25',
         )}
       >

@@ -2,7 +2,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, existsSync } from 'fs';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import { resolve, relative, dirname, sep } from 'path';
 import { minimatch } from 'minimatch';
 
@@ -242,12 +242,15 @@ export class ToolExecutor {
     const timeoutMs = Math.min(timeout || 30000, 120000);
 
     try {
-      const output = execSync(command, {
+      // Split command safely for shell: false — avoids shell injection
+      const parts = command.split(/\s+/);
+      const cmd = parts[0];
+      const cmdArgs = parts.slice(1);
+      const output = execFileSync(cmd, cmdArgs, {
         cwd: execCwd,
-        encoding: 'utf8',
         timeout: timeoutMs,
-        maxBuffer: 2 * 1024 * 1024, // 2MB
-        shell: true,
+        maxBuffer: 1024 * 1024,
+        encoding: 'utf8',
         env: { ...process.env, GROOVE_AGENT_ID: this.agentId },
       });
       // Cap output to prevent context window blowup
@@ -292,6 +295,9 @@ export class ToolExecutor {
   }
 
   searchContent({ pattern, path: searchPath, glob: globFilter }) {
+    if (!/^[a-zA-Z0-9_.\-\/\\*?[\]{}()|^$+\s]+$/.test(pattern)) {
+      throw new Error('Invalid search pattern');
+    }
     const searchDir = searchPath ? this._resolvePath(searchPath) : this.workingDir;
 
     // Prefer ripgrep (faster, respects .gitignore), fall back to grep

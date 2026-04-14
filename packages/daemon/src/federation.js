@@ -1,7 +1,7 @@
 // GROOVE — Federation (Ed25519 key exchange + contract signing)
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { generateKeyPairSync, sign, verify, createPublicKey, createPrivateKey, createHash } from 'crypto';
+import { generateKeyPairSync, sign, verify, createPublicKey, createPrivateKey, createHash, randomBytes } from 'crypto';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, readdirSync } from 'fs';
 import { resolve } from 'path';
 
@@ -66,10 +66,11 @@ export class Federation {
    * @returns {{ payload: object, signature: string }}
    */
   sign(payload) {
-    const data = Buffer.from(JSON.stringify(payload), 'utf8');
+    const enriched = { ...payload, timestamp: Date.now(), nonce: randomBytes(16).toString('hex') };
+    const data = Buffer.from(JSON.stringify(enriched), 'utf8');
     const sig = sign(null, data, this.privateKey);
     return {
-      payload,
+      payload: enriched,
       signature: sig.toString('base64'),
     };
   }
@@ -86,6 +87,12 @@ export class Federation {
     if (!peer) return false;
 
     try {
+      // Replay protection: reject messages older than 5 minutes
+      if (payload.timestamp && (Date.now() - payload.timestamp > 5 * 60 * 1000)) {
+        console.warn(`[federation] Rejected stale message from ${peerId}`);
+        return false;
+      }
+
       const data = Buffer.from(JSON.stringify(payload), 'utf8');
       const sig = Buffer.from(signature, 'base64');
       const pubKey = createPublicKey(peer.publicKey);
@@ -132,6 +139,26 @@ export class Federation {
    * @returns {object} pairing result
    */
   async initiatePairing(remoteUrl) {
+    // SSRF protection: block private/reserved IPs
+    try {
+      const parsed = new URL(remoteUrl);
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+        throw new Error('Only HTTP(S) URLs allowed');
+      }
+      const host = parsed.hostname;
+      const privatePatterns = [
+        /^127\./, /^10\./, /^192\.168\./, /^172\.(1[6-9]|2\d|3[01])\./,
+        /^0\./, /^169\.254\./, /^localhost$/i, /^::1$/, /^\[::1\]$/,
+        /^fc/i, /^fd/i, /^fe80/i,
+      ];
+      if (privatePatterns.some(p => p.test(host))) {
+        throw new Error('Cannot pair with private/local addresses');
+      }
+    } catch (err) {
+      if (err.message.includes('Cannot pair') || err.message.includes('Only HTTP')) throw err;
+      throw new Error(`Invalid remote URL: ${err.message}`);
+    }
+
     const localInfo = this._localInfo();
 
     // Send our public key to the remote daemon's pairing endpoint

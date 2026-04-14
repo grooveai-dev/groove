@@ -2,6 +2,7 @@
 import { Network, Code2, ChartSpline, Puzzle, Users, Box, Globe, Newspaper, Settings } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Tooltip } from '../ui/tooltip';
+import { isElectron, getPlatform } from '../../lib/electron';
 
 const NAV_ITEMS = [
   { id: 'agents',      icon: Network,   label: 'Agents' },
@@ -19,10 +20,13 @@ const UTIL_ITEMS = [
 ];
 
 export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel }) {
+  const darwinTrafficLights = isElectron() && getPlatform() === 'darwin';
+
   return (
     <nav className="w-12 flex-shrink-0 flex flex-col bg-surface-3 border-r border-border">
       {/* Main nav */}
       <div className="flex flex-col items-center gap-1.5 pt-3">
+        {darwinTrafficLights && <div className="w-full h-[38px] flex-shrink-0" />}
         {NAV_ITEMS.map((item) => (
           <Tooltip key={item.id} content={item.label} side="right">
             <button

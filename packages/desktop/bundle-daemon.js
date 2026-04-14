@@ -2,7 +2,7 @@
 // Creates a standalone daemon bundle with its own node_modules for Electron packaging.
 // npm workspaces hoist deps to root, but the packaged app needs them alongside the daemon.
 import { execSync } from 'child_process';
-import { cpSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -22,10 +22,21 @@ for (const d of ['templates']) {
   try { cpSync(join(daemonDir, d), join(bundleDir, d), { recursive: true }); } catch { /* optional */ }
 }
 
-execSync('npm install --production --ignore-scripts', {
+execSync('npm install --omit=dev --ignore-scripts', {
   cwd: bundleDir,
   stdio: 'inherit',
   env: { ...process.env, npm_config_workspaces: 'false' },
 });
+
+writeFileSync(join(bundleDir, '.npmignore'), '');
+
+const critical = ['express', 'ws', 'minimatch'];
+const missing = critical.filter(dep => !existsSync(join(bundleDir, 'node_modules', dep)));
+if (missing.length) {
+  throw new Error(
+    `[bundle-daemon] Missing dependencies in bundle: ${missing.join(', ')}. ` +
+    `Expected at ${join(bundleDir, 'node_modules')}`
+  );
+}
 
 console.log('[bundle-daemon] Done — standalone daemon ready at .daemon-bundle/');

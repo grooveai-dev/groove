@@ -88,7 +88,16 @@ class WorkspaceManager {
       }
     }
 
-    const port = await this._startDaemon(id, projectDir);
+    let port;
+    try {
+      port = await this._startDaemon(id, projectDir);
+    } catch (err) {
+      if (options.showDialogs !== false) {
+        dialog.showErrorBox('Failed to open project',
+          `${err.message}\n\nTry reinstalling Groove from groovedev.ai or rebuild with ./promote-local.sh`);
+      }
+      throw err;
+    }
     const name = projectDir.split('/').pop();
     const window = this._createWindow(id, port, projectDir);
 
@@ -223,6 +232,7 @@ class WorkspaceManager {
       if (IS_MAC && !isQuitting) {
         e.preventDefault();
         win.hide();
+        this._showHomeIfNeeded(win);
       }
     });
 
@@ -296,10 +306,10 @@ class WorkspaceManager {
     writeFileSync(htmlPath, getWelcomeHtml(), 'utf8');
 
     const win = new BrowserWindow({
-      width: 540,
-      height: 600,
-      minWidth: 400,
-      minHeight: 400,
+      width: 1440,
+      height: 900,
+      minWidth: 900,
+      minHeight: 600,
       resizable: true,
       titleBarStyle: IS_MAC ? 'hiddenInset' : 'default',
       backgroundColor: '#0a0a0a',
@@ -336,6 +346,16 @@ class WorkspaceManager {
     }
     this._homeWindow = null;
   }
+
+  _showHomeIfNeeded(hiddenWin) {
+    if (!IS_MAC || isQuitting) return;
+    const hasVisible = [...this.instances.values()].some(
+      i => i.window && !i.window.isDestroyed() && i.window.isVisible() && i.window !== hiddenWin
+    );
+    if (!hasVisible && (!this._homeWindow || this._homeWindow.isDestroyed())) {
+      this._createHomeWindow();
+    }
+  }
 }
 
 function getWelcomeHtml() {
@@ -350,91 +370,186 @@ function getWelcomeHtml() {
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
   background: #0a0a0a; color: #fafafa;
-  font-family: system-ui, -apple-system, sans-serif;
-  height: 100vh; display: flex; flex-direction: column;
-  overflow: hidden; user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+  height: 100vh; display: flex; overflow: hidden; user-select: none;
 }
-.titlebar { -webkit-app-region: drag; height: 38px; flex-shrink: 0; }
-.container {
-  flex: 1; display: flex; flex-direction: column;
-  align-items: center; padding: 0 40px 24px; overflow-y: auto;
+
+.shell { display: flex; width: 100%; height: 100%; }
+
+.ab {
+  width: 48px; background: #111; border-right: 1px solid #1e1e1e;
+  display: flex; flex-direction: column; align-items: center; flex-shrink: 0;
 }
-.brand { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-bottom: 32px; }
-.brand h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
-.brand p { font-size: 13px; color: #71717a; }
-.section-label {
-  font-size: 11px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.5px; color: #71717a; width: 100%; max-width: 420px; margin-bottom: 8px;
+.ab-drag { -webkit-app-region: drag; height: 52px; width: 100%; flex-shrink: 0; }
+.ab-logo {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: linear-gradient(135deg, #33afbc, #2a95a1);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 16px; flex-shrink: 0;
 }
-.recents { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
-.recent-item {
-  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
-  border-radius: 8px; cursor: pointer; transition: background 0.15s;
-  -webkit-app-region: no-drag;
+.ab-logo span { color: #fff; font-weight: 700; font-size: 14px; }
+.ab-nav { display: flex; flex-direction: column; gap: 2px; align-items: center; }
+.ab-ic {
+  width: 36px; height: 36px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center; color: #3f3f46;
 }
-.recent-item:hover { background: #18181b; }
-.recent-item:active { background: #27272a; }
-.recent-icon {
-  width: 32px; height: 32px; border-radius: 6px; background: #27272a;
+
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.topbar {
+  -webkit-app-region: drag; height: 38px; border-bottom: 1px solid #1e1e1e;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.recent-icon svg { color: #71717a; }
-.recent-info { flex: 1; min-width: 0; }
-.recent-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.recent-path { font-size: 11px; color: #52525b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.recent-time { font-size: 10px; color: #3f3f46; flex-shrink: 0; }
-.actions { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-.btn {
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 10px 20px; border-radius: 8px; border: 1px solid #27272a;
-  background: #18181b; color: #fafafa; font-size: 13px; font-weight: 500;
-  cursor: pointer; transition: all 0.15s; -webkit-app-region: no-drag;
+.topbar span { font-size: 12px; color: #3f3f46; font-weight: 500; letter-spacing: 0.3px; }
+
+.workspace { flex: 1; position: relative; background: #0e0e0e; }
+
+.overlay {
+  position: absolute; inset: 0; background: rgba(0,0,0,0.35);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
 }
-.btn:hover { background: #27272a; border-color: #3f3f46; }
-.btn:active { background: #3f3f46; }
-.loading { display: none; flex-direction: column; align-items: center; gap: 12px; padding: 20px; }
-.loading.active { display: flex; }
+
+.modal {
+  width: 100%; max-width: 440px; background: #141414;
+  border: 1px solid #232323; border-radius: 12px;
+  display: flex; flex-direction: column; max-height: min(520px, 80vh);
+  position: relative; overflow: hidden;
+  box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+}
+.m-head {
+  padding: 24px 24px 16px; display: flex; align-items: center; gap: 14px; flex-shrink: 0;
+}
+.m-icon {
+  width: 36px; height: 36px; border-radius: 8px;
+  background: rgba(51,175,188,0.1);
+  display: flex; align-items: center; justify-content: center;
+  color: #33afbc; flex-shrink: 0;
+}
+.m-title { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; }
+.m-sub { font-size: 12px; color: #52525b; margin-top: 1px; }
+.m-div { height: 1px; background: #1e1e1e; margin: 0 24px; flex-shrink: 0; }
+
+.error-msg {
+  display: none; margin: 12px 16px 0; padding: 10px 14px;
+  border-radius: 6px; background: #1c1007; border: 1px solid #854d0e;
+  color: #fbbf24; font-size: 12px; flex-shrink: 0;
+}
+.error-msg.active { display: block; }
+
+.m-body { flex: 1; overflow-y: auto; padding: 12px 8px; min-height: 0; }
+.sec-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.5px; color: #52525b; padding: 4px 16px 8px;
+}
+
+.recents { display: flex; flex-direction: column; gap: 1px; }
+.ri {
+  display: flex; align-items: center; gap: 12px; padding: 8px 12px;
+  border-radius: 6px; cursor: pointer; transition: background 0.12s;
+  -webkit-app-region: no-drag;
+}
+.ri:hover { background: #1a1a1a; }
+.ri:active { background: #222; }
+.ri-ic {
+  width: 28px; height: 28px; border-radius: 6px; background: #1e1e1e;
+  display: flex; align-items: center; justify-content: center;
+  color: #52525b; flex-shrink: 0;
+}
+.ri-info { flex: 1; min-width: 0; }
+.ri-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ri-path { font-size: 11px; color: #3f3f46; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.ri-time { font-size: 10px; color: #3f3f46; flex-shrink: 0; }
+
+.empty { padding: 32px 16px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.empty-ic { color: #27272a; }
+.empty-text { font-size: 13px; color: #52525b; }
+.empty-hint { font-size: 11px; color: #3f3f46; }
+
+.m-foot {
+  padding: 12px 16px 16px; border-top: 1px solid #1e1e1e; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 10px; align-items: center;
+}
+.btn-open {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 10px; border-radius: 8px;
+  border: 1px solid #27272a; background: #18181b;
+  color: #fafafa; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.12s;
+  -webkit-app-region: no-drag; font-family: inherit;
+}
+.btn-open:hover { background: #27272a; border-color: #3f3f46; }
+.btn-open:active { background: #333; }
+.m-ver { font-size: 10px; color: #27272a; }
+
+.m-loading {
+  display: none; position: absolute; inset: 0; background: #141414;
+  border-radius: 12px; flex-direction: column; align-items: center;
+  justify-content: center; gap: 16px; z-index: 10;
+}
+.m-loading.active { display: flex; }
 .spinner {
-  width: 24px; height: 24px; border: 2px solid #27272a;
-  border-top-color: #33afbc; border-radius: 50%; animation: spin .8s linear infinite;
+  width: 28px; height: 28px; border: 2.5px solid #27272a;
+  border-top-color: #33afbc; border-radius: 50%; animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-text { font-size: 13px; color: #71717a; }
-.error-msg {
-  display: none; width: 100%; max-width: 420px; padding: 12px 16px;
-  border-radius: 8px; background: #1c1007; border: 1px solid #854d0e;
-  color: #fbbf24; font-size: 12px; margin-bottom: 12px;
-}
-.error-msg.active { display: block; }
-.empty { padding: 24px; text-align: center; color: #52525b; font-size: 13px; }
-.version { margin-top: auto; padding-top: 16px; font-size: 11px; color: #3f3f46; }
 </style>
 </head>
 <body>
-<div class="titlebar"></div>
-<div class="container">
-  <div class="brand"><h1>Groove</h1><p>Agent Orchestration Layer</p></div>
-  <div class="section-label" id="recents-label" style="display:none">Recent Projects</div>
-  <div class="recents" id="recents"></div>
-  <div class="error-msg" id="error"></div>
-  <div class="loading" id="loading">
-    <div class="spinner"></div>
-    <div class="loading-text" id="loading-text">Starting daemon...</div>
+<div class="shell">
+  <div class="ab">
+    <div class="ab-drag"></div>
+    <div class="ab-logo"><span>G</span></div>
+    <div class="ab-nav">
+      <div class="ab-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><path d="M12 8v4M7.5 17.2 10 12M16.5 17.2 14 12"/></svg></div>
+      <div class="ab-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></div>
+      <div class="ab-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg></div>
+      <div class="ab-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></div>
+      <div class="ab-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+    </div>
   </div>
-  <div class="actions" id="actions">
-    <button class="btn" id="open-folder">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-      </svg>
-      Open Project Folder
-    </button>
+  <div class="main">
+    <div class="topbar"><span>GROOVE</span></div>
+    <div class="workspace">
+      <div class="overlay">
+        <div class="modal">
+          <div class="m-head">
+            <div class="m-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+            </div>
+            <div>
+              <div class="m-title">Connect to Project</div>
+              <div class="m-sub">Select a workspace to open</div>
+            </div>
+          </div>
+          <div class="m-div"></div>
+          <div class="error-msg" id="error"></div>
+          <div class="m-body">
+            <div class="sec-label" id="recents-label" style="display:none">Recent Projects</div>
+            <div class="recents" id="recents"></div>
+          </div>
+          <div class="m-foot">
+            <button class="btn-open" id="open-folder">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              Open Folder
+            </button>
+            <div class="m-ver" id="version"></div>
+          </div>
+          <div class="m-loading" id="loading">
+            <div class="spinner"></div>
+            <div class="loading-text" id="loading-text">Starting Groove...</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
-  <div class="version" id="version"></div>
 </div>
 <script>
 (function() {
-  var FOLDER = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+  var FOLDER = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
     ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
 
@@ -461,10 +576,7 @@ body {
   }
 
   function setLoading(on, text) {
-    document.getElementById('loading').className = on ? 'loading active' : 'loading';
-    document.getElementById('actions').style.display = on ? 'none' : '';
-    document.getElementById('recents').style.pointerEvents = on ? 'none' : '';
-    document.getElementById('recents').style.opacity = on ? '0.5' : '';
+    document.getElementById('loading').className = on ? 'm-loading active' : 'm-loading';
     if (text) document.getElementById('loading-text').textContent = text;
   }
 
@@ -488,7 +600,7 @@ body {
   }
 
   if (window.groove.platform !== 'darwin') {
-    document.querySelector('.titlebar').style.display = 'none';
+    document.querySelector('.ab-drag').style.height = '12px';
   }
 
   document.getElementById('open-folder').addEventListener('click', function() {
@@ -508,21 +620,25 @@ body {
     var c = document.getElementById('recents');
     var l = document.getElementById('recents-label');
     if (!recents || !recents.length) {
-      c.innerHTML = '<div class="empty">No recent projects. Open a folder to get started.</div>';
+      c.innerHTML = '<div class="empty">' +
+        '<div class="empty-ic"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>' +
+        '<div class="empty-text">No recent projects</div>' +
+        '<div class="empty-hint">Open a folder to get started</div>' +
+      '</div>';
       return;
     }
     l.style.display = '';
     c.innerHTML = recents.map(function(r) {
-      return '<div class="recent-item" data-dir="' + esc(r.dir) + '">' +
-        '<div class="recent-icon">' + FOLDER + '</div>' +
-        '<div class="recent-info">' +
-          '<div class="recent-name">' + esc(r.name || r.dir.split('/').pop()) + '</div>' +
-          '<div class="recent-path">' + esc(shortenPath(r.dir)) + '</div>' +
+      return '<div class="ri" data-dir="' + esc(r.dir) + '">' +
+        '<div class="ri-ic">' + FOLDER + '</div>' +
+        '<div class="ri-info">' +
+          '<div class="ri-name">' + esc(r.name || r.dir.split('/').pop()) + '</div>' +
+          '<div class="ri-path">' + esc(shortenPath(r.dir)) + '</div>' +
         '</div>' +
-        '<div class="recent-time">' + (r.lastOpened ? timeAgo(r.lastOpened) : '') + '</div>' +
+        '<div class="ri-time">' + (r.lastOpened ? timeAgo(r.lastOpened) : '') + '</div>' +
       '</div>';
     }).join('');
-    c.querySelectorAll('.recent-item').forEach(function(el) {
+    c.querySelectorAll('.ri').forEach(function(el) {
       el.addEventListener('click', function() {
         openProject(el.getAttribute('data-dir'));
       });
@@ -641,8 +757,80 @@ ipcMain.handle('home-get-recents', () => {
 
 ipcMain.handle('home-open-recent', async (_event, dir) => {
   if (!dir || typeof dir !== 'string') throw new Error('Invalid directory');
-  await workspaces.open(dir, { showDialogs: false });
-  workspaces._closeHomeWindow();
+  const forbidden = workspaces._rejectIfUnsafe(dir);
+  if (forbidden) throw new Error(forbidden);
+
+  const id = workspaces._instanceId(dir);
+
+  if (workspaces.instances.has(id)) {
+    const existing = workspaces.instances.get(id);
+    if (existing.window && !existing.window.isDestroyed()) {
+      existing.window.show();
+      existing.window.focus();
+      workspaces._closeHomeWindow();
+      return { ok: true };
+    }
+  }
+
+  let port;
+  try {
+    port = await workspaces._startDaemon(id, dir);
+  } catch (err) {
+    dialog.showErrorBox('Failed to open project',
+      `${err.message}\n\nTry reinstalling Groove from groovedev.ai or rebuild with ./promote-local.sh`);
+    return { error: err.message };
+  }
+
+  const name = dir.split('/').pop();
+  const win = workspaces._homeWindow;
+  if (!win || win.isDestroyed()) throw new Error('Window was closed');
+
+  win.setTitle(`${name} — Groove`);
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+        shell.openExternal(url);
+      }
+    } catch {}
+    return { action: 'deny' };
+  });
+
+  win.webContents.on('console-message', (event) => {
+    const { level, message, lineNumber, sourceId } = event;
+    if (level === 'error' || level === 'warning') {
+      process.stderr.write(`[renderer:${level}] ${message} (${sourceId}:${lineNumber})\n`);
+    }
+  });
+  win.webContents.on('render-process-gone', (_e, details) => {
+    process.stderr.write(`[renderer-gone] ${JSON.stringify(details)}\n`);
+  });
+
+  win.removeAllListeners('close');
+  win.removeAllListeners('closed');
+  win.on('close', (e) => {
+    if (IS_MAC && !isQuitting) {
+      e.preventDefault();
+      win.hide();
+      workspaces._showHomeIfNeeded(win);
+    }
+  });
+  win.on('closed', () => {
+    const inst = workspaces.instances.get(id);
+    if (inst) inst.window = null;
+  });
+  win.on('focus', () => {
+    if (loadStoredToken()) checkSubscription();
+  });
+
+  const inst = { id, port, projectDir: dir, name, daemon: workspaces._getDaemon(id), window: win };
+  workspaces.instances.set(id, inst);
+  workspaces._touchRecent(dir, name);
+  workspaces._homeWindow = null;
+  workspaces._updateTrayMenu();
+
+  win.loadURL(`http://localhost:${port}?instance=${encodeURIComponent(name)}`);
   return { ok: true };
 });
 
@@ -807,6 +995,28 @@ function createTray() {
 
 // --- App lifecycle ---
 
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+
+app.on('second-instance', () => {
+  if (!workspaces) return;
+  const instances = workspaces.getAll();
+  const visible = instances.find(i => i.window && !i.window.isDestroyed() && i.window.isVisible());
+  if (visible) {
+    if (visible.window.isMinimized()) visible.window.restore();
+    visible.window.show();
+    visible.window.focus();
+  } else if (workspaces._homeWindow && !workspaces._homeWindow.isDestroyed()) {
+    if (workspaces._homeWindow.isMinimized()) workspaces._homeWindow.restore();
+    workspaces._homeWindow.show();
+    workspaces._homeWindow.focus();
+  } else {
+    workspaces._createHomeWindow();
+  }
+});
+
 app.whenReady().then(async () => {
   workspaces = new WorkspaceManager();
   createTray();
@@ -844,3 +1054,5 @@ app.on('before-quit', async () => {
   stopSubscriptionPoll();
   if (workspaces) await workspaces.shutdownAll();
 });
+
+} // end single-instance lock

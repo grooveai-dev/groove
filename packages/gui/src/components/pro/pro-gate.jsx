@@ -21,7 +21,7 @@ export function ProGate({ feature, featureKey, description, children }) {
     return <UpgradeCard feature={feature} description={description} variant="subscribe" />;
   }
 
-  if (featureKey && !(subscription.features || []).includes(featureKey)) {
+  if (featureKey && subscription?.plan !== 'pro' && !(subscription.features || []).includes(featureKey)) {
     return <UpgradeCard feature={feature} description={description} variant="subscribe" />;
   }
 

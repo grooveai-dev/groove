@@ -30,12 +30,6 @@ function savePositions(teamId, positions) {
   try { localStorage.setItem(`groove:nodePositions:${teamId}`, JSON.stringify(positions)); } catch {}
 }
 
-function loadGlobalPositionsOnce(teamId) {
-  const teamKey = `groove:nodePositions:${teamId}`;
-  if (localStorage.getItem(teamKey) !== null) return null;
-  try { return JSON.parse(localStorage.getItem('groove:nodePositions') || '{}'); } catch { return {}; }
-}
-
 function loadTeamViewports() {
   try { return JSON.parse(localStorage.getItem('groove:teamViewports') || '{}'); } catch { return {}; }
 }
@@ -302,12 +296,23 @@ function AgentTreeInner() {
   const selectAgent = useGrooveStore((s) => s.selectAgent);
   const closeDetail = useGrooveStore((s) => s.closeDetail);
 
-  const agents = useMemo(
-    () => allAgents
+  const prevAgentsRef = useRef([]);
+  const agents = useMemo(() => {
+    const next = allAgents
       .filter((a) => a.teamId === activeTeamId)
-      .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)),
-    [allAgents, activeTeamId],
-  );
+      .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+    const prev = prevAgentsRef.current;
+    if (prev.length === next.length && prev.every((p, i) => p.id === next[i].id && p.status === next[i].status && p.name === next[i].name && p.model === next[i].model && p.tokensUsed === next[i].tokensUsed && p.contextUsage === next[i].contextUsage)) return prev;
+    prevAgentsRef.current = next;
+    return next;
+  }, [allAgents, activeTeamId]);
+
+  const positionsRef = useRef(loadPositions(activeTeamId));
+  const positionsTeamRef = useRef(activeTeamId);
+  if (positionsTeamRef.current !== activeTeamId) {
+    positionsTeamRef.current = activeTeamId;
+    positionsRef.current = loadPositions(activeTeamId);
+  }
 
   const { fitView, setViewport } = useReactFlow();
   const [prevCount, setPrevCount] = useState(0);
@@ -315,15 +320,7 @@ function AgentTreeInner() {
 
   // Build nodes — positions are stable, data updates flow to node components
   const targetNodes = useMemo(() => {
-    let saved = loadPositions(activeTeamId);
-    // Migrate global positions on first load for this team
-    if (Object.keys(saved).length === 0) {
-      const global = loadGlobalPositionsOnce(activeTeamId);
-      if (global && Object.keys(global).length > 0) {
-        saved = global;
-        savePositions(activeTeamId, saved);
-      }
-    }
+    const saved = positionsRef.current;
     const runningCount = agents.filter((a) => a.status === 'running').length;
 
     const nodes = [
@@ -337,15 +334,12 @@ function AgentTreeInner() {
       },
     ];
 
-    // Track occupied positions so new nodes don't overlap existing ones
     const occupied = new Set();
     const posKey = (x, y) => `${Math.round(x / 100)},${Math.round(y / 100)}`;
 
-    // Mark root node position as occupied
     const rootPos = saved[ROOT_ID] || { x: 0, y: 0 };
     occupied.add(posKey(rootPos.x, rootPos.y));
 
-    // First pass: place agents with saved positions
     const pending = [];
     agents.forEach((agent) => {
       const key = agent.name || agent.id;
@@ -362,8 +356,6 @@ function AgentTreeInner() {
       }
     });
 
-    // Second pass: place new agents in non-overlapping positions using sequential index
-    const newPositions = {};
     pending.forEach((agent, idx) => {
       const row = Math.floor(idx / MAX_PER_ROW);
       const col = idx % MAX_PER_ROW;
@@ -377,7 +369,6 @@ function AgentTreeInner() {
       occupied.add(posKey(pos.x, pos.y));
 
       const key = agent.name || agent.id;
-      newPositions[key] = pos;
       nodes.push({
         id: agent.id, type: 'agentNode', position: pos,
         data: { agent, timeline: tokenTimeline[agent.id] || [] },
@@ -385,13 +376,23 @@ function AgentTreeInner() {
       });
     });
 
-    // Auto-save positions for newly placed nodes so they survive team switches
-    if (Object.keys(newPositions).length > 0) {
-      savePositions(activeTeamId, { ...saved, ...newPositions });
-    }
-
     return nodes;
   }, [agents, tokenTimeline, activeTeamId]);
+
+  // Auto-save positions for newly placed nodes to positionsRef + localStorage
+  useEffect(() => {
+    const newPositions = {};
+    targetNodes.forEach((n) => {
+      const key = n.id === ROOT_ID ? ROOT_ID : (n.data?.agent?.name || n.id);
+      if (!positionsRef.current[key]) {
+        newPositions[key] = n.position;
+      }
+    });
+    if (Object.keys(newPositions).length > 0) {
+      Object.assign(positionsRef.current, newPositions);
+      savePositions(activeTeamId, positionsRef.current);
+    }
+  }, [targetNodes, activeTeamId]);
 
   // Build edges — compute closest handle based on saved node positions
   const targetEdges = useMemo(() => {
@@ -441,10 +442,9 @@ function AgentTreeInner() {
       return targetNodes.map((tn) => {
         const existing = currentMap.get(tn.id);
         if (existing) {
-          // Preserve existing position, update data only
-          return { ...existing, data: tn.data };
+          const key = existing.data?.agent?.name || existing.id;
+          return { ...existing, data: tn.data, position: positionsRef.current[key] || existing.position };
         }
-        // New node — use calculated position
         return tn;
       });
     });
@@ -546,12 +546,12 @@ function AgentTreeInner() {
   }, [nodes, setEdges]);
 
   const onNodeDragStop = useCallback((_e, node) => {
-    const agent = agents.find((a) => a.id === node.id);
-    const key = node.id === ROOT_ID ? ROOT_ID : (agent?.name || node.id);
+    const key = node.id === ROOT_ID ? ROOT_ID : (node.data?.agent?.name || node.id);
+    positionsRef.current[key] = node.position;
     const saved = loadPositions(activeTeamId);
     saved[key] = node.position;
     savePositions(activeTeamId, saved);
-  }, [agents, activeTeamId]);
+  }, [activeTeamId]);
 
   return (
     <ReactFlow
@@ -829,7 +829,7 @@ export default function AgentsView() {
         ) : teamAgents.length === 0 ? (
           <EmptyState onPlanner={launchPlanner} onSpawn={() => openDetail({ type: 'spawn' })} />
         ) : (
-          <ReactFlowProvider>
+          <ReactFlowProvider key={activeTeamId}>
             <AgentTreeInner />
           </ReactFlowProvider>
         )}

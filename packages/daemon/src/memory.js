@@ -237,6 +237,14 @@ export class MemoryStore {
     if (!trigger || !fix) return { added: false, error: 'trigger and fix required' };
     if (outcome !== 'success') return { added: false, reason: 'only successes stored' };
 
+    const fileExtPattern = /[\w./-]+\.(?:js|ts|json|md|jsx|tsx|css|mjs|cjs)\b/g;
+    const triggerTokens = new Set((String(trigger).match(fileExtPattern) || []).map(t => t.toLowerCase()));
+    const fixTokens = new Set((String(fix).match(fileExtPattern) || []).map(t => t.toLowerCase()));
+    const hasOverlap = [...triggerTokens].some(t => fixTokens.has(t));
+    if (triggerTokens.size > 0 && fixTokens.size > 0 && !hasOverlap) {
+      return { added: false, reason: 'trigger and fix are unrelated' };
+    }
+
     const entry = {
       ts: new Date().toISOString(),
       agentId: agentId || null,

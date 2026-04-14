@@ -393,7 +393,7 @@ export class ProcessManager {
     }
 
     // Generate introduction context (team awareness + negotiation)
-    const introContext = introducer.generateContext(agent, { taskNegotiation });
+    const introContext = introducer.generateContext(agent, { taskNegotiation, hasTask: !!config.prompt });
 
     // Track cold-start savings — agent gets context from planner/journalist/team
     // instead of exploring the codebase from scratch

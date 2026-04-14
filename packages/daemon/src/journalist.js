@@ -1010,41 +1010,7 @@ export class Journalist {
   }
 
   _extractConstraints(filteredLogs) {
-    if (!this.daemon.memory) return;
-
-    try {
-      for (const [agentId, data] of Object.entries(filteredLogs)) {
-        const { agent, entries } = data;
-        if (!entries || entries.length === 0) continue;
-
-        // Look for reasoning entries that mention constraints
-        for (const entry of entries) {
-          if (entry.type !== 'thinking') continue;
-          const text = entry.text || '';
-
-          // Match patterns like "must always", "never do", "do not", "avoid", "required"
-          const constraintPatterns = [
-            /(?:must always|always must|critical:?)\s+(.{20,200})/i,
-            /(?:never|do not|don't|avoid)\s+(.{20,200})/i,
-            /(?:required|mandatory):?\s+(.{20,200})/i,
-          ];
-
-          for (const pattern of constraintPatterns) {
-            const match = text.match(pattern);
-            if (match) {
-              const constraintText = match[0].slice(0, 300).trim();
-              // Only add if it looks like a project-specific constraint, not general coding advice
-              if (constraintText.includes('/') || constraintText.includes('.js') || constraintText.includes('.ts') || constraintText.includes('config') || constraintText.includes('package')) {
-                this.daemon.memory.addConstraint({
-                  text: constraintText,
-                  category: 'discovered',
-                });
-              }
-            }
-          }
-        }
-      }
-    } catch { /* Memory extraction must never break journalist cycle */ }
+    return;
   }
 
   // --- Accessors ---

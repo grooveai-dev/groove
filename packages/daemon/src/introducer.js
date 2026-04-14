@@ -14,7 +14,7 @@ export class Introducer {
   }
 
   generateContext(newAgent, options = {}) {
-    const { taskNegotiation } = options;
+    const { taskNegotiation, hasTask } = options;
     const agents = this.daemon.registry.getAll();
     // Only include ACTIVE agents — not completed/killed ones from previous sessions
     // Completed agents' work is captured in the journalist's project map, not here
@@ -344,14 +344,16 @@ export class Introducer {
           parts.push(`### Constraints (read carefully)\n${constraints}`);
         }
 
-        const discoveries = this.daemon.memory.getDiscoveriesMarkdown(newAgent.role, 15, 1000);
-        if (discoveries) {
-          parts.push(`### Known Fixes for ${newAgent.role} Role\n${discoveries}`);
-        }
+        if (hasTask) {
+          const discoveries = this.daemon.memory.getDiscoveriesMarkdown(newAgent.role, 15, 1000);
+          if (discoveries) {
+            parts.push(`### Known Fixes for ${newAgent.role} Role\n${discoveries}`);
+          }
 
-        const handoffs = this.daemon.memory.getRecentHandoffMarkdown(newAgent.role, 2, 1000, newAgent.workingDir);
-        if (handoffs) {
-          parts.push(`### Recent Handoff History\n${handoffs}`);
+          const handoffs = this.daemon.memory.getRecentHandoffMarkdown(newAgent.role, 2, 1000, newAgent.workingDir);
+          if (handoffs) {
+            parts.push(`### Recent Handoff History\n${handoffs}`);
+          }
         }
 
         if (parts.length > 0) {

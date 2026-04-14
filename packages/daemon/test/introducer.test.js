@@ -105,7 +105,7 @@ describe('Introducer', () => {
       const intro = new Introducer(daemon);
 
       const agent = registry.add({ role: 'backend', scope: ['src/api/**'] });
-      const ctx = intro.generateContext(agent);
+      const ctx = intro.generateContext(agent, { hasTask: true });
 
       assert.ok(ctx.includes('## Project Memory (auto-generated)'));
       assert.ok(ctx.includes('Constraints (read carefully)'));

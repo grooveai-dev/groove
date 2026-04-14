@@ -312,7 +312,7 @@ describe('Journalist', () => {
   });
 
   describe('_extractConstraints', () => {
-    it('should extract project-specific constraints from thinking entries', () => {
+    it('should no-op since auto-extraction is disabled', () => {
       const { daemon, grooveDir } = createMockDaemon();
       daemon.memory = new MemoryStore(grooveDir);
       const journalist = new Journalist(daemon);
@@ -333,9 +333,7 @@ describe('Journalist', () => {
       journalist._extractConstraints(filteredLogs);
 
       const constraints = daemon.memory.listConstraints();
-      assert.equal(constraints.length, 1);
-      assert.ok(constraints[0].text.includes('packages/daemon/index.js'));
-      assert.equal(constraints[0].category, 'discovered');
+      assert.equal(constraints.length, 0);
     });
 
     it('should skip non-project-specific constraints', () => {

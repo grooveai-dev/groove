@@ -27,7 +27,11 @@ export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel
     <nav className="w-12 flex-shrink-0 flex flex-col bg-surface-3 border-r border-border">
       {/* Main nav */}
       <div className="flex flex-col items-center gap-1.5 pt-3">
-        {darwinTrafficLights && <div className="w-full h-[38px] flex-shrink-0" />}
+        {darwinTrafficLights && (
+          <div className="w-full h-[44px] flex-shrink-0 flex items-end justify-center pb-1.5">
+            <img src="/favicon.png" alt="Groove" className="h-7 w-7 rounded-full" />
+          </div>
+        )}
         {NAV_ITEMS.map((item) => (
           <Tooltip key={item.id} content={item.label} side="right">
             <button

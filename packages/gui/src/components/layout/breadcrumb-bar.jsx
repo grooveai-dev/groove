@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, ChevronRight, FolderOpen, LogIn, LogOut, User, ExternalLink, BookOpen, ChevronDown } from 'lucide-react';
+import { Search, Plus, ChevronRight, LogIn, LogOut, User, ExternalLink, BookOpen, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useGrooveStore } from '../../stores/groove';
 import { isElectron, getPlatform } from '../../lib/electron';
@@ -160,28 +160,17 @@ export function BreadcrumbBar({
     <header
       className={cn(
         'h-11 flex-shrink-0 flex items-center gap-3 px-4 bg-surface-3 border-b border-border',
-        darwinDrag && 'pl-20 electron-drag electron-no-drag-children',
+        darwinDrag && 'pl-24 electron-drag electron-no-drag-children',
       )}
     >
-      {/* Logo */}
-      <img src="/favicon.png" alt="Groove" className="h-7 w-7 rounded-full flex-shrink-0" />
-
-      {/* Open Folder — Electron only */}
-      {window.groove?.openFolder && (
-        <button
-          onClick={() => window.groove.openFolder()}
-          className="p-1.5 rounded-md text-text-3 hover:text-text-0 hover:bg-surface-4 transition-colors cursor-pointer"
-          title="Open Folder (new window)"
-        >
-          <FolderOpen size={15} />
-        </button>
-      )}
-
-      {/* Project name badge */}
+      {/* Project name badge — clickable to open folder */}
       {instanceName && (
-        <span className="text-2xs font-mono font-semibold text-accent bg-accent/10 px-1.5 py-0.5 rounded flex-shrink-0">
+        <button
+          onClick={() => window.groove?.openFolder?.()}
+          className="text-2xs font-mono font-semibold text-accent bg-accent/10 px-1.5 py-0.5 rounded flex-shrink-0 hover:bg-accent/20 transition-colors cursor-pointer"
+        >
           {instanceName}
-        </span>
+        </button>
       )}
 
       {/* Host badge — show raw host when no instance */}

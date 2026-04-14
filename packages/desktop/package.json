@@ -36,7 +36,8 @@
     "extraResources": [
       {
         "from": ".daemon-bundle",
-        "to": "daemon"
+        "to": "daemon",
+        "filter": ["**/*"]
       },
       {
         "from": "../gui/dist",

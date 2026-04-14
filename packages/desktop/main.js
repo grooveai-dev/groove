@@ -31,6 +31,7 @@ class WorkspaceManager {
     this.instances = new Map();
     this._daemonProcesses = new Map();
     this.recentProjects = this._loadRecents();
+    this._homeWindow = null;
   }
 
   _instanceId(projectDir) {
@@ -70,10 +71,10 @@ class WorkspaceManager {
     this._saveRecents();
   }
 
-  async open(projectDir) {
+  async open(projectDir, options = {}) {
     const forbidden = this._rejectIfUnsafe(projectDir);
     if (forbidden) {
-      dialog.showErrorBox('Cannot open this folder', forbidden);
+      if (options.showDialogs !== false) dialog.showErrorBox('Cannot open this folder', forbidden);
       throw new Error(forbidden);
     }
     const id = this._instanceId(projectDir);
@@ -283,6 +284,256 @@ class WorkspaceManager {
       await this.open(result.filePaths[0]);
     }
   }
+
+  _createHomeWindow() {
+    if (this._homeWindow && !this._homeWindow.isDestroyed()) {
+      this._homeWindow.show();
+      this._homeWindow.focus();
+      return;
+    }
+
+    const htmlPath = join(app.getPath('userData'), 'welcome.html');
+    writeFileSync(htmlPath, getWelcomeHtml(), 'utf8');
+
+    const win = new BrowserWindow({
+      width: 540,
+      height: 600,
+      minWidth: 400,
+      minHeight: 400,
+      resizable: true,
+      titleBarStyle: IS_MAC ? 'hiddenInset' : 'default',
+      backgroundColor: '#0a0a0a',
+      title: 'Groove',
+      show: false,
+      webPreferences: {
+        preload: join(__dirname, 'preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+
+    win.loadFile(htmlPath);
+    win.once('ready-to-show', () => win.show());
+
+    win.on('close', (e) => {
+      if (IS_MAC && !isQuitting) {
+        e.preventDefault();
+        win.hide();
+      }
+    });
+
+    win.on('closed', () => {
+      this._homeWindow = null;
+    });
+
+    this._homeWindow = win;
+  }
+
+  _closeHomeWindow() {
+    if (this._homeWindow && !this._homeWindow.isDestroyed()) {
+      this._homeWindow.destroy();
+    }
+    this._homeWindow = null;
+  }
+}
+
+function getWelcomeHtml() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<title>Groove</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0a; color: #fafafa;
+  font-family: system-ui, -apple-system, sans-serif;
+  height: 100vh; display: flex; flex-direction: column;
+  overflow: hidden; user-select: none;
+}
+.titlebar { -webkit-app-region: drag; height: 38px; flex-shrink: 0; }
+.container {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; padding: 0 40px 24px; overflow-y: auto;
+}
+.brand { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-bottom: 32px; }
+.brand h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+.brand p { font-size: 13px; color: #71717a; }
+.section-label {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.5px; color: #71717a; width: 100%; max-width: 420px; margin-bottom: 8px;
+}
+.recents { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
+.recent-item {
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  border-radius: 8px; cursor: pointer; transition: background 0.15s;
+  -webkit-app-region: no-drag;
+}
+.recent-item:hover { background: #18181b; }
+.recent-item:active { background: #27272a; }
+.recent-icon {
+  width: 32px; height: 32px; border-radius: 6px; background: #27272a;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.recent-icon svg { color: #71717a; }
+.recent-info { flex: 1; min-width: 0; }
+.recent-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recent-path { font-size: 11px; color: #52525b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recent-time { font-size: 10px; color: #3f3f46; flex-shrink: 0; }
+.actions { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 20px; border-radius: 8px; border: 1px solid #27272a;
+  background: #18181b; color: #fafafa; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s; -webkit-app-region: no-drag;
+}
+.btn:hover { background: #27272a; border-color: #3f3f46; }
+.btn:active { background: #3f3f46; }
+.loading { display: none; flex-direction: column; align-items: center; gap: 12px; padding: 20px; }
+.loading.active { display: flex; }
+.spinner {
+  width: 24px; height: 24px; border: 2px solid #27272a;
+  border-top-color: #33afbc; border-radius: 50%; animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-size: 13px; color: #71717a; }
+.error-msg {
+  display: none; width: 100%; max-width: 420px; padding: 12px 16px;
+  border-radius: 8px; background: #1c1007; border: 1px solid #854d0e;
+  color: #fbbf24; font-size: 12px; margin-bottom: 12px;
+}
+.error-msg.active { display: block; }
+.empty { padding: 24px; text-align: center; color: #52525b; font-size: 13px; }
+.version { margin-top: auto; padding-top: 16px; font-size: 11px; color: #3f3f46; }
+</style>
+</head>
+<body>
+<div class="titlebar"></div>
+<div class="container">
+  <div class="brand"><h1>Groove</h1><p>Agent Orchestration Layer</p></div>
+  <div class="section-label" id="recents-label" style="display:none">Recent Projects</div>
+  <div class="recents" id="recents"></div>
+  <div class="error-msg" id="error"></div>
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loading-text">Starting daemon...</div>
+  </div>
+  <div class="actions" id="actions">
+    <button class="btn" id="open-folder">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+      </svg>
+      Open Project Folder
+    </button>
+  </div>
+  <div class="version" id="version"></div>
+</div>
+<script>
+(function() {
+  var FOLDER = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+    ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function timeAgo(d) {
+    var ms = Date.now() - new Date(d).getTime();
+    var m = Math.floor(ms / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return m + 'm ago';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + 'h ago';
+    var dy = Math.floor(h / 24);
+    if (dy < 30) return dy + 'd ago';
+    return Math.floor(dy / 30) + 'mo ago';
+  }
+
+  function shortenPath(p) {
+    var m = p.match(/^(\\/Users\\/[^/]+|\\/home\\/[^/]+)/);
+    return m ? '~' + p.slice(m[0].length) : p;
+  }
+
+  function setLoading(on, text) {
+    document.getElementById('loading').className = on ? 'loading active' : 'loading';
+    document.getElementById('actions').style.display = on ? 'none' : '';
+    document.getElementById('recents').style.pointerEvents = on ? 'none' : '';
+    document.getElementById('recents').style.opacity = on ? '0.5' : '';
+    if (text) document.getElementById('loading-text').textContent = text;
+  }
+
+  function showError(msg) {
+    var el = document.getElementById('error');
+    el.textContent = msg;
+    el.className = 'error-msg active';
+  }
+
+  function hideError() {
+    document.getElementById('error').className = 'error-msg';
+  }
+
+  function openProject(dir) {
+    setLoading(true, 'Opening ' + dir.split('/').pop() + '...');
+    hideError();
+    window.groove.home.openRecent(dir).catch(function(err) {
+      setLoading(false);
+      showError(err.message || 'Failed to open project');
+    });
+  }
+
+  if (window.groove.platform !== 'darwin') {
+    document.querySelector('.titlebar').style.display = 'none';
+  }
+
+  document.getElementById('open-folder').addEventListener('click', function() {
+    hideError();
+    window.groove.home.openFolder().then(function(dir) {
+      if (dir) openProject(dir);
+    }).catch(function(err) {
+      showError(err.message || 'Failed to open folder');
+    });
+  });
+
+  window.groove.getVersion().then(function(v) {
+    document.getElementById('version').textContent = 'v' + v;
+  }).catch(function() {});
+
+  window.groove.home.getRecents().then(function(recents) {
+    var c = document.getElementById('recents');
+    var l = document.getElementById('recents-label');
+    if (!recents || !recents.length) {
+      c.innerHTML = '<div class="empty">No recent projects. Open a folder to get started.</div>';
+      return;
+    }
+    l.style.display = '';
+    c.innerHTML = recents.map(function(r) {
+      return '<div class="recent-item" data-dir="' + esc(r.dir) + '">' +
+        '<div class="recent-icon">' + FOLDER + '</div>' +
+        '<div class="recent-info">' +
+          '<div class="recent-name">' + esc(r.name || r.dir.split('/').pop()) + '</div>' +
+          '<div class="recent-path">' + esc(shortenPath(r.dir)) + '</div>' +
+        '</div>' +
+        '<div class="recent-time">' + (r.lastOpened ? timeAgo(r.lastOpened) : '') + '</div>' +
+      '</div>';
+    }).join('');
+    c.querySelectorAll('.recent-item').forEach(function(el) {
+      el.addEventListener('click', function() {
+        openProject(el.getAttribute('data-dir'));
+      });
+    });
+  }).catch(function(err) {
+    showError('Failed to load recent projects: ' + err.message);
+  });
+})();
+</script>
+</body>
+</html>`;
 }
 
 // --- Instance lookup helper ---
@@ -380,6 +631,30 @@ ipcMain.handle('set-project-dir', async (event, dir) => {
   } catch (err) {
     return { error: err.message };
   }
+});
+
+// --- Home window IPC ---
+
+ipcMain.handle('home-get-recents', () => {
+  return workspaces?.recentProjects || [];
+});
+
+ipcMain.handle('home-open-recent', async (_event, dir) => {
+  if (!dir || typeof dir !== 'string') throw new Error('Invalid directory');
+  await workspaces.open(dir, { showDialogs: false });
+  workspaces._closeHomeWindow();
+  return { ok: true };
+});
+
+ipcMain.handle('home-open-folder', async () => {
+  const parentWin = workspaces?._homeWindow && !workspaces._homeWindow.isDestroyed()
+    ? workspaces._homeWindow : null;
+  const result = await dialog.showOpenDialog(parentWin, {
+    properties: ['openDirectory'],
+    title: 'Open Project Folder',
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  return result.filePaths[0];
 });
 
 // --- Auth flow ---
@@ -522,6 +797,9 @@ function createTray() {
     if (visible) {
       visible.window.show();
       visible.window.focus();
+    } else if (workspaces?._homeWindow && !workspaces._homeWindow.isDestroyed()) {
+      workspaces._homeWindow.show();
+      workspaces._homeWindow.focus();
     }
   });
   workspaces?._updateTrayMenu();
@@ -537,11 +815,7 @@ app.whenReady().then(async () => {
     storeToken(stored);
     startSubscriptionPoll();
   }
-  const lastProject = workspaces.recentProjects[0]?.dir;
-  if (lastProject && !workspaces._rejectIfUnsafe(lastProject)) {
-    try { await workspaces.open(lastProject); return; } catch { /* fall through to picker */ }
-  }
-  await workspaces._openFolderDialog();
+  workspaces._createHomeWindow();
 });
 
 app.on('activate', () => {
@@ -550,8 +824,11 @@ app.on('activate', () => {
   if (visible) {
     visible.window.show();
     visible.window.focus();
+  } else if (workspaces?._homeWindow && !workspaces._homeWindow.isDestroyed()) {
+    workspaces._homeWindow.show();
+    workspaces._homeWindow.focus();
   } else {
-    workspaces?._openFolderDialog();
+    workspaces?._createHomeWindow();
   }
 });
 

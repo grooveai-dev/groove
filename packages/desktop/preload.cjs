@@ -13,6 +13,11 @@ contextBridge.exposeInMainWorld('groove', {
     select: (options) => ipcRenderer.invoke('select-folder', options),
     setProjectDir: (dir) => ipcRenderer.invoke('set-project-dir', dir),
   },
+  home: {
+    getRecents: () => ipcRenderer.invoke('home-get-recents'),
+    openRecent: (dir) => ipcRenderer.invoke('home-open-recent', dir),
+    openFolder: () => ipcRenderer.invoke('home-open-folder'),
+  },
   auth: {
     login: () => ipcRenderer.invoke('auth-login'),
     logout: () => ipcRenderer.invoke('auth-logout'),

@@ -565,7 +565,7 @@ export function createApi(app, daemon) {
   app.get('/api/edition', (req, res) => {
     const sub = daemon.subscriptionCache || {};
     res.json({
-      edition: isPro ? 'pro' : 'community',
+      edition: (isPro || sub.active) ? 'pro' : 'community',
       plan: sub.plan || 'community',
       subscriptionActive: sub.active || false,
       features: sub.features || [],
@@ -578,6 +578,7 @@ export function createApi(app, daemon) {
 
   // Daemon status
   app.get('/api/status', (req, res) => {
+    const sub = daemon.subscriptionCache || {};
     res.json({
       pid: process.pid,
       uptime: process.uptime(),
@@ -586,7 +587,7 @@ export function createApi(app, daemon) {
       host: daemon.host,
       port: daemon.port,
       projectDir: daemon.projectDir,
-      edition: isPro ? 'pro' : 'community',
+      edition: (isPro || sub.active) ? 'pro' : 'community',
     });
   });
 
@@ -1108,7 +1109,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
 
     const user = await daemon.skills.setAuth(token);
-    if (user) daemon.setAuthToken(token);
+    if (user) await daemon.setAuthToken(token);
     if (!user) {
       return res.send(`<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Groove — Login Failed</title>
@@ -1159,12 +1160,13 @@ Keep responses concise. Help them think, don't lecture them about the system the
 </body></html>`);
   });
 
-  // Auth status — returns current user or { authenticated: false }
+  // Auth status — returns current user + subscription or { authenticated: false }
   app.get('/api/auth/status', async (req, res) => {
     const user = daemon.skills.getUser();
     const token = daemon.skills.getToken();
     if (!user || !token) return res.json({ authenticated: false });
-    res.json({ authenticated: true, user });
+    const sub = daemon.subscriptionCache || {};
+    res.json({ authenticated: true, user, subscription: sub });
   });
 
   // Validate stored token (hits remote API)
@@ -2457,6 +2459,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
     try {
       const raw = JSON.parse(readFileSync(found.path, 'utf8'));
+
+      // Delete immediately after reading to prevent duplicate launches from poll races
+      try { unlinkSync(found.path); } catch { /* already gone */ }
 
       // Support both old format (bare array) and new format ({ projectDir, agents })
       let agentConfigs;

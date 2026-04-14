@@ -81,6 +81,7 @@ export const useGrooveStore = create((set, get) => ({
 
   // ── Recommended Team ──────────────────────────────────────
   recommendedTeam: null,  // { name, agents: [...] } from planner
+  _delegatingTeamIds: new Set(),
 
   // ── Journalist ────────────────────────────────────────────
   journalistStatus: null, // { cycleCount, lastCycleTime, history, lastSynthesis }
@@ -473,7 +474,7 @@ export const useGrooveStore = create((set, get) => ({
               subscription: {
                 plan: ed.plan || 'community',
                 status: ed.status || (ed.subscriptionActive ? 'active' : 'none'),
-                active: ed.subscriptionActive !== false,
+                active: ed.subscriptionActive === true,
                 features: ed.features || [],
                 seats: ed.seats || 1,
                 periodEnd: ed.periodEnd || null,
@@ -654,7 +655,7 @@ export const useGrooveStore = create((set, get) => ({
           subscription: {
             plan: edition.plan || 'community',
             status: edition.status || (edition.subscriptionActive ? 'active' : 'none'),
-            active: edition.subscriptionActive !== false,
+            active: edition.subscriptionActive === true,
             features: edition.features || [],
             seats: edition.seats || 1,
             periodEnd: edition.periodEnd || null,
@@ -686,7 +687,7 @@ export const useGrooveStore = create((set, get) => ({
                 subscription: {
                   plan: edition.plan || 'community',
                   status: edition.status || (edition.subscriptionActive ? 'active' : 'none'),
-                  active: edition.subscriptionActive !== false,
+                  active: edition.subscriptionActive === true,
                   features: edition.features || [],
                   seats: edition.seats || 1,
                   periodEnd: edition.periodEnd || null,
@@ -702,7 +703,7 @@ export const useGrooveStore = create((set, get) => ({
                   subscription: {
                     plan: e.plan || 'community',
                     status: e.status || (e.subscriptionActive ? 'active' : 'none'),
-                    active: e.subscriptionActive !== false,
+                    active: e.subscriptionActive === true,
                     features: e.features || [],
                     seats: e.seats || 1,
                     periodEnd: e.periodEnd || null,
@@ -853,19 +854,26 @@ export const useGrooveStore = create((set, get) => ({
         const allExist = phase1Roles.every((role) => teamAgents.some((a) => a.role === role));
 
         if (allExist && phase1Roles.length > 0) {
-          // Auto-delegate — all agents already exist in the team
-          set({ recommendedTeam: null });
-          const result = await api.post('/recommended-team/launch', { teamId });
-          const agents = result.agents || [];
-          const names = agents.map((a) => a.name).join(', ') || '';
-          get().addToast('success', 'Planner delegated work', names ? `→ ${names}` : undefined);
-          // Set thinking indicator for all delegated agents so the UI shows activity
-          if (agents.length > 0) {
-            set((s) => ({
-              thinkingAgents: new Set([...s.thinkingAgents, ...agents.map((a) => a.id)]),
-            }));
+          // Guard: skip if already delegating for this team (poll race)
+          if (get()._delegatingTeamIds.has(teamId)) return;
+          set((s) => ({ recommendedTeam: null, _delegatingTeamIds: new Set([...s._delegatingTeamIds, teamId]) }));
+          try {
+            const result = await api.post('/recommended-team/launch', { teamId });
+            const agents = result.agents || [];
+            const names = agents.map((a) => a.name).join(', ') || '';
+            get().addToast('success', 'Planner delegated work', names ? `→ ${names}` : undefined);
+            if (agents.length > 0) {
+              set((s) => ({
+                thinkingAgents: new Set([...s.thinkingAgents, ...agents.map((a) => a.id)]),
+              }));
+            }
+          } finally {
+            set((s) => {
+              const next = new Set(s._delegatingTeamIds);
+              next.delete(teamId);
+              return { _delegatingTeamIds: next };
+            });
           }
-          api.post('/cleanup').catch(() => {});
           return;
         }
       }

@@ -12,9 +12,18 @@ export class Registry extends EventEmitter {
   }
 
   add(config) {
+    let name = config.name || `${config.role}-${this.agents.size + 1}`;
+    // Dedup: ensure name is unique within the same team
+    const teamId = config.teamId || null;
+    const existing = this.getAll();
+    if (existing.some((a) => a.name === name && a.teamId === teamId)) {
+      let suffix = 2;
+      while (existing.some((a) => a.name === `${name}-${suffix}` && a.teamId === teamId)) suffix++;
+      name = `${name}-${suffix}`;
+    }
     const agent = {
       id: randomUUID().slice(0, 8),
-      name: config.name || `${config.role}-${this.agents.size + 1}`,
+      name,
       role: config.role,
       scope: config.scope || [],
       provider: config.provider || 'claude-code',

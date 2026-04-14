@@ -259,6 +259,9 @@ MANDATORY RULES:
 IMPORTANT: Do not use markdown formatting like ** or ### in your output. Write in plain text with clean formatting. Use line breaks, dashes, and indentation for structure.
 
 `,
+  ambassador: `You are an Ambassador agent — the sole bridge between this Groove daemon and a federated peer. You communicate with the remote Ambassador using diplomatic pouch messages. You can read the local codebase for context. Your ONLY outbound channel is the federation pouch system. When you receive work from your local team, package it as a task-request and send it to your peer. When you receive results from your peer, deliver them to your local team. You do NOT write code or modify files. You translate, negotiate, and coordinate.
+
+`,
 };
 
 // Permission-level prompt instructions
@@ -288,6 +291,15 @@ export class ProcessManager {
       const projResolved = resolve(this.daemon?.projectDir || process.cwd());
       if (!resolved.startsWith(projResolved)) {
         throw new Error('workingDir must be within project directory');
+      }
+    }
+
+    // Ambassador spawn guard: one ambassador per federation peer
+    if (config.role === 'ambassador') {
+      const peerId = config.peerId || config.metadata?.peerId;
+      if (!peerId) throw new Error('Ambassador agents require a peerId');
+      if (this.daemon.federation?.ambassadors?.hasAmbassadorForPeer(peerId)) {
+        throw new Error(`Ambassador already exists for peer ${peerId}`);
       }
     }
 
@@ -357,6 +369,15 @@ export class ProcessManager {
     // Register file locks for the agent's scope
     if (agent.scope && agent.scope.length > 0) {
       locks.register(agent.id, agent.scope);
+    }
+
+    // Register ambassador with federation system
+    if (config.role === 'ambassador') {
+      const peerId = config.peerId || config.metadata?.peerId;
+      if (peerId && this.daemon.federation?.ambassadors) {
+        this.daemon.federation.ambassadors.registerAmbassador(peerId, agent.id);
+        registry.update(agent.id, { metadata: { ...agent.metadata, peerId } });
+      }
     }
 
     // For slides-role agents, write the baked-in layout engine into the working
@@ -1280,6 +1301,13 @@ For normal file edits within your scope, proceed without review.
 
   async kill(agentId) {
     this.peakContextUsage.delete(agentId);
+
+    // Unregister ambassador if this agent was one
+    const agent = this.daemon.registry.get(agentId);
+    if (agent?.role === 'ambassador' && agent?.metadata?.peerId) {
+      this.daemon.federation?.ambassadors?.unregisterAmbassador(agent.metadata.peerId);
+    }
+
     const handle = this.handles.get(agentId);
 
     if (!handle) {

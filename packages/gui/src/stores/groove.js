@@ -42,6 +42,16 @@ export const useGrooveStore = create((set, get) => ({
   // ── Gateways ──────────────────────────────────────────────
   gateways: [],
 
+  // ── Federation ────────────────────────────────────────────
+  federation: {
+    peers: [],
+    whitelist: [],
+    connections: [],
+    pouchLog: [],
+    ambassadors: [],
+    selectedPeerId: null,
+  },
+
   // ── Navigation ────────────────────────────────────────────
   activeView: 'agents',           // 'agents' | 'editor' | 'dashboard' | 'marketplace' | 'teams' | 'settings'
   detailPanel: null,              // null | { type: 'agent', agentId } | { type: 'spawn' } | { type: 'journalist' }
@@ -406,6 +416,30 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'gateway:status':
           set({ gateways: msg.data || [] });
+          break;
+
+        case 'federation:whitelist':
+          set((s) => ({ federation: { ...s.federation, whitelist: msg.data || [] } }));
+          break;
+
+        case 'federation:connection':
+          set((s) => {
+            const conns = [...s.federation.connections];
+            const idx = conns.findIndex((c) => c.ip === msg.data?.ip);
+            if (idx >= 0) conns[idx] = { ...conns[idx], ...msg.data };
+            else conns.push(msg.data);
+            return { federation: { ...s.federation, connections: conns } };
+          });
+          break;
+
+        case 'federation:pouch':
+        case 'federation:pouch-log':
+          set((s) => ({
+            federation: {
+              ...s.federation,
+              pouchLog: [...s.federation.pouchLog, msg.data].slice(-200),
+            },
+          }));
           break;
 
         case 'tunnel.connected':
@@ -1235,6 +1269,67 @@ export const useGrooveStore = create((set, get) => ({
     } catch (err) {
       get().addToast('error', 'Delete failed', err.message);
       return false;
+    }
+  },
+
+  // ── Federation ────────────────────────────────────────────
+
+  async fetchFederationStatus() {
+    try {
+      const data = await api.get('/federation');
+      set((s) => ({
+        federation: {
+          ...s.federation,
+          peers: data.peers || [],
+          whitelist: data.whitelist || [],
+          connections: data.connections || [],
+          ambassadors: data.ambassadors?.ambassadors || data.ambassadors || [],
+        },
+      }));
+      return data;
+    } catch { return null; }
+  },
+
+  async addToWhitelist(ip, port = 31415) {
+    try {
+      await api.post('/federation/whitelist', { ip, port });
+      get().addToast('success', `Added ${ip} to whitelist`);
+      get().fetchFederationStatus();
+    } catch (err) {
+      get().addToast('error', 'Whitelist failed', err.message);
+      throw err;
+    }
+  },
+
+  async removeFromWhitelist(ip) {
+    try {
+      await api.delete(`/federation/whitelist/${encodeURIComponent(ip)}`);
+      get().addToast('info', `Removed ${ip}`);
+      get().fetchFederationStatus();
+    } catch (err) {
+      get().addToast('error', 'Remove failed', err.message);
+    }
+  },
+
+  setSelectedPeer(peerId) {
+    set((s) => ({ federation: { ...s.federation, selectedPeerId: peerId } }));
+  },
+
+  async fetchPouchLog(peerId) {
+    try {
+      const data = await api.get(`/federation/pouch/log${peerId ? `?peerId=${encodeURIComponent(peerId)}` : ''}`);
+      set((s) => ({ federation: { ...s.federation, pouchLog: data || [] } }));
+    } catch { /* ignore */ }
+  },
+
+  async sendPouch(peerId, contract) {
+    try {
+      const result = await api.post('/federation/pouch/send', { peerId, contract });
+      get().addToast('success', 'Pouch sent');
+      return result;
+    } catch (err) {
+      get().addToast('error', 'Pouch send failed', err.message);
+      throw err;
     }
   },
 

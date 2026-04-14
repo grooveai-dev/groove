@@ -31,5 +31,6 @@ test-*
 *.log
 *.sh
 .DS_Store
+*.tgz
 .env*
 docs/

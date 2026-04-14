@@ -765,8 +765,12 @@ export function createApi(app, daemon) {
         // Loop exists but not running — fall through to resume/rotate
       }
 
-      // CLI agent path — session resume or rotation
-      const resumed = !!agent.sessionId;
+      // CLI agent path — session resume or rotation.
+      // Force rotation (fresh session + handoff brief) past the resume ceiling:
+      // reviving a >5M-token claude session has crashed the CLI mid-HTTP-parse
+      // (V8 fatal in JsonStringifier) — the rotator's handoff brief sidesteps that.
+      const SESSION_RESUME_CEILING = 5_000_000;
+      const resumed = !!agent.sessionId && (agent.tokensUsed || 0) < SESSION_RESUME_CEILING;
       const newAgent = resumed
         ? await daemon.processes.resume(req.params.id, message.trim())
         : await daemon.rotator.rotate(req.params.id, { additionalPrompt: message.trim() });
@@ -2795,7 +2799,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   // --- Federation ---
 
-  // Federation status
+  // Federation status (v1 — includes whitelist, connections, ambassadors)
   app.get('/api/federation', proOnly, (req, res) => {
     res.json(daemon.federation.getStatus());
   });
@@ -2803,30 +2807,6 @@ Keep responses concise. Help them think, don't lecture them about the system the
   // List peers
   app.get('/api/federation/peers', proOnly, (req, res) => {
     res.json(daemon.federation.getPeers());
-  });
-
-  // Initiate pairing (local CLI calls this with the remote URL)
-  app.post('/api/federation/initiate', proOnly, async (req, res) => {
-    try {
-      const { remoteUrl } = req.body;
-      if (!remoteUrl || typeof remoteUrl !== 'string') {
-        return res.status(400).json({ error: 'remoteUrl is required' });
-      }
-      const result = await daemon.federation.initiatePairing(remoteUrl);
-      res.json(result);
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  // Accept pairing (remote daemon calls this during key exchange)
-  app.post('/api/federation/pair', proOnly, (req, res) => {
-    try {
-      const result = daemon.federation.acceptPairing(req.body);
-      res.json(result);
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
   });
 
   // Unpair a peer
@@ -2839,7 +2819,131 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
-  // Receive a signed contract from a peer
+  // Initiate pairing with a remote daemon
+  app.post('/api/federation/initiate', proOnly, async (req, res) => {
+    try {
+      const { remoteUrl } = req.body;
+      if (!remoteUrl || typeof remoteUrl !== 'string') {
+        return res.status(400).json({ error: 'remoteUrl is required (string)' });
+      }
+      const result = await daemon.federation.initiatePairing(remoteUrl);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // --- Federation v1: Whitelist ---
+
+  app.get('/api/federation/whitelist', proOnly, (req, res) => {
+    res.json(daemon.federation.whitelist?.list() || []);
+  });
+
+  app.post('/api/federation/whitelist', proOnly, (req, res) => {
+    try {
+      const { ip, port } = req.body;
+      if (!ip || typeof ip !== 'string') {
+        return res.status(400).json({ error: 'ip is required (string)' });
+      }
+      const entry = daemon.federation.whitelist.add(ip, port);
+      daemon.broadcast({ type: 'federation:whitelist', data: daemon.federation.whitelist.list() });
+      res.json(entry);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/federation/whitelist/:ip', proOnly, (req, res) => {
+    try {
+      daemon.federation.whitelist.remove(req.params.ip);
+      daemon.broadcast({ type: 'federation:whitelist', data: daemon.federation.whitelist.list() });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Probe endpoint — remote daemons hit this to check if they are whitelisted
+  app.get('/api/federation/whitelist-check', (req, res) => {
+    const remoteId = req.headers['x-groove-daemonid'] || '';
+    const ip = req.ip?.replace('::ffff:', '') || req.socket?.remoteAddress?.replace('::ffff:', '') || '';
+    const whitelisted = daemon.federation.isWhitelisted(ip);
+    res.json({
+      whitelisted,
+      daemonId: daemon.federation._daemonId(),
+    });
+  });
+
+  // --- Federation v1: Knock ---
+
+  app.post('/api/federation/knock', (req, res) => {
+    try {
+      const { senderId, publicKey, payload, signature } = req.body;
+      if (!senderId || !publicKey || !payload || !signature) {
+        return res.status(400).json({ error: 'senderId, publicKey, payload, and signature are required' });
+      }
+      const result = daemon.federation.handleKnock(senderId, publicKey, payload, signature);
+      res.json(result);
+    } catch (err) {
+      res.status(403).json({ error: err.message });
+    }
+  });
+
+  // --- Federation v1: Connections ---
+
+  app.get('/api/federation/connections', proOnly, (req, res) => {
+    res.json(daemon.federation.connections?.getStatus() || []);
+  });
+
+  // --- Federation v1: Diplomatic Pouch ---
+
+  app.post('/api/federation/pouch', (req, res) => {
+    try {
+      const { senderId, payload, signature } = req.body;
+      if (!senderId || !payload || !signature) {
+        return res.status(400).json({ error: 'senderId, payload, and signature are required' });
+      }
+      const result = daemon.federation.ambassadors.receivePouch(senderId, payload, signature);
+      res.json(result);
+    } catch (err) {
+      res.status(403).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/federation/pouch/log', proOnly, (req, res) => {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    res.json(daemon.federation.ambassadors?.getPouchLog(limit) || []);
+  });
+
+  // Send a pouch message to a peer (local agents/GUI call this)
+  app.post('/api/federation/pouch/send', proOnly, async (req, res) => {
+    try {
+      const { peerId, contract } = req.body;
+      if (!peerId || !contract) {
+        return res.status(400).json({ error: 'peerId and contract are required' });
+      }
+      const result = await daemon.federation.ambassadors.sendPouch(peerId, contract);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Accept incoming pairing request from a remote daemon
+  app.post('/api/federation/pair', (req, res) => {
+    try {
+      const { id, name, host, port, publicKey } = req.body;
+      if (!id || !publicKey) {
+        return res.status(400).json({ error: 'id and publicKey are required' });
+      }
+      const result = daemon.federation.acceptPairing({ id, name, host, port, publicKey });
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Legacy contract endpoints (kept for backward compat)
   app.post('/api/federation/contract', proOnly, (req, res) => {
     try {
       const { senderId, payload, signature } = req.body;
@@ -2853,7 +2957,6 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
-  // Send a contract to a peer (local agents call this)
   app.post('/api/federation/contract/send', proOnly, async (req, res) => {
     try {
       const { peerId, contract } = req.body;

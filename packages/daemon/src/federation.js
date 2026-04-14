@@ -1,9 +1,13 @@
-// GROOVE — Federation (Ed25519 key exchange + contract signing)
+// GROOVE — Federation (Ed25519 key exchange + contract signing + v1 protocol)
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { generateKeyPairSync, sign, verify, createPublicKey, createPrivateKey, createHash, randomBytes } from 'crypto';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, readdirSync } from 'fs';
 import { resolve } from 'path';
+import { WhitelistManager } from './federation/whitelist.js';
+import { ConnectionManager } from './federation/connection.js';
+import { AmbassadorManager } from './federation/ambassador.js';
+import { ContractHandlerRegistry, createCapabilityResponse } from './federation/contracts.js';
 
 // Peer IDs must be safe for filenames — hex only (from SHA-256 fingerprint)
 const PEER_ID_PATTERN = /^[a-f0-9]{1,64}$/;
@@ -368,12 +372,107 @@ export class Federation {
     }));
   }
 
+  // --- v1 Protocol ---
+
+  initialize() {
+    this.whitelist = new WhitelistManager(this);
+    this.connections = new ConnectionManager(this);
+    this.ambassadors = new AmbassadorManager(this);
+    this.contractHandlers = new ContractHandlerRegistry();
+
+    this.contractHandlers.register('capability-query', (_contract, _ctx) => {
+      return createCapabilityResponse(this.daemon);
+    });
+
+    this.whitelist.on('status-change', ({ ip, newStatus, entry }) => {
+      this.daemon.broadcast({ type: 'federation:whitelist', data: this.whitelist.list() });
+      if (newStatus === 'mutual') {
+        this.connections.onMutual(ip, entry.port, entry.remoteDaemonId);
+      }
+    });
+
+    this.connections.on('message', ({ message, peerId, daemonId, inbound }) => {
+      const senderId = inbound ? daemonId : peerId;
+      if (message.type === 'pouch' && message.senderId && message.payload && message.signature) {
+        try {
+          this.ambassadors.receivePouch(message.senderId, message.payload, message.signature);
+        } catch (err) {
+          console.warn(`[federation] Pouch error from ${senderId}: ${err.message}`);
+        }
+      }
+    });
+
+    this.whitelist.startProbing();
+    console.log(`[federation] v1 initialized — daemon ${this._daemonId()}`);
+  }
+
+  handleKnock(senderId, publicKey, payload, signature) {
+    if (!senderId || !publicKey || !payload || !signature) {
+      throw new Error('Missing knock fields');
+    }
+
+    validatePeerId(senderId);
+
+    try {
+      createPublicKey(publicKey);
+    } catch {
+      throw new Error('Invalid public key in knock');
+    }
+
+    // Auto-register peer if not known yet
+    if (!this.peers.has(senderId)) {
+      this._savePeer({
+        id: senderId,
+        name: senderId,
+        host: null,
+        port: null,
+        publicKey,
+        pairedAt: new Date().toISOString(),
+      });
+    }
+
+    if (!this.verify(senderId, payload, signature)) {
+      throw new Error('Knock signature verification failed');
+    }
+
+    this.daemon.audit.log('federation.knock', { senderId });
+
+    return {
+      accepted: true,
+      peerId: this._daemonId(),
+      peerName: this._daemonId(),
+      publicKey: this.getPublicKeyPem(),
+    };
+  }
+
+  handleWsUpgrade(ws, daemonId) {
+    if (!daemonId || !this.peers.has(daemonId)) {
+      ws.close(4001, 'Unknown daemon');
+      return;
+    }
+    this.connections.handleInboundConnection(ws, daemonId);
+    this.daemon.broadcast({ type: 'federation:whitelist', data: this.whitelist?.list() || [] });
+  }
+
+  isWhitelisted(ip) {
+    return this.whitelist?.isWhitelisted(ip) || false;
+  }
+
   getStatus() {
     return {
       id: this._daemonId(),
       peers: this.getPeers(),
       peerCount: this.peers.size,
       hasKeypair: existsSync(this.keyPath),
+      whitelist: this.whitelist?.list() || [],
+      connections: this.connections?.getStatus() || [],
+      ambassadors: this.ambassadors?.getStatus() || { ambassadors: [], totalQueued: 0 },
     };
+  }
+
+  destroy() {
+    this.whitelist?.destroy();
+    this.connections?.destroy();
+    this.ambassadors?.destroy();
   }
 }

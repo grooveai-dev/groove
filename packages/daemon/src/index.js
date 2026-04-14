@@ -149,22 +149,37 @@ export class Daemon {
     // HTTP + WebSocket server
     this.app = express();
     this.server = createHttpServer(this.app);
-    this.wss = new WebSocketServer({
-      server: this.server,
-      maxPayload: 1024 * 1024, // 1MB max message
-      verifyClient: ({ req }) => {
-        const origin = req.headers.origin;
-        // Allow: no origin (CLI/native clients)
-        if (!origin) return true;
-        try {
-          const url = new URL(origin);
-          // Allow any localhost origin (any port — tunnels change the port)
-          if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return true;
-          // Allow the bound interface (for Tailscale/LAN access)
-          if (this.host !== DEFAULT_HOST && url.hostname === this.host) return true;
-        } catch { /* invalid origin */ }
-        return false;
-      },
+
+    const verifyOrigin = (req) => {
+      const origin = req.headers.origin;
+      if (!origin) return true;
+      try {
+        const url = new URL(origin);
+        if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return true;
+        if (this.host !== DEFAULT_HOST && url.hostname === this.host) return true;
+      } catch { /* invalid origin */ }
+      return false;
+    };
+
+    this.wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
+    this.federationWss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
+
+    this.server.on('upgrade', (req, socket, head) => {
+      if (!verifyOrigin(req) && !req.url?.startsWith('/ws/federation')) {
+        socket.destroy();
+        return;
+      }
+      if (req.url?.startsWith('/ws/federation')) {
+        const daemonId = req.headers['x-groove-daemonid'];
+        if (!daemonId) { socket.destroy(); return; }
+        this.federationWss.handleUpgrade(req, socket, head, (ws) => {
+          this.federation.handleWsUpgrade(ws, daemonId);
+        });
+      } else {
+        this.wss.handleUpgrade(req, socket, head, (ws) => {
+          this.wss.emit('connection', ws, req);
+        });
+      }
     });
 
     // Wire up API routes
@@ -403,6 +418,7 @@ export class Daemon {
         this.scheduler.start();
         this.timeline.start();
         this.gateways.start();
+        this.federation.initialize();
         this._startGarbageCollector();
 
         // Classifier broadcasting — decoupled from stdout handler
@@ -549,6 +565,9 @@ export class Daemon {
     // Clean up file watchers and terminal sessions
     this.fileWatcher.unwatchAll();
     this.terminalManager.killAll();
+
+    // Clean up federation (whitelist probing, connections, ambassadors)
+    this.federation.destroy();
 
     // Disconnect all SSH tunnels
     this.tunnelManager.shutdown();

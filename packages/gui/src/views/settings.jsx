@@ -14,6 +14,7 @@ import { cn } from '../lib/cn';
 import { fmtUptime } from '../lib/format';
 import { RemoteServerCard } from '../components/settings/remote-server-card';
 import { ServerDialog } from '../components/settings/server-dialog';
+import { FederationPanel } from '../components/settings/federation-panel';
 import { ProGate } from '../components/pro/pro-gate';
 import { SubscriptionPanel } from './subscription-panel';
 import {
@@ -1289,6 +1290,17 @@ export default function SettingsView() {
                   </div>
                 )}
               </div>
+            </ProGate>
+          </div>
+
+          {/* ═══════ FEDERATION ═══════ */}
+          <div>
+            <div className="flex items-center gap-2 mb-2.5 px-0.5">
+              <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Federation</span>
+              <div className="flex-1 h-px bg-border-subtle" />
+            </div>
+            <ProGate feature="Federation" featureKey="federation" description="Daemon-to-daemon federation over Tailscale mesh for multi-machine agent coordination">
+              <FederationPanel />
             </ProGate>
           </div>
 

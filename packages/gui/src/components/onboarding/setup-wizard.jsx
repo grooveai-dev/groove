@@ -3,12 +3,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useGrooveStore } from '../../stores/groove';
-import { isElectron } from '../../lib/electron';
+import { isElectron, selectFolder, setProjectDir } from '../../lib/electron';
 import { cn } from '../../lib/cn';
 import { ProviderCard } from './provider-card';
+import { FolderBrowser } from '../agents/folder-browser';
 import { Badge } from '../ui/badge';
 import {
-  ChevronRight, ChevronLeft, Eye, EyeOff, Check, Sparkles, ArrowRight,
+  ChevronRight, ChevronLeft, Eye, EyeOff, Check, Sparkles, ArrowRight, FolderOpen,
 } from 'lucide-react';
 
 // ── Provider definitions ────────────────────────────────────
@@ -124,7 +125,72 @@ function WelcomeStep({ onNext, onSkip }) {
   );
 }
 
-// ── Step 2: Install Providers ───────────────────────────────
+// ── Step 2: Project Folder ──────────────────────────────────
+
+function ProjectFolderStep({ selectedDir, onSelectDir }) {
+  const [browsing, setBrowsing] = useState(false);
+
+  async function handleBrowse() {
+    const dir = await selectFolder({
+      title: 'Choose your project folder',
+      defaultPath: selectedDir || undefined,
+    });
+    if (dir) {
+      onSelectDir(dir);
+    } else if (!window.groove?.folders?.select) {
+      setBrowsing(true);
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-center max-w-lg mx-auto w-full text-center">
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold text-text-0 mb-2">Choose your project folder</h2>
+        <p className="text-sm text-text-2">
+          Pick the root directory where your code lives. Groove will manage agents from here.
+        </p>
+      </div>
+
+      <div className="w-full bg-surface-2 border border-border-subtle rounded-lg p-5 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center">
+            <FolderOpen className="w-6 h-6 text-accent" />
+          </div>
+          <div className="flex-1 min-w-0 text-left">
+            <p className="text-xs text-text-3 mb-0.5">Working directory</p>
+            <p className="text-sm font-mono text-text-0 truncate">
+              {selectedDir || 'No folder selected'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={handleBrowse}
+        className="h-10 px-6 rounded-lg bg-accent text-surface-0 font-medium text-sm hover:bg-accent/80 transition-colors cursor-pointer flex items-center gap-2"
+      >
+        <FolderOpen className="w-4 h-4" />
+        {selectedDir ? 'Change Folder' : 'Select Folder'}
+      </button>
+
+      <p className="mt-4 text-2xs text-text-4">
+        You can change this anytime in Settings.
+      </p>
+
+      {browsing && (
+        <FolderBrowser
+          open={browsing}
+          onOpenChange={setBrowsing}
+          currentPath={selectedDir || '/'}
+          onSelect={(dir) => { onSelectDir(dir); setBrowsing(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Step 3: Install Providers ───────────────────────────────
 
 function InstallStep({ providerStatus, selected, onInstall, installing, statusChecking }) {
   const installedCount = PROVIDERS.filter((p) => providerStatus[p.id]?.installed).length;
@@ -166,7 +232,7 @@ function InstallStep({ providerStatus, selected, onInstall, installing, statusCh
   );
 }
 
-// ── Step 3: Authentication ──────────────────────────────────
+// ── Step 4: Authentication ──────────────────────────────────
 
 function AuthCard({ provider, providerStatus, onSaveKey, onSubscriptionLogin }) {
   const [authMode, setAuthMode] = useState(
@@ -344,7 +410,7 @@ function AuthStep({ providerStatus, installedIds, onSaveKey, onSubscriptionLogin
   );
 }
 
-// ── Step 4: Default Model ───────────────────────────────────
+// ── Step 5: Default Model ───────────────────────────────────
 
 function DefaultModelStep({ providerStatus, installedIds, defaultProvider, defaultModel, onSetDefault }) {
   const authenticated = PROVIDERS.filter(
@@ -422,7 +488,7 @@ function DefaultModelStep({ providerStatus, installedIds, defaultProvider, defau
   );
 }
 
-// ── Step 5: Done ────────────────────────────────────────────
+// ── Step 6: Done ────────────────────────────────────────────
 
 function DoneStep({ providerStatus, defaultProvider, defaultModel, onFinish }) {
   const installedCount = PROVIDERS.filter((p) => providerStatus[p.id]?.installed).length;
@@ -470,7 +536,7 @@ function DoneStep({ providerStatus, defaultProvider, defaultModel, onFinish }) {
 
 // ── Main Wizard ─────────────────────────────────────────────
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 6;
 
 export function SetupWizard() {
   const dismissOnboarding = useGrooveStore((s) => s.dismissOnboarding);
@@ -486,6 +552,7 @@ export function SetupWizard() {
   const [defaultProv, setDefaultProv] = useState(null);
   const [defaultMod, setDefaultMod] = useState(null);
   const [statusChecking, setStatusChecking] = useState(true);
+  const [projectDir, setProjectDir] = useState(null);
   const containerRef = useRef(null);
 
   useEffect(() => {
@@ -502,7 +569,7 @@ export function SetupWizard() {
             status[p.id] = { installed: p.installed, authenticated: authed };
             if (p.installed) installedIds.push(p.id);
           }
-          return { status, installedIds };
+          return { status, installedIds, workingDir: data.config?.defaultWorkingDir || null };
         }
       } catch { /* fallback */ }
       try {
@@ -541,6 +608,9 @@ export function SetupWizard() {
             return [...merged];
           });
         }
+        if (result.workingDir && !projectDir) {
+          setProjectDir(result.workingDir);
+        }
       }
       if (!cancelled) setStatusChecking(false);
     }
@@ -566,9 +636,16 @@ export function SetupWizard() {
     dismissOnboarding();
   }, [dismissOnboarding]);
 
-  const handleFinish = useCallback(() => {
+  const handleFinish = useCallback(async () => {
+    if (projectDir) {
+      try {
+        await setProjectDir(projectDir);
+      } catch {
+        addToast('error', 'Failed to set project directory');
+      }
+    }
     dismissOnboarding();
-  }, [dismissOnboarding]);
+  }, [dismissOnboarding, projectDir, addToast]);
 
   const handleInstall = useCallback(async (id) => {
     setInstalling((prev) => ({ ...prev, [id]: true }));
@@ -625,9 +702,10 @@ export function SetupWizard() {
   const hasAuthenticated = PROVIDERS.some((p) => providerStatus[p.id]?.authenticated);
   const canContinue =
     step === 0 ? true :
-    step === 1 ? hasInstalled :
-    step === 2 ? hasAuthenticated :
-    step === 3 ? !!defaultProv :
+    step === 1 ? true :
+    step === 2 ? hasInstalled :
+    step === 3 ? hasAuthenticated :
+    step === 4 ? !!defaultProv :
     false;
 
   useEffect(() => {
@@ -641,6 +719,7 @@ export function SetupWizard() {
 
   const stepContent = [
     <WelcomeStep key="welcome" onNext={goNext} onSkip={handleSkip} />,
+    <ProjectFolderStep key="folder" selectedDir={projectDir} onSelectDir={setProjectDir} />,
     <InstallStep
       key="install"
       providerStatus={providerStatus}
@@ -730,7 +809,7 @@ export function SetupWizard() {
             disabled={!canContinue}
             className="h-10 px-8 rounded-md text-sm font-medium bg-accent text-surface-0 hover:bg-accent/80 transition-colors duration-100 cursor-pointer disabled:opacity-40 disabled:pointer-events-none flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
           >
-            {step === 3 ? 'Finish Setup' : 'Continue'}
+            {step === 4 ? 'Finish Setup' : 'Continue'}
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>

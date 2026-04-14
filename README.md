@@ -63,6 +63,8 @@ groove auto-detects monorepo workspaces (npm, pnpm, lerna) and lets you spawn ea
 
 ## Remote Access
 
+*Included with Groove Pro.*
+
 Run groove on a VPS and manage your agents from anywhere. No ports exposed to the internet. No tokens. No custom auth code. Zero attack surface.
 
 ### How It Works
@@ -122,7 +124,9 @@ groove start --host 0.0.0.0     # REJECTED — not allowed
 
 This is by design. Direct exposure requires custom auth, rate limiting, TLS management — attack surface we refuse to create. SSH and WireGuard solve this better than we ever could.
 
-### Federation (Preview)
+### Federation
+
+*Included with Groove Pro.*
 
 Pair groove daemons across machines with Ed25519 key exchange. The security layer is built — cross-server agent coordination (typed contracts, federated registry) is coming soon.
 
@@ -205,6 +209,38 @@ Open the dashboard after starting the daemon (local or remote):
 - **Skills Store** — app-store marketplace for agent skills with ratings and verification
 - **PM Review Log** — full audit trail of AI Project Manager decisions
 - **Team Management** — save, load, export, import agent configurations
+
+## Plans
+
+groove is free. Not free-with-limits, not free-trial, not freemium. The full product — unlimited agents, teams, context rotation, Layer 7 memory, model routing, dashboard, all providers, skills marketplace, scheduling — ships in the free tier. No feature walls. No agent caps.
+
+Pro and Team add infrastructure for users who outgrow a single machine.
+
+| Feature | Free | Pro | Team |
+|---------|:----:|:---:|:----:|
+| Unlimited agents | ✓ | ✓ | ✓ |
+| Unlimited teams | ✓ | ✓ | ✓ |
+| Context rotation (adaptive) | ✓ | ✓ | ✓ |
+| Layer 7 memory | ✓ | ✓ | ✓ |
+| Journalist (zero cold-start) | ✓ | ✓ | ✓ |
+| AI Project Manager | ✓ | ✓ | ✓ |
+| Adaptive model routing | ✓ | ✓ | ✓ |
+| Dashboard + telemetry | ✓ | ✓ | ✓ |
+| All providers (Claude, Codex, Gemini, Ollama) | ✓ | ✓ | ✓ |
+| Skills marketplace | ✓ | ✓ | ✓ |
+| Quick Launch | ✓ | ✓ | ✓ |
+| Workspaces | ✓ | ✓ | ✓ |
+| Scheduling | ✓ | ✓ | ✓ |
+| Gateways | ✓ | ✓ | ✓ |
+| Remote tunnels (SSH / Tailscale) | — | ✓ | ✓ |
+| Federation (daemon-to-daemon) | — | ✓ | ✓ |
+| Cloud team management | — | — | ✓ |
+| Centralized config | — | — | ✓ |
+| Seat management | — | — | ✓ |
+
+- **Free** — one machine, one person, everything works.
+- **Pro** — multiple machines, one person, everything connects.
+- **Team** — multiple machines, multiple people, everything is managed.
 
 ## Adaptive Model Routing
 

@@ -2,7 +2,7 @@
 import { useGrooveStore } from '../../stores/groove';
 import { UpgradeCard } from './upgrade-card';
 
-export function ProGate({ feature, description, children }) {
+export function ProGate({ feature, featureKey, description, children }) {
   const authenticated = useGrooveStore((s) => s.marketplaceAuthenticated);
   const subscription = useGrooveStore((s) => s.subscription);
 
@@ -14,7 +14,11 @@ export function ProGate({ feature, description, children }) {
     return <UpgradeCard feature={feature} description={description} variant="sign-in" />;
   }
 
-  if (subscription && !subscription.active) {
+  if (!subscription?.active) {
+    return <UpgradeCard feature={feature} description={description} variant="subscribe" />;
+  }
+
+  if (featureKey && !(subscription.features || []).includes(featureKey)) {
     return <UpgradeCard feature={feature} description={description} variant="subscribe" />;
   }
 

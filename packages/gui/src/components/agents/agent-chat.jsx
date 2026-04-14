@@ -105,7 +105,6 @@ export function AgentChat({ agent }) {
   const chatHistory = useGrooveStore((s) => s.chatHistory[agent.id]) || EMPTY;
   const activityLog = useGrooveStore((s) => s.activityLog[agent.id]) || EMPTY;
   const instructAgent = useGrooveStore((s) => s.instructAgent);
-  const queryAgent = useGrooveStore((s) => s.queryAgent);
   const isThinking = useGrooveStore((s) => s.thinkingAgents?.has(agent.id));
 
   const storeInput = useGrooveStore((s) => s.chatInputs[agent.id] || '');
@@ -143,11 +142,7 @@ export function AgentChat({ agent }) {
     setAttachedFiles([]);
     setSending(true);
     try {
-      if (text.startsWith('?')) {
-        await queryAgent(agent.id, text.slice(1).trim());
-      } else {
-        await instructAgent(agent.id, text);
-      }
+      await instructAgent(agent.id, text);
     } catch { /* toast handles */ }
     setSending(false);
     inputRef.current?.focus();
@@ -160,7 +155,6 @@ export function AgentChat({ agent }) {
     }
   }
 
-  const isQuery = input.startsWith('?');
   const isAlive = agent.status === 'running' || agent.status === 'starting';
 
   // Build merged timeline
@@ -183,7 +177,7 @@ export function AgentChat({ agent }) {
             </p>
             <p className="text-xs text-text-3 font-sans mt-1 max-w-[240px]">
               {isAlive
-                ? 'Send an instruction to guide this agent, or prefix with ? to query without disrupting its work.'
+                ? 'Send a message to guide this agent. Use the stop button to interrupt.'
                 : 'Reply to continue the conversation — a new session starts with full context.'}
             </p>
           </div>
@@ -200,14 +194,11 @@ export function AgentChat({ agent }) {
       <div className="border-t border-border-subtle px-4 py-3 bg-surface-1">
         {/* Mode indicator */}
         <div className="flex items-center gap-2 mb-2">
-          <span className={cn(
-            'text-2xs font-semibold font-sans px-2 py-0.5 rounded-full',
-            isQuery ? 'bg-info/12 text-info' : 'bg-accent/12 text-accent',
-          )}>
-            {isQuery ? 'Query' : isAlive ? 'Instruct' : 'Continue'}
+          <span className="text-2xs font-semibold font-sans px-2 py-0.5 rounded-full bg-accent/12 text-accent">
+            {isAlive ? 'Instruct' : 'Continue'}
           </span>
           <span className="text-2xs text-text-4 font-sans">
-            {isQuery ? 'Read-only question — agent keeps running' : isAlive ? 'Guides the agent\'s next action' : 'Resumes with full context'}
+            {isAlive ? 'Message goes directly to this agent' : 'Resumes with full context'}
           </span>
         </div>
 
@@ -233,7 +224,7 @@ export function AgentChat({ agent }) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder={isAlive ? 'Instruct agent... (? to query)' : 'Continue conversation...'}
+            placeholder={isAlive ? 'Instruct this agent...' : 'Continue conversation...'}
             rows={1}
             className={cn(
               'flex-1 resize-y rounded-xl px-4 py-2.5 text-sm',
@@ -241,10 +232,10 @@ export function AgentChat({ agent }) {
               'placeholder:text-text-4',
               'focus:outline-none focus:ring-1',
               'min-h-[40px]',
-              isQuery ? 'border-info/30 focus:ring-info/40' : 'border-border focus:ring-accent/40',
+              'border-border focus:ring-accent/40',
             )}
           />
-          {isThinking ? (
+          {isAlive && (
             <button
               onClick={() => useGrooveStore.getState().stopAgent(agent.id)}
               title="Stop agent"
@@ -252,21 +243,20 @@ export function AgentChat({ agent }) {
             >
               <Square size={14} fill="currentColor" />
             </button>
-          ) : (
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || sending}
-              className={cn(
-                'w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer',
-                'disabled:opacity-20 disabled:cursor-not-allowed',
-                input.trim()
-                  ? 'bg-accent text-surface-0 hover:bg-accent/90 shadow-lg shadow-accent/20'
-                  : 'bg-surface-4 text-text-4',
-              )}
-            >
-              {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-            </button>
           )}
+          <button
+            onClick={handleSend}
+            disabled={!input.trim() || sending}
+            className={cn(
+              'w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer',
+              'disabled:opacity-20 disabled:cursor-not-allowed',
+              input.trim()
+                ? 'bg-accent text-surface-0 hover:bg-accent/90 shadow-lg shadow-accent/20'
+                : 'bg-surface-4 text-text-4',
+            )}
+          >
+            {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+          </button>
         </div>
       </div>
     </div>

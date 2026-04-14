@@ -251,12 +251,12 @@ export class Rotator extends EventEmitter {
         this.daemon.memory.appendHandoffBrief(agent.role, {
           timestamp: new Date().toISOString(),
           agentId: agent.id,
-          newAgentId: null, // filled after respawn completes
+          newAgentId: null,
           reason: options.reason || 'manual',
           oldTokens: agent.tokensUsed,
           contextUsage: agent.contextUsage,
           brief: brief.slice(0, 4000),
-        });
+        }, agent.workingDir);
       }
 
       const record = {
@@ -276,17 +276,28 @@ export class Rotator extends EventEmitter {
       const routingMode = this.daemon.router.getMode(agentId);
       const respawnModel = routingMode.mode === 'auto' ? 'auto' : agent.model;
 
-      const newAgent = await processes.spawn({
-        role: agent.role,
-        scope: agent.scope,
-        provider: agent.provider,
-        model: respawnModel,
-        prompt: brief,
-        permission: agent.permission || 'full',
-        workingDir: agent.workingDir,
-        name: agent.name,
-        teamId: agent.teamId,
-      });
+      let newAgent;
+      try {
+        newAgent = await processes.spawn({
+          role: agent.role,
+          scope: agent.scope,
+          provider: agent.provider,
+          model: respawnModel,
+          prompt: brief,
+          permission: agent.permission || 'full',
+          workingDir: agent.workingDir,
+          name: agent.name,
+          teamId: agent.teamId,
+        });
+      } catch (spawnErr) {
+        // Spawn failed — old agent still in registry with 'killed' status.
+        // Don't lose it — the user can see and retry.
+        console.error(`[Groove] Rotation spawn failed for ${agent.name}: ${spawnErr.message}`);
+        throw spawnErr;
+      }
+
+      // Spawn succeeded — safe to remove old agent entry
+      registry.remove(agentId);
 
       if (agent.tokensUsed > 0) {
         registry.update(newAgent.id, { tokensUsed: agent.tokensUsed });

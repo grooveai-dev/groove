@@ -557,6 +557,7 @@ For normal file edits within your scope, proceed without review.
           const files = this.daemon.journalist?.getAgentFiles(agent) || [];
           if (files.length > 0) this._triggerIdleQC(agent);
           this._processHandoffs(agent);
+          this._writeCompletionHandoff(agent);
         }
       });
 
@@ -720,8 +721,8 @@ For normal file edits within your scope, proceed without review.
       if (finalStatus === 'completed') {
         const files = this.daemon.journalist?.getAgentFiles(agent) || [];
         if (files.length > 0) this._triggerIdleQC(agent);
-        // Process cross-scope handoff requests from this agent
         this._processHandoffs(agent);
+        this._writeCompletionHandoff(agent);
       }
 
       // Update Layer 7 specialization profile for this agent's session
@@ -1024,6 +1025,46 @@ For normal file edits within your scope, proceed without review.
     });
   }
 
+  _writeCompletionHandoff(agent) {
+    if (!this.daemon.memory || !this.daemon.journalist) return;
+    try {
+      const agentData = this.daemon.registry.get(agent.id);
+      const filteredLogs = this.daemon.journalist.collectFilteredLogs([agent]);
+      const agentLog = filteredLogs[agent.id];
+      const entries = agentLog?.entries || [];
+      const files = this.daemon.journalist.getAgentFiles(agent) || [];
+
+      const toolSummary = entries
+        .filter(e => e.type === 'tool')
+        .map(e => `- ${e.tool}: ${e.input}`)
+        .slice(-15)
+        .join('\n');
+
+      const errorSummary = entries
+        .filter(e => e.type === 'error')
+        .map(e => `- ${e.text}`)
+        .slice(-5)
+        .join('\n');
+
+      const brief = [
+        `Agent ${agent.name} (${agent.role}) completed.`,
+        agent.prompt ? `Task: ${agent.prompt.slice(0, 300)}` : '',
+        files.length > 0 ? `\nFiles modified:\n${files.slice(0, 15).map(f => '- ' + f).join('\n')}` : '',
+        toolSummary ? `\nRecent actions:\n${toolSummary}` : '',
+        errorSummary ? `\nErrors encountered:\n${errorSummary}` : '',
+      ].filter(Boolean).join('\n');
+
+      this.daemon.memory.appendHandoffBrief(agent.role, {
+        timestamp: new Date().toISOString(),
+        agentId: agent.id,
+        reason: 'completed',
+        oldTokens: agentData?.tokensUsed || 0,
+        contextUsage: agentData?.contextUsage || 0,
+        brief: brief.slice(0, 4000),
+      }, agent.workingDir);
+    } catch { /* best-effort */ }
+  }
+
   /**
    * Process handoff files in .groove/handoffs/.
    * Agents write handoff requests when they need cross-scope work from a teammate.
@@ -1103,13 +1144,12 @@ For normal file edits within your scope, proceed without review.
     const config = { ...agent };
     const sessionId = agent.sessionId;
 
-    // Kill if still running, or remove if dead
+    // Stop if running, then remove old entry so we can re-register with same name
     if (this.handles.has(agentId)) {
       await this.kill(agentId);
-    } else {
-      locks.release(agentId);
-      registry.remove(agentId);
     }
+    registry.remove(agentId);
+    locks.release(agentId);
 
     // Build resume command
     const { command, args, env } = provider.buildResumeCommand(sessionId, message, config.model);
@@ -1233,8 +1273,9 @@ For normal file edits within your scope, proceed without review.
     const handle = this.handles.get(agentId);
 
     if (!handle) {
-      // Not running — just clean up registry
-      this.daemon.registry.remove(agentId);
+      // Not running — release locks but keep agent in registry.
+      // Spawn's exit handler already set the terminal status.
+      // Callers that want removal must call registry.remove() explicitly.
       this.daemon.locks.release(agentId);
       return;
     }
@@ -1244,24 +1285,19 @@ For normal file edits within your scope, proceed without review.
     // Agent loop path — clean async stop
     if (loop) {
       await loop.stop();
-      // Exit handler already fired; finish cleanup
-      this.handles.delete(agentId);
-      this.daemon.registry.remove(agentId);
+      // Loop exit handler already updated status and cleaned handles
       this.daemon.locks.release(agentId);
       return;
     }
 
-    // CLI process path
+    // CLI process path — spawn's exit handler sets status='killed' for SIGTERM
     return new Promise((resolveKill) => {
-      // Give the process 5s to exit gracefully
       const forceTimer = setTimeout(() => {
         try { proc.kill('SIGKILL'); } catch {}
       }, 5000);
 
       proc.on('exit', () => {
         clearTimeout(forceTimer);
-        this.handles.delete(agentId);
-        this.daemon.registry.remove(agentId);
         this.daemon.locks.release(agentId);
         resolveKill();
       });
@@ -1272,7 +1308,6 @@ For normal file edits within your scope, proceed without review.
         // Already dead
         clearTimeout(forceTimer);
         this.handles.delete(agentId);
-        this.daemon.registry.remove(agentId);
         this.daemon.locks.release(agentId);
         resolveKill();
       }

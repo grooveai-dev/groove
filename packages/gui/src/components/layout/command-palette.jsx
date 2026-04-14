@@ -4,7 +4,7 @@ import { useGrooveStore } from '../../stores/groove';
 import {
   Network, Code2, ChartSpline, Puzzle, Users, Plus,
   RotateCw, Skull, MessageSquare, Terminal, Newspaper,
-  Search, Radio, ExternalLink,
+  Search, Radio, ExternalLink, FolderOpen,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -51,7 +51,10 @@ export function CommandPalette() {
         : { id: `tunnel:connect:${t.id}`, label: `Connect to ${t.name}`, icon: Radio, category: 'Remote', action: (s) => { s.connectTunnel(t.id); } }
       ),
     ];
-    return [...STATIC_COMMANDS, ...agentCommands, ...tunnelCommands];
+    const windowCommands = window.groove?.openFolder ? [
+      { id: 'action:openfolder', label: 'Open Folder', icon: FolderOpen, category: 'Window', shortcut: 'Cmd+O', action: () => window.groove.openFolder() },
+    ] : [];
+    return [...STATIC_COMMANDS, ...windowCommands, ...agentCommands, ...tunnelCommands];
   }, [agents, savedTunnels]);
 
   // Filter

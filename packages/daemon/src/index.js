@@ -142,6 +142,10 @@ export class Daemon {
     this.tunnelManager = new TunnelManager(this);
     this.repoImporter = new RepoImporter(this);
 
+    // Subscription state (populated by Electron IPC or direct auth)
+    this.authToken = null;
+    this.subscriptionCache = { plan: 'community', status: 'none', features: [], active: false, validatedAt: 0 };
+
     // HTTP + WebSocket server
     this.app = express();
     this.server = createHttpServer(this.app);
@@ -256,6 +260,51 @@ export class Daemon {
     }
   }
 
+  setAuthToken(token) {
+    this.authToken = token;
+    if (token) {
+      this._pollSubscription();
+    } else {
+      this.subscriptionCache = { plan: 'community', status: 'none', features: [], active: false, validatedAt: Date.now() };
+      this.broadcast({ type: 'subscription:updated', data: this.subscriptionCache });
+    }
+  }
+
+  async _pollSubscription() {
+    if (!this.authToken) return;
+    const API_BASE = 'https://docs.groovedev.ai/api/v1';
+    try {
+      const resp = await fetch(`${API_BASE}/subscription/status`, {
+        headers: { 'Authorization': `Bearer ${this.authToken}` },
+      });
+      if (resp.status === 401) {
+        this.subscriptionCache = { plan: 'community', status: 'none', features: [], active: false, validatedAt: Date.now() };
+        this.broadcast({ type: 'subscription:updated', data: this.subscriptionCache });
+        this.broadcast({ type: 'auth:expired' });
+        return;
+      }
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      this.subscriptionCache = {
+        plan: data.plan || 'community',
+        status: data.status || 'none',
+        features: data.features || [],
+        active: data.status === 'active' || data.status === 'trialing',
+        seats: data.seats || 1,
+        periodEnd: data.periodEnd || null,
+        cancelAtPeriodEnd: data.cancelAtPeriodEnd || false,
+        validatedAt: Date.now(),
+      };
+      this.broadcast({ type: 'subscription:updated', data: this.subscriptionCache });
+    } catch {
+      if (this.subscriptionCache?.validatedAt && (Date.now() - this.subscriptionCache.validatedAt < 72 * 3600 * 1000)) {
+        return;
+      }
+      this.subscriptionCache = { plan: 'community', status: 'none', features: [], active: false, validatedAt: 0 };
+      this.broadcast({ type: 'subscription:updated', data: this.subscriptionCache });
+    }
+  }
+
   async start() {
     // Kill any existing daemon on our port
     if (existsSync(this.pidFile)) {
@@ -317,6 +366,8 @@ export class Daemon {
 
     return new Promise((resolvePromise) => {
       this.server.listen(this.port, this.host, () => {
+        // Read back actual port (critical for port 0 / dynamic allocation)
+        this.port = this.server.address().port;
         writeFileSync(this.pidFile, String(process.pid));
         // Write actual port and host so CLI can find us
         writeFileSync(resolve(this.grooveDir, 'daemon.port'), String(this.port));
@@ -365,6 +416,9 @@ export class Daemon {
         if (stats) {
           this.tokens.setProjectStats(stats.totalFiles, stats.totalDirs);
         }
+
+        // Auto-connect saved tunnels that have autoConnect enabled
+        this.tunnelManager.init();
 
         resolvePromise(this);
       });

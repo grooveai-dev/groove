@@ -16,6 +16,7 @@ describe('Rotator', () => {
       get(id) { return this.agents.find((a) => a.id === id) || null; },
       getAll() { return this.agents; },
       update(id, updates) { const a = this.agents.find((x) => x.id === id); if (a) Object.assign(a, updates); return a; },
+      remove(id) { this.agents = this.agents.filter((a) => a.id !== id); return true; },
       agents: [],
     };
 

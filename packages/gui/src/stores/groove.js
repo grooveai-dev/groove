@@ -48,6 +48,7 @@ export const useGrooveStore = create((set, get) => ({
   teamDetailPanels: {},            // { [teamId]: detailPanel } — persists panel state per team
   commandPaletteOpen: false,
   quickConnectOpen: false,
+  upgradeModalOpen: false,
 
   // ── Node expansion (click-to-open persistent panels) ───────
   expandedNodes: loadJSON('groove:expandedNodes'),
@@ -77,7 +78,15 @@ export const useGrooveStore = create((set, get) => ({
   // ── Marketplace Auth ───────────────────────────────────────
   marketplaceUser: null,        // { id, displayName, avatar, ... } or null
   marketplaceAuthenticated: false,
-  subscription: null,
+  subscription: {
+    plan: 'community',
+    status: 'none',
+    active: false,
+    features: [],
+    seats: 1,
+    periodEnd: null,
+    cancelAtPeriodEnd: false,
+  },
 
   // ── Toasts ────────────────────────────────────────────────
   toasts: [],
@@ -120,7 +129,13 @@ export const useGrooveStore = create((set, get) => ({
       get().fetchTeams();
       get().fetchApprovals();
       get().checkMarketplaceAuth();
+      get().fetchTunnels();
       if (!get().onboardingComplete) get().fetchOnboardingStatus();
+      if (window.groove?.auth?.onSubscriptionStatus) {
+        window.groove.auth.onSubscriptionStatus((data) => {
+          if (data) set({ subscription: { ...get().subscription, ...data } });
+        });
+      }
     };
 
     ws.onmessage = (event) => {
@@ -263,6 +278,15 @@ export const useGrooveStore = create((set, get) => ({
           const type = msg.status === 'completed' ? 'success' : isKill ? 'info' : 'warning';
           get().addToast(type, text, msg.error ? msg.error.slice(0, 200) : undefined);
 
+          // Clear thinking indicator — agent is no longer active
+          if (get().thinkingAgents.has(msg.agentId)) {
+            set((s) => {
+              const next = new Set(s.thinkingAgents);
+              next.delete(msg.agentId);
+              return { thinkingAgents: next };
+            });
+          }
+
           // Log crash error to agent chat so user can see what happened
           if (msg.error && msg.agentId) {
             get().addChatMessage(msg.agentId, 'system', `Crashed: ${msg.error}`);
@@ -399,6 +423,15 @@ export const useGrooveStore = create((set, get) => ({
           set({ savedTunnels: tunnels });
           break;
         }
+
+        case 'subscription:updated':
+          set({ subscription: msg.data });
+          break;
+
+        case 'auth:expired':
+          set({ marketplaceAuthenticated: false, marketplaceUser: null });
+          get().addToast('warning', 'Session expired', 'Please sign in again');
+          break;
       }
     };
 
@@ -515,6 +548,7 @@ export const useGrooveStore = create((set, get) => ({
   },
   toggleCommandPalette() { set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })); },
   toggleQuickConnect() { set((s) => ({ quickConnectOpen: !s.quickConnectOpen })); },
+  setUpgradeModalOpen: (open) => set({ upgradeModalOpen: open }),
 
   setDetailPanelWidth(w) {
     set({ detailPanelWidth: w });
@@ -559,7 +593,17 @@ export const useGrooveStore = create((set, get) => ({
       });
       try {
         const edition = await api.get('/edition');
-        set({ subscription: { active: edition.subscriptionActive !== false, plan: edition.plan || 'community', edition: edition.edition } });
+        set({
+          subscription: {
+            plan: edition.plan || 'community',
+            status: edition.status || (edition.subscriptionActive ? 'active' : 'none'),
+            active: edition.subscriptionActive !== false,
+            features: edition.features || [],
+            seats: edition.seats || 1,
+            periodEnd: edition.periodEnd || null,
+            cancelAtPeriodEnd: edition.cancelAtPeriodEnd || false,
+          },
+        });
       } catch { /* edition endpoint may not exist */ }
     } catch {
       set({ marketplaceAuthenticated: false, marketplaceUser: null });
@@ -580,7 +624,17 @@ export const useGrooveStore = create((set, get) => ({
             get().addToast('success', `Signed in as ${status.user?.displayName || status.user?.id || 'user'}`);
             try {
               const edition = await api.get('/edition');
-              set({ subscription: { active: edition.subscriptionActive !== false, plan: edition.plan || 'community', edition: edition.edition } });
+              set({
+                subscription: {
+                  plan: edition.plan || 'community',
+                  status: edition.status || (edition.subscriptionActive ? 'active' : 'none'),
+                  active: edition.subscriptionActive !== false,
+                  features: edition.features || [],
+                  seats: edition.seats || 1,
+                  periodEnd: edition.periodEnd || null,
+                  cancelAtPeriodEnd: edition.cancelAtPeriodEnd || false,
+                },
+              });
             } catch { /* edition endpoint may not exist */ }
           }
         } catch { /* keep polling */ }
@@ -609,6 +663,65 @@ export const useGrooveStore = create((set, get) => ({
       return data;
     } catch (err) {
       get().addToast('error', 'Checkout failed', err.message);
+      throw err;
+    }
+  },
+
+  // ── Subscription ────────────────────────────────────────────
+
+  async fetchSubscriptionPlans() {
+    return api.get('/subscription/plans');
+  },
+
+  async startCheckout(priceId) {
+    try {
+      const data = await api.post('/subscription/checkout', { priceId });
+      if (data.url) {
+        if (window.groove?.openExternal) {
+          window.groove.openExternal(data.url);
+        } else {
+          window.open(data.url, '_blank');
+        }
+      }
+      return data;
+    } catch (err) {
+      if (err.status === 401 || err.message?.includes('Not authenticated')) {
+        get().addToast('info', 'Please sign in to subscribe');
+        get().marketplaceLogin();
+      } else if (err.status === 409) {
+        get().addToast('info', 'Already subscribed', 'Use Manage Subscription to switch plans');
+      } else {
+        get().addToast('error', 'Checkout failed', err.message);
+      }
+      throw err;
+    }
+  },
+
+  async openPortal() {
+    try {
+      const data = await api.post('/subscription/portal');
+      if (data.url) {
+        if (window.groove?.openExternal) {
+          window.groove.openExternal(data.url);
+        } else {
+          window.open(data.url, '_blank');
+        }
+      }
+      return data;
+    } catch (err) {
+      get().addToast('error', 'Portal failed', err.message);
+      throw err;
+    }
+  },
+
+  async updateSeats(seats) {
+    try {
+      const data = await api.patch('/subscription', { seats });
+      set({ subscription: { ...get().subscription, ...data } });
+      get().addToast('success', `Updated to ${seats} seat${seats !== 1 ? 's' : ''}`);
+      return data;
+    } catch (err) {
+      get().addToast('error', 'Seat update failed', err.message);
       throw err;
     }
   },
@@ -933,41 +1046,24 @@ export const useGrooveStore = create((set, get) => ({
   },
 
   async instructAgent(id, message) {
-    const agent = get().agents.find((a) => a.id === id);
-    const isAlive = agent && (agent.status === 'running' || agent.status === 'starting');
-
-    // Running agent: use query (non-destructive) instead of killing it
-    if (isAlive) {
-      get().addChatMessage(id, 'user', message, false);
-      try {
-        const data = await api.post(`/agents/${id}/query`, { message });
-        // Agent loop agents: response comes via WebSocket, show thinking indicator
-        if (data.status === 'pending' || data.response === 'Message sent to agent') {
-          set((s) => ({ thinkingAgents: new Set([...s.thinkingAgents, id]) }));
-          return data;
-        }
-        get().addChatMessage(id, 'agent', data.response);
-        return data;
-      } catch (err) {
-        get().addChatMessage(id, 'system', `failed: ${err.message}`);
-        throw err;
-      }
-    }
-
-    // Completed/stopped agent: resume with full context
     get().addChatMessage(id, 'user', message, false);
-    // Show thinking indicator immediately — stays until first WebSocket output
     set((s) => ({ thinkingAgents: new Set([...s.thinkingAgents, id]) }));
     try {
-      const newAgent = await api.post(`/agents/${id}/instruct`, { message });
-      // Carry history + thinking state to new agent ID
+      const data = await api.post(`/agents/${id}/instruct`, { message });
+
+      // Agent loop: message sent directly to running agent — response comes via WebSocket
+      if (data.status === 'message_sent') {
+        return data;
+      }
+
+      // CLI agent: was stopped + resumed/rotated — transfer state to new agent ID
+      const newAgent = data;
       for (const key of ['chatHistory', 'activityLog', 'tokenTimeline']) {
         const old = get()[key][id];
         if (old?.length) {
           set((s) => ({ [key]: { ...s[key], [newAgent.id]: [...old] } }));
         }
       }
-      // Transfer thinking indicator to the new agent
       set((s) => {
         const next = new Set(s.thinkingAgents);
         next.delete(id);
@@ -979,7 +1075,6 @@ export const useGrooveStore = create((set, get) => ({
       get().selectAgent(newAgent.id);
       return newAgent;
     } catch (err) {
-      // Clear thinking indicator on failure
       set((s) => {
         const next = new Set(s.thinkingAgents);
         next.delete(id);

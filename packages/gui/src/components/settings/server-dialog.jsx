@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Dialog, DialogContent } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { FolderBrowser } from '../agents/folder-browser';
+import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { FolderSearch } from 'lucide-react';
 
@@ -55,7 +56,9 @@ export function ServerDialog({ open, onOpenChange, server, onSave }) {
       if (server?.id) data.id = server.id;
       await onSave(data);
       onOpenChange(false);
-    } catch {}
+    } catch (err) {
+      useGrooveStore.getState().addToast('error', 'Failed to save server', err.message);
+    }
     setSaving(false);
   }
 

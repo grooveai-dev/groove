@@ -1,7 +1,8 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 process.env.GROOVE_EDITION = 'pro';
 
-const port = parseInt(process.argv[2], 10) || 31415;
+const portArg = parseInt(process.argv[2], 10);
+const port = Number.isNaN(portArg) ? 31415 : portArg;
 const projectDir = process.argv[3] || process.cwd();
 
 async function main() {
@@ -19,6 +20,14 @@ async function main() {
   await daemon.start();
 
   process.send({ type: 'ready', port: daemon.port });
+
+  process.on('message', (msg) => {
+    if (msg.type === 'auth-token') {
+      try { daemon.setAuthToken(msg.token); } catch (err) {
+        process.stderr.write(`[daemon-bridge] setAuthToken failed: ${err.message}\n`);
+      }
+    }
+  });
 
   process.on('SIGTERM', async () => {
     await daemon.stop();

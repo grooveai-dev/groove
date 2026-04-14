@@ -15,6 +15,7 @@ import { fmtUptime } from '../lib/format';
 import { RemoteServerCard } from '../components/settings/remote-server-card';
 import { ServerDialog } from '../components/settings/server-dialog';
 import { ProGate } from '../components/pro/pro-gate';
+import { SubscriptionPanel } from './subscription-panel';
 import {
   Key, Eye, EyeOff, Check, Cpu, ChevronDown,
   FolderOpen, FolderSearch, RotateCw, Users, Gauge, Zap,
@@ -1137,7 +1138,17 @@ export default function SettingsView() {
                     <code className="flex-1 h-8 px-2 flex items-center bg-surface-0 border border-border-subtle rounded-md text-2xs font-mono text-text-2 truncate min-w-0">
                       {config.defaultWorkingDir || 'Project root'}
                     </code>
-                    <Button variant="secondary" size="sm" onClick={() => setFolderBrowserOpen(true)} className="h-8 px-2 flex-shrink-0">
+                    <Button variant="secondary" size="sm" onClick={async () => {
+                      if (window.groove?.folders?.select) {
+                        const dir = await window.groove.folders.select({
+                          title: 'Select Working Directory',
+                          defaultPath: config?.defaultWorkingDir || undefined,
+                        });
+                        if (dir) updateConfig('defaultWorkingDir', dir);
+                      } else {
+                        setFolderBrowserOpen(true);
+                      }
+                    }} className="h-8 px-2 flex-shrink-0">
                       <FolderSearch size={12} />
                     </Button>
                   </div>
@@ -1229,13 +1240,22 @@ export default function SettingsView() {
             </div>
           )}
 
+          {/* ═══════ SUBSCRIPTION ═══════ */}
+          <div>
+            <div className="flex items-center gap-2 mb-2.5 px-0.5">
+              <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Subscription</span>
+              <div className="flex-1 h-px bg-border-subtle" />
+            </div>
+            <SubscriptionPanel />
+          </div>
+
           {/* ═══════ REMOTE SERVERS ═══════ */}
           <div>
             <div className="flex items-center gap-2 mb-2.5 px-0.5">
               <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Remote Servers</span>
               <div className="flex-1 h-px bg-border-subtle" />
             </div>
-            <ProGate feature="Remote Access" description="Connect to remote servers via SSH tunnel and manage agents across machines">
+            <ProGate feature="Remote Access" featureKey="remote-access" description="Connect to remote servers via SSH tunnel and manage agents across machines">
               <div>
                 <div className="flex justify-end mb-2.5">
                   <Button

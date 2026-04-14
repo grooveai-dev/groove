@@ -142,8 +142,44 @@ describe('MemoryStore', () => {
     it('sanitizes role names for filesystem safety', () => {
       const ok = memory.appendHandoffBrief('../evil/role', { brief: 'test' });
       assert.equal(ok, true);
-      // File should be created with safe name, no path traversal
       assert.ok(existsSync(tmpDir));
+    });
+
+    it('scopes chains by workspace', () => {
+      const wsA = join(tmpDir, '..', 'electron-app');
+      const wsB = join(tmpDir, '..', 'agents-team');
+      memory.appendHandoffBrief('backend', { brief: 'electron backend work' }, wsA);
+      memory.appendHandoffBrief('backend', { brief: 'agents backend work' }, wsB);
+
+      const chainA = memory.getHandoffChain('backend', wsA);
+      const chainB = memory.getHandoffChain('backend', wsB);
+      assert.equal(chainA.length, 1);
+      assert.equal(chainB.length, 1);
+      assert.match(chainA[0].body, /electron backend/);
+      assert.match(chainB[0].body, /agents backend/);
+    });
+
+    it('workspace chains are independent from root chains', () => {
+      const ws = join(tmpDir, '..', 'my-workspace');
+      memory.appendHandoffBrief('frontend', { brief: 'root work' });
+      memory.appendHandoffBrief('frontend', { brief: 'workspace work' }, ws);
+
+      assert.equal(memory.getHandoffChain('frontend').length, 1);
+      assert.equal(memory.getHandoffChain('frontend', ws).length, 1);
+      assert.match(memory.getRecentHandoffMarkdown('frontend'), /root work/);
+      assert.match(memory.getRecentHandoffMarkdown('frontend', 3, 4000, ws), /workspace work/);
+    });
+
+    it('listHandoffRoles scoped to workspace', () => {
+      const ws = join(tmpDir, '..', 'electron-app');
+      memory.appendHandoffBrief('backend', { brief: 'root' });
+      memory.appendHandoffBrief('frontend', { brief: 'ws' }, ws);
+
+      const rootRoles = memory.listHandoffRoles();
+      const wsRoles = memory.listHandoffRoles(ws);
+      assert.ok(rootRoles.includes('backend'));
+      assert.ok(!rootRoles.includes('frontend'));
+      assert.ok(wsRoles.includes('frontend'));
     });
   });
 

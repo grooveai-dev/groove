@@ -1,5 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Search, Plus, ChevronRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search, Plus, ChevronRight, FolderOpen } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { isElectron, getPlatform } from '../../lib/electron';
 
@@ -27,6 +28,19 @@ export function BreadcrumbBar({
   const electron = isElectron();
   const darwinDrag = electron && getPlatform() === 'darwin';
 
+  const [instanceName, setInstanceName] = useState(null);
+
+  useEffect(() => {
+    if (window.groove?.getInstanceInfo) {
+      window.groove.getInstanceInfo().then(info => {
+        if (info?.name) setInstanceName(info.name);
+      });
+    } else {
+      const param = new URLSearchParams(window.location.search).get('instance');
+      if (param) setInstanceName(param);
+    }
+  }, []);
+
   return (
     <header
       className={cn(
@@ -37,21 +51,30 @@ export function BreadcrumbBar({
       {/* Logo */}
       <img src="/favicon.png" alt="Groove" className="h-7 w-7 rounded-full flex-shrink-0" />
 
-      {/* Host badge — show instance name from ?instance= or raw host */}
-      {(() => {
-        const instance = new URLSearchParams(window.location.search).get('instance');
-        if (instance) return (
-          <span className="text-2xs font-mono font-semibold text-accent bg-accent/10 px-1.5 py-0.5 rounded flex-shrink-0">
-            {instance}
-          </span>
-        );
-        if (daemonHost) return (
-          <span className="text-2xs font-mono font-semibold text-text-3 bg-surface-5 px-1.5 py-0.5 rounded flex-shrink-0">
-            {daemonHost}
-          </span>
-        );
-        return null;
-      })()}
+      {/* Open Folder — Electron only */}
+      {window.groove?.openFolder && (
+        <button
+          onClick={() => window.groove.openFolder()}
+          className="p-1.5 rounded-md text-text-3 hover:text-text-0 hover:bg-surface-4 transition-colors cursor-pointer"
+          title="Open Folder (new window)"
+        >
+          <FolderOpen size={15} />
+        </button>
+      )}
+
+      {/* Project name badge */}
+      {instanceName && (
+        <span className="text-2xs font-mono font-semibold text-accent bg-accent/10 px-1.5 py-0.5 rounded flex-shrink-0">
+          {instanceName}
+        </span>
+      )}
+
+      {/* Host badge — show raw host when no instance */}
+      {!instanceName && daemonHost && (
+        <span className="text-2xs font-mono font-semibold text-text-3 bg-surface-5 px-1.5 py-0.5 rounded flex-shrink-0">
+          {daemonHost}
+        </span>
+      )}
 
       <div className="flex-1 min-w-4" />
 
@@ -59,7 +82,7 @@ export function BreadcrumbBar({
       <button
         onClick={onOpenCommandPalette}
         className={cn(
-          'flex items-center gap-2.5 h-8 px-4 rounded-full w-full max-w-md',
+          'flex items-center gap-2.5 h-8 px-4 rounded-md w-full max-w-md',
           'bg-surface-1 border border-border-subtle',
           'text-xs text-text-4 font-sans',
           'hover:border-border hover:text-text-3 transition-colors cursor-pointer',
@@ -67,7 +90,7 @@ export function BreadcrumbBar({
       >
         <Search size={14} className="flex-shrink-0" />
         <span className="flex-1 text-left">Search commands...</span>
-        <kbd className="text-2xs font-mono bg-surface-4 px-1.5 py-0.5 rounded-full text-text-4">Cmd+K</kbd>
+        <kbd className="text-2xs font-mono bg-surface-4 px-1.5 py-0.5 rounded text-text-4 ml-1">Cmd+K</kbd>
       </button>
 
       <div className="flex-1 min-w-4" />
@@ -88,7 +111,7 @@ export function BreadcrumbBar({
       {connected && (
         <button
           onClick={onSpawn}
-          className="ml-1 flex items-center gap-1 h-7 px-3.5 rounded-full bg-accent/15 text-accent text-xs font-semibold font-sans hover:bg-accent/25 transition-colors cursor-pointer select-none flex-shrink-0"
+          className="ml-1 flex items-center gap-1 h-7 px-3.5 rounded-md bg-accent/15 text-accent text-xs font-semibold font-sans hover:bg-accent/25 transition-colors cursor-pointer select-none flex-shrink-0"
         >
           <Plus size={14} />
           Spawn

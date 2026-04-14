@@ -737,7 +737,7 @@ export class Journalist {
     // Pull recent rotation history from persistent memory (Layer 7).
     // Gives the new agent causal continuity: what the last 3 agents struggled
     // with, decided, and solved — not just what the current session did.
-    const recentChain = this.daemon.memory?.getRecentHandoffMarkdown(agent.role, 3, 3000) || '';
+    const recentChain = this.daemon.memory?.getRecentHandoffMarkdown(agent.role, 3, 3000, agent.workingDir) || '';
 
     // Pull the user's recent messages to this agent so the new instance
     // can continue the conversation naturally instead of restarting it.

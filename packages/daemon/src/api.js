@@ -14,25 +14,22 @@ import { validateAgentConfig } from './validate.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const isPro = process.env.GROOVE_EDITION === 'pro';
 
-let _subscriptionCache = { active: true, checkedAt: 0 };
+let _daemon = null;
 
 function proOnly(req, res, next) {
-  if (!isPro) {
-    return res.status(403).json({
-      error: 'Pro feature',
-      edition: 'community',
-      upgrade: 'https://groovedev.ai/pro',
-    });
-  }
-  if (!_subscriptionCache.active) {
-    return res.status(403).json({
-      error: 'Pro subscription required',
-      edition: 'pro',
-      subscriptionActive: false,
-      upgrade: 'https://groovedev.ai/pro',
-    });
-  }
-  next();
+  const sub = _daemon?.subscriptionCache || {};
+  if (isPro || sub.active) return next();
+  return res.status(403).json({
+    error: 'Pro subscription required',
+    edition: 'community',
+    plan: sub.plan || 'community',
+    subscriptionActive: false,
+    upgrade: 'https://groovedev.ai/pro',
+  });
+}
+
+function hasFeature(name) {
+  return (_daemon?.subscriptionCache?.features || []).includes(name);
 }
 
 async function _executeApprovalRetry(daemon, approval) {
@@ -65,6 +62,8 @@ async function _executeApprovalRetry(daemon, approval) {
 }
 
 export function createApi(app, daemon) {
+  _daemon = daemon;
+
   // CORS — restrict to localhost + bound interface origins
   app.use((req, res, next) => {
     const origin = req.headers.origin;
@@ -144,22 +143,28 @@ export function createApi(app, daemon) {
         await daemon.processes.kill(req.params.id);
       }
 
-      // Purge from registry if requested or if agent is dead
-      if (req.query.purge === 'true' || !isAlive) {
+      // Only purge from registry when explicitly requested.
+      // Killed/completed agents stay visible so the user can review output.
+      const purge = req.query.purge === 'true';
+      if (purge) {
         daemon.registry.remove(req.params.id);
       }
 
-      daemon.audit.log('agent.kill', { id: agent.id, role: agent.role, purged: req.query.purge === 'true' || !isAlive });
-      res.json({ ok: true, purged: req.query.purge === 'true' || !isAlive });
+      daemon.audit.log('agent.kill', { id: agent.id, role: agent.role, purged: purge });
+      res.json({ ok: true, purged: purge });
     } catch (err) {
       res.status(400).json({ error: err.message });
     }
   });
 
-  // Kill all agents
+  // Kill all agents and purge registry (used by groove nuke)
   app.delete('/api/agents', async (req, res) => {
     const count = daemon.processes.getRunningCount();
     await daemon.processes.killAll();
+    // Purge all agents from registry — kill() no longer does this automatically
+    for (const agent of daemon.registry.getAll()) {
+      daemon.registry.remove(agent.id);
+    }
     daemon.audit.log('agent.kill_all', { count });
     res.json({ ok: true });
   });
@@ -228,11 +233,12 @@ export function createApi(app, daemon) {
     res.json({ removed });
   });
 
-  // Handoff chains (per role)
+  // Handoff chains (per role, optionally scoped by workspace)
   app.get('/api/memory/handoff-chain/:role', (req, res) => {
     res.json({
       role: req.params.role,
-      entries: daemon.memory.getHandoffChain(req.params.role),
+      workspace: req.query.workspace || null,
+      entries: daemon.memory.getHandoffChain(req.params.role, req.query.workspace),
     });
   });
 
@@ -240,12 +246,13 @@ export function createApi(app, daemon) {
     const count = Math.min(parseInt(req.query.count) || 3, 10);
     res.json({
       role: req.params.role,
-      markdown: daemon.memory.getRecentHandoffMarkdown(req.params.role, count, 10_000),
+      workspace: req.query.workspace || null,
+      markdown: daemon.memory.getRecentHandoffMarkdown(req.params.role, count, 10_000, req.query.workspace),
     });
   });
 
   app.get('/api/memory/handoff-chain', (req, res) => {
-    res.json({ roles: daemon.memory.listHandoffRoles() });
+    res.json({ roles: daemon.memory.listHandoffRoles(req.query.workspace) });
   });
 
   // Discoveries (error → fix pairs)
@@ -547,10 +554,15 @@ export function createApi(app, daemon) {
 
   // Edition
   app.get('/api/edition', (req, res) => {
+    const sub = daemon.subscriptionCache || {};
     res.json({
       edition: isPro ? 'pro' : 'community',
-      plan: isPro ? 'pro' : 'community',
-      subscriptionActive: isPro ? _subscriptionCache.active : false,
+      plan: sub.plan || 'community',
+      subscriptionActive: sub.active || false,
+      features: sub.features || [],
+      seats: sub.seats || 1,
+      periodEnd: sub.periodEnd || null,
+      cancelAtPeriodEnd: sub.cancelAtPeriodEnd || false,
     });
   });
 
@@ -1180,6 +1192,80 @@ Keep responses concise. Help them think, don't lecture them about the system the
       res.json(result);
     } catch (err) {
       res.status(400).json({ error: err.message });
+    }
+  });
+
+  // --- Subscription ---
+
+  const SUB_API = 'https://docs.groovedev.ai/api/v1';
+
+  app.get('/api/subscription/plans', async (req, res) => {
+    try {
+      const resp = await fetch(`${SUB_API}/subscription/plans`);
+      const data = await resp.json();
+      res.json(data);
+    } catch (err) {
+      res.status(502).json({ error: 'Failed to fetch plans', message: err.message });
+    }
+  });
+
+  app.get('/api/subscription/status', (req, res) => {
+    const sub = daemon.subscriptionCache || {};
+    res.json(sub);
+  });
+
+  app.post('/api/subscription/checkout', async (req, res) => {
+    if (!daemon.authToken) return res.status(401).json({ error: 'Not authenticated' });
+    const { priceId } = req.body;
+    if (!priceId || typeof priceId !== 'string') return res.status(400).json({ error: 'priceId required' });
+    try {
+      const resp = await fetch(`${SUB_API}/subscription/checkout`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${daemon.authToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priceId }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) return res.status(resp.status).json(data);
+      res.json(data);
+    } catch (err) {
+      res.status(502).json({ error: 'Checkout failed', message: err.message });
+    }
+  });
+
+  app.post('/api/subscription/portal', async (req, res) => {
+    if (!daemon.authToken) return res.status(401).json({ error: 'Not authenticated' });
+    try {
+      const resp = await fetch(`${SUB_API}/subscription/portal`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${daemon.authToken}`, 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const data = await resp.json();
+      if (!resp.ok) return res.status(resp.status).json(data);
+      res.json(data);
+    } catch (err) {
+      res.status(502).json({ error: 'Portal failed', message: err.message });
+    }
+  });
+
+  app.patch('/api/subscription', async (req, res) => {
+    if (!daemon.authToken) return res.status(401).json({ error: 'Not authenticated' });
+    const { seats } = req.body;
+    if (!seats || typeof seats !== 'number' || seats < 1 || seats > 999 || !Number.isInteger(seats)) {
+      return res.status(400).json({ error: 'seats must be integer 1-999' });
+    }
+    try {
+      const resp = await fetch(`${SUB_API}/subscription`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${daemon.authToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seats }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) return res.status(resp.status).json(data);
+      daemon._pollSubscription();
+      res.json(data);
+    } catch (err) {
+      res.status(502).json({ error: 'Seat update failed', message: err.message });
     }
   });
 
@@ -2879,9 +2965,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
-  app.delete('/api/tunnels/:id', proOnly, (req, res) => {
+  app.delete('/api/tunnels/:id', proOnly, async (req, res) => {
     try {
-      daemon.tunnelManager.delete(req.params.id);
+      await daemon.tunnelManager.delete(req.params.id);
       res.json({ ok: true });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -3081,6 +3167,27 @@ Keep responses concise. Help them think, don't lecture them about the system the
     daemon.audit.log('onboarding.setDefault', { provider, model: model || null });
     daemon.broadcast({ type: 'onboarding:default-changed', provider, model });
     res.json({ ok: true });
+  });
+
+  // --- Project Directory ---
+
+  app.post('/api/project-dir', async (req, res) => {
+    const { dir } = req.body;
+    if (!dir || typeof dir !== 'string') return res.status(400).json({ error: 'dir required' });
+    if (/[\0\n\r]/.test(dir)) return res.status(400).json({ error: 'Invalid characters in path' });
+    const { existsSync, statSync } = await import('fs');
+    const { resolve, isAbsolute } = await import('path');
+    const resolved = resolve(dir);
+    if (!isAbsolute(resolved)) return res.status(400).json({ error: 'Path must be absolute' });
+    if (!existsSync(resolved) || !statSync(resolved).isDirectory()) {
+      return res.status(400).json({ error: 'Directory does not exist' });
+    }
+    daemon.config.defaultWorkingDir = resolved;
+    const { saveConfig } = await import('./firstrun.js');
+    saveConfig(daemon.grooveDir, daemon.config);
+    daemon.broadcast({ type: 'config:updated', data: { defaultWorkingDir: resolved } });
+    daemon.audit.log('project.dir.change', { dir: resolved });
+    res.json({ ok: true, dir: resolved });
   });
 
   // --- Config ---

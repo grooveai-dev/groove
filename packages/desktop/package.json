@@ -12,14 +12,15 @@
     "prebuild": "node bundle-daemon.js",
     "build": "electron-builder",
     "predist": "node bundle-daemon.js",
-    "dist": "electron-builder --mac --win --linux"
+    "dist": "electron-builder --mac --win --linux",
+    "dist:mac": "electron-builder --mac -c.directories.output=/tmp/groove-dist"
   },
   "dependencies": {
     "@groove-dev/daemon": "*"
   },
   "devDependencies": {
     "electron": "33.4.11",
-    "electron-builder": "^25.0.0",
+    "electron-builder": "^26.8.1",
     "electron-updater": "^6.0.0"
   },
   "build": {
@@ -42,12 +43,32 @@
         "to": "gui"
       }
     ],
+    "afterPack": "./afterPack.cjs",
     "artifactName": "Groove-${os}-${arch}.${ext}",
     "mac": {
-      "target": "dmg",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
       "category": "public.app-category.developer-tools",
       "icon": "assets/icon.png",
-      "identity": null
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "notarize": true
     },
     "win": {
       "target": "nsis",

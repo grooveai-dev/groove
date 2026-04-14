@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Lock, Download, LogIn, Sparkles, ExternalLink } from 'lucide-react';
+import { Lock, Download, LogIn, Sparkles } from 'lucide-react';
 import { isElectron, openExternal } from '../../lib/electron';
 import { useGrooveStore } from '../../stores/groove';
 
@@ -12,9 +12,9 @@ const VARIANTS = {
   },
   'community-electron': {
     heading: 'Pro Feature',
-    cta: 'Learn More',
-    icon: ExternalLink,
-    action: () => openExternal('https://groovedev.ai/pro'),
+    cta: 'Upgrade to Pro',
+    icon: Sparkles,
+    action: () => useGrooveStore.getState().setUpgradeModalOpen(true),
   },
   'sign-in': {
     heading: 'Sign in to unlock',
@@ -23,10 +23,10 @@ const VARIANTS = {
     action: () => useGrooveStore.getState().marketplaceLogin(),
   },
   subscribe: {
-    heading: 'Upgrade to Pro',
-    cta: 'Subscribe',
+    heading: 'Pro Feature',
+    cta: 'Upgrade to Pro',
     icon: Sparkles,
-    action: () => openExternal('https://groovedev.ai/pro'),
+    action: () => useGrooveStore.getState().setUpgradeModalOpen(true),
   },
 };
 

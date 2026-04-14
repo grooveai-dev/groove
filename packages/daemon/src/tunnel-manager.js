@@ -56,9 +56,21 @@ export class TunnelManager {
     );
   }
 
+  async init() {
+    for (const [id, config] of this.saved) {
+      if (config.autoConnect) {
+        try {
+          await this.connect(id);
+        } catch (err) {
+          this.daemon.broadcast({ type: 'tunnel.error', data: { id, error: err.message } });
+        }
+      }
+    }
+  }
+
   getSaved() {
     return Array.from(this.saved.values()).map(s => ({
-      ...s,
+      ...this._sanitize(s),
       active: this.active.has(s.id),
       ...(this.active.get(s.id) || {}),
     }));
@@ -149,9 +161,9 @@ export class TunnelManager {
     return merged;
   }
 
-  delete(id) {
+  async delete(id) {
     if (!this.saved.has(id)) throw new Error(`Remote ${id} not found`);
-    if (this.active.has(id)) this.disconnect(id);
+    if (this.active.has(id)) await this.disconnect(id);
     const name = this.saved.get(id).name;
     this.saved.delete(id);
     this._save();
@@ -419,17 +431,24 @@ export class TunnelManager {
     return { installed: verify.grooveInstalled, daemonRunning: verify.daemonRunning };
   }
 
+  _sanitize(entry) {
+    if (!entry) return entry;
+    const { sshKeyPath, ...safe } = entry;
+    safe.sshKeyDisplay = sshKeyPath ? sshKeyPath.split('/').pop() : null;
+    return safe;
+  }
+
   getStatus(id) {
     const saved = this.saved.get(id);
     if (!saved) return null;
     const active = this.active.get(id);
-    return { ...saved, active: !!active, ...(active || {}) };
+    return { ...this._sanitize(saved), active: !!active, ...(active || {}) };
   }
 
   getActive() {
     return Array.from(this.active.entries()).map(([id, conn]) => ({
       ...conn,
-      ...(this.saved.get(id) || {}),
+      ...this._sanitize(this.saved.get(id) || {}),
       id,
     }));
   }

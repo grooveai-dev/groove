@@ -16,6 +16,21 @@ export function openExternal(url) {
   }
 }
 
+export async function selectFolder(options = {}) {
+  if (window.groove?.folders?.select) {
+    return window.groove.folders.select(options);
+  }
+  return null;
+}
+
+export async function setProjectDir(dir) {
+  if (window.groove?.folders?.setProjectDir) {
+    return window.groove.folders.setProjectDir(dir);
+  }
+  const { api } = await import('./api.js');
+  return api.post('/project-dir', { dir });
+}
+
 export const electronAuth = {
   login: () => window.groove?.auth?.login(),
   logout: () => window.groove?.auth?.logout(),

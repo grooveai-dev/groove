@@ -349,7 +349,7 @@ export class Introducer {
           parts.push(`### Known Fixes for ${newAgent.role} Role\n${discoveries}`);
         }
 
-        const handoffs = this.daemon.memory.getRecentHandoffMarkdown(newAgent.role, 2, 1000);
+        const handoffs = this.daemon.memory.getRecentHandoffMarkdown(newAgent.role, 2, 1000, newAgent.workingDir);
         if (handoffs) {
           parts.push(`### Recent Handoff History\n${handoffs}`);
         }

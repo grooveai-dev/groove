@@ -111,10 +111,10 @@ export function RemoteServerCard({ server, onEdit, onDelete, onConnect, onDiscon
         {server.user}@{server.host}:{server.port || 22}
       </div>
 
-      {/* SSH key path */}
-      {server.sshKeyPath && (
+      {/* SSH key */}
+      {server.sshKeyDisplay && (
         <div className="text-2xs text-text-4 font-mono truncate mb-2">
-          Key: {server.sshKeyPath}
+          Key: {server.sshKeyDisplay}
         </div>
       )}
 

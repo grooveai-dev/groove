@@ -1,10 +1,12 @@
 // GROOVE GUI v2 — App Root
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useGrooveStore } from './stores/groove';
 import { AppShell } from './components/layout/app-shell';
 import { SetupWizard } from './components/onboarding/setup-wizard';
+import { useKeyboard } from './lib/hooks/use-keyboard';
+import { UpgradeModal } from './components/pro/upgrade-modal';
 
 // Views
 import AgentsView from './views/agents';
@@ -105,22 +107,40 @@ export default function App() {
   useEffect(() => { connect(); }, [connect]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const instance = params.get('instance');
-    if (instance) {
-      document.title = `${instance} — Groove`;
-    } else if (tunneled) {
-      document.title = 'Remote — Groove';
-    } else {
-      document.title = 'Groove';
+    async function setTitle() {
+      if (window.groove?.getInstanceInfo) {
+        const info = await window.groove.getInstanceInfo();
+        if (info?.name) {
+          document.title = `${info.name} — Groove`;
+          return;
+        }
+      }
+      const params = new URLSearchParams(window.location.search);
+      const instance = params.get('instance');
+      if (instance) {
+        document.title = `${instance} — Groove`;
+      } else if (tunneled) {
+        document.title = 'Remote — Groove';
+      } else {
+        document.title = 'Groove';
+      }
     }
+    setTitle();
   }, [tunneled]);
+
+  const openFolderShortcuts = useMemo(() =>
+    window.groove?.openFolder
+      ? [{ key: 'o', meta: true, handler: () => window.groove.openFolder() }]
+      : [],
+  []);
+  useKeyboard(openFolderShortcuts);
 
   if (!hydrated) return <LoadingScreen />;
 
   return (
     <ErrorBoundary>
       {onboardingComplete ? <ViewRouter /> : <SetupWizard />}
+      <UpgradeModal />
     </ErrorBoundary>
   );
 }

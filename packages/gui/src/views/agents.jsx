@@ -10,7 +10,7 @@ import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, ChevronLeft, ChevronRight, FolderOpen } from 'lucide-react';
 
 const NODE_TYPES = { agentNode: AgentNode, rootNode: RootNode };
 const NODE_W = 220;
@@ -611,6 +611,19 @@ function EmptyState({ onPlanner, onSpawn }) {
             </div>
           </button>
         </div>
+
+        {window.groove?.openFolder && (
+          <div className="max-w-sm mx-auto">
+            <p className="text-xs text-text-3 mb-2">Or open a different project</p>
+            <button
+              onClick={() => window.groove.openFolder()}
+              className="w-full h-10 rounded-lg border border-border-subtle bg-surface-2 hover:bg-surface-3 text-sm text-text-1 font-medium flex items-center justify-center gap-2 cursor-pointer transition-colors"
+            >
+              <FolderOpen size={16} className="text-accent" />
+              Open Folder
+            </button>
+          </div>
+        )}
 
         <p className="text-xs text-text-4 font-sans">
           <kbd className="font-mono bg-surface-4 px-1.5 py-0.5 rounded text-text-3">Cmd+K</kbd>

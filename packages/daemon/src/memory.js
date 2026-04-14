@@ -10,7 +10,7 @@
 // Read by the introducer on every spawn so agent #50 knows what agent #1 learned.
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, appendFileSync, statSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, relative } from 'path';
 import { createHash } from 'crypto';
 
 const MAX_CONSTRAINTS = 50;
@@ -34,6 +34,7 @@ function truncate(text, max) {
 export class MemoryStore {
   constructor(grooveDir) {
     this.memDir = resolve(grooveDir, 'memory');
+    this.projectDir = resolve(grooveDir, '..');
     this.constraintsPath = resolve(this.memDir, 'project-constraints.md');
     this.handoffDir = resolve(this.memDir, 'handoff-chain');
     this.discoveriesPath = resolve(this.memDir, 'agent-discoveries.jsonl');
@@ -133,19 +134,29 @@ export class MemoryStore {
 
   // --- Handoff Chain ---
 
-  _chainPath(role) {
+  _workspaceSlug(workingDir) {
+    if (!workingDir) return '';
+    const rel = relative(this.projectDir, workingDir);
+    if (!rel || rel === '.' || rel.startsWith('..')) return '';
+    return safeName(rel);
+  }
+
+  _chainPath(role, workingDir) {
+    const slug = this._workspaceSlug(workingDir);
+    if (slug) {
+      const dir = resolve(this.handoffDir, slug);
+      mkdirSync(dir, { recursive: true });
+      return resolve(dir, `${safeName(role)}.md`);
+    }
     return resolve(this.handoffDir, `${safeName(role)}.md`);
   }
 
-  getHandoffChain(role) {
-    const path = this._chainPath(role);
+  getHandoffChain(role, workingDir) {
+    const path = this._chainPath(role, workingDir);
     if (!existsSync(path)) return [];
     try {
       const content = readFileSync(path, 'utf8');
       const entries = [];
-      // Parse entries — each starts with "## Rotation N —"
-      // Body includes the header + all content up to (but not including) the
-      // trailing --- separator and the next entry.
       const blocks = content.split(/\n(?=## Rotation )/);
       for (const block of blocks) {
         const headerMatch = block.match(/^## Rotation (\d+) —/);
@@ -162,9 +173,9 @@ export class MemoryStore {
     }
   }
 
-  appendHandoffBrief(role, entry) {
+  appendHandoffBrief(role, entry, workingDir) {
     if (!role || !entry) return false;
-    const chain = this.getHandoffChain(role);
+    const chain = this.getHandoffChain(role, workingDir);
     const nextN = (chain[0]?.rotationN || 0) + 1;
 
     const block = [
@@ -178,7 +189,6 @@ export class MemoryStore {
       '',
     ].filter(Boolean).join('\n');
 
-    // Prepend new entry (newest first), keep last N
     const newChain = [{ rotationN: nextN, body: block }, ...chain].slice(0, MAX_HANDOFF_ROTATIONS);
 
     const lines = [
@@ -193,25 +203,27 @@ export class MemoryStore {
     }
 
     try {
-      writeFileSync(this._chainPath(role), lines.join('\n'));
+      writeFileSync(this._chainPath(role, workingDir), lines.join('\n'));
       return true;
     } catch {
       return false;
     }
   }
 
-  getRecentHandoffMarkdown(role, count = 3, maxChars = 4000) {
-    const chain = this.getHandoffChain(role);
+  getRecentHandoffMarkdown(role, count = 3, maxChars = 4000, workingDir) {
+    const chain = this.getHandoffChain(role, workingDir);
     if (chain.length === 0) return '';
     const recent = chain.slice(0, count);
     const out = recent.map((e) => e.body || '').join('\n\n---\n\n');
     return truncate(out, maxChars);
   }
 
-  listHandoffRoles() {
-    if (!existsSync(this.handoffDir)) return [];
+  listHandoffRoles(workingDir) {
+    const slug = this._workspaceSlug(workingDir);
+    const dir = slug ? resolve(this.handoffDir, slug) : this.handoffDir;
+    if (!existsSync(dir)) return [];
     try {
-      return readdirSync(this.handoffDir)
+      return readdirSync(dir)
         .filter((f) => f.endsWith('.md'))
         .map((f) => f.replace(/\.md$/, ''));
     } catch {

@@ -20,12 +20,20 @@ const NODE_Y_GAP = 130;
 const MAX_PER_ROW = 4;
 const ROOT_ID = '__groove_root__';
 
-function loadPositions() {
-  try { return JSON.parse(localStorage.getItem('groove:nodePositions') || '{}'); } catch { return {}; }
+function loadPositions(teamId) {
+  if (!teamId) return {};
+  try { return JSON.parse(localStorage.getItem(`groove:nodePositions:${teamId}`) || '{}'); } catch { return {}; }
 }
 
-function savePositions(positions) {
-  try { localStorage.setItem('groove:nodePositions', JSON.stringify(positions)); } catch {}
+function savePositions(teamId, positions) {
+  if (!teamId) return;
+  try { localStorage.setItem(`groove:nodePositions:${teamId}`, JSON.stringify(positions)); } catch {}
+}
+
+function loadGlobalPositionsOnce(teamId) {
+  const teamKey = `groove:nodePositions:${teamId}`;
+  if (localStorage.getItem(teamKey) !== null) return null;
+  try { return JSON.parse(localStorage.getItem('groove:nodePositions') || '{}'); } catch { return {}; }
 }
 
 function loadTeamViewports() {
@@ -307,7 +315,15 @@ function AgentTreeInner() {
 
   // Build nodes — positions are stable, data updates flow to node components
   const targetNodes = useMemo(() => {
-    const saved = loadPositions();
+    let saved = loadPositions(activeTeamId);
+    // Migrate global positions on first load for this team
+    if (Object.keys(saved).length === 0) {
+      const global = loadGlobalPositionsOnce(activeTeamId);
+      if (global && Object.keys(global).length > 0) {
+        saved = global;
+        savePositions(activeTeamId, saved);
+      }
+    }
     const runningCount = agents.filter((a) => a.status === 'running').length;
 
     const nodes = [
@@ -371,15 +387,15 @@ function AgentTreeInner() {
 
     // Auto-save positions for newly placed nodes so they survive team switches
     if (Object.keys(newPositions).length > 0) {
-      savePositions({ ...saved, ...newPositions });
+      savePositions(activeTeamId, { ...saved, ...newPositions });
     }
 
     return nodes;
-  }, [agents, tokenTimeline]);
+  }, [agents, tokenTimeline, activeTeamId]);
 
   // Build edges — compute closest handle based on saved node positions
   const targetEdges = useMemo(() => {
-    const saved = loadPositions();
+    const saved = loadPositions(activeTeamId);
     const rootPos = saved[ROOT_ID] || { x: 0, y: 0 };
 
     return agents.map((agent, i) => {
@@ -411,7 +427,7 @@ function AgentTreeInner() {
         animated: agent.status === 'running',
       };
     });
-  }, [agents]);
+  }, [agents, activeTeamId]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(targetNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(targetEdges);
@@ -531,12 +547,11 @@ function AgentTreeInner() {
 
   const onNodeDragStop = useCallback((_e, node) => {
     const agent = agents.find((a) => a.id === node.id);
-    // Save by agent name (stable across resumes/rotations) instead of ID (changes each session)
     const key = node.id === ROOT_ID ? ROOT_ID : (agent?.name || node.id);
-    const saved = loadPositions();
+    const saved = loadPositions(activeTeamId);
     saved[key] = node.position;
-    savePositions(saved);
-  }, [agents]);
+    savePositions(activeTeamId, saved);
+  }, [agents, activeTeamId]);
 
   return (
     <ReactFlow

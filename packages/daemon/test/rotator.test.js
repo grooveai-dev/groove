@@ -51,6 +51,9 @@ describe('Rotator', () => {
         recordColdStartSkipped() {},
         record() {},
       },
+      locks: {
+        release() {},
+      },
       broadcast(msg) { broadcasts.push(msg); },
     };
 

@@ -259,6 +259,15 @@ MANDATORY RULES:
 IMPORTANT: Do not use markdown formatting like ** or ### in your output. Write in plain text with clean formatting. Use line breaks, dashes, and indentation for structure.
 
 `,
+  avatar: `You are an Avatar agent — a talking, voice-enabled AI persona. You work inside the avatar-team project (Vite + React 19 + Tailwind CSS v4 + TalkingHead). Focus on:
+- Building and refining the 3D avatar experience (TalkingHead / Ready Player Me models)
+- Voice pipeline: ElevenLabs WebSocket TTS, Web Speech API STT, real-time lip sync
+- Chat modes: Agent Mode (GROOVE agent bridge) and Quick Chat (direct Claude/OpenAI/Gemini API)
+- UI: FaceTime-style video call layout, spawn wizard, settings, chat transcript
+- Integration with GROOVE daemon for agent spawning and conversation routing
+You write frontend (React components, hooks) and backend (voice pipeline modules, API integration). Keep latency low — avatar interactions must feel real-time.
+
+`,
   ambassador: `You are an Ambassador agent — the sole bridge between this Groove daemon and a federated peer. You communicate with the remote Ambassador using diplomatic pouch messages. You can read the local codebase for context. Your ONLY outbound channel is the federation pouch system. When you receive work from your local team, package it as a task-request and send it to your peer. When you receive results from your peer, deliver them to your local team. Report results to your local team. Priority order: deliver to the planner agent first. If no planner exists, deliver to the fullstack agent. If neither exists, broadcast to all running agents. Use the GROOVE coordination API at http://localhost:31415 to discover running agents (GET /api/agents) and instruct them (POST /api/agents/:id/instruct). You do NOT write code or modify files. You translate, negotiate, and coordinate.
 
 `,
@@ -280,6 +289,7 @@ export class ProcessManager {
     this.daemon = daemon;
     this.handles = new Map(); // agentId -> { proc, logStream }
     this.peakContextUsage = new Map(); // agentId -> highest contextUsage seen
+    this.pendingMessages = new Map(); // agentId -> { message, timestamp }
   }
 
   async spawn(config) {
@@ -341,6 +351,12 @@ export class ProcessManager {
       throw new Error(
         `${provider.constructor.displayName} is not installed. Run: ${provider.constructor.installCommand()}`
       );
+    }
+
+    // Persist ElevenLabs key to credential store, then strip from metadata
+    if (config.role === 'avatar' && config.metadata?.ttsApiKey) {
+      try { this.daemon.credentials.setKey('elevenlabs', config.metadata.ttsApiKey); } catch { /* best effort */ }
+      delete config.metadata.ttsApiKey;
     }
 
     // Resolve auto model routing before registering
@@ -736,6 +752,21 @@ For normal file edits within your scope, proceed without review.
       // Non-Claude providers (Codex, Gemini) may embed the JSON in text rather than using Write.
       if (finalStatus === 'completed' && agent.role === 'planner') {
         this._extractRecommendedTeam(agent, logPath);
+      }
+
+      // Auto-resume with queued message: if the user sent a message while this
+      // CLI agent was still running, resume the session now that it's done.
+      if (finalStatus === 'completed') {
+        const pending = this.consumePendingMessage(agent.id);
+        if (pending) {
+          const agentData = registry.get(agent.id);
+          if (agentData?.sessionId) {
+            this.resume(agent.id, pending.message).catch((err) => {
+              console.error(`[Groove] Auto-resume with queued message failed for ${agent.name}: ${err.message}`);
+            });
+            return;
+          }
+        }
       }
 
       // Trigger journalist synthesis immediately on completion so the project
@@ -1147,17 +1178,37 @@ For normal file edits within your scope, proceed without review.
 
       // Wake the target agent with the handoff request
       const message = `Cross-scope handoff from ${sourceAgent.name} (${sourceAgent.role}):\n\n${content}`;
-      this.daemon.processes.resume(target.id, message).then((newAgent) => {
+
+      if (target.status === 'running') {
+        let sent = false;
+        if (this.hasAgentLoop(target.id)) {
+          this.sendMessage(target.id, message).catch(() => {});
+          sent = true;
+        }
+        if (!sent && this.daemon.journalist) {
+          this.daemon.journalist.recordUserFeedback(target, message);
+        }
         this.daemon.audit.log('handoff.routed', {
-          from: sourceAgent.name, to: target.name, newId: newAgent.id, role: targetRole,
+          from: sourceAgent.name, to: target.name, newId: target.id, role: targetRole,
         });
         this.daemon.broadcast({
           type: 'handoff:routed',
           from: sourceAgent.name, to: target.name, role: targetRole,
         });
-      }).catch((err) => {
-        console.error(`[Groove] Handoff to ${targetRole} failed: ${err.message}`);
-      });
+      } else {
+        // Target is completed/stopped — resume it with the handoff message
+        this.daemon.processes.resume(target.id, message).then((newAgent) => {
+          this.daemon.audit.log('handoff.routed', {
+            from: sourceAgent.name, to: target.name, newId: newAgent.id, role: targetRole,
+          });
+          this.daemon.broadcast({
+            type: 'handoff:routed',
+            from: sourceAgent.name, to: target.name, role: targetRole,
+          });
+        }).catch((err) => {
+          console.error(`[Groove] Handoff to ${targetRole} failed: ${err.message}`);
+        });
+      }
 
       // Remove the handoff file
       try { unlinkSync(filePath); } catch {}
@@ -1246,7 +1297,16 @@ For normal file edits within your scope, proceed without review.
     }
 
     this.handles.set(newAgent.id, { proc, logStream });
-    registry.update(newAgent.id, { status: 'running', pid: proc.pid });
+    registry.update(newAgent.id, { status: 'running', pid: proc.pid, sessionId });
+
+    this.daemon.broadcast({
+      type: 'rotation:complete',
+      agentId: newAgent.id,
+      agentName: newAgent.name,
+      oldAgentId: agentId,
+      reason: 'resume',
+      tokensSaved: 0,
+    });
 
     // Same stdout/stderr/exit handling as spawn
     proc.stdout.on('data', (chunk) => {
@@ -1388,6 +1448,17 @@ For normal file edits within your scope, proceed without review.
   hasAgentLoop(agentId) {
     const handle = this.handles.get(agentId);
     return !!(handle?.loop);
+  }
+
+  queueMessage(agentId, message) {
+    this.pendingMessages.set(agentId, { message, timestamp: Date.now() });
+    this.daemon.broadcast({ type: 'agent:message_queued', agentId, message });
+  }
+
+  consumePendingMessage(agentId) {
+    const pending = this.pendingMessages.get(agentId);
+    if (pending) this.pendingMessages.delete(agentId);
+    return pending || null;
   }
 
   async killAll() {

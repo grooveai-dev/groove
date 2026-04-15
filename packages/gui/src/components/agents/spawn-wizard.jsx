@@ -118,17 +118,31 @@ export function SpawnWizard() {
   const [selectedPeerId, setSelectedPeerId] = useState('');
   const federation = useGrooveStore((s) => s.federation);
 
-  // Avatar-specific state
-  const [avatarUrl, setAvatarUrl] = useState('');
-  const [ttsProvider, setTtsProvider] = useState('elevenlabs');
-  const [ttsApiKey, setTtsApiKey] = useState('');
-  const [ttsVoiceId, setTtsVoiceId] = useState('');
-  const [sttMode, setSttMode] = useState('web-speech');
-  const [chatMode, setChatMode] = useState('quick-chat');
-  const [chatProvider, setChatProvider] = useState('');
-  const [chatModel, setChatModel] = useState('');
+  // Avatar-specific state — persisted to localStorage
+  const savedAvatar = (() => {
+    try { return JSON.parse(localStorage.getItem('groove-avatar-wizard-cfg') || '{}'); } catch { return {}; }
+  })();
+  const [avatarUrl, setAvatarUrl] = useState(savedAvatar.avatarUrl || '');
+  const [avatarPreset, setAvatarPreset] = useState(savedAvatar.avatarPreset || 'default');
+  const [ttsProvider, setTtsProvider] = useState(savedAvatar.ttsProvider || 'browser');
+  const [ttsApiKey, setTtsApiKey] = useState(savedAvatar.ttsApiKey || '');
+  const [ttsVoiceId, setTtsVoiceId] = useState(savedAvatar.ttsVoiceId || '');
+  const [sttMode, setSttMode] = useState(savedAvatar.sttMode || 'web-speech');
+  const [chatMode, setChatMode] = useState(savedAvatar.chatMode || 'quick-chat');
+  const [chatProvider, setChatProvider] = useState(savedAvatar.chatProvider || '');
+  const [chatModel, setChatModel] = useState(savedAvatar.chatModel || '');
   const [frontAgentId, setFrontAgentId] = useState('');
   const agents = useGrooveStore((s) => s.agents);
+
+  // Persist avatar config to localStorage
+  useEffect(() => {
+    if (role !== 'avatar') return;
+    try {
+      localStorage.setItem('groove-avatar-wizard-cfg', JSON.stringify({
+        avatarUrl, avatarPreset, ttsProvider, ttsVoiceId, sttMode, chatMode, chatProvider, chatModel,
+      }));
+    } catch {}
+  }, [role, avatarUrl, avatarPreset, ttsProvider, ttsVoiceId, sttMode, chatMode, chatProvider, chatModel]);
 
   useEffect(() => {
     if (open) {
@@ -163,8 +177,7 @@ export function SpawnWizard() {
       setSelectedPersonality('');
       setSelectedPeerId('');
       setShowAdvanced(false);
-      setAvatarUrl(''); setTtsProvider('elevenlabs'); setTtsApiKey(''); setTtsVoiceId('');
-      setSttMode('web-speech'); setChatMode('quick-chat'); setChatProvider(''); setChatModel(''); setFrontAgentId('');
+      setFrontAgentId('');
     }
   }, [open, fetchProviders]);
 
@@ -192,6 +205,7 @@ export function SpawnWizard() {
         ...(selectedRole === 'avatar' && {
           metadata: {
             avatarUrl: avatarUrl || undefined,
+            avatarPreset: avatarPreset || 'default',
             ttsProvider,
             ttsApiKey: ttsApiKey || undefined,
             ttsVoiceId: ttsVoiceId || undefined,
@@ -312,17 +326,17 @@ export function SpawnWizard() {
                   </label>
                   <div className="flex gap-2 mb-3">
                     {[
-                      { label: 'Default', color: '#33afbc' },
-                      { label: 'Casual',  color: '#c678dd' },
-                      { label: 'Pro',     color: '#61afef' },
-                      { label: 'Minimal', color: '#e5c07b' },
+                      { id: 'default', label: 'Alex',   desc: 'Male',   color: '#33afbc' },
+                      { id: 'casual',  label: 'Maya',   desc: 'Female', color: '#c678dd' },
+                      { id: 'pro',     label: 'Sam',    desc: 'Male',   color: '#61afef' },
+                      { id: 'minimal', label: 'Jordan', desc: 'Female', color: '#e5c07b' },
                     ].map((preset) => (
                       <button
-                        key={preset.label}
-                        onClick={() => setAvatarUrl('')}
+                        key={preset.id}
+                        onClick={() => { setAvatarPreset(preset.id); setAvatarUrl(''); }}
                         className={cn(
                           'flex flex-col items-center gap-1.5 p-2 rounded-lg border transition-all cursor-pointer flex-1',
-                          !avatarUrl
+                          avatarPreset === preset.id && !avatarUrl
                             ? 'border-accent bg-accent/5'
                             : 'border-border-subtle bg-surface-1 hover:border-border',
                         )}
@@ -334,6 +348,7 @@ export function SpawnWizard() {
                           <User size={18} style={{ color: preset.color }} />
                         </div>
                         <span className="text-2xs text-text-2 font-sans">{preset.label}</span>
+                        <span className="text-2xs text-text-4 font-sans">{preset.desc}</span>
                       </button>
                     ))}
                   </div>
@@ -586,7 +601,8 @@ export function SpawnWizard() {
                   placeholder={`${selectedRole}-1`}
                 />
 
-                {/* Provider select - native for reliability */}
+                {/* Provider select — hidden for avatar (uses chat provider instead) */}
+                {selectedRole !== 'avatar' && (<>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <label className="text-xs font-medium text-text-2 font-sans">Provider</label>
@@ -626,7 +642,6 @@ export function SpawnWizard() {
                   </div>
                 </div>
 
-                {/* Provider status hints */}
                 {provider && selectedProvider && (
                   <div className="text-2xs text-text-3 font-sans flex items-center gap-2">
                     {selectedProvider.authType === 'local' ? (
@@ -640,6 +655,7 @@ export function SpawnWizard() {
                     )}
                   </div>
                 )}
+                </>)}
 
                 {/* Skills */}
                 <div className="space-y-1.5">

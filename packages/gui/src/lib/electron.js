@@ -31,6 +31,13 @@ export async function setProjectDir(dir) {
   return api.post('/project-dir', { dir });
 }
 
+export async function integrationOAuth(url) {
+  if (window.groove?.integrations?.oauthStart) {
+    return window.groove.integrations.oauthStart(url);
+  }
+  window.open(url, '_blank', 'noopener');
+}
+
 export const electronAuth = {
   login: () => window.groove?.auth?.login(),
   logout: () => window.groove?.auth?.logout(),

@@ -423,6 +423,11 @@ export class Daemon {
     this.state.load();
     this.registry.restore(this.state.get('agents') || []);
 
+    // Purge file-scope locks for agents that didn't survive the restart
+    const runningIds = this.registry.getAll().filter(a => a.status === 'running').map(a => a.id);
+    const purged = this.locks.purgeOrphans(runningIds);
+    if (purged > 0) console.log(`  Purged ${purged} orphaned lock(s) from previous session`);
+
     // Migrate old agents without teamId to default team
     this.teams.migrateAgents();
 

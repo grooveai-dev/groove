@@ -6,6 +6,7 @@ import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { api } from '../../lib/api';
 import { useToast } from '../../lib/hooks/use-toast';
+import { integrationOAuth } from '../../lib/electron';
 import {
   Check, CheckCircle, ExternalLink, Loader2, Eye, EyeOff,
   Key, Shield, Trash2, ChevronRight, X, Copy, RefreshCw,
@@ -390,8 +391,12 @@ function ConfigureStep({ item, status, onDone, onRefreshStatus }) {
     try {
       const data = await api.post(`/integrations/${item.id}/oauth/start`);
       if (data.url) {
-        window.open(data.url, '_blank', 'noopener');
-        toast.success('Browser opened — complete sign-in there');
+        const result = await integrationOAuth(data.url);
+        if (result?.error) {
+          toast.error('Sign-in failed', result.error);
+        } else {
+          toast.success('Browser opened — complete sign-in there');
+        }
       }
     } catch (err) {
       toast.error('Sign-in failed', err.message);
@@ -757,7 +762,12 @@ export function GoogleWorkspaceWizard({ integrations, open, onClose }) {
     try {
       const data = await api.post('/integrations/google-workspace/oauth/start', { integrationIds: installedIds });
       if (data.url) {
-        window.open(data.url, '_blank', 'noopener');
+        const result = await integrationOAuth(data.url);
+        if (result?.error) {
+          toast.error('Sign-in failed', result.error);
+          setAuthenticating(false);
+          return;
+        }
         toast.success('Browser opened — complete sign-in there');
         // Poll for auth completion
         if (pollRef.current) clearInterval(pollRef.current);

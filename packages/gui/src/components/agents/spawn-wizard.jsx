@@ -12,7 +12,6 @@ import {
   Shield, Database, Megaphone, Calculator, UserCheck,
   Headphones, BarChart3, Rocket, ChevronDown, Pen, Presentation,
   Sparkles, X, Search, AlertTriangle, Plug, MessageCircle, GitBranch, Globe,
-  User, Volume2, Mic, Zap, Bot,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Dialog, DialogContent } from '../ui/dialog';
@@ -71,7 +70,6 @@ const ROLE_PRESETS = [
   { id: 'analyst',   label: 'Analyst',    desc: 'Data analysis, insights',         icon: BarChart3,  tier: 'Medium' },
   { id: 'creative',  label: 'Writer',     desc: 'Copy, articles, proposals',       icon: Pen,        tier: 'Heavy',  skillHint: true },
   { id: 'slides',    label: 'Slides',     desc: 'Pitch decks, presentations',      icon: Presentation, tier: 'Heavy', skillHint: true },
-  { id: 'avatar',     label: 'Avatar',     desc: 'Talking avatar, voice chat',      icon: User,         tier: 'Heavy' },
   { id: 'ambassador', label: 'Ambassador', desc: 'Bridge to federated server',     icon: Globe,        tier: 'Light' },
 ];
 
@@ -118,32 +116,6 @@ export function SpawnWizard() {
   const [selectedPeerId, setSelectedPeerId] = useState('');
   const federation = useGrooveStore((s) => s.federation);
 
-  // Avatar-specific state — persisted to localStorage
-  const savedAvatar = (() => {
-    try { return JSON.parse(localStorage.getItem('groove-avatar-wizard-cfg') || '{}'); } catch { return {}; }
-  })();
-  const [avatarUrl, setAvatarUrl] = useState(savedAvatar.avatarUrl || '');
-  const [avatarPreset, setAvatarPreset] = useState(savedAvatar.avatarPreset || 'default');
-  const [ttsProvider, setTtsProvider] = useState(savedAvatar.ttsProvider || 'browser');
-  const [ttsApiKey, setTtsApiKey] = useState(savedAvatar.ttsApiKey || '');
-  const [ttsVoiceId, setTtsVoiceId] = useState(savedAvatar.ttsVoiceId || '');
-  const [sttMode, setSttMode] = useState(savedAvatar.sttMode || 'web-speech');
-  const [chatMode, setChatMode] = useState(savedAvatar.chatMode || 'quick-chat');
-  const [chatProvider, setChatProvider] = useState(savedAvatar.chatProvider || '');
-  const [chatModel, setChatModel] = useState(savedAvatar.chatModel || '');
-  const [frontAgentId, setFrontAgentId] = useState('');
-  const agents = useGrooveStore((s) => s.agents);
-
-  // Persist avatar config to localStorage
-  useEffect(() => {
-    if (role !== 'avatar') return;
-    try {
-      localStorage.setItem('groove-avatar-wizard-cfg', JSON.stringify({
-        avatarUrl, avatarPreset, ttsProvider, ttsVoiceId, sttMode, chatMode, chatProvider, chatModel,
-      }));
-    } catch {}
-  }, [role, avatarUrl, avatarPreset, ttsProvider, ttsVoiceId, sttMode, chatMode, chatProvider, chatModel]);
-
   useEffect(() => {
     if (open) {
       fetchProviders().then((data) => {
@@ -177,7 +149,6 @@ export function SpawnWizard() {
       setSelectedPersonality('');
       setSelectedPeerId('');
       setShowAdvanced(false);
-      setFrontAgentId('');
     }
   }, [open, fetchProviders]);
 
@@ -202,20 +173,6 @@ export function SpawnWizard() {
         ...(selectedRepos.length > 0 && { repos: selectedRepos }),
         ...(selectedPersonality && { personality: selectedPersonality }),
         ...(selectedRole === 'ambassador' && selectedPeerId && { peerId: selectedPeerId }),
-        ...(selectedRole === 'avatar' && {
-          metadata: {
-            avatarUrl: avatarUrl || undefined,
-            avatarPreset: avatarPreset || 'default',
-            ttsProvider,
-            ttsApiKey: ttsApiKey || undefined,
-            ttsVoiceId: ttsVoiceId || undefined,
-            sttMode,
-            chatMode,
-            chatProvider: chatMode === 'quick-chat' ? chatProvider : undefined,
-            chatModel: chatMode === 'quick-chat' ? chatModel : undefined,
-            frontAgentId: chatMode === 'agent-voice' ? frontAgentId : undefined,
-          },
-        }),
       };
       await spawnAgent(config);
       closeDetail();
@@ -316,277 +273,6 @@ export function SpawnWizard() {
               );
             })()}
 
-            {/* Avatar-specific config */}
-            {selectedRole === 'avatar' && (
-              <div className="space-y-5">
-                {/* Avatar Model */}
-                <div>
-                  <label className="text-xs font-semibold text-text-2 font-sans uppercase tracking-wider block mb-3">
-                    Avatar Model
-                  </label>
-                  <div className="flex gap-2 mb-3">
-                    {[
-                      { id: 'default', label: 'Alex',   desc: 'Male',   color: '#33afbc' },
-                      { id: 'casual',  label: 'Maya',   desc: 'Female', color: '#c678dd' },
-                      { id: 'pro',     label: 'Sam',    desc: 'Male',   color: '#61afef' },
-                      { id: 'minimal', label: 'Jordan', desc: 'Female', color: '#e5c07b' },
-                    ].map((preset) => (
-                      <button
-                        key={preset.id}
-                        onClick={() => { setAvatarPreset(preset.id); setAvatarUrl(''); }}
-                        className={cn(
-                          'flex flex-col items-center gap-1.5 p-2 rounded-lg border transition-all cursor-pointer flex-1',
-                          avatarPreset === preset.id && !avatarUrl
-                            ? 'border-accent bg-accent/5'
-                            : 'border-border-subtle bg-surface-1 hover:border-border',
-                        )}
-                      >
-                        <div
-                          className="w-10 h-10 rounded-full flex items-center justify-center"
-                          style={{ background: preset.color + '20', border: `1.5px solid ${preset.color}40` }}
-                        >
-                          <User size={18} style={{ color: preset.color }} />
-                        </div>
-                        <span className="text-2xs text-text-2 font-sans">{preset.label}</span>
-                        <span className="text-2xs text-text-4 font-sans">{preset.desc}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <Input
-                    label="Custom .glb URL (Ready Player Me)"
-                    value={avatarUrl}
-                    onChange={(e) => setAvatarUrl(e.target.value)}
-                    placeholder="https://models.readyplayer.me/..."
-                    mono
-                    className="text-xs"
-                  />
-                </div>
-
-                {/* Voice Setup */}
-                <div>
-                  <label className="text-xs font-semibold text-text-2 font-sans uppercase tracking-wider block mb-3">
-                    Voice Setup
-                  </label>
-
-                  {/* TTS */}
-                  <div className="space-y-2 mb-4">
-                    <label className="text-2xs font-medium text-text-3 font-sans uppercase tracking-wider">Text-to-Speech</label>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setTtsProvider('elevenlabs')}
-                        className={cn(
-                          'flex-1 flex items-center gap-2 px-3 py-2 rounded-md border text-left transition-all cursor-pointer',
-                          ttsProvider === 'elevenlabs'
-                            ? 'border-accent bg-accent/5'
-                            : 'border-border-subtle bg-surface-1 hover:border-border',
-                        )}
-                      >
-                        <Volume2 size={14} className={ttsProvider === 'elevenlabs' ? 'text-accent' : 'text-text-3'} />
-                        <div>
-                          <div className="text-2xs font-semibold text-text-0 font-sans">ElevenLabs</div>
-                          <div className="text-2xs text-text-4 font-sans">High quality</div>
-                        </div>
-                      </button>
-                      <button
-                        onClick={() => setTtsProvider('browser')}
-                        className={cn(
-                          'flex-1 flex items-center gap-2 px-3 py-2 rounded-md border text-left transition-all cursor-pointer',
-                          ttsProvider === 'browser'
-                            ? 'border-accent bg-accent/5'
-                            : 'border-border-subtle bg-surface-1 hover:border-border',
-                        )}
-                      >
-                        <Volume2 size={14} className={ttsProvider === 'browser' ? 'text-accent' : 'text-text-3'} />
-                        <div>
-                          <div className="text-2xs font-semibold text-text-0 font-sans">Browser Voice</div>
-                          <div className="text-2xs text-text-4 font-sans">Free</div>
-                        </div>
-                      </button>
-                    </div>
-
-                    {ttsProvider === 'elevenlabs' && (
-                      <div className="space-y-2 pl-1">
-                        <Input
-                          label="ElevenLabs API Key"
-                          type="password"
-                          value={ttsApiKey}
-                          onChange={(e) => setTtsApiKey(e.target.value)}
-                          placeholder="sk_..."
-                          mono
-                          className="text-xs"
-                        />
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium text-text-2 font-sans">Voice</label>
-                          <div className="relative">
-                            <select
-                              value={ttsVoiceId}
-                              onChange={(e) => setTtsVoiceId(e.target.value)}
-                              className="w-full h-8 px-3 pr-8 text-sm rounded-md bg-surface-1 border border-border text-text-0 font-sans appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
-                            >
-                              <option value="">Default</option>
-                              <option value="rachel">Rachel (Female)</option>
-                              <option value="drew">Drew (Male)</option>
-                              <option value="clyde">Clyde (Male)</option>
-                              <option value="domi">Domi (Female)</option>
-                              <option value="bella">Bella (Female)</option>
-                              <option value="josh">Josh (Male)</option>
-                            </select>
-                            <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none" />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* STT */}
-                  <div className="space-y-2">
-                    <label className="text-2xs font-medium text-text-3 font-sans uppercase tracking-wider">Speech-to-Text</label>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setSttMode('web-speech')}
-                        className={cn(
-                          'flex-1 flex items-center gap-2 px-3 py-2 rounded-md border text-left transition-all cursor-pointer',
-                          sttMode === 'web-speech'
-                            ? 'border-accent bg-accent/5'
-                            : 'border-border-subtle bg-surface-1 hover:border-border',
-                        )}
-                      >
-                        <Mic size={14} className={sttMode === 'web-speech' ? 'text-accent' : 'text-text-3'} />
-                        <div>
-                          <div className="text-2xs font-semibold text-text-0 font-sans">Web Speech API</div>
-                          <div className="text-2xs text-text-4 font-sans">Built-in, no setup</div>
-                        </div>
-                      </button>
-                      <button
-                        onClick={() => setSttMode('whisper')}
-                        className={cn(
-                          'flex-1 flex items-center gap-2 px-3 py-2 rounded-md border text-left transition-all cursor-pointer',
-                          sttMode === 'whisper'
-                            ? 'border-accent bg-accent/5'
-                            : 'border-border-subtle bg-surface-1 hover:border-border',
-                        )}
-                      >
-                        <Mic size={14} className={sttMode === 'whisper' ? 'text-accent' : 'text-text-3'} />
-                        <div>
-                          <div className="text-2xs font-semibold text-text-0 font-sans">Whisper Local</div>
-                          <div className="text-2xs text-text-4 font-sans">Offline, accurate</div>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Chat Mode */}
-                <div>
-                  <label className="text-xs font-semibold text-text-2 font-sans uppercase tracking-wider block mb-3">
-                    Chat Mode
-                  </label>
-                  <div className="flex gap-2 mb-3">
-                    <button
-                      onClick={() => setChatMode('quick-chat')}
-                      className={cn(
-                        'flex-1 flex items-center gap-2.5 p-3 rounded-lg border text-left transition-all cursor-pointer',
-                        chatMode === 'quick-chat'
-                          ? 'border-accent bg-accent/5'
-                          : 'border-border-subtle bg-surface-1 hover:border-border',
-                      )}
-                    >
-                      <Zap size={16} className={chatMode === 'quick-chat' ? 'text-accent' : 'text-text-3'} />
-                      <div>
-                        <div className="text-xs font-semibold text-text-0 font-sans">Quick Chat</div>
-                        <div className="text-2xs text-text-3 font-sans">Direct API, low latency</div>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => setChatMode('agent-voice')}
-                      className={cn(
-                        'flex-1 flex items-center gap-2.5 p-3 rounded-lg border text-left transition-all cursor-pointer',
-                        chatMode === 'agent-voice'
-                          ? 'border-accent bg-accent/5'
-                          : 'border-border-subtle bg-surface-1 hover:border-border',
-                      )}
-                    >
-                      <Bot size={16} className={chatMode === 'agent-voice' ? 'text-accent' : 'text-text-3'} />
-                      <div>
-                        <div className="text-xs font-semibold text-text-0 font-sans">Agent Voice</div>
-                        <div className="text-2xs text-text-3 font-sans">Fronts a running agent</div>
-                      </div>
-                    </button>
-                  </div>
-
-                  {chatMode === 'quick-chat' && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-text-2 font-sans">Provider</label>
-                        <div className="relative">
-                          <select
-                            value={chatProvider}
-                            onChange={(e) => { setChatProvider(e.target.value); setChatModel(''); }}
-                            className="w-full h-8 px-3 pr-8 text-sm rounded-md bg-surface-1 border border-border text-text-0 font-sans appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
-                          >
-                            <option value="">Auto</option>
-                            <option value="claude">Claude</option>
-                            <option value="openai">OpenAI</option>
-                            <option value="gemini">Gemini</option>
-                          </select>
-                          <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none" />
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-text-2 font-sans">Model</label>
-                        <div className="relative">
-                          <select
-                            value={chatModel}
-                            onChange={(e) => setChatModel(e.target.value)}
-                            className="w-full h-8 px-3 pr-8 text-sm rounded-md bg-surface-1 border border-border text-text-0 font-sans appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
-                          >
-                            <option value="">Auto</option>
-                            {chatProvider === 'claude' && <>
-                              <option value="claude-sonnet-4-20250514">Sonnet 4</option>
-                              <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
-                            </>}
-                            {chatProvider === 'openai' && <>
-                              <option value="gpt-4o">GPT-4o</option>
-                              <option value="gpt-4o-mini">GPT-4o Mini</option>
-                            </>}
-                            {chatProvider === 'gemini' && <>
-                              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                            </>}
-                          </select>
-                          <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none" />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {chatMode === 'agent-voice' && (
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-text-2 font-sans">Front Agent</label>
-                      <div className="relative">
-                        <select
-                          value={frontAgentId}
-                          onChange={(e) => setFrontAgentId(e.target.value)}
-                          className="w-full h-8 px-3 pr-8 text-sm rounded-md bg-surface-1 border border-border text-text-0 font-sans appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
-                        >
-                          <option value="">Select an agent...</option>
-                          {agents
-                            .filter((a) => a.status === 'running' && a.role !== 'avatar')
-                            .map((a) => (
-                              <option key={a.id} value={a.id}>{a.name} ({a.role})</option>
-                            ))}
-                        </select>
-                        <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none" />
-                      </div>
-                      {agents.filter((a) => a.status === 'running' && a.role !== 'avatar').length === 0 && (
-                        <p className="text-2xs text-text-4 font-sans">No running agents. Spawn one first, then use Agent Voice.</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
             {/* Section 2: Configuration */}
             {selectedRole && (
               <div className="space-y-4">
@@ -601,8 +287,6 @@ export function SpawnWizard() {
                   placeholder={`${selectedRole}-1`}
                 />
 
-                {/* Provider select — hidden for avatar (uses chat provider instead) */}
-                {selectedRole !== 'avatar' && (<>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <label className="text-xs font-medium text-text-2 font-sans">Provider</label>
@@ -655,7 +339,6 @@ export function SpawnWizard() {
                     )}
                   </div>
                 )}
-                </>)}
 
                 {/* Skills */}
                 <div className="space-y-1.5">

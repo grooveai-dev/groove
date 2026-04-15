@@ -64,6 +64,24 @@ export class LockManager {
     return { conflict: false };
   }
 
+  purgeOrphans(aliveAgentIds) {
+    const alive = new Set(aliveAgentIds);
+    let purged = 0;
+    for (const id of this.locks.keys()) {
+      if (!alive.has(id)) {
+        this.locks.delete(id);
+        purged++;
+      }
+    }
+    for (const id of this.operations.keys()) {
+      if (!alive.has(id)) {
+        this.operations.delete(id);
+      }
+    }
+    if (purged > 0) this.save();
+    return purged;
+  }
+
   getAll() {
     return Object.fromEntries(this.locks);
   }

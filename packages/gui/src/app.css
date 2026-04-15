@@ -160,10 +160,6 @@ html {
   50% { opacity: 1; }
 }
 
-@keyframes avatar-spin {
-  to { transform: rotate(360deg); }
-}
-
 @keyframes tooltip-slide-in {
   from { opacity: 0; transform: translateX(-6px); }
   to { opacity: 1; transform: translateX(0); }

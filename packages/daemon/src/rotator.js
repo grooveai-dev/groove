@@ -276,6 +276,12 @@ export class Rotator extends EventEmitter {
       const routingMode = this.daemon.router.getMode(agentId);
       const respawnModel = routingMode.mode === 'auto' ? 'auto' : agent.model;
 
+      // Remove old agent BEFORE spawning so registry.add() won't dedup the name
+      // (appending "-2", "-2-2", etc.). Save config in case we need to re-add on failure.
+      const savedConfig = { ...agent };
+      registry.remove(agentId);
+      this.daemon.locks.release(agentId);
+
       let newAgent;
       try {
         newAgent = await processes.spawn({
@@ -290,14 +296,15 @@ export class Rotator extends EventEmitter {
           teamId: agent.teamId,
         });
       } catch (spawnErr) {
-        // Spawn failed — old agent still in registry with 'killed' status.
-        // Don't lose it — the user can see and retry.
+        // Spawn failed — re-add old agent so the user can see and retry.
+        registry.add({
+          role: savedConfig.role, scope: savedConfig.scope, provider: savedConfig.provider,
+          model: savedConfig.model, prompt: savedConfig.prompt, permission: savedConfig.permission,
+          workingDir: savedConfig.workingDir, name: savedConfig.name, teamId: savedConfig.teamId,
+        });
         console.error(`[Groove] Rotation spawn failed for ${agent.name}: ${spawnErr.message}`);
         throw spawnErr;
       }
-
-      // Spawn succeeded — safe to remove old agent entry
-      registry.remove(agentId);
 
       if (agent.tokensUsed > 0) {
         registry.update(newAgent.id, { tokensUsed: agent.tokensUsed });

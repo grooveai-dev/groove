@@ -410,8 +410,7 @@ export class IntegrationStore {
       throw new Error('Google OAuth not configured. Set up your Google Cloud project first.');
     }
 
-    const port = this.daemon.port || 31415;
-    const redirectUri = `http://localhost:${port}/api/integrations/oauth/callback`;
+    const redirectUri = 'http://localhost:31415/api/integrations/oauth/callback';
     const scopes = entry.oauthScopes || [];
 
     const params = new URLSearchParams({
@@ -438,8 +437,7 @@ export class IntegrationStore {
     const { clientId, clientSecret } = creds;
 
     if (!redirectUri) {
-      const port = this.daemon.port || 31415;
-      redirectUri = `http://localhost:${port}/api/integrations/oauth/callback`;
+      redirectUri = 'http://localhost:31415/api/integrations/oauth/callback';
     }
 
     const res = await fetch('https://oauth2.googleapis.com/token', {
@@ -504,8 +502,7 @@ export class IntegrationStore {
       }
     }
 
-    const port = this.daemon.port || 31415;
-    const redirectUri = `http://localhost:${port}/api/integrations/oauth/callback`;
+    const redirectUri = 'http://localhost:31415/api/integrations/oauth/callback';
 
     const params = new URLSearchParams({
       client_id: creds.clientId,

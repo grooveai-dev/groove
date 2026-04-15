@@ -170,7 +170,8 @@ export class Journalist {
     const lines = rawLog.split('\n');
     const toolResults = new Map(); // tool_use_id -> result text
 
-    // First pass: collect tool results so we can attach them to tool calls
+    // First pass: collect tool results (and error flags) so we can attach them to tool calls
+    const toolErrors = new Set(); // tool_use_ids that returned errors
     for (const line of lines) {
       if (!line.trim() || line.startsWith('[')) continue;
       try {
@@ -183,6 +184,7 @@ export class Journalist {
                 : Array.isArray(block.content) ? block.content.map((c) => c.text || '').join('').slice(0, 300)
                 : '';
               if (text) toolResults.set(block.tool_use_id, text);
+              if (block.is_error) toolErrors.add(block.tool_use_id);
             }
           }
         }
@@ -236,6 +238,12 @@ export class Journalist {
                   if (result) entry.output = result.slice(0, 200);
                 }
 
+                // Promote to error if the tool result was flagged is_error
+                if (block.id && toolErrors.has(block.id)) {
+                  entry.type = 'error';
+                  entry.text = toolResults.get(block.id)?.slice(0, 300) || entry.input;
+                }
+
                 entries.push(entry);
               } else if (block.type === 'text' && block.text) {
                 // Keep reasoning that contains decisions or conclusions.
@@ -245,6 +253,20 @@ export class Journalist {
                 if (text.length > 50) {
                   entries.push({ type: 'thinking', text: text.slice(0, 2000), timestamp: data.timestamp });
                 }
+              }
+            }
+          }
+        }
+
+        // User messages — capture for constraint extraction
+        if (data.type === 'user' && data.message?.content) {
+          const content = data.message.content;
+          if (typeof content === 'string' && content.trim().length > 10) {
+            entries.push({ type: 'user', text: content.slice(0, 500), timestamp: data.timestamp });
+          } else if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'text' && block.text && block.text.trim().length > 10) {
+                entries.push({ type: 'user', text: block.text.slice(0, 500), timestamp: data.timestamp });
               }
             }
           }
@@ -368,6 +390,12 @@ export class Journalist {
         if (entry.output) line += ` → ${entry.output.split('\n')[0]}`;
         return line;
       }
+      case 'error': {
+        let line = `- [ERROR] ${entry.tool ? `${entry.tool}: ` : ''}${(entry.text || entry.input || '').slice(0, 300)}`;
+        return line;
+      }
+      case 'user':
+        return `- [user] ${(entry.text || '').slice(0, 300)}`;
       case 'thinking':
         return `- [thought] ${entry.text.slice(0, 300)}`;
       case 'result':
@@ -679,21 +707,6 @@ export class Journalist {
     const filteredLogs = this.collectFilteredLogs([agent]);
     const agentLog = filteredLogs[agent.id];
     const entries = agentLog?.entries || [];
-    const explorationEntries = agentLog?.explorationEntries || [];
-
-    // Get current project map — scoped to agent's workspace if applicable
-    const mapPath = resolve(this.daemon.projectDir, 'GROOVE_PROJECT_MAP.md');
-    const fullMap = existsSync(mapPath) ? readFileSync(mapPath, 'utf8') : '';
-    const projectMap = agent.workingDir
-      ? this.extractWorkspaceSection(fullMap, agent.workingDir)
-      : fullMap;
-
-    // Build a focused handoff brief
-    const toolSummary = entries
-      .filter((e) => e.type === 'tool')
-      .map((e) => `- ${e.tool}: ${e.input}`)
-      .slice(-30)
-      .join('\n');
 
     const errorSummary = entries
       .filter((e) => e.type === 'error')
@@ -705,12 +718,6 @@ export class Journalist {
       .filter((e) => e.type === 'result')
       .map((e) => e.text)
       .slice(-3)
-      .join('\n');
-
-    // Build exploration summary — what files/patterns were examined
-    const explorationSummary = explorationEntries
-      .map((e) => `- ${e.tool}: ${e.input}`)
-      .slice(-20)
       .join('\n');
 
     // Build file changes section — group Edit/Write operations by file path
@@ -739,73 +746,40 @@ export class Journalist {
     // with, decided, and solved — not just what the current session did.
     const recentChain = this.daemon.memory?.getRecentHandoffMarkdown(agent.role, 3, 3000, agent.workingDir) || '';
 
-    // Pull the user's recent messages to this agent so the new instance
-    // can continue the conversation naturally instead of restarting it.
-    // Without this, the user feels like their chat was lost.
-    const allFeedback = this.getUserFeedback() || [];
-    const agentFeedback = allFeedback
-      .filter((fb) => fb.agentId === agent.id || fb.agentName === agent.name)
-      .slice(-5);
+    // Pull the user's recent messages scoped to this agent
+    const agentFeedback = this.getUserFeedback(agent.id).slice(-5);
     const conversationSummary = agentFeedback.length > 0
       ? agentFeedback.map((fb) => `- "${fb.message}"`).join('\n')
       : '';
 
-    // Rotation reason for the new agent
-    const rotationTrigger = `- Rotation trigger: ${options.reason || 'manual'}${options.qualityScore ? ` (quality: ${options.qualityScore}/100)` : ''}`;
+    // Compact last 5 tool calls (not full output, just tool + target)
+    const recentTools = entries
+      .filter((e) => e.type === 'tool' || e.type === 'error')
+      .slice(-5)
+      .map((e) => `- ${e.type === 'error' ? 'ERROR ' : ''}${e.tool}: ${(e.input || '').slice(0, 80)}`)
+      .join('\n');
 
+    // Brief priority: errors > constraints > recent tools > accomplishments
+    // The rotator already wraps this with session continuation context
     return [
-      `# Session Continuation`,
+      `# Handoff Brief — ${agent.name} (${agent.role})`,
       ``,
-      `You are **${agent.name}** (role: ${agent.role}). This is an internal context refresh — `,
-      `the conversation with the user is ongoing and must feel seamless to them. They cannot see this brief.`,
-      rotationTrigger,
-      ``,
-      `## CRITICAL: Finish What You Were Doing`,
-      ``,
-      `The previous session was mid-work when this refresh happened. YOUR JOB IS TO COMPLETE THAT WORK.`,
-      ``,
-      `- If Recent User Messages show an unanswered request, deliver the answer.`,
-      `- If Recent Tool Calls show exploration/planning/building in progress, finish it and deliver the output.`,
-      `- If you were a planner about to output a plan, output the plan now.`,
-      `- If you were a builder about to make edits, make the edits.`,
-      ``,
-      `Do NOT announce a restart, rotation, or resumption. Do NOT greet the user. Do NOT say `,
-      `"resuming", "let me check state again", "here's where I was", or anything that signals a `,
-      `break. Do NOT ask "what would you like me to do" — the user already told you. Do NOT `,
-      `just wait — the user is waiting for YOUR output.`,
-      ``,
-      `From the user's perspective, the conversation never paused. Act accordingly.`,
-      ``,
-      conversationSummary ? `## Recent User Messages (what they've been asking for — deliver this)\n\n${conversationSummary}\n` : '',
-      recentChain ? `## Rotation History (recent)\n\n${recentChain}\n` : '',
-      `## Your Identity`,
-      `- Role: ${agent.role}`,
-      `- Scope: ${agent.scope?.join(', ') || 'unrestricted'}`,
-      `- Provider: ${agent.provider}`,
-      agent.workingDir ? `- Working directory: ${agent.workingDir}` : '',
+      `Role: ${agent.role} | Scope: ${agent.scope?.join(', ') || 'unrestricted'} | Provider: ${agent.provider}`,
+      agent.workingDir ? `Working directory: ${agent.workingDir}` : '',
+      `Rotation: ${options.reason || 'manual'}${options.qualityScore ? ` (quality: ${options.qualityScore}/100)` : ''} | Tokens: ${agent.tokensUsed}`,
       specLine,
       ``,
-      `## Session State`,
-      `- Tokens used before refresh: ${agent.tokensUsed}`,
-      `- Tool calls completed: ${entries.filter((e) => e.type === 'tool').length}`,
-      ``,
-      toolSummary ? `### Recent tool calls (what you were doing)\n${toolSummary}\n` : '',
-      resultSummary ? `### Last results\n${resultSummary}\n` : '',
-      errorSummary ? `### Unresolved errors\n${errorSummary}\n` : '',
-      fileChangesSummary ? `## Files Modified\n\n${fileChangesSummary}\n` : '',
-      explorationSummary ? `## Exploration Context\n\n${explorationSummary}\n` : '',
+      errorSummary ? `## Unresolved Errors (fix these first)\n\n${errorSummary}\n` : '',
+      constraints ? `## Project Constraints (must follow)\n\n${constraints}\n` : '',
       discoveries ? `## Known Issues & Fixes\n\n${discoveries}\n` : '',
-      constraints ? `## Project Constraints\n\n${constraints}\n` : '',
-      `## Current Project State`,
+      conversationSummary ? `## Recent User Messages\n\n${conversationSummary}\n` : '',
+      recentTools ? `## Last 5 Tool Calls\n\n${recentTools}\n` : '',
+      fileChangesSummary ? `## Files Modified\n\n${fileChangesSummary}\n` : '',
+      resultSummary ? `## Accomplishments\n\n${resultSummary}\n` : '',
+      recentChain ? `## Rotation History\n\n${recentChain}\n` : '',
+      agent.prompt ? `## Original Task\n\n${agent.prompt}\n` : '',
       ``,
-      projectMap ? projectMap.slice(0, 10000) : 'No project map available yet.',
-      ``,
-      `## Your Next Action`,
-      ``,
-      `Look at Recent User Messages and Recent Tool Calls. Decide what output the user is waiting `,
-      `for right now. Produce it. No preamble, no announcement, just the answer or work product.`,
-      agent.workingDir ? `Stay within your working directory: ${agent.workingDir}.` : '',
-      agent.prompt ? `\nOriginal task context: ${agent.prompt}` : '',
+      `Continue seamlessly — finish what was in progress and deliver the output. Do not announce rotation or greet the user.`,
     ].filter(Boolean).join('\n');
   }
 
@@ -961,9 +935,10 @@ export class Journalist {
   getUserFeedback(agentOrTeamId) {
     if (!this._userFeedback) this._loadFeedback();
     if (!this._userFeedback) return [];
-    // Check if it's an agent ID
-    if (this._userFeedback[agentOrTeamId]) return this._userFeedback[agentOrTeamId];
-    // Check by team — collect feedback for all agents in the team
+    if (agentOrTeamId) {
+      return this._userFeedback[agentOrTeamId] || [];
+    }
+    // Only return all feedback when explicitly called with no argument
     const all = [];
     for (const [, entries] of Object.entries(this._userFeedback)) {
       all.push(...entries);
@@ -1009,7 +984,28 @@ export class Journalist {
   }
 
   _extractConstraints(filteredLogs) {
-    return;
+    if (!this.daemon.memory) return;
+
+    const directivePattern = /\b(don't|do not|stop|must|always|never|use|avoid|instead|please don't|do NOT)\b/i;
+
+    try {
+      for (const [, data] of Object.entries(filteredLogs)) {
+        const { entries } = data;
+        if (!entries || entries.length === 0) continue;
+
+        for (const entry of entries) {
+          if (entry.type !== 'user' && entry.source !== 'user') continue;
+          const text = (entry.text || entry.content || '').trim();
+          if (text.length < 10 || text.length > 500) continue;
+          if (!directivePattern.test(text)) continue;
+
+          this.daemon.memory.addConstraint({
+            text: text.slice(0, 500),
+            category: 'user-directive',
+          });
+        }
+      }
+    } catch { /* Memory extraction must never break journalist cycle */ }
   }
 
   // --- Accessors ---

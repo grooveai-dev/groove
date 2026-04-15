@@ -1,7 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { memo, useMemo, useRef, useEffect } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Maximize2, X, User } from 'lucide-react';
+import { Maximize2, X } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { statusColor } from '../../lib/status';
 import { fmtNum, fmtDollar, fmtUptime } from '../../lib/format';
@@ -258,60 +258,4 @@ const AgentNode = memo(({ data, selected }) => {
 
 AgentNode.displayName = 'AgentNode';
 
-// ── Avatar Node (circular) ──────────────────────────────
-const AvatarNode = memo(({ data, selected }) => {
-  const { agent } = data;
-  const isAlive = agent.status === 'running' || agent.status === 'starting';
-  const sColor = statusColor(agent.status);
-
-  return (
-    <div className="flex flex-col items-center gap-1.5">
-      <div
-        className={`relative w-[80px] h-[80px] rounded-full overflow-hidden transition-all duration-200 ease-out border-2 border-solid ${selected ? 'border-[#ff87b4]' : 'border-[#ff87b440]'} hover:border-[#ff87b4]`}
-        style={{
-          background: 'linear-gradient(135deg, #1c1f26 0%, #2a1a2e 100%)',
-        }}
-      >
-        <Handle id="top" type="target" position={Position.Top} className="!w-1 !h-1 !bg-transparent !border-0" />
-        <Handle id="bottom" type="target" position={Position.Bottom} className="!w-1 !h-1 !bg-transparent !border-0" />
-        <Handle id="left" type="target" position={Position.Left} className="!w-1 !h-1 !bg-transparent !border-0" />
-        <Handle id="right" type="target" position={Position.Right} className="!w-1 !h-1 !bg-transparent !border-0" />
-
-        {isAlive && (
-          <div className="absolute inset-0 rounded-full overflow-hidden pointer-events-none">
-            <div
-              className="absolute inset-0 rounded-full"
-              style={{
-                background: 'conic-gradient(from 0deg, transparent 0%, rgba(255,135,180,0.15) 25%, transparent 50%)',
-                animation: 'avatar-spin 4s linear infinite',
-              }}
-            />
-          </div>
-        )}
-
-        <div className="absolute inset-0 flex items-center justify-center">
-          <User size={28} className="text-[#ff87b4]" />
-        </div>
-
-        {/* Status dot */}
-        <div className="absolute bottom-1 right-1">
-          <span className="block w-[8px] h-[8px] rounded-full border border-[#1c1f26]" style={{ background: sColor }} />
-        </div>
-      </div>
-
-      <span className="text-[10px] font-semibold text-[#e6e6e6] font-sans text-center max-w-[100px] truncate">
-        {agent.name}
-      </span>
-      <span
-        className="text-[7px] font-mono font-bold uppercase tracking-wider px-1.5 py-px rounded-full"
-        style={{ color: sColor, background: sColor + '12' }}
-      >
-        {STATUS_SHORT[agent.status] || agent.status}
-      </span>
-    </div>
-  );
-});
-
-AvatarNode.displayName = 'AvatarNode';
-
-export { AgentNode, AvatarNode };
+export { AgentNode };

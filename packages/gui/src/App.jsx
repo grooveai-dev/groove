@@ -21,7 +21,6 @@ import ToysView from './views/toys';
 
 // Agent components
 import { AgentPanel } from './components/agents/agent-panel';
-import { AvatarPanel } from './components/agents/avatar-panel';
 import { SpawnWizard } from './components/agents/spawn-wizard';
 import { JournalistPanel } from './components/agents/journalist-panel';
 
@@ -77,12 +76,7 @@ function ViewRouter() {
   if (detailPanel) {
     switch (detailPanel.type) {
       case 'agent': {
-        const agent = agents.find((a) => a.id === detailPanel.agentId);
-        if (agent?.role === 'avatar') {
-          detailContent = <AvatarPanel />;
-        } else {
-          detailContent = <AgentPanel />;
-        }
+        detailContent = <AgentPanel />;
         break;
       }
       case 'journalist':

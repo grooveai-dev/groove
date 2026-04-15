@@ -43,7 +43,6 @@ export const ROLE_COLORS = {
   creative:   { bg: 'rgba(229, 192, 123, 0.12)', text: '#e5c07b', border: '#e5c07b' },
   slides:     { bg: 'rgba(209, 154, 102, 0.12)', text: '#d19a66', border: '#d19a66' },
   chat:       { bg: 'rgba(198, 120, 221, 0.12)', text: '#c678dd', border: '#c678dd' },
-  avatar:     { bg: 'rgba(255, 135, 180, 0.12)', text: '#ff87b4', border: '#ff87b4' },
 };
 
 export function roleColor(role) {

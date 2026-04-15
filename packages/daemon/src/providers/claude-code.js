@@ -4,6 +4,7 @@
 import { execSync } from 'child_process';
 import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
+import { homedir } from 'os';
 import { Provider } from './base.js';
 
 export class ClaudeCodeProvider extends Provider {
@@ -24,6 +25,18 @@ export class ClaudeCodeProvider extends Provider {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  static isAuthenticated() {
+    const home = homedir();
+    const settingsPath = resolve(home, '.claude', 'settings.json');
+    if (!existsSync(settingsPath)) return { authenticated: false, reason: 'Claude Code not configured' };
+    try {
+      execSync('claude --version', { stdio: 'ignore', timeout: 5000 });
+      return { authenticated: true, method: 'subscription' };
+    } catch {
+      return { authenticated: false, reason: 'Claude CLI not responding' };
     }
   }
 

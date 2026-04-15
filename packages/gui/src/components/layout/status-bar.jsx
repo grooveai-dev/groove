@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Terminal, BookOpen, Radio, Plug } from 'lucide-react';
+import { Terminal, BookOpen, Radio, Plug, Globe } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/status-dot';
 import { fmtUptime } from '../../lib/format';
@@ -28,6 +28,16 @@ export function StatusBar({
             {connected ? (electron ? 'Desktop' : 'Connected') : 'Offline'}
           </span>
         </div>
+        {electron && connected && (
+          <button
+            onClick={() => openExternal(window.location.href)}
+            className="flex items-center gap-1 text-text-4 hover:text-text-1 cursor-pointer transition-colors"
+            title="Open this workspace in your browser"
+          >
+            <Globe size={10} />
+            <span>Browser</span>
+          </button>
+        )}
         {connected && uptime > 0 && (
           <span className="text-text-4">Up {fmtUptime(uptime)}</span>
         )}

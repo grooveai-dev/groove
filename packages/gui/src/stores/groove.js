@@ -1147,6 +1147,17 @@ export const useGrooveStore = create((set, get) => ({
   async instructAgent(id, message) {
     get().addChatMessage(id, 'user', message, false);
     set((s) => ({ thinkingAgents: new Set([...s.thinkingAgents, id]) }));
+
+    // Snapshot per-agent state before the async call — a WebSocket state broadcast
+    // can arrive before the HTTP response returns and prune chatHistory[id], losing
+    // the user's message.  The snapshot guarantees the transfer to the new agent ID
+    // always has the full history.
+    const snapshot = {
+      chatHistory: [...(get().chatHistory[id] || [])],
+      activityLog: [...(get().activityLog[id] || [])],
+      tokenTimeline: [...(get().tokenTimeline[id] || [])],
+    };
+
     try {
       const data = await api.post(`/agents/${encodeURIComponent(id)}/instruct`, { message });
 
@@ -1158,9 +1169,8 @@ export const useGrooveStore = create((set, get) => ({
       // CLI agent: was stopped + resumed/rotated — transfer state to new agent ID
       const newAgent = data;
       for (const key of ['chatHistory', 'activityLog', 'tokenTimeline']) {
-        const old = get()[key][id];
-        if (old?.length) {
-          set((s) => ({ [key]: { ...s[key], [newAgent.id]: [...old] } }));
+        if (snapshot[key]?.length) {
+          set((s) => ({ [key]: { ...s[key], [newAgent.id]: [...snapshot[key]] } }));
         }
       }
       set((s) => {
@@ -1169,8 +1179,8 @@ export const useGrooveStore = create((set, get) => ({
         next.add(newAgent.id);
         return { thinkingAgents: next };
       });
-      if (get().chatHistory[id]?.length) persistJSON('groove:chatHistory', get().chatHistory);
-      if (get().activityLog[id]?.length) persistJSON('groove:activityLog', get().activityLog);
+      if (get().chatHistory[newAgent.id]?.length) persistJSON('groove:chatHistory', get().chatHistory);
+      if (get().activityLog[newAgent.id]?.length) persistJSON('groove:activityLog', get().activityLog);
       get().selectAgent(newAgent.id);
       return newAgent;
     } catch (err) {

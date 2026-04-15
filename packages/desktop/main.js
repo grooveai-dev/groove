@@ -4,12 +4,35 @@ import { createHash, randomBytes } from 'crypto';
 import { fork } from 'child_process';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { writeFileSync, readFileSync, unlinkSync } from 'fs';
+import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'fs';
+import { execSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const IS_MAC = process.platform === 'darwin';
 const STUDIO_URL = 'https://studio.groovedev.ai';
 const SUBSCRIPTION_POLL_MS = 5 * 60 * 1000;
+
+// macOS Electron apps launched from Finder inherit a minimal PATH missing user
+// shell additions. Resolve the real PATH once at startup so forked daemons can
+// find CLI tools like `claude`, `codex`, `gemini`, etc.
+(function fixElectronPath() {
+  if (!IS_MAC) return;
+  try {
+    const shell = process.env.SHELL || '/bin/zsh';
+    const fullPath = execSync(`${shell} -ilc 'echo $PATH'`, { encoding: 'utf8', timeout: 5000 }).trim();
+    if (fullPath) process.env.PATH = fullPath;
+  } catch {
+    // Fallback: manually add common bin dirs
+    const home = app.getPath('home');
+    const extra = [
+      '/usr/local/bin', '/opt/homebrew/bin', `${home}/.local/bin`,
+      `${home}/.npm-global/bin`,
+    ];
+    const cur = process.env.PATH || '';
+    const toAdd = extra.filter(p => !cur.split(':').includes(p));
+    if (toAdd.length) process.env.PATH = [...toAdd, cur].join(':');
+  }
+})();
 
 let tray = null;
 let isQuitting = false;

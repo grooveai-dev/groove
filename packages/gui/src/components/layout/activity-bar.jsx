@@ -25,13 +25,15 @@ export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel
 
   return (
     <nav className="w-12 flex-shrink-0 flex flex-col bg-surface-3 border-r border-border">
+      {/* Sidebar header — aligns with BreadcrumbBar */}
+      {darwinTrafficLights && (
+        <div className="h-11 flex-shrink-0 flex items-end justify-center pb-1.5 border-b border-border">
+          <img src="/favicon.png" alt="Groove" className="h-6 w-6 rounded-full" />
+        </div>
+      )}
+
       {/* Main nav */}
-      <div className="flex flex-col items-center gap-1.5 pt-3">
-        {darwinTrafficLights && (
-          <div className="w-full h-[44px] flex-shrink-0 flex items-end justify-center pb-1.5">
-            <img src="/favicon.png" alt="Groove" className="h-7 w-7 rounded-full" />
-          </div>
-        )}
+      <div className="flex flex-col items-center gap-1.5 pt-2.5">
         {NAV_ITEMS.map((item) => (
           <Tooltip key={item.id} content={item.label} side="right">
             <button

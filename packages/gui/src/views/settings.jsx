@@ -50,8 +50,9 @@ function ProviderCard({ provider, onKeyChange }) {
 
   const isLocal = provider.authType === 'local';
   const isSubscription = provider.authType === 'subscription';
-  // "Ready" means: local + installed, subscription + installed, api-key + hasKey
-  const isReady = isLocal ? provider.installed : isSubscription ? provider.installed : provider.hasKey;
+  const isReady = isLocal ? provider.installed
+    : isSubscription ? (provider.installed || provider.authStatus?.authenticated)
+    : provider.hasKey;
 
   async function handleSetKey() {
     if (!keyInput.trim()) return;

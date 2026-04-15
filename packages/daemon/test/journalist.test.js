@@ -264,7 +264,7 @@ describe('Journalist', () => {
         a1: {
           agent: { id: 'a1', role: 'backend' },
           entries: [
-            { type: 'tool', tool: 'Bash', input: 'npm run build', output: 'Error: Cannot find module gray-matter' },
+            { type: 'error', text: 'Error: Cannot find module gray-matter' },
             { type: 'tool', tool: 'Edit', input: 'package.json — added gray-matter dependency' },
           ],
           explorationEntries: [],

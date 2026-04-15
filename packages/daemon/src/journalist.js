@@ -981,28 +981,27 @@ export class Journalist {
         const { agent, entries } = data;
         if (!entries || entries.length === 0) continue;
 
-        // Look for error entries followed by successful tool calls
         for (let i = 0; i < entries.length - 1; i++) {
           const entry = entries[i];
-          if (entry.type !== 'error' && !(entry.type === 'tool' && entry.output?.includes('Error'))) continue;
+          if (entry.type !== 'error') continue;
 
-          // Look ahead for a fix (successful edit/write within next 5 entries)
+          const trigger = (entry.text || '').trim();
+          if (trigger.length < 20) continue;
+
           for (let j = i + 1; j < Math.min(i + 6, entries.length); j++) {
             const next = entries[j];
-            if (next.type === 'tool' && (next.tool === 'Edit' || next.tool === 'Write' || next.tool === 'Bash')) {
-              const trigger = entry.type === 'error' ? entry.text : (entry.output || entry.input || '');
-              const fix = next.input || '';
-              if (trigger && fix && trigger.length > 10 && fix.length > 10) {
-                this.daemon.memory.addDiscovery({
-                  agentId: agent.id,
-                  role: agent.role,
-                  trigger: trigger.slice(0, 300),
-                  fix: fix.slice(0, 500),
-                  outcome: 'success',
-                });
-                break; // One discovery per error
-              }
-            }
+            if (next.type !== 'tool' || (next.tool !== 'Edit' && next.tool !== 'Write')) continue;
+            const fix = (next.input || '').trim();
+            if (fix.length < 10) continue;
+
+            this.daemon.memory.addDiscovery({
+              agentId: agent.id,
+              role: agent.role,
+              trigger: trigger.slice(0, 300),
+              fix: fix.slice(0, 500),
+              outcome: 'success',
+            });
+            break;
           }
         }
       }

@@ -27,7 +27,7 @@ export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel
     <nav className="w-12 flex-shrink-0 flex flex-col bg-surface-3 border-r border-border">
       {/* Sidebar header — aligns with BreadcrumbBar */}
       {darwinTrafficLights && (
-        <div className="h-8 flex-shrink-0 flex items-center justify-center border-b border-border">
+        <div className="flex-shrink-0 flex items-center justify-center border-b border-border py-px">
           <img src="/favicon.png" alt="Groove" className="h-6 w-6 rounded-full" />
         </div>
       )}
@@ -41,8 +41,8 @@ export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel
               className={cn(
                 'w-8 h-8 flex items-center justify-center rounded-md transition-colors cursor-pointer',
                 activeView === item.id
-                  ? 'text-text-0 bg-surface-5'
-                  : 'text-text-3 hover:text-text-1 hover:bg-surface-4',
+                  ? 'text-accent bg-accent/10'
+                  : 'text-text-3 hover:text-accent hover:bg-accent/10',
               )}
             >
               <item.icon size={16} strokeWidth={activeView === item.id ? 2 : 1.5} />
@@ -67,8 +67,8 @@ export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel
                 className={cn(
                   'w-8 h-8 flex items-center justify-center rounded-md transition-colors cursor-pointer',
                   isActive
-                    ? 'text-text-0 bg-surface-5'
-                    : 'text-text-3 hover:text-text-1 hover:bg-surface-4',
+                    ? 'text-accent bg-accent/10'
+                    : 'text-text-3 hover:text-accent hover:bg-accent/10',
                 )}
               >
                 <item.icon size={16} strokeWidth={isActive ? 2 : 1.5} />

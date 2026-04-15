@@ -171,7 +171,7 @@ export function BreadcrumbBar({
           onClick={() => window.groove?.openFolder?.()}
           className="text-2xs font-mono font-semibold text-accent bg-accent/10 px-1.5 py-0.5 rounded flex-shrink-0 hover:bg-accent/20 transition-colors cursor-pointer"
         >
-          {instanceName}
+          /{instanceName}
         </button>
       )}
 
@@ -202,7 +202,7 @@ export function BreadcrumbBar({
       <button
         onClick={onOpenCommandPalette}
         className={cn(
-          'absolute left-1/2 -translate-x-1/2 flex items-center gap-2.5 h-8 px-4 rounded-md w-full max-w-md',
+          'absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2.5 h-8 px-4 rounded-md w-full max-w-md',
           'bg-surface-1 border border-border-subtle',
           'text-xs text-text-4 font-sans',
           'hover:border-border hover:text-text-3 transition-colors cursor-pointer',

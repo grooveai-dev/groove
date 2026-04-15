@@ -729,7 +729,7 @@ ipcMain.handle('open-external', (_event, url) => {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return;
-    const allowed = ['groovedev.ai', 'studio.groovedev.ai', 'github.com', 'checkout.stripe.com', 'billing.stripe.com', 'appleid.apple.com'];
+    const allowed = ['groovedev.ai', 'studio.groovedev.ai', 'github.com', 'checkout.stripe.com', 'billing.stripe.com', 'appleid.apple.com', 'localhost'];
     if (!allowed.some(d => parsed.hostname === d || parsed.hostname.endsWith('.' + d))) return;
     return shell.openExternal(url);
   } catch {

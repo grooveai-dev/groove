@@ -25,15 +25,18 @@ function preflightCheck(daemonPath) {
   });
 
   if (missing.length) {
-    const nmDir = join(daemonDir, 'node_modules');
-    let contents = '(node_modules not found)';
-    if (existsSync(nmDir)) {
-      try { contents = readdirSync(nmDir).join(', '); } catch { /* ignore */ }
+    const diag = [`Missing deps: ${missing.join(', ')}`, `GROOVE_DAEMON_PATH: ${daemonPath}`];
+    let walkDir = daemonDir;
+    for (let i = 0; i < 5 && walkDir !== dirname(walkDir); i++) {
+      try {
+        const entries = readdirSync(walkDir);
+        diag.push(`${walkDir}/: [${entries.join(', ')}]`);
+      } catch { diag.push(`${walkDir}/: (unreadable)`); }
+      walkDir = dirname(walkDir);
     }
     throw new Error(
-      `Daemon is missing dependencies: ${missing.join(', ')}. ` +
-      `Searched from ${daemonDir}. ` +
-      `node_modules contains: [${contents}]. ` +
+      `Daemon is missing dependencies. ` +
+      `Diagnostics:\n${diag.join('\n')}\n` +
       'The app bundle may be incomplete — try reinstalling Groove.'
     );
   }

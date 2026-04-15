@@ -186,6 +186,7 @@ export function SubscriptionPanel() {
   const subscription = useGrooveStore((s) => s.subscription);
   const authenticated = useGrooveStore((s) => s.marketplaceAuthenticated);
   const fetchSubscriptionPlans = useGrooveStore((s) => s.fetchSubscriptionPlans);
+  const checkMarketplaceAuth = useGrooveStore((s) => s.checkMarketplaceAuth);
   const startCheckout = useGrooveStore((s) => s.startCheckout);
   const addToast = useGrooveStore((s) => s.addToast);
 
@@ -193,9 +194,17 @@ export function SubscriptionPanel() {
   const [billing, setBilling] = useState('monthly');
   const [loading, setLoading] = useState(false);
   const [planError, setPlanError] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
   useEffect(() => {
-    if (!subscription?.active && authenticated) {
+    if (authenticated && !subscription?.active) {
+      setVerifying(true);
+      checkMarketplaceAuth().finally(() => setVerifying(false));
+    }
+  }, [authenticated]);
+
+  useEffect(() => {
+    if (!subscription?.active && !verifying && authenticated) {
       setLoading(true);
       setPlanError(false);
       fetchSubscriptionPlans()
@@ -203,7 +212,7 @@ export function SubscriptionPanel() {
         .catch(() => setPlanError(true))
         .finally(() => setLoading(false));
     }
-  }, [subscription?.active, authenticated, fetchSubscriptionPlans]);
+  }, [subscription?.active, verifying, authenticated, fetchSubscriptionPlans]);
 
   const handleUpgrade = async (priceId) => {
     try {
@@ -216,12 +225,25 @@ export function SubscriptionPanel() {
   };
 
   if (subscription?.active) {
-    return <ActivePlanCard subscription={subscription} />;
+    return (
+      <div className="py-2">
+        <ActivePlanCard subscription={subscription} />
+      </div>
+    );
+  }
+
+  if (verifying) {
+    return (
+      <div className="rounded-md border border-border-subtle bg-surface-1 p-4 flex items-center gap-3 my-2">
+        <div className="h-4 w-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs text-text-2 font-sans">Verifying subscription…</span>
+      </div>
+    );
   }
 
   if (!authenticated) {
     return (
-      <div className="rounded-md border border-dashed border-border-subtle bg-surface-1/50 px-4 py-6 text-center">
+      <div className="rounded-md border border-dashed border-border-subtle bg-surface-1/50 px-4 py-6 text-center my-2">
         <Crown size={20} className="text-text-4 mx-auto mb-2" />
         <p className="text-xs text-text-3 font-sans">Sign in to manage your subscription.</p>
       </div>
@@ -230,7 +252,7 @@ export function SubscriptionPanel() {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 py-2">
         {[0, 1].map((i) => (
           <div key={i} className="rounded-md border border-border-subtle bg-surface-1 p-4 h-52 animate-pulse" />
         ))}
@@ -240,7 +262,7 @@ export function SubscriptionPanel() {
 
   if (planError || !plans) {
     return (
-      <div className="rounded-md border border-dashed border-border-subtle bg-surface-1/50 px-4 py-6 text-center">
+      <div className="rounded-md border border-dashed border-border-subtle bg-surface-1/50 px-4 py-6 text-center my-2">
         <Sparkles size={20} className="text-text-4 mx-auto mb-2" />
         <p className="text-xs text-text-3 font-sans">Plans unavailable right now. Visit groovedev.ai/pro for details.</p>
       </div>
@@ -252,7 +274,7 @@ export function SubscriptionPanel() {
   const isAnnual = billing === 'annual';
 
   return (
-    <div>
+    <div className="py-2">
       <div className="flex justify-center mb-4">
         <div className="flex bg-surface-0 rounded-md p-0.5 border border-border-subtle">
           <button

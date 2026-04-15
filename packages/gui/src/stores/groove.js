@@ -158,6 +158,7 @@ export const useGrooveStore = create((set, get) => ({
         case 'state': {
           const timeline = { ...get().tokenTimeline };
           const now = Date.now();
+          const liveIds = new Set(msg.data.map((a) => a.id));
           for (const agent of msg.data) {
             if (!timeline[agent.id]) timeline[agent.id] = [];
             const arr = timeline[agent.id];
@@ -167,15 +168,30 @@ export const useGrooveStore = create((set, get) => ({
               if (arr.length > 200) timeline[agent.id] = arr.slice(-200);
             }
           }
+          // Prune stale agent data from timeline, chatHistory, activityLog.
+          // Without this, localStorage fills with dead agents' data until quota is
+          // exceeded and nothing else (e.g. node positions) can save.
+          let prunedChat = null, prunedLog = null;
+          const st = get();
+          for (const id of Object.keys(timeline)) if (!liveIds.has(id)) delete timeline[id];
+          for (const id of Object.keys(st.chatHistory)) {
+            if (!liveIds.has(id)) { if (!prunedChat) prunedChat = { ...st.chatHistory }; delete prunedChat[id]; }
+          }
+          for (const id of Object.keys(st.activityLog)) {
+            if (!liveIds.has(id)) { if (!prunedLog) prunedLog = { ...st.activityLog }; delete prunedLog[id]; }
+          }
           // Only replace agents array if something meaningful changed
           // (prevents React Flow tree flicker on every lastActivity update)
-          const prev = get().agents;
+          const prev = st.agents;
           const changed = msg.data.length !== prev.length || msg.data.some((a, i) => {
             const p = prev[i];
             return !p || p.id !== a.id || p.status !== a.status || p.tokensUsed !== a.tokensUsed
               || p.contextUsage !== a.contextUsage || p.name !== a.name || p.model !== a.model;
           });
-          set({ agents: changed ? msg.data : prev, tokenTimeline: timeline, hydrated: true });
+          const nextState = { agents: changed ? msg.data : prev, tokenTimeline: timeline, hydrated: true };
+          if (prunedChat) { nextState.chatHistory = prunedChat; persistJSON('groove:chatHistory', prunedChat); }
+          if (prunedLog) { nextState.activityLog = prunedLog; persistJSON('groove:activityLog', prunedLog); }
+          set(nextState);
 
           // Poll for recommended-team.json while a planner is running
           const hasRunningPlanner = msg.data.some((a) => a.role === 'planner' && a.status === 'running');

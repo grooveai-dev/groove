@@ -72,8 +72,9 @@ export class SkillStore {
         return null; // Invalid token
       }
     } catch {
-      // Can't validate — store anyway, will revalidate later
-      user = { id: 'unknown' };
+      // Can't validate — keep existing stored user so subscription data survives
+      const existingUser = this.getUser();
+      user = existingUser || { id: 'unknown' };
     }
 
     this.daemon.config.marketplace = { token, user };
@@ -86,7 +87,11 @@ export class SkillStore {
 
   _syncSubscriptionCache(user) {
     const sub = user?.subscription;
-    if (!sub || !this.daemon) return;
+    if (!this.daemon) return;
+    if (!sub) {
+      console.log(`[Groove:Sub] No subscription data on user — cache unchanged (plan: ${this.daemon.subscriptionCache?.plan || 'unknown'})`);
+      return;
+    }
     this.daemon.subscriptionCache = {
       plan: sub.plan || 'community',
       status: sub.status || (sub.plan !== 'community' ? 'active' : 'none'),
@@ -97,6 +102,7 @@ export class SkillStore {
       cancelAtPeriodEnd: sub.cancelAtPeriodEnd || false,
       validatedAt: Date.now(),
     };
+    this.daemon.broadcast({ type: 'subscription:updated', data: this.daemon.subscriptionCache });
   }
 
   /** Clear stored auth */

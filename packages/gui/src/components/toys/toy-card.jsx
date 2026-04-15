@@ -21,29 +21,30 @@ export function ToyCard({ toy, onClick }) {
   return (
     <Card
       hover
-      className="group relative flex flex-col p-4 gap-3 transition-all duration-150 hover:scale-[1.02] hover:shadow-lg hover:shadow-black/20"
+      className="group flex flex-col p-4 gap-3 transition-all duration-150 hover:scale-[1.02] hover:shadow-lg hover:shadow-black/20"
       onClick={() => onClick(toy)}
     >
-      {/* Category badge — top right */}
-      <Badge variant="default" className="absolute top-3 right-3">
-        {toy.category}
-      </Badge>
-
-      {/* Icon + name */}
+      {/* Icon + name + category */}
       <div className="flex items-start gap-3">
         <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-accent/10 border border-accent/20 text-accent">
           <Icon size={20} />
         </div>
         <div className="flex-1 min-w-0 pt-0.5">
-          <h3 className="text-sm font-semibold text-text-0 font-sans truncate">{toy.name}</h3>
+          <h3 className="text-sm font-semibold text-text-0 font-sans truncate pr-1">{toy.name}</h3>
         </div>
+        <Badge variant="default" className="flex-shrink-0 mt-0.5">
+          {toy.category}
+        </Badge>
       </div>
 
       {/* Description — 2 lines max */}
       <p className="text-xs text-text-2 font-sans leading-relaxed line-clamp-2">{toy.description}</p>
 
       {/* Bottom badges */}
-      <div className="flex items-center gap-1.5 mt-auto">
+      <div className="flex items-center gap-1.5 mt-auto flex-wrap">
+        {toy.custom && (
+          <Badge variant="accent">Custom</Badge>
+        )}
         <Badge variant={DIFFICULTY_VARIANT[toy.difficulty] || 'default'}>
           {toy.difficulty || 'beginner'}
         </Badge>

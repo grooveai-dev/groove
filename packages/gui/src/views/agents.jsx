@@ -25,9 +25,23 @@ function loadPositions(teamId) {
   try { return JSON.parse(localStorage.getItem(`groove:nodePositions:${teamId}`) || '{}'); } catch { return {}; }
 }
 
+// Drop high-volume caches (chatHistory, activityLog) to free quota.
+// Used as a fallback when setItem fails on savePositions.
+function freeLocalStorage() {
+  let freed = false;
+  for (const key of ['groove:chatHistory', 'groove:activityLog']) {
+    if (localStorage.getItem(key) !== null) { localStorage.removeItem(key); freed = true; }
+  }
+  return freed;
+}
+
 function savePositions(teamId, positions) {
   if (!teamId) return;
-  try { localStorage.setItem(`groove:nodePositions:${teamId}`, JSON.stringify(positions)); } catch {}
+  const key = `groove:nodePositions:${teamId}`;
+  const s = JSON.stringify(positions);
+  try { localStorage.setItem(key, s); return; } catch { /* quota */ }
+  if (!freeLocalStorage()) return;
+  try { localStorage.setItem(key, s); } catch { /* still over — give up silently */ }
 }
 
 function loadTeamViewports() {
@@ -442,8 +456,7 @@ function AgentTreeInner() {
       return targetNodes.map((tn) => {
         const existing = currentMap.get(tn.id);
         if (existing) {
-          const key = existing.data?.agent?.name || existing.id;
-          return { ...existing, data: tn.data, position: positionsRef.current[key] || existing.position };
+          return { ...existing, data: tn.data };
         }
         return tn;
       });
@@ -835,6 +848,15 @@ export default function AgentsView() {
         )}
       </div>
       <RecommendedTeamCard />
+      {!isLoading && teamAgents.length > 0 && (
+        <button
+          onClick={() => openDetail({ type: 'spawn' })}
+          className="absolute bottom-4 left-4 z-40 flex items-center gap-1.5 h-8 px-4 rounded-md bg-accent/15 text-accent text-xs font-semibold font-sans hover:bg-accent/25 transition-colors cursor-pointer select-none shadow-lg shadow-black/10"
+        >
+          <Plus size={14} />
+          Spawn
+        </button>
+      )}
     </div>
   );
 }

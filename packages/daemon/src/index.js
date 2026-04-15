@@ -234,7 +234,7 @@ export class Daemon {
             'ping'
           ]);
           if (!msg || typeof msg !== 'object' || !VALID_WS_TYPES.has(msg.type)) return;
-          if ('__proto__' in msg || 'constructor' in msg) return;
+          if (Object.hasOwn(msg, '__proto__') || Object.hasOwn(msg, 'constructor')) return;
 
           switch (msg.type) {
             // File editor
@@ -248,11 +248,16 @@ export class Daemon {
               break;
             // Terminal
             case 'terminal:spawn': {
-              if (typeof msg.cwd !== 'string' || msg.cwd.includes('..')) break;
+              if (msg.cwd !== undefined && (typeof msg.cwd !== 'string' || msg.cwd.includes('..'))) break;
               if (msg.cols !== undefined && (typeof msg.cols !== 'number' || msg.cols < 1 || msg.cols > 500)) break;
               if (msg.rows !== undefined && (typeof msg.rows !== 'number' || msg.rows < 1 || msg.rows > 200)) break;
-              const id = this.terminalManager.spawn(ws, { cwd: msg.cwd, cols: msg.cols, rows: msg.rows });
-              ws.send(JSON.stringify({ type: 'terminal:spawned', id }));
+              try {
+                const id = this.terminalManager.spawn(ws, { cwd: msg.cwd, cols: msg.cols, rows: msg.rows });
+                ws.send(JSON.stringify({ type: 'terminal:spawned', id }));
+              } catch (err) {
+                console.error('[terminal] spawn error:', err);
+                ws.send(JSON.stringify({ type: 'terminal:error', message: err.message }));
+              }
               break;
             }
             case 'terminal:input':
@@ -293,6 +298,7 @@ export class Daemon {
   }
 
   broadcast(message) {
+    if (!this.wss) return;
     const payload = JSON.stringify(message);
     for (const client of this.wss.clients) {
       if (client.readyState === 1) {
@@ -301,10 +307,14 @@ export class Daemon {
     }
   }
 
-  setAuthToken(token) {
+  async setAuthToken(token) {
     this.authToken = token;
     if (token) {
-      this._pollSubscription();
+      await this._pollSubscription();
+      // Fallback: if external API failed, try syncing from stored user data
+      if (!this.subscriptionCache?.active) {
+        this.skills?._syncSubscriptionCache(this.skills?.getUser());
+      }
     } else {
       this.subscriptionCache = { plan: 'community', status: 'none', features: [], active: false, validatedAt: Date.now() };
       this.broadcast({ type: 'subscription:updated', data: this.subscriptionCache });
@@ -314,35 +324,46 @@ export class Daemon {
   async _pollSubscription() {
     if (!this.authToken) return;
     const API_BASE = 'https://docs.groovedev.ai/api/v1';
-    try {
-      const resp = await fetch(`${API_BASE}/subscription/status`, {
-        headers: { 'Authorization': `Bearer ${this.authToken}` },
-      });
-      if (resp.status === 401) {
-        this.subscriptionCache = { plan: 'community', status: 'none', features: [], active: false, validatedAt: Date.now() };
+    const delays = [0, 5000, 15000, 30000];
+    for (let attempt = 0; attempt < delays.length; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, delays[attempt]));
+      try {
+        const resp = await fetch(`${API_BASE}/subscription/status`, {
+          headers: { 'Authorization': `Bearer ${this.authToken}` },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (resp.status === 401) {
+          this.subscriptionCache = { plan: 'community', status: 'none', features: [], active: false, validatedAt: Date.now() };
+          this.broadcast({ type: 'subscription:updated', data: this.subscriptionCache });
+          this.broadcast({ type: 'auth:expired' });
+          return;
+        }
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        this.subscriptionCache = {
+          plan: data.plan || 'community',
+          status: data.status || 'none',
+          features: data.features || [],
+          active: data.status === 'active' || data.status === 'trialing',
+          seats: data.seats || 1,
+          periodEnd: data.periodEnd || null,
+          cancelAtPeriodEnd: data.cancelAtPeriodEnd || false,
+          validatedAt: Date.now(),
+        };
         this.broadcast({ type: 'subscription:updated', data: this.subscriptionCache });
-        this.broadcast({ type: 'auth:expired' });
         return;
+      } catch (err) {
+        if (attempt < delays.length - 1) {
+          console.log(`[Groove:Subscription] Attempt ${attempt + 1} failed, retrying in ${delays[attempt + 1] / 1000}s...`);
+          continue;
+        }
+        if (this.subscriptionCache?.validatedAt && (Date.now() - this.subscriptionCache.validatedAt < 72 * 3600 * 1000)) {
+          console.log('[Groove:Subscription] External API unreachable, keeping cached subscription');
+          return;
+        }
+        this.subscriptionCache = { plan: 'community', status: 'none', features: [], active: false, validatedAt: 0 };
+        this.broadcast({ type: 'subscription:updated', data: this.subscriptionCache });
       }
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      this.subscriptionCache = {
-        plan: data.plan || 'community',
-        status: data.status || 'none',
-        features: data.features || [],
-        active: data.status === 'active' || data.status === 'trialing',
-        seats: data.seats || 1,
-        periodEnd: data.periodEnd || null,
-        cancelAtPeriodEnd: data.cancelAtPeriodEnd || false,
-        validatedAt: Date.now(),
-      };
-      this.broadcast({ type: 'subscription:updated', data: this.subscriptionCache });
-    } catch {
-      if (this.subscriptionCache?.validatedAt && (Date.now() - this.subscriptionCache.validatedAt < 72 * 3600 * 1000)) {
-        return;
-      }
-      this.subscriptionCache = { plan: 'community', status: 'none', features: [], active: false, validatedAt: 0 };
-      this.broadcast({ type: 'subscription:updated', data: this.subscriptionCache });
     }
   }
 
@@ -424,6 +445,18 @@ export class Daemon {
         this.gateways.start();
         this.federation.initialize();
         this._startGarbageCollector();
+
+        // Restore auth token from stored config so subscription polling works after restart
+        const storedToken = this.skills.getToken();
+        if (storedToken) {
+          this.authToken = storedToken;
+          this._pollSubscription().catch(() => {});
+        }
+
+        // Re-validate subscription every 30 minutes
+        this._subscriptionPollInterval = setInterval(() => {
+          this._pollSubscription().catch(() => {});
+        }, 30 * 60 * 1000);
 
         // Classifier broadcasting — decoupled from stdout handler
         // Runs every 30s, checks for classification changes, broadcasts to GUI
@@ -565,6 +598,7 @@ export class Daemon {
     if (this._gcInterval) clearInterval(this._gcInterval);
     if (this._stateSaveInterval) clearInterval(this._stateSaveInterval);
     if (this._classifierInterval) clearInterval(this._classifierInterval);
+    if (this._subscriptionPollInterval) clearInterval(this._subscriptionPollInterval);
 
     // Clean up file watchers and terminal sessions
     this.fileWatcher.unwatchAll();

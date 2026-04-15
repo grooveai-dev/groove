@@ -67,7 +67,6 @@ export function AppShell({ children, detailContent, terminalContent }) {
           daemonHost={daemonHost}
           editorActiveFile={editorActiveFile}
           onOpenCommandPalette={toggleCommandPalette}
-          onSpawn={() => openDetail({ type: 'spawn' })}
         />
 
         <div className="flex-1 flex min-h-0">

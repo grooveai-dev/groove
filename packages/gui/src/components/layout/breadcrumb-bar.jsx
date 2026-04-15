@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, ChevronRight, LogIn, LogOut, User, ExternalLink, BookOpen, ChevronDown } from 'lucide-react';
+import { Search, ChevronRight, LogIn, LogOut, User, ExternalLink, BookOpen, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useGrooveStore } from '../../stores/groove';
 import { isElectron, getPlatform } from '../../lib/electron';
@@ -133,7 +133,6 @@ export function BreadcrumbBar({
   daemonHost,
   editorActiveFile,
   onOpenCommandPalette,
-  onSpawn,
 }) {
   const crumbs = ['Groove', VIEW_LABELS[activeView] || activeView];
   if (activeView === 'editor' && editorActiveFile) {
@@ -159,10 +158,13 @@ export function BreadcrumbBar({
   return (
     <header
       className={cn(
-        'h-11 flex-shrink-0 flex items-center gap-3 px-4 bg-surface-3 border-b border-border',
+        'h-11 flex-shrink-0 flex items-center gap-3 px-4 bg-surface-3 border-b border-border relative',
         darwinDrag && 'pl-24 electron-drag electron-no-drag-children',
       )}
     >
+      {/* Logo — web only (Electron shows it in the sidebar) */}
+      {!darwinDrag && <img src="/favicon.png" alt="Groove" className="h-7 w-7 rounded-full flex-shrink-0" />}
+
       {/* Project name badge — clickable to open folder */}
       {instanceName && (
         <button
@@ -182,23 +184,6 @@ export function BreadcrumbBar({
 
       <div className="flex-1 min-w-4" />
 
-      {/* Command palette — pill style */}
-      <button
-        onClick={onOpenCommandPalette}
-        className={cn(
-          'flex items-center gap-2.5 h-8 px-4 rounded-md w-full max-w-md',
-          'bg-surface-1 border border-border-subtle',
-          'text-xs text-text-4 font-sans',
-          'hover:border-border hover:text-text-3 transition-colors cursor-pointer',
-        )}
-      >
-        <Search size={14} className="flex-shrink-0" />
-        <span className="flex-1 text-left">Search commands...</span>
-        <kbd className="text-2xs font-mono bg-surface-4 px-1.5 py-0.5 rounded text-text-4 ml-1">Cmd+K</kbd>
-      </button>
-
-      <div className="flex-1 min-w-4" />
-
       {/* Breadcrumbs */}
       <div className="flex items-center gap-1 text-xs font-sans text-text-3 flex-shrink-0">
         {crumbs.map((crumb, i) => (
@@ -211,18 +196,22 @@ export function BreadcrumbBar({
         ))}
       </div>
 
-      {/* Spawn button */}
-      {connected && (
-        <button
-          onClick={onSpawn}
-          className="ml-1 flex items-center gap-1 h-7 px-3.5 rounded-md bg-accent/15 text-accent text-xs font-semibold font-sans hover:bg-accent/25 transition-colors cursor-pointer select-none flex-shrink-0"
-        >
-          <Plus size={14} />
-          Spawn
-        </button>
-      )}
-
       <UserMenu />
+
+      {/* Command palette — absolutely centered to header */}
+      <button
+        onClick={onOpenCommandPalette}
+        className={cn(
+          'absolute left-1/2 -translate-x-1/2 flex items-center gap-2.5 h-8 px-4 rounded-md w-full max-w-md',
+          'bg-surface-1 border border-border-subtle',
+          'text-xs text-text-4 font-sans',
+          'hover:border-border hover:text-text-3 transition-colors cursor-pointer',
+        )}
+      >
+        <Search size={14} className="flex-shrink-0" />
+        <span className="flex-1 text-left">Search commands...</span>
+        <kbd className="text-2xs font-mono bg-surface-4 px-1.5 py-0.5 rounded text-text-4 ml-1">Cmd+K</kbd>
+      </button>
     </header>
   );
 }

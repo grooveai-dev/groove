@@ -1,12 +1,13 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Badge } from '../components/ui/badge';
 import { useGrooveStore } from '../stores/groove';
 import { api } from '../lib/api';
 import { ToyCard, ToyCardSkeleton } from '../components/toys/toy-card';
 import { ToyLauncher } from '../components/toys/toy-launcher';
-import { Gamepad2, Search, Rocket } from 'lucide-react';
+import { ToyCreator } from '../components/toys/toy-creator';
+import { Gamepad2, Search, Rocket, Plus } from 'lucide-react';
 
 const CATEGORIES = ['All', 'Space', 'Weather', 'Finance', 'Fun', 'Maps', 'Data'];
 
@@ -16,15 +17,18 @@ export default function ToysView() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [selectedToy, setSelectedToy] = useState(null);
+  const [creatorOpen, setCreatorOpen] = useState(false);
   const teams = useGrooveStore((s) => s.teams);
 
-  useEffect(() => {
+  const fetchToys = useCallback(() => {
     setLoading(true);
     api.get('/toys')
       .then((d) => setToys(d.toys || d.items || (Array.isArray(d) ? d : [])))
       .catch(() => setToys([]))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { fetchToys(); }, [fetchToys]);
 
   const searchLower = search.toLowerCase();
   const filtered = toys.filter((t) => {
@@ -42,6 +46,14 @@ export default function ToysView() {
         <div className="flex items-center gap-2.5 mb-1">
           <Gamepad2 size={18} className="text-accent" />
           <h1 className="text-lg font-bold text-text-0 font-sans">Toys</h1>
+          <div className="flex-1" />
+          <button
+            onClick={() => setCreatorOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold font-sans rounded-full cursor-pointer select-none transition-colors bg-accent/15 text-accent border border-accent/25 hover:bg-accent/25"
+          >
+            <Plus size={13} />
+            New
+          </button>
         </div>
         <p className="text-xs text-text-3 font-sans">Plug in an API and start building</p>
       </div>
@@ -82,12 +94,21 @@ export default function ToysView() {
 
       {/* Content */}
       <ScrollArea className="flex-1 min-h-0">
-        <div className="px-5 pb-5">
+        <div className="px-5 pt-1 pb-5">
           {/* Grid */}
           <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
             {loading
               ? Array.from({ length: 6 }).map((_, i) => <ToyCardSkeleton key={i} />)
-              : filtered.map((t) => <ToyCard key={t.id} toy={t} onClick={setSelectedToy} />)
+              : <>
+                  {filtered.map((t) => <ToyCard key={t.id} toy={t} onClick={setSelectedToy} />)}
+                  <button
+                    onClick={() => setCreatorOpen(true)}
+                    className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-border-subtle text-text-4 hover:text-accent hover:border-accent/30 hover:bg-accent/5 transition-colors cursor-pointer min-h-[140px]"
+                  >
+                    <Plus size={20} />
+                    <span className="text-xs font-semibold font-sans">Add API</span>
+                  </button>
+                </>
             }
           </div>
 
@@ -128,6 +149,13 @@ export default function ToysView() {
         toy={selectedToy}
         open={!!selectedToy}
         onClose={() => setSelectedToy(null)}
+      />
+
+      {/* Creator sheet */}
+      <ToyCreator
+        open={creatorOpen}
+        onClose={() => setCreatorOpen(false)}
+        onCreated={() => fetchToys()}
       />
     </div>
   );

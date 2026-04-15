@@ -23,6 +23,7 @@ let tabCounter = 0;
 function TerminalInstance({ tabId, visible }) {
   const containerRef = useRef(null);
   const termRef = useRef(null);
+  const fitRef = useRef(null);
   const termIdRef = useRef(null);
   const handlerRef = useRef(null);
   const mountedRef = useRef(false);
@@ -47,13 +48,18 @@ function TerminalInstance({ tabId, visible }) {
     term.loadAddon(new WebLinksAddon());
     term.open(containerRef.current);
     termRef.current = term;
+    fitRef.current = fitAddon;
 
-    requestAnimationFrame(() => fitAddon.fit());
+    requestAnimationFrame(() => {
+      try { fitAddon.fit(); } catch {}
+    });
 
+    let spawnAttempts = 0;
     function trySpawn() {
+      spawnAttempts++;
       const ws = useGrooveStore.getState().ws;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
-        setTimeout(trySpawn, 500);
+        if (spawnAttempts < 20) setTimeout(trySpawn, 500);
         return;
       }
 
@@ -108,15 +114,15 @@ function TerminalInstance({ tabId, visible }) {
         handlerRef.current.ws.removeEventListener('message', handlerRef.current.handler);
       }
       term.dispose();
+      fitRef.current = null;
       mountedRef.current = false;
     };
   }, []);
 
-  // Refit when visibility changes
   useEffect(() => {
-    if (visible && termRef.current) {
+    if (visible && fitRef.current) {
       requestAnimationFrame(() => {
-        try { termRef.current._addonManager?._addons?.[0]?.instance?.fit?.(); } catch {}
+        try { fitRef.current.fit(); } catch {}
       });
     }
   }, [visible]);
@@ -124,7 +130,7 @@ function TerminalInstance({ tabId, visible }) {
   return (
     <div
       ref={containerRef}
-      className="w-full h-full"
+      className="w-full h-full overflow-hidden"
       style={{ display: visible ? 'block' : 'none' }}
     />
   );

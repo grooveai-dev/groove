@@ -63,26 +63,27 @@ export function TerminalPanel({
       )}
 
       {/* Header bar */}
-      <div className="flex items-center h-9 bg-surface-1 border-b border-border-subtle flex-shrink-0 pl-3 pr-1.5">
+      <div className="flex items-center h-9 bg-surface-1 border-b border-border flex-shrink-0 px-3">
         {/* Tabs */}
-        <div className="flex items-center gap-0 flex-1 min-w-0 overflow-x-auto scrollbar-none">
+        <div className="flex items-center gap-0 flex-1 min-w-0 overflow-x-auto scrollbar-none h-full">
           {tabList.map((tab) => (
             <button
               key={tab.id}
               onClick={() => onSelectTab?.(tab.id)}
               className={cn(
-                'flex items-center gap-1.5 pl-2.5 pr-1 h-7 text-2xs font-sans cursor-pointer select-none transition-colors flex-shrink-0 rounded-t',
+                'inline-flex items-center gap-1.5 px-3 h-full text-xs font-medium font-sans cursor-pointer select-none transition-colors duration-100 flex-shrink-0',
+                'border-t',
                 tab.id === activeTab
-                  ? 'text-text-0 bg-surface-0'
-                  : 'text-text-3 hover:text-text-1 hover:bg-surface-0/50',
+                  ? 'text-text-0 border-accent'
+                  : 'text-text-2 border-transparent hover:text-text-0 hover:bg-surface-5/50',
               )}
             >
-              <Terminal size={10} />
-              <span className="truncate max-w-[80px]">{tab.label}</span>
+              <Terminal size={11} />
+              <span className="truncate max-w-[100px]">{tab.label}</span>
               {tabList.length > 1 && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onCloseTab?.(tab.id); }}
-                  className="ml-0.5 p-0.5 rounded hover:bg-surface-5 text-text-4 hover:text-text-1 cursor-pointer"
+                  className="ml-1 p-0.5 rounded hover:bg-surface-5 text-text-4 hover:text-text-1 cursor-pointer"
                 >
                   <X size={9} />
                 </button>
@@ -91,7 +92,7 @@ export function TerminalPanel({
           ))}
           <button
             onClick={onAddTab}
-            className="flex items-center justify-center w-6 h-6 text-text-4 hover:text-text-1 hover:bg-surface-0/50 rounded cursor-pointer transition-colors flex-shrink-0 ml-0.5"
+            className="flex items-center justify-center w-6 h-6 text-text-3 hover:text-text-0 hover:bg-surface-5/50 rounded cursor-pointer transition-colors flex-shrink-0 ml-1"
             title="New terminal"
           >
             <Plus size={11} />

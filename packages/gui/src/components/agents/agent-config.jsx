@@ -79,7 +79,7 @@ function AgentActions({ agent }) {
   async function handleKill() {
     if (!confirmKill) { setConfirmKill(true); setTimeout(() => setConfirmKill(false), 3000); return; }
     setLoading('kill');
-    try { await killAgent(agent.id); closeDetail(); } catch {}
+    try { await killAgent(agent.id, !isAlive); closeDetail(); } catch {}
     setLoading(null);
     setConfirmKill(false);
   }
@@ -189,13 +189,18 @@ export function AgentConfig({ agent }) {
 
   useEffect(() => {
     setPersonalityLoaded(false);
-    api.get(`/personalities/${agent.name}`).then((data) => {
-      setPersonalityContent(data?.content || '');
-      setPersonalityLoaded(true);
-    }).catch(() => {
+    if (agent.personality) {
+      api.get(`/personalities/${agent.name}`).then((data) => {
+        setPersonalityContent(data?.content || '');
+        setPersonalityLoaded(true);
+      }).catch(() => {
+        setPersonalityContent('');
+        setPersonalityLoaded(true);
+      });
+    } else {
       setPersonalityContent('');
       setPersonalityLoaded(true);
-    });
+    }
     api.get('/personalities').then((data) => {
       setPersonalities(Array.isArray(data) ? data : data.personalities || []);
     }).catch(() => {});

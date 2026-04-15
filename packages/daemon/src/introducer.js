@@ -312,15 +312,24 @@ export class Introducer {
     lines.push('To clone a NEW GitHub repo, use: `POST http://localhost:31415/api/repos/import` with `{ "repoUrl": "...", "targetPath": "~/Projects/name", "createTeam": true }`. Do NOT run `git clone` directly.');
 
     // Surface stored API keys so agents know what's available in their environment
+    // Only inject provider API keys (codex, gemini, ollama) and integration credentials
+    // that are relevant to this agent's attached integrations — skip OAuth boilerplate
     const KEY_MAP = { codex: 'OPENAI_API_KEY', gemini: 'GEMINI_API_KEY', ollama: 'OLLAMA_API_KEY' };
+    const agentIntegrations = new Set(newAgent.integrations || []);
     try {
       const credProviders = this.daemon.credentials?.listProviders() || [];
-      if (credProviders.length > 0) {
+      const relevant = credProviders.filter((cp) => {
+        if (KEY_MAP[cp.provider]) return true;
+        if (!cp.provider.startsWith('integration:')) return true;
+        const parts = cp.provider.split(':');
+        return parts.length >= 2 && agentIntegrations.has(parts[1]);
+      });
+      if (relevant.length > 0) {
         lines.push('');
         lines.push('## Available API Keys');
         lines.push('');
         lines.push('GROOVE has API keys stored and injected into your environment. Do NOT ask the user for these:');
-        for (const cp of credProviders) {
+        for (const cp of relevant) {
           const envVar = KEY_MAP[cp.provider];
           if (envVar) {
             lines.push(`- **${cp.provider}**: available as \`${envVar}\` in your environment`);

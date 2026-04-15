@@ -21,6 +21,7 @@ import ToysView from './views/toys';
 
 // Agent components
 import { AgentPanel } from './components/agents/agent-panel';
+import { AvatarPanel } from './components/agents/avatar-panel';
 import { SpawnWizard } from './components/agents/spawn-wizard';
 import { JournalistPanel } from './components/agents/journalist-panel';
 
@@ -54,6 +55,7 @@ class ErrorBoundary extends React.Component {
 function ViewRouter() {
   const activeView = useGrooveStore((s) => s.activeView);
   const detailPanel = useGrooveStore((s) => s.detailPanel);
+  const agents = useGrooveStore((s) => s.agents);
 
   // Render active view
   let content;
@@ -74,9 +76,15 @@ function ViewRouter() {
   let detailContent = null;
   if (detailPanel) {
     switch (detailPanel.type) {
-      case 'agent':
-        detailContent = <AgentPanel />;
+      case 'agent': {
+        const agent = agents.find((a) => a.id === detailPanel.agentId);
+        if (agent?.role === 'avatar') {
+          detailContent = <AvatarPanel />;
+        } else {
+          detailContent = <AgentPanel />;
+        }
         break;
+      }
       case 'journalist':
         detailContent = <JournalistPanel />;
         break;

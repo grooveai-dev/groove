@@ -168,18 +168,13 @@ export const useGrooveStore = create((set, get) => ({
               if (arr.length > 200) timeline[agent.id] = arr.slice(-200);
             }
           }
-          // Prune stale agent data from timeline, chatHistory, activityLog.
-          // Without this, localStorage fills with dead agents' data until quota is
-          // exceeded and nothing else (e.g. node positions) can save.
-          let prunedChat = null, prunedLog = null;
+          // Prune stale tokenTimeline (high-volume metrics, safe to drop).
+          // chatHistory and activityLog are NOT pruned here — they must survive
+          // the gap between registry.remove() and rotation:complete so the
+          // rotation handler can migrate them to the new agent ID.  Explicit
+          // cleanup happens in killAgent(purge=true) and rotation:complete.
           const st = get();
           for (const id of Object.keys(timeline)) if (!liveIds.has(id)) delete timeline[id];
-          for (const id of Object.keys(st.chatHistory)) {
-            if (!liveIds.has(id)) { if (!prunedChat) prunedChat = { ...st.chatHistory }; delete prunedChat[id]; }
-          }
-          for (const id of Object.keys(st.activityLog)) {
-            if (!liveIds.has(id)) { if (!prunedLog) prunedLog = { ...st.activityLog }; delete prunedLog[id]; }
-          }
           // Only replace agents array if something meaningful changed
           // (prevents React Flow tree flicker on every lastActivity update)
           const prev = st.agents;
@@ -188,10 +183,7 @@ export const useGrooveStore = create((set, get) => ({
             return !p || p.id !== a.id || p.status !== a.status || p.tokensUsed !== a.tokensUsed
               || p.contextUsage !== a.contextUsage || p.name !== a.name || p.model !== a.model;
           });
-          const nextState = { agents: changed ? msg.data : prev, tokenTimeline: timeline, hydrated: true };
-          if (prunedChat) { nextState.chatHistory = prunedChat; persistJSON('groove:chatHistory', prunedChat); }
-          if (prunedLog) { nextState.activityLog = prunedLog; persistJSON('groove:activityLog', prunedLog); }
-          set(nextState);
+          set({ agents: changed ? msg.data : prev, tokenTimeline: timeline, hydrated: true });
 
           // Poll for recommended-team.json while a planner is running
           const hasRunningPlanner = msg.data.some((a) => a.role === 'planner' && a.status === 'running');
@@ -1079,6 +1071,19 @@ export const useGrooveStore = create((set, get) => ({
   async killAgent(id, purge = false) {
     try {
       await api.delete(`/agents/${encodeURIComponent(id)}?purge=${purge}`);
+      if (purge) {
+        set((s) => {
+          const chatHistory = { ...s.chatHistory };
+          const activityLog = { ...s.activityLog };
+          const tokenTimeline = { ...s.tokenTimeline };
+          delete chatHistory[id];
+          delete activityLog[id];
+          delete tokenTimeline[id];
+          persistJSON('groove:chatHistory', chatHistory);
+          persistJSON('groove:activityLog', activityLog);
+          return { chatHistory, activityLog, tokenTimeline };
+        });
+      }
     } catch (err) {
       get().addToast('error', 'Kill failed', err.message);
     }
@@ -1186,8 +1191,8 @@ export const useGrooveStore = create((set, get) => ({
     try {
       const data = await api.post(`/agents/${encodeURIComponent(id)}/instruct`, { message });
 
-      // Agent loop: message sent directly to running agent — response comes via WebSocket
-      if (data.status === 'message_sent') {
+      // Agent loop or running CLI agent — message delivered/queued, no respawn
+      if (data.status === 'message_sent' || data.status === 'message_queued') {
         return data;
       }
 

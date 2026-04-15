@@ -5,7 +5,7 @@ import {
   useReactFlow, ReactFlowProvider,
 } from '@xyflow/react';
 import { useGrooveStore } from '../stores/groove';
-import { AgentNode } from '../components/agents/agent-node';
+import { AgentNode, AvatarNode } from '../components/agents/agent-node';
 import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
@@ -13,7 +13,7 @@ import { Badge } from '../components/ui/badge';
 import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen } from 'lucide-react';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../components/ui/context-menu';
 
-const NODE_TYPES = { agentNode: AgentNode, rootNode: RootNode };
+const NODE_TYPES = { agentNode: AgentNode, avatarNode: AvatarNode, rootNode: RootNode };
 const NODE_W = 220;
 const NODE_H = 82;
 const NODE_X_GAP = 260;
@@ -356,7 +356,7 @@ function AgentTreeInner() {
         const pos = saved[key];
         occupied.add(posKey(pos.x, pos.y));
         nodes.push({
-          id: agent.id, type: 'agentNode', position: pos,
+          id: agent.id, type: agent.role === 'avatar' ? 'avatarNode' : 'agentNode', position: pos,
           data: { agent, timeline: tokenTimeline[agent.id] || [] },
           draggable: true, selectable: true,
         });
@@ -379,7 +379,7 @@ function AgentTreeInner() {
 
       const key = agent.name || agent.id;
       nodes.push({
-        id: agent.id, type: 'agentNode', position: pos,
+        id: agent.id, type: agent.role === 'avatar' ? 'avatarNode' : 'agentNode', position: pos,
         data: { agent, timeline: tokenTimeline[agent.id] || [] },
         draggable: true, selectable: true,
       });

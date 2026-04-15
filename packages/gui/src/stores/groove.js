@@ -100,6 +100,10 @@ export const useGrooveStore = create((set, get) => ({
     cancelAtPeriodEnd: false,
   },
 
+  // ── Version / Auto-Update ──────────────────────────────────
+  version: null,
+  updateReady: null,
+
   // ── Toasts ────────────────────────────────────────────────
   toasts: [],
 
@@ -137,6 +141,7 @@ export const useGrooveStore = create((set, get) => ({
         if (s.host && s.host !== '127.0.0.1') updates.daemonHost = s.host;
         const browserPort = window.location.port || '80';
         if (String(s.port) !== browserPort) updates.tunneled = true;
+        if (s.version) updates.version = s.version;
         if (Object.keys(updates).length > 0) set(updates);
       }).catch(() => {});
       get().fetchTeams();
@@ -147,6 +152,12 @@ export const useGrooveStore = create((set, get) => ({
       if (window.groove?.auth?.onSubscriptionStatus) {
         window.groove.auth.onSubscriptionStatus((data) => {
           if (data) set({ subscription: { ...get().subscription, ...data } });
+        });
+      }
+      if (window.groove?.update?.onUpdateDownloaded) {
+        window.groove.update.onUpdateDownloaded((data) => {
+          set({ updateReady: data.version });
+          get().addToast('info', 'Update available', `v${data.version} downloaded — restart to apply`);
         });
       }
     };
@@ -328,50 +339,50 @@ export const useGrooveStore = create((set, get) => ({
           get().addToast('error', `QC agent failed to spawn`, msg.error || 'Unknown error');
           break;
 
+        case 'agent:message_queued':
+          get().addChatMessage(msg.agentId, 'system', 'Agent is working — message will be delivered when it finishes.');
+          break;
+
         case 'rotation:start':
-          // Silent — rotation must feel seamless to the user.
-          // Visibility is available in dashboard Intel panel for curious users.
           break;
 
         case 'rotation:complete': {
-          // Silent toast — seamless infinite sessions are the whole promise.
-          // Migrate all agent-keyed state to the new ID ALWAYS, not just when
-          // the old agent's panel is open. Chat history, activity log, token
-          // timeline all carry forward so no state is orphaned.
-          if (!msg.newAgentId || !msg.oldAgentId) break;
+          // Migrate all agent-keyed state to the new ID so chat history,
+          // activity log, and token timeline carry forward seamlessly.
+          // The broadcast sends `agentId` (new) and `oldAgentId` (old).
+          const newId = msg.agentId;
+          const oldId = msg.oldAgentId;
+          if (!newId || !oldId) break;
           set((s) => {
             const chatHistory = { ...s.chatHistory };
             const tokenTimeline = { ...s.tokenTimeline };
             const activityLog = { ...s.activityLog };
             const chatInputs = { ...s.chatInputs };
-            if (chatHistory[msg.oldAgentId]?.length) {
-              chatHistory[msg.newAgentId] = [...chatHistory[msg.oldAgentId]];
-              delete chatHistory[msg.oldAgentId];
+            if (chatHistory[oldId]?.length) {
+              chatHistory[newId] = [...chatHistory[oldId]];
+              delete chatHistory[oldId];
             }
-            if (tokenTimeline[msg.oldAgentId]?.length) {
-              tokenTimeline[msg.newAgentId] = [...tokenTimeline[msg.oldAgentId]];
-              delete tokenTimeline[msg.oldAgentId];
+            if (tokenTimeline[oldId]?.length) {
+              tokenTimeline[newId] = [...tokenTimeline[oldId]];
+              delete tokenTimeline[oldId];
             }
-            if (activityLog[msg.oldAgentId]?.length) {
-              activityLog[msg.newAgentId] = [...activityLog[msg.oldAgentId]];
-              delete activityLog[msg.oldAgentId];
+            if (activityLog[oldId]?.length) {
+              activityLog[newId] = [...activityLog[oldId]];
+              delete activityLog[oldId];
             }
-            if (chatInputs[msg.oldAgentId]) {
-              chatInputs[msg.newAgentId] = chatInputs[msg.oldAgentId];
-              delete chatInputs[msg.oldAgentId];
+            if (chatInputs[oldId]) {
+              chatInputs[newId] = chatInputs[oldId];
+              delete chatInputs[oldId];
             }
-            // Only redirect the detail panel if the user was actively viewing
-            // the old agent. Otherwise leave their current view alone.
             const panel = s.detailPanel;
             let detailPanel = panel;
             let teamDetailPanels = s.teamDetailPanels;
-            if (panel?.type === 'agent' && panel.agentId === msg.oldAgentId) {
-              const newPanel = { type: 'agent', agentId: msg.newAgentId };
+            if (panel?.type === 'agent' && panel.agentId === oldId) {
+              const newPanel = { type: 'agent', agentId: newId };
               detailPanel = newPanel;
               const tid = get().activeTeamId;
               teamDetailPanels = { ...s.teamDetailPanels, [tid]: newPanel };
             }
-            // Persist the migration to localStorage so it survives a reload
             try { localStorage.setItem('groove:chatHistory', JSON.stringify(chatHistory)); } catch {}
             return { chatHistory, tokenTimeline, activityLog, chatInputs, detailPanel, teamDetailPanels };
           });
@@ -670,6 +681,10 @@ export const useGrooveStore = create((set, get) => ({
   },
   removeToast(id) {
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+  },
+
+  installUpdate() {
+    window.groove?.update?.installUpdate();
   },
 
   // ── Marketplace Auth ────────────────────────────────────────
@@ -1191,8 +1206,15 @@ export const useGrooveStore = create((set, get) => ({
     try {
       const data = await api.post(`/agents/${encodeURIComponent(id)}/instruct`, { message });
 
-      // Agent loop or running CLI agent — message delivered/queued, no respawn
-      if (data.status === 'message_sent' || data.status === 'message_queued') {
+      if (data.status === 'message_sent') {
+        return data;
+      }
+      if (data.status === 'message_queued') {
+        set((s) => {
+          const next = new Set(s.thinkingAgents);
+          next.delete(id);
+          return { thinkingAgents: next };
+        });
         return data;
       }
 

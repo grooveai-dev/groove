@@ -113,6 +113,11 @@
           "path": "/Applications"
         }
       ]
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "grooveai-dev",
+      "repo": "groove"
     }
   }
 }

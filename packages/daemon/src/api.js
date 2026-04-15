@@ -12,6 +12,7 @@ import { OllamaProvider } from './providers/ollama.js';
 import { validateAgentConfig } from './validate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkgVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const isPro = process.env.GROOVE_EDITION === 'pro';
 
 let _daemon = null;
@@ -93,7 +94,7 @@ export function createApi(app, daemon) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('X-XSS-Protection', '0');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:* https://*.google.com https://*.googleapis.com; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
     next();
   });
 
@@ -580,6 +581,7 @@ export function createApi(app, daemon) {
   app.get('/api/status', (req, res) => {
     const sub = daemon.subscriptionCache || {};
     res.json({
+      version: pkgVersion,
       pid: process.pid,
       uptime: process.uptime(),
       agents: daemon.registry.getAll().length,
@@ -1105,145 +1107,6 @@ Keep responses concise. Help them think, don't lecture them about the system the
   // Adaptive thresholds
   app.get('/api/adaptive', (req, res) => {
     res.json(daemon.adaptive.getAllProfiles());
-  });
-
-  // --- Avatar Voice Chat ---
-
-  const VOICE_SYSTEM_PROMPT = 'You are a helpful voice assistant. Keep responses concise and conversational — 2-3 sentences max unless asked for detail.';
-
-  const AVATAR_CHAT_PROVIDERS = [
-    { name: 'claude', keyNames: ['anthropic', 'anthropic-api'] },
-    { name: 'openai', keyNames: ['openai', 'codex'] },
-    { name: 'gemini', keyNames: ['gemini'] },
-  ];
-
-  app.post('/api/avatar/chat', async (req, res) => {
-    try {
-      const { messages, provider: reqProvider, model: reqModel, agentId } = req.body || {};
-      if (!messages || !Array.isArray(messages) || messages.length === 0) {
-        return res.status(400).json({ error: 'messages array is required' });
-      }
-
-      const agent = agentId ? daemon.registry.get(agentId) : null;
-      const meta = agent?.metadata || {};
-      let provider = reqProvider || meta.chatProvider;
-      let apiKey = null;
-      let keyName = null;
-
-      if (provider) {
-        const entry = AVATAR_CHAT_PROVIDERS.find((p) => p.name === provider);
-        if (entry) {
-          for (const kn of entry.keyNames) {
-            apiKey = daemon.credentials.getKey(kn);
-            if (apiKey) { keyName = kn; break; }
-          }
-        }
-      }
-
-      if (!apiKey) {
-        for (const entry of AVATAR_CHAT_PROVIDERS) {
-          for (const kn of entry.keyNames) {
-            apiKey = daemon.credentials.getKey(kn);
-            if (apiKey) { provider = entry.name; keyName = kn; break; }
-          }
-          if (apiKey) break;
-        }
-      }
-
-      if (!apiKey) {
-        return res.status(400).json({ error: 'No API keys configured. Set a key via groove set-key or the GUI credentials panel.' });
-      }
-
-      let text;
-      let usedModel;
-
-      if (provider === 'claude') {
-        usedModel = reqModel || meta.chatModel || 'claude-sonnet-4-20250514';
-        const apiRes = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({
-            model: usedModel,
-            max_tokens: 512,
-            system: VOICE_SYSTEM_PROMPT,
-            messages: messages.map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
-          }),
-        });
-        const data = await apiRes.json();
-        if (data.error) return res.status(400).json({ error: data.error.message || 'Claude API error' });
-        text = data.content?.[0]?.text || '';
-      } else if (provider === 'openai') {
-        usedModel = reqModel || meta.chatModel || 'gpt-4o';
-        const apiRes = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-          body: JSON.stringify({
-            model: usedModel,
-            max_tokens: 512,
-            messages: [{ role: 'system', content: VOICE_SYSTEM_PROMPT }, ...messages.map((m) => ({ role: m.role, content: m.content }))],
-          }),
-        });
-        const data = await apiRes.json();
-        if (data.error) return res.status(400).json({ error: data.error.message || 'OpenAI API error' });
-        text = data.choices?.[0]?.message?.content || '';
-      } else if (provider === 'gemini') {
-        usedModel = reqModel || meta.chatModel || 'gemini-2.0-flash';
-        const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${usedModel}:generateContent?key=${apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: VOICE_SYSTEM_PROMPT }] },
-            contents: messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-            generationConfig: { maxOutputTokens: 512 },
-          }),
-        });
-        const data = await apiRes.json();
-        if (data.error) return res.status(400).json({ error: data.error.message || 'Gemini API error' });
-        text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      } else {
-        return res.status(400).json({ error: `Unsupported provider: ${provider}` });
-      }
-
-      res.json({ text, provider, model: usedModel });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/avatar/tts', async (req, res) => {
-    try {
-      const { text, voiceId, agentId } = req.body || {};
-      if (!text) return res.status(400).json({ error: 'text is required' });
-
-      const agent = agentId ? daemon.registry.get(agentId) : null;
-      let apiKey = daemon.credentials.getKey('elevenlabs');
-
-      if (!apiKey) {
-        return res.json({ fallback: 'browser' });
-      }
-
-      const voice = voiceId || 'rachel';
-      const apiRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'xi-api-key': apiKey },
-        body: JSON.stringify({
-          text,
-          model_id: 'eleven_monolingual_v1',
-          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
-        }),
-      });
-
-      if (!apiRes.ok) {
-        const errData = await apiRes.json().catch(() => ({}));
-        return res.status(apiRes.status).json({ error: errData.detail?.message || errData.message || 'ElevenLabs API error' });
-      }
-
-      const arrayBuf = await apiRes.arrayBuffer();
-      const base64 = Buffer.from(arrayBuf).toString('base64');
-      res.json({ audio: base64, contentType: 'audio/mpeg' });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
   });
 
   // --- Marketplace Auth ---

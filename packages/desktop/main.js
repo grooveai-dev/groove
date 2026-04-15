@@ -1,5 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { app, BrowserWindow, Tray, Menu, shell, nativeImage, dialog, ipcMain, safeStorage } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import { createHash, randomBytes } from 'crypto';
 import { fork } from 'child_process';
 import { dirname, join, resolve } from 'path';
@@ -13,16 +14,24 @@ const STUDIO_URL = 'https://studio.groovedev.ai';
 const SUBSCRIPTION_POLL_MS = 5 * 60 * 1000;
 
 // macOS Electron apps launched from Finder inherit a minimal PATH missing user
-// shell additions. Resolve the real PATH once at startup so forked daemons can
-// find CLI tools like `claude`, `codex`, `gemini`, etc.
-(function fixElectronPath() {
+// shell additions. Resolve the real PATH and API key env vars once at startup
+// so forked daemons can find CLI tools and use API keys as fallback.
+(function fixElectronEnv() {
   if (!IS_MAC) return;
+  const shell = process.env.SHELL || '/bin/zsh';
+  const apiKeyVars = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'ELEVENLABS_API_KEY'];
   try {
-    const shell = process.env.SHELL || '/bin/zsh';
-    const fullPath = execSync(`${shell} -ilc 'echo $PATH'`, { encoding: 'utf8', timeout: 5000 }).trim();
-    if (fullPath) process.env.PATH = fullPath;
+    const printCmd = ['echo "PATH=$PATH"', ...apiKeyVars.map(v => `echo "${v}=$${v}"`)].join('; ');
+    const output = execSync(`${shell} -ilc '${printCmd}'`, { encoding: 'utf8', timeout: 5000 }).trim();
+    for (const line of output.split('\n')) {
+      const eq = line.indexOf('=');
+      if (eq < 1) continue;
+      const key = line.slice(0, eq);
+      const val = line.slice(eq + 1);
+      if (key === 'PATH' && val) { process.env.PATH = val; }
+      else if (apiKeyVars.includes(key) && val && !process.env[key]) { process.env[key] = val; }
+    }
   } catch {
-    // Fallback: manually add common bin dirs
     const home = app.getPath('home');
     const extra = [
       '/usr/local/bin', '/opt/homebrew/bin', `${home}/.local/bin`,
@@ -227,6 +236,27 @@ class WorkspaceManager {
         nodeIntegration: false,
         sandbox: true,
       },
+    });
+
+    win.webContents.session.setPermissionRequestHandler((wc, permission, callback) => {
+      const url = wc.getURL();
+      const isLocal = url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1');
+      if (isLocal && (permission === 'media' || permission === 'microphone' || permission === 'audio-capture')) {
+        callback(true);
+        return;
+      }
+      if (!isLocal) { callback(false); return; }
+      callback(true);
+    });
+
+    win.webContents.session.setPermissionCheckHandler((wc, permission) => {
+      if (!wc) return false;
+      const url = wc.getURL();
+      const isLocal = url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1');
+      if (isLocal && (permission === 'media' || permission === 'microphone' || permission === 'audio-capture')) {
+        return true;
+      }
+      return isLocal;
     });
 
     win.loadURL(`http://localhost:${port}?instance=${encodeURIComponent(name)}`);
@@ -703,6 +733,11 @@ ipcMain.on('app-quit', () => {
 });
 
 ipcMain.handle('get-version', () => app.getVersion());
+ipcMain.handle('install-update', () => { autoUpdater.quitAndInstall(false, true); });
+
+autoUpdater.on('update-available', (info) => broadcastToAllWindows('update-available', { version: info.version }));
+autoUpdater.on('update-downloaded', (info) => broadcastToAllWindows('update-downloaded', { version: info.version }));
+autoUpdater.on('error', (err) => console.error('[auto-updater]', err.message));
 
 ipcMain.handle('get-instance-info', (event) => {
   const inst = getInstanceForEvent(event);
@@ -853,6 +888,27 @@ ipcMain.handle('home-open-recent', async (_event, dir) => {
   workspaces._homeWindow = null;
   workspaces._updateTrayMenu();
 
+  win.webContents.session.setPermissionRequestHandler((wc, permission, callback) => {
+    const url = wc.getURL();
+    const isLocal = url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1');
+    if (isLocal && (permission === 'media' || permission === 'microphone' || permission === 'audio-capture')) {
+      callback(true);
+      return;
+    }
+    if (!isLocal) { callback(false); return; }
+    callback(true);
+  });
+
+  win.webContents.session.setPermissionCheckHandler((wc, permission) => {
+    if (!wc) return false;
+    const url = wc.getURL();
+    const isLocal = url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1');
+    if (isLocal && (permission === 'media' || permission === 'microphone' || permission === 'audio-capture')) {
+      return true;
+    }
+    return isLocal;
+  });
+
   win.loadURL(`http://localhost:${port}?instance=${encodeURIComponent(name)}`);
   return { ok: true };
 });
@@ -930,6 +986,58 @@ ipcMain.handle('auth-logout', () => {
 ipcMain.handle('auth-status', () => {
   const token = loadStoredToken();
   return { authenticated: !!token };
+});
+
+ipcMain.handle('integration-oauth-start', async (_event, oauthUrl) => {
+  return new Promise((resolve) => {
+    const oauthWin = new BrowserWindow({
+      width: 800,
+      height: 700,
+      backgroundColor: '#0a0a0a',
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+
+    let resolved = false;
+
+    function handleRedirect(url) {
+      if (resolved) return;
+      if (!url.includes('localhost:31415/api/integrations/oauth/callback')) return;
+      resolved = true;
+      oauthWin.webContents.stop();
+      const parsed = new URL(url);
+      const code = parsed.searchParams.get('code');
+      const state = parsed.searchParams.get('state');
+      const instances = workspaces?.getAll() || [];
+      const inst = instances.find(i => i.port);
+      const actualPort = inst ? inst.port : 31415;
+      fetch(`http://localhost:${actualPort}/api/integrations/oauth/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`)
+        .then(res => res.json())
+        .then(() => {
+          resolve({ ok: true });
+        })
+        .catch(err => {
+          resolve({ error: err.message });
+        })
+        .finally(() => {
+          if (!oauthWin.isDestroyed()) oauthWin.close();
+        });
+    }
+
+    oauthWin.webContents.on('will-redirect', (_e, url) => handleRedirect(url));
+    oauthWin.webContents.on('will-navigate', (_e, url) => handleRedirect(url));
+
+    oauthWin.on('closed', () => {
+      if (!resolved) {
+        resolved = true;
+        resolve({ error: 'cancelled' });
+      }
+    });
+
+    oauthWin.loadURL(oauthUrl);
+  });
 });
 
 function handleAuthCallback(url) {
@@ -1049,6 +1157,15 @@ app.whenReady().then(async () => {
     startSubscriptionPoll();
   }
   workspaces._createHomeWindow();
+
+  // Auto-updater setup — skip in dev mode
+  if (app.isPackaged) {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.logger = null;
+    autoUpdater.checkForUpdates().catch(() => {});
+    setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);
+  }
 });
 
 app.on('activate', () => {

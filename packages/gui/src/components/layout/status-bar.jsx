@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Terminal, BookOpen, Radio, Plug, Globe } from 'lucide-react';
+import { Terminal, BookOpen, Radio, Plug, Globe, ArrowUpCircle } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/status-dot';
 import { fmtUptime } from '../../lib/format';
@@ -15,6 +15,9 @@ export function StatusBar({
   onToggleTerminal,
 }) {
   const savedTunnels = useGrooveStore((s) => s.savedTunnels);
+  const version = useGrooveStore((s) => s.version);
+  const updateReady = useGrooveStore((s) => s.updateReady);
+  const installUpdate = useGrooveStore((s) => s.installUpdate);
   const activeTunnel = savedTunnels.find((t) => t.active);
   const electron = isElectron();
 
@@ -75,7 +78,19 @@ export function StatusBar({
 
       <div className="flex-1" />
 
-      {/* Right: docs + terminal toggle */}
+      {/* Right: version + docs + terminal toggle */}
+      {updateReady ? (
+        <button
+          onClick={installUpdate}
+          className="flex items-center gap-1.5 px-2 h-full text-success hover:bg-success/10 transition-colors cursor-pointer"
+          title={`Update to v${updateReady}`}
+        >
+          <ArrowUpCircle size={12} />
+          <span>v{updateReady}</span>
+        </button>
+      ) : version ? (
+        <span className="text-text-4 px-2">v{version}</span>
+      ) : null}
       {!electron && (
         <a
           href="https://docs.groovedev.ai"

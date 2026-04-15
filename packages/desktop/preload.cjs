@@ -38,7 +38,23 @@ contextBridge.exposeInMainWorld('groove', {
     ipcRenderer.on('daemon-crashed', handler);
     return () => ipcRenderer.removeListener('daemon-crashed', handler);
   },
+  integrations: {
+    oauthStart: (url) => ipcRenderer.invoke('integration-oauth-start', url),
+  },
   subscription: {
     check: () => ipcRenderer.invoke('subscription-check'),
+  },
+  update: {
+    installUpdate: () => ipcRenderer.invoke('install-update'),
+    onUpdateAvailable: (cb) => {
+      const h = (_e, d) => cb(d);
+      ipcRenderer.on('update-available', h);
+      return () => ipcRenderer.removeListener('update-available', h);
+    },
+    onUpdateDownloaded: (cb) => {
+      const h = (_e, d) => cb(d);
+      ipcRenderer.on('update-downloaded', h);
+      return () => ipcRenderer.removeListener('update-downloaded', h);
+    },
   },
 });

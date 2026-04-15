@@ -592,6 +592,31 @@ export const useGrooveStore = create((set, get) => ({
     try { localStorage.setItem('groove:teamOrder', JSON.stringify(teams.map((t) => t.id))); } catch {}
   },
 
+  async cloneTeam(id) {
+    const team = get().teams.find((t) => t.id === id);
+    if (!team) return;
+    const sourceAgents = get().agents.filter((a) => a.teamId === id);
+    try {
+      const newTeam = await api.post('/teams', { name: `${team.name} (copy)` });
+      set({ activeTeamId: newTeam.id });
+      localStorage.setItem('groove:activeTeamId', newTeam.id);
+      for (const agent of sourceAgents) {
+        await api.post('/agents', {
+          role: agent.role,
+          name: agent.name,
+          provider: agent.provider,
+          model: agent.model,
+          scope: agent.scope,
+          teamId: newTeam.id,
+        });
+      }
+      get().addToast('success', `Cloned "${team.name}" with ${sourceAgents.length} agent${sourceAgents.length !== 1 ? 's' : ''}`);
+      return newTeam;
+    } catch (err) {
+      get().addToast('error', 'Failed to clone team', err.message);
+    }
+  },
+
   async renameTeam(id, name) {
     try {
       const team = await api.patch(`/teams/${encodeURIComponent(id)}`, { name });

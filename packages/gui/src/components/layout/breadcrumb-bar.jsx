@@ -67,14 +67,14 @@ function UserMenu() {
       <button
         onClick={() => setOpen(!open)}
         className={cn(
-          'flex items-center gap-2 h-7 pl-1 pr-2 rounded-md transition-colors cursor-pointer select-none',
+          'flex items-center gap-2 h-7 pl-2 pr-1 rounded-md transition-colors cursor-pointer select-none',
           open ? 'bg-surface-1 border border-border' : 'hover:bg-surface-1 border border-transparent',
         )}
       >
-        <ProfilePic user={user} size={20} />
         <span className="text-xs text-text-1 font-sans font-medium max-w-[100px] truncate">
           {user?.displayName || user?.id || 'Account'}
         </span>
+        <ProfilePic user={user} size={20} />
         <ChevronDown size={10} className={cn('text-text-4 transition-transform', open && 'rotate-180')} />
       </button>
 

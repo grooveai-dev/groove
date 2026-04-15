@@ -10,7 +10,8 @@ import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, ChevronLeft, ChevronRight, FolderOpen } from 'lucide-react';
+import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronLeft, ChevronRight, FolderOpen } from 'lucide-react';
+import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../components/ui/context-menu';
 
 const NODE_TYPES = { agentNode: AgentNode, rootNode: RootNode };
 const NODE_W = 220;
@@ -78,7 +79,7 @@ export function TeamTabBar() {
   const createTeam = useGrooveStore((s) => s.createTeam);
   const deleteTeam = useGrooveStore((s) => s.deleteTeam);
   const renameTeam = useGrooveStore((s) => s.renameTeam);
-
+  const cloneTeam = useGrooveStore((s) => s.cloneTeam);
   const reorderTeams = useGrooveStore((s) => s.reorderTeams);
 
   const [creating, setCreating] = useState(false);
@@ -158,102 +159,96 @@ export function TeamTabBar() {
         const running = agents.filter((a) => a.teamId === team.id && (a.status === 'running' || a.status === 'starting')).length;
 
         return (
-          <div
-            key={team.id}
-            draggable={!isRenaming}
-            onDragStart={(e) => { setDragId(team.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', ''); }}
-            onDragEnd={() => { setDragId(null); setDragOverId(null); }}
-            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragId && dragId !== team.id) setDragOverId(team.id); }}
-            onDragLeave={() => { if (dragOverId === team.id) setDragOverId(null); }}
-            onDrop={(e) => {
-              e.preventDefault();
-              if (!dragId || dragId === team.id) return;
-              const from = teams.findIndex((t) => t.id === dragId);
-              const to = teams.findIndex((t) => t.id === team.id);
-              if (from !== -1 && to !== -1) reorderTeams(from, to);
-              setDragId(null);
-              setDragOverId(null);
-            }}
-            onClick={() => !isRenaming && switchTeam(team.id)}
-            onDoubleClick={() => startRename(team)}
-            className={cn(
-              'group relative flex items-center gap-2 px-4 h-9 text-xs font-sans cursor-pointer select-none transition-colors flex-shrink-0',
-              isActive
-                ? 'text-text-0 font-semibold border-x border-x-border bg-[#242830]'
-                : 'text-text-3 hover:text-text-1 hover:bg-surface-3/50',
-              dragId === team.id && 'opacity-40',
-              dragOverId === team.id && dragId !== team.id && 'border-l-2 !border-l-accent',
-            )}
-          >
-            {/* Thin accent line at top */}
-            {isActive && <div className="absolute top-0 left-0 right-0 h-px bg-accent" style={{ height: '0.5px' }} />}
-            {(() => {
-              const status = teamStatus(agents, team.id);
-              const iconColor = status === 'working' ? 'text-green-400'
-                : status === 'completed' ? 'text-green-400'
-                : status === 'crashed' ? 'text-red-400'
-                : isActive ? 'text-accent' : 'text-text-4';
-              return (
-                <span className="relative flex-shrink-0">
-                  <Users size={13} className={cn(iconColor, status === 'working' && 'animate-pulse')} />
-                  {status === 'working' && (
-                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                  )}
-                </span>
-              );
-            })()}
+          <ContextMenu key={team.id}>
+            <ContextMenuTrigger asChild>
+              <div
+                draggable={!isRenaming}
+                onDragStart={(e) => { setDragId(team.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', ''); }}
+                onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragId && dragId !== team.id) setDragOverId(team.id); }}
+                onDragLeave={() => { if (dragOverId === team.id) setDragOverId(null); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (!dragId || dragId === team.id) return;
+                  const from = teams.findIndex((t) => t.id === dragId);
+                  const to = teams.findIndex((t) => t.id === team.id);
+                  if (from !== -1 && to !== -1) reorderTeams(from, to);
+                  setDragId(null);
+                  setDragOverId(null);
+                }}
+                onClick={() => !isRenaming && switchTeam(team.id)}
+                onDoubleClick={() => startRename(team)}
+                className={cn(
+                  'relative flex items-center gap-2 px-3 h-9 text-xs font-sans cursor-pointer select-none transition-colors flex-shrink-0',
+                  isActive
+                    ? 'text-text-0 font-semibold border-x border-x-border bg-[#242830]'
+                    : 'text-text-3 hover:text-text-1 hover:bg-surface-3/50',
+                  dragId === team.id && 'opacity-40',
+                  dragOverId === team.id && dragId !== team.id && 'border-l-2 !border-l-accent',
+                )}
+              >
+                {isActive && <div className="absolute top-0 left-0 right-0 h-px bg-accent" style={{ height: '0.5px' }} />}
+                {(() => {
+                  const status = teamStatus(agents, team.id);
+                  const iconColor = status === 'working' ? 'text-green-400'
+                    : status === 'completed' ? 'text-green-400'
+                    : status === 'crashed' ? 'text-red-400'
+                    : isActive ? 'text-accent' : 'text-text-4';
+                  return (
+                    <span className="relative flex-shrink-0">
+                      <Users size={13} className={cn(iconColor, status === 'working' && 'animate-pulse')} />
+                      {status === 'working' && (
+                        <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                      )}
+                    </span>
+                  );
+                })()}
 
-            {isRenaming ? (
-              <input
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); if (e.key === 'Escape') setRenamingId(null); }}
-                onBlur={handleRename}
-                className="h-5 w-24 px-1.5 text-xs bg-surface-0 border border-accent rounded text-text-0 font-sans focus:outline-none"
-                autoFocus
-                onClick={(e) => e.stopPropagation()}
-              />
-            ) : (
-              <span className="truncate max-w-[120px]">{team.name}</span>
-            )}
+                {isRenaming ? (
+                  <input
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); if (e.key === 'Escape') setRenamingId(null); }}
+                    onBlur={handleRename}
+                    className="h-5 w-24 px-1.5 text-xs bg-surface-0 border border-accent rounded text-text-0 font-sans focus:outline-none"
+                    autoFocus
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <span className="truncate max-w-[120px]">{team.name}</span>
+                )}
 
-            {/* Agent count badge */}
-            {count > 0 && !isRenaming && (
-              <span className={cn(
-                'flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-2xs font-mono font-semibold',
-                running > 0 ? 'bg-accent/15 text-accent' : 'bg-surface-4 text-text-3',
-              )}>
-                {count}
-              </span>
-            )}
+                {count > 0 && !isRenaming && (
+                  <span className={cn(
+                    'flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-2xs font-mono font-semibold',
+                    running > 0 ? 'bg-accent/15 text-accent' : 'bg-surface-4 text-text-3',
+                  )}>
+                    {count}
+                  </span>
+                )}
 
-            {/* Actions — rename + close */}
-            {!isRenaming && (
-              <div className="flex items-center gap-0.5 ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={(e) => { e.stopPropagation(); startRename(team); }}
-                  className="p-0.5 rounded hover:bg-surface-5 text-text-4 hover:text-text-1 cursor-pointer"
-                  title="Rename team"
-                >
-                  <Pencil size={10} />
-                </button>
-                {!team.isDefault && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); deleteTeam(team.id); }}
-                    className="p-0.5 rounded hover:bg-surface-5 text-text-4 hover:text-danger cursor-pointer"
-                    title="Delete team"
-                  >
-                    <X size={10} />
-                  </button>
+                {isActive && (
+                  <div className="absolute bottom-[-1px] left-0 right-0 h-px bg-[#242830]" />
                 )}
               </div>
-            )}
-
-            {/* Bottom edge hides the parent border for active tab */}
-            {isActive && (
-              <div className="absolute bottom-[-1px] left-0 right-0 h-px bg-[#242830]" />
-            )}
-          </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem onSelect={() => startRename(team)}>
+                <Pencil size={12} /> Rename
+              </ContextMenuItem>
+              <ContextMenuItem onSelect={() => cloneTeam(team.id)}>
+                <Copy size={12} /> Clone
+              </ContextMenuItem>
+              {!team.isDefault && (
+                <>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem danger onSelect={() => deleteTeam(team.id)}>
+                    <Trash2 size={12} /> Delete
+                  </ContextMenuItem>
+                </>
+              )}
+            </ContextMenuContent>
+          </ContextMenu>
         );
       })}
 

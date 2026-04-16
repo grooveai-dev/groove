@@ -1,6 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { app, BrowserWindow, Tray, Menu, shell, nativeImage, dialog, ipcMain, safeStorage } from 'electron';
-import { autoUpdater } from 'electron-updater';
+import pkg from 'electron-updater';
+const { autoUpdater } = pkg;
 import { createHash, randomBytes } from 'crypto';
 import { fork } from 'child_process';
 import { dirname, join, resolve } from 'path';

@@ -46,13 +46,16 @@ export class TimelineTracker {
     if (this._writing) return;
     this._writing = true;
     try {
+      this._dirty = false;
       await writeFile(this.path, JSON.stringify({
         snapshots: this.snapshots,
         events: this.events,
       }, null, 2));
-      this._dirty = false;
-    } catch { /* best effort */ }
+    } catch {
+      this._dirty = true;
+    }
     this._writing = false;
+    if (this._dirty) this._saveAsync();
   }
 
   start() {
@@ -69,13 +72,11 @@ export class TimelineTracker {
   }
 
   snapshot() {
+    const agents = this.daemon.registry.getAll();
     if (!this._dirty) {
-      const agents = this.daemon.registry.getAll();
       const running = agents.filter((a) => a.status === 'running').length;
       if (running === 0 && this.snapshots.length > 0) return;
     }
-
-    const agents = this.daemon.registry.getAll();
     const entry = {
       t: Date.now(),
       tokens: this.daemon.tokens.getTotal(),

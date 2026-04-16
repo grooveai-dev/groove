@@ -702,6 +702,11 @@ For normal file edits within your scope, proceed without review.
 
       this.handles.delete(agent.id);
 
+      // Clean up stream throttle so pending timers don't fire for dead agents
+      const throttle = this._streamThrottle.get(agent.id);
+      if (throttle?.timer) clearTimeout(throttle.timer);
+      this._streamThrottle.delete(agent.id);
+
       // Release file-scope locks so they don't persist after agent death
       if (this.daemon.locks) this.daemon.locks.release(agent.id);
 

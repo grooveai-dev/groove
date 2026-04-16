@@ -12,6 +12,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, appendFileSync, statSync } from 'fs';
 import { resolve, relative } from 'path';
 import { createHash } from 'crypto';
+import { minimatch } from 'minimatch';
 
 const MAX_CONSTRAINTS = 50;
 const MAX_HANDOFF_ROTATIONS = 25;
@@ -141,7 +142,12 @@ export class MemoryStore {
     return safeName(rel);
   }
 
-  _chainPath(role, workingDir) {
+  _chainPath(role, workingDir, teamId) {
+    if (teamId) {
+      const dir = resolve(this.handoffDir, safeName(teamId));
+      mkdirSync(dir, { recursive: true });
+      return resolve(dir, `${safeName(role)}.md`);
+    }
     const slug = this._workspaceSlug(workingDir);
     if (slug) {
       const dir = resolve(this.handoffDir, slug);
@@ -151,8 +157,8 @@ export class MemoryStore {
     return resolve(this.handoffDir, `${safeName(role)}.md`);
   }
 
-  getHandoffChain(role, workingDir) {
-    const path = this._chainPath(role, workingDir);
+  getHandoffChain(role, workingDir, teamId) {
+    const path = this._chainPath(role, workingDir, teamId);
     if (!existsSync(path)) return [];
     try {
       const content = readFileSync(path, 'utf8');
@@ -173,9 +179,9 @@ export class MemoryStore {
     }
   }
 
-  appendHandoffBrief(role, entry, workingDir) {
+  appendHandoffBrief(role, entry, workingDir, teamId) {
     if (!role || !entry) return false;
-    const chain = this.getHandoffChain(role, workingDir);
+    const chain = this.getHandoffChain(role, workingDir, teamId);
     const nextN = (chain[0]?.rotationN || 0) + 1;
 
     const block = [
@@ -203,15 +209,15 @@ export class MemoryStore {
     }
 
     try {
-      writeFileSync(this._chainPath(role, workingDir), lines.join('\n'));
+      writeFileSync(this._chainPath(role, workingDir, teamId), lines.join('\n'));
       return true;
     } catch {
       return false;
     }
   }
 
-  getRecentHandoffMarkdown(role, count = 3, maxChars = 4000, workingDir) {
-    const chain = this.getHandoffChain(role, workingDir);
+  getRecentHandoffMarkdown(role, count = 3, maxChars = 4000, workingDir, teamId) {
+    const chain = this.getHandoffChain(role, workingDir, teamId);
     if (chain.length === 0) return '';
     const recent = chain.slice(0, count);
     const out = recent.map((e) => e.body || '').join('\n\n---\n\n');
@@ -300,9 +306,22 @@ export class MemoryStore {
     } catch { /* best-effort */ }
   }
 
-  getDiscoveriesMarkdown(role, limit = 20, maxChars = 4000) {
-    const entries = this.listDiscoveries({ role, limit });
+  getDiscoveriesMarkdown(role, limit = 20, maxChars = 4000, scope) {
+    let entries = this.listDiscoveries({ role, limit: limit * 3 });
     if (entries.length === 0) return '';
+
+    if (scope && Array.isArray(scope) && scope.length > 0) {
+      const filtered = entries.filter((d) => {
+        const file = d.fix || '';
+        const rel = file.startsWith(this.projectDir + '/') ? file.slice(this.projectDir.length + 1) : file;
+        return scope.some((pattern) => minimatch(rel, pattern, { dot: true }));
+      });
+      if (filtered.length >= 3) {
+        entries = filtered;
+      }
+    }
+
+    entries = entries.slice(0, limit);
     const lines = entries.map((d) => `- When \`${d.trigger}\` → fix: ${d.fix}`);
     return truncate(lines.join('\n'), maxChars);
   }

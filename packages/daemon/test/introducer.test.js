@@ -163,6 +163,69 @@ describe('Introducer', () => {
     });
   });
 
+  describe('hasTask gate — cross-team contamination fix', () => {
+    it('should NOT inject handoffs for agents spawned without a prompt', () => {
+      const grooveDir = join(tmpDir, '.groove');
+      mkdirSync(grooveDir, { recursive: true });
+      const memory = new MemoryStore(grooveDir);
+      memory.appendHandoffBrief('planner', {
+        brief: 'Old team planner work that should not leak',
+        reason: 'completed',
+      });
+      memory.addDiscovery({ role: 'planner', trigger: 'some error', fix: 'some fix', outcome: 'success' });
+      memory.addConstraint({ text: 'Always use ESM', category: 'pattern' });
+
+      const daemon = { registry, projectDir: tmpDir, grooveDir, memory };
+      const intro = new Introducer(daemon);
+
+      const agent = registry.add({ role: 'planner', scope: [] });
+      // hasTask=false, isRotation=false — simulates a fresh spawn with no prompt
+      const ctx = intro.generateContext(agent, { hasTask: false, isRotation: false });
+
+      // Constraints should ALWAYS be injected (project knowledge)
+      assert.ok(ctx.includes('Always use ESM'), 'constraints should always be injected');
+      // Handoffs and discoveries should NOT be injected
+      assert.ok(!ctx.includes('Old team planner work'), 'handoffs must not leak to promptless agents');
+      assert.ok(!ctx.includes('Known Fixes'), 'discoveries must not be injected for promptless agents');
+    });
+
+    it('should inject handoffs for agents spawned WITH a prompt (hasTask=true)', () => {
+      const grooveDir = join(tmpDir, '.groove');
+      mkdirSync(grooveDir, { recursive: true });
+      const memory = new MemoryStore(grooveDir);
+      memory.appendHandoffBrief('backend', {
+        brief: 'Previous backend handoff',
+        reason: 'completed',
+      });
+
+      const daemon = { registry, projectDir: tmpDir, grooveDir, memory };
+      const intro = new Introducer(daemon);
+
+      const agent = registry.add({ role: 'backend', scope: [] });
+      const ctx = intro.generateContext(agent, { hasTask: true });
+
+      assert.ok(ctx.includes('Recent Handoff History'), 'handoffs should be injected when hasTask=true');
+    });
+
+    it('should inject handoffs for rotation replacements (isRotation=true)', () => {
+      const grooveDir = join(tmpDir, '.groove');
+      mkdirSync(grooveDir, { recursive: true });
+      const memory = new MemoryStore(grooveDir);
+      memory.appendHandoffBrief('backend', {
+        brief: 'Rotation handoff content',
+        reason: 'context_threshold',
+      });
+
+      const daemon = { registry, projectDir: tmpDir, grooveDir, memory };
+      const intro = new Introducer(daemon);
+
+      const agent = registry.add({ role: 'backend', scope: [] });
+      const ctx = intro.generateContext(agent, { hasTask: false, isRotation: true });
+
+      assert.ok(ctx.includes('Recent Handoff History'), 'handoffs should be injected for rotations');
+    });
+  });
+
   describe('CLAUDE.md injection', () => {
     it('should inject GROOVE section into existing CLAUDE.md', () => {
       writeFileSync(join(tmpDir, 'CLAUDE.md'), '# My Project\n\nSome content.\n');

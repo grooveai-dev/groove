@@ -427,12 +427,18 @@ export class ProcessManager {
       taskNegotiation = await this.negotiateTaskSplit(agent, sameRole);
     }
 
-    // Generate introduction context (team awareness + negotiation)
-    // Always pass hasTask: true so Layer 7 discoveries and handoff history
-    // are injected for ALL agents, not just those with explicit prompts.
-    // Without this, first-generation agents spawned with just a role never
-    // receive prior discoveries and repeat mistakes Layer 7 already captured.
-    const introContext = introducer.generateContext(agent, { taskNegotiation, hasTask: true });
+    // Compute hasTask from actual prompt content — agents spawned without a
+    // prompt should NOT receive handoff history (prevents cross-team contamination).
+    // Discoveries + constraints are always injected (project knowledge).
+    // Handoffs are injected only when the agent has a real task or is a rotation.
+    const hasTask = !!(config.prompt && config.prompt.trim().length > 0);
+    const isRotation = !!(config.isRotation);
+    const introContext = introducer.generateContext(agent, { taskNegotiation, hasTask, isRotation });
+
+    // Ensure the project map is fresh before the new agent reads CLAUDE.md
+    if (this.daemon.journalist) {
+      await this.daemon.journalist.ensureFresh(30000);
+    }
 
     // Track cold-start savings — agent gets context from planner/journalist/team
     // instead of exploring the codebase from scratch
@@ -597,7 +603,7 @@ For normal file edits within your scope, proceed without review.
 
         this.daemon.broadcast({ type: 'agent:exit', agentId: agent.id, code: code || 0, signal, status });
         if (this.daemon.integrations) this.daemon.integrations.refreshMcpJson();
-        if (status === 'completed' && this.daemon.journalist) this.daemon.journalist.cycle().catch(() => {});
+        if (status === 'completed' && this.daemon.journalist) this.daemon.journalist.requestSynthesis('completion');
         this._checkPhase2(agent.id);
 
         // Auto-trigger idle QC + process cross-scope handoffs
@@ -783,10 +789,9 @@ For normal file edits within your scope, proceed without review.
         }
       }
 
-      // Trigger journalist synthesis immediately on completion so the project
-      // map is fresh for the next agent that spawns (don't wait for 120s cycle)
+      // Trigger journalist synthesis on completion (event-driven, debounced)
       if (finalStatus === 'completed' && this.daemon.journalist) {
-        this.daemon.journalist.cycle().catch(() => {});
+        this.daemon.journalist.requestSynthesis('completion');
       }
 
       // Phase 2 auto-spawn: check if all phase 1 agents for a team are done
@@ -1168,7 +1173,7 @@ For normal file edits within your scope, proceed without review.
         oldTokens: agentData?.tokensUsed || 0,
         contextUsage: agentData?.contextUsage || 0,
         brief: brief.slice(0, 4000),
-      }, agent.workingDir);
+      }, agent.workingDir, agent.teamId);
     } catch { /* best-effort */ }
   }
 
@@ -1369,7 +1374,7 @@ For normal file edits within your scope, proceed without review.
       registry.update(newAgent.id, { status: finalStatus, pid: null });
       this.daemon.broadcast({ type: 'agent:exit', agentId: newAgent.id, code, signal, status: finalStatus });
       if (finalStatus === 'completed' && this.daemon.journalist) {
-        this.daemon.journalist.cycle().catch(() => {});
+        this.daemon.journalist.requestSynthesis('completion');
       }
     });
 

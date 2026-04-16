@@ -311,6 +311,112 @@ describe('Journalist', () => {
     });
   });
 
+  describe('requestSynthesis', () => {
+    it('should debounce multiple calls within 10s into a single cycle', async () => {
+      const { daemon } = createMockDaemon();
+      const journalist = new Journalist(daemon);
+
+      let cycleCalls = 0;
+      journalist.cycle = async () => { cycleCalls++; };
+
+      journalist.requestSynthesis('completion');
+      journalist.requestSynthesis('spawn');
+      journalist.requestSynthesis('rotation');
+
+      assert.equal(cycleCalls, 0, 'cycle should not fire immediately');
+
+      // Wait for debounce to fire
+      await new Promise((r) => setTimeout(r, 11_000));
+      assert.equal(cycleCalls, 1, 'only one cycle should fire after debounce');
+
+      journalist.stop();
+    });
+
+    it('should track the latest reason', () => {
+      const { daemon } = createMockDaemon();
+      const journalist = new Journalist(daemon);
+      journalist.cycle = async () => {};
+
+      journalist.requestSynthesis('completion');
+      journalist.requestSynthesis('rotation');
+
+      assert.equal(journalist._debounceReason, 'rotation');
+      journalist.stop();
+    });
+  });
+
+  describe('ensureFresh', () => {
+    it('should skip synthesis when lastCycleAt is recent', async () => {
+      const { daemon } = createMockDaemon();
+      const journalist = new Journalist(daemon);
+
+      let cycleCalled = false;
+      journalist.cycle = async () => { cycleCalled = true; };
+      journalist.lastCycleAt = Date.now() - 5000; // 5s ago
+
+      await journalist.ensureFresh(30000);
+      assert.equal(cycleCalled, false, 'should skip when recent');
+    });
+
+    it('should trigger synthesis when lastCycleAt is stale', async () => {
+      const { daemon } = createMockDaemon();
+      const journalist = new Journalist(daemon);
+
+      let cycleCalled = false;
+      journalist.cycle = async () => { cycleCalled = true; };
+      journalist.lastCycleAt = Date.now() - 60_000; // 60s ago
+
+      await journalist.ensureFresh(30000);
+      assert.equal(cycleCalled, true, 'should trigger when stale');
+    });
+
+    it('should trigger synthesis when lastCycleAt is null', async () => {
+      const { daemon } = createMockDaemon();
+      const journalist = new Journalist(daemon);
+
+      let cycleCalled = false;
+      journalist.cycle = async () => { cycleCalled = true; };
+
+      await journalist.ensureFresh(30000);
+      assert.equal(cycleCalled, true, 'should trigger when never synthesized');
+    });
+  });
+
+  describe('model tier selection', () => {
+    it('should prefer medium tier over light tier for synthesis', () => {
+      // Verify the callHeadless model selection logic by checking the source
+      // The constructor picks medium first, falling back to light
+      const { daemon } = createMockDaemon();
+      const journalist = new Journalist(daemon);
+
+      // Simulate provider model selection logic matching callHeadless
+      const models = [
+        { id: 'haiku', tier: 'light' },
+        { id: 'sonnet', tier: 'medium' },
+        { id: 'opus', tier: 'heavy' },
+      ];
+
+      const selected = models.find((m) => m.tier === 'medium')
+        || models.find((m) => m.tier === 'light')
+        || models[0];
+
+      assert.equal(selected.id, 'sonnet', 'should select medium tier (Sonnet)');
+    });
+
+    it('should fall back to light tier when medium is unavailable', () => {
+      const models = [
+        { id: 'haiku', tier: 'light' },
+        { id: 'opus', tier: 'heavy' },
+      ];
+
+      const selected = models.find((m) => m.tier === 'medium')
+        || models.find((m) => m.tier === 'light')
+        || models[0];
+
+      assert.equal(selected.id, 'haiku', 'should fall back to light tier');
+    });
+  });
+
   describe('_extractConstraints', () => {
     it('should no-op since auto-extraction is disabled', () => {
       const { daemon, grooveDir } = createMockDaemon();

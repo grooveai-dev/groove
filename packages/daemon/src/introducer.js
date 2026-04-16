@@ -14,7 +14,7 @@ export class Introducer {
   }
 
   generateContext(newAgent, options = {}) {
-    const { taskNegotiation, hasTask } = options;
+    const { taskNegotiation, hasTask, isRotation } = options;
     const agents = this.daemon.registry.getAll();
     // Only include ACTIVE agents — not completed/killed ones from previous sessions
     // Completed agents' work is captured in the journalist's project map, not here
@@ -353,13 +353,13 @@ export class Introducer {
           parts.push(`### Constraints (read carefully)\n${constraints}`);
         }
 
-        if (hasTask) {
-          const discoveries = this.daemon.memory.getDiscoveriesMarkdown(newAgent.role, 15, 1000);
+        if (hasTask || isRotation) {
+          const discoveries = this.daemon.memory.getDiscoveriesMarkdown(newAgent.role, 8, 600, newAgent.scope);
           if (discoveries) {
             parts.push(`### Known Fixes for ${newAgent.role} Role\n${discoveries}`);
           }
 
-          const handoffs = this.daemon.memory.getRecentHandoffMarkdown(newAgent.role, 2, 1000, newAgent.workingDir);
+          const handoffs = this.daemon.memory.getRecentHandoffMarkdown(newAgent.role, 2, 1000, newAgent.workingDir, newAgent.teamId);
           if (handoffs) {
             parts.push(`### Recent Handoff History\n${handoffs}`);
           }
@@ -367,9 +367,9 @@ export class Introducer {
 
         if (parts.length > 0) {
           memorySection = `\n## Project Memory (auto-generated)\n\n${parts.join('\n\n')}\n`;
-          // Hard budget: 4K chars total
-          if (memorySection.length > 4000) {
-            memorySection = memorySection.slice(0, 3997) + '...';
+          // Hard budget: 3K chars total
+          if (memorySection.length > 3000) {
+            memorySection = memorySection.slice(0, 2997) + '...';
           }
         }
       }

@@ -95,6 +95,7 @@ export class CodexProvider extends Provider {
     if (agent.prompt) args.push(agent.prompt);
 
     this._currentModel = agent.model;
+    this._sessionInputTokens = 0;
 
     return {
       command: 'codex',
@@ -107,6 +108,11 @@ export class CodexProvider extends Provider {
     const args = ['exec', '--json', prompt];
     if (model) args.push('--model', model);
     return { command: 'codex', args, env: {} };
+  }
+
+  _getMaxContext() {
+    const model = CodexProvider.models.find((m) => m.id === this._currentModel);
+    return model?.maxContext || 200000;
   }
 
   switchModel(agent, newModel) {
@@ -175,36 +181,48 @@ export class CodexProvider extends Provider {
 
       case 'item.completed': {
         const item = event.item || {};
+
+        // Accumulate usage for intermediate context estimation.
+        // Codex only reports full contextUsage at turn.completed — without this,
+        // the rotator sees stale contextUsage between turns and never triggers.
+        if (event.usage) {
+          this._sessionInputTokens += event.usage.input_tokens || 0;
+        }
+
+        let result = null;
         if (item.type === 'agent_message') {
-          return {
+          result = {
             type: 'activity', subtype: 'assistant',
             data: [{ type: 'text', text: item.text || '' }],
           };
-        }
-        if (item.type === 'command_execution') {
+        } else if (item.type === 'command_execution') {
           const output = (item.aggregated_output || '').slice(0, 2000);
-          return {
+          result = {
             type: 'activity', subtype: 'assistant',
             data: [
               { type: 'tool_use', id: item.id || 'exec', name: 'Bash', input: { command: item.command } },
               ...(output ? [{ type: 'text', text: output }] : []),
             ],
           };
-        }
-        if (item.type === 'todo_list') {
+        } else if (item.type === 'todo_list') {
           const steps = (item.items || []).map((s) => `${s.completed ? '✓' : '○'} ${s.text}`).join('\n');
-          return {
+          result = {
             type: 'activity', subtype: 'assistant',
             data: [{ type: 'text', text: steps }],
           };
-        }
-        if (item.type === 'file_edit' || item.type === 'file_write' || item.type === 'file_read') {
-          return {
+        } else if (item.type === 'file_edit' || item.type === 'file_write' || item.type === 'file_read') {
+          result = {
             type: 'activity', subtype: 'assistant',
             data: [{ type: 'tool_use', id: item.id || 'file', name: item.type === 'file_read' ? 'Read' : item.type === 'file_write' ? 'Write' : 'Edit', input: { path: item.path || item.file || '' } }],
           };
         }
-        return null;
+
+        // Attach intermediate context estimate so all 7 layers see Codex progress
+        if (result && this._sessionInputTokens > 0) {
+          result.contextUsage = this._sessionInputTokens / this._getMaxContext();
+        }
+
+        return result;
       }
 
       case 'turn.completed': {
@@ -215,10 +233,14 @@ export class CodexProvider extends Provider {
         const outputTokens = usage.output_tokens || 0;
         const cachedTokens = usage.cached_input_tokens || 0;
         const totalTokens = inputTokens + outputTokens;
+        const cacheCreationTokens = cachedTokens > 0 ? Math.max(0, inputTokens - cachedTokens) : 0;
 
         const model = CodexProvider.models.find((m) => m.id === this._currentModel);
         const pricing = model?.pricing;
         const maxContext = model?.maxContext || 200000;
+
+        // Sync accumulator to actual cumulative value from turn completion
+        this._sessionInputTokens = inputTokens;
 
         let estimatedCostUsd = 0;
         if (pricing) {
@@ -235,6 +257,7 @@ export class CodexProvider extends Provider {
           inputTokens,
           outputTokens,
           cacheReadTokens: cachedTokens,
+          cacheCreationTokens,
           contextUsage: inputTokens / maxContext,
           estimatedCostUsd,
           costSource: pricing ? 'calculated' : 'estimated',

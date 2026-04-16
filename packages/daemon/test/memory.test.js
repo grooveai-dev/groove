@@ -181,6 +181,55 @@ describe('MemoryStore', () => {
       assert.ok(!rootRoles.includes('frontend'));
       assert.ok(wsRoles.includes('frontend'));
     });
+
+    it('scopes chains by teamId — different teams produce different files', () => {
+      memory.appendHandoffBrief('planner', { brief: 'team-A planner work' }, null, 'team-A');
+      memory.appendHandoffBrief('planner', { brief: 'team-B planner work' }, null, 'team-B');
+
+      const chainA = memory.getHandoffChain('planner', null, 'team-A');
+      const chainB = memory.getHandoffChain('planner', null, 'team-B');
+      assert.equal(chainA.length, 1);
+      assert.equal(chainB.length, 1);
+      assert.match(chainA[0].body, /team-A planner/);
+      assert.match(chainB[0].body, /team-B planner/);
+    });
+
+    it('team-scoped chains are independent from root chains', () => {
+      memory.appendHandoffBrief('planner', { brief: 'root planner work' });
+      memory.appendHandoffBrief('planner', { brief: 'scoped planner work' }, null, 'team-X');
+
+      const rootChain = memory.getHandoffChain('planner');
+      const teamChain = memory.getHandoffChain('planner', null, 'team-X');
+      assert.equal(rootChain.length, 1);
+      assert.equal(teamChain.length, 1);
+      assert.match(rootChain[0].body, /root planner/);
+      assert.match(teamChain[0].body, /scoped planner/);
+    });
+
+    it('teamId takes priority over workingDir for chain path', () => {
+      const ws = join(tmpDir, '..', 'some-workspace');
+      memory.appendHandoffBrief('backend', { brief: 'team-scoped' }, ws, 'team-Z');
+      memory.appendHandoffBrief('backend', { brief: 'ws-scoped' }, ws);
+
+      const teamChain = memory.getHandoffChain('backend', ws, 'team-Z');
+      const wsChain = memory.getHandoffChain('backend', ws);
+      assert.equal(teamChain.length, 1);
+      assert.equal(wsChain.length, 1);
+      assert.match(teamChain[0].body, /team-scoped/);
+      assert.match(wsChain[0].body, /ws-scoped/);
+    });
+
+    it('getRecentHandoffMarkdown respects teamId', () => {
+      memory.appendHandoffBrief('planner', { brief: 'team-1 brief' }, null, 'team-1');
+      memory.appendHandoffBrief('planner', { brief: 'team-2 brief' }, null, 'team-2');
+
+      const md1 = memory.getRecentHandoffMarkdown('planner', 3, 4000, null, 'team-1');
+      const md2 = memory.getRecentHandoffMarkdown('planner', 3, 4000, null, 'team-2');
+      assert.match(md1, /team-1 brief/);
+      assert.ok(!md1.includes('team-2 brief'));
+      assert.match(md2, /team-2 brief/);
+      assert.ok(!md2.includes('team-1 brief'));
+    });
   });
 
   describe('discoveries', () => {

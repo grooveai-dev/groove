@@ -6,8 +6,9 @@ import { resolve } from 'path';
 import { execFile, spawn as cpSpawn } from 'child_process';
 import { getProvider, getInstalledProviders } from './providers/index.js';
 
-const DEFAULT_INTERVAL = 120_000; // 2 minutes
+const DEFAULT_INTERVAL = 300_000; // 5 minutes (safety-net fallback; event-driven triggers handle the normal case)
 const MAX_LOG_CHARS = 100_000; // ~25k tokens budget for synthesis input (captures 80-90% of recent activity)
+const DEBOUNCE_MS = 10_000; // requestSynthesis debounce window
 
 export class Journalist {
   constructor(daemon) {
@@ -19,6 +20,8 @@ export class Journalist {
     this.synthesizing = false;
     this.lastSynthesis = null; // last synthesis result text
     this.history = []; // recent synthesis summaries
+    this._debounceTimer = null;
+    this._debounceReason = null;
   }
 
   start(intervalMs = DEFAULT_INTERVAL) {
@@ -51,6 +54,33 @@ export class Journalist {
       clearInterval(this.interval);
       this.interval = null;
     }
+    if (this._debounceTimer) {
+      clearTimeout(this._debounceTimer);
+      this._debounceTimer = null;
+    }
+  }
+
+  requestSynthesis(reason = 'unknown') {
+    if (this._debounceTimer) {
+      this._debounceReason = reason;
+      return;
+    }
+    this._debounceReason = reason;
+    this._debounceTimer = setTimeout(() => {
+      const r = this._debounceReason;
+      this._debounceTimer = null;
+      this._debounceReason = null;
+      this.cycle().catch((err) => {
+        console.error(`  Journalist requestSynthesis(${r}) failed:`, err.message);
+      });
+    }, DEBOUNCE_MS);
+  }
+
+  async ensureFresh(maxAgeMs = 30000) {
+    if (this.lastCycleAt && (Date.now() - this.lastCycleAt) < maxAgeMs) {
+      return;
+    }
+    await this.cycle();
   }
 
   async cycle() {
@@ -454,11 +484,11 @@ export class Journalist {
     }
     const provider = getProvider(providerId);
 
-    // Pick the lightest model for synthesis (cheapest/fastest)
-    const lightModel = provider.constructor.models?.find((m) => m.tier === 'light')
-      || provider.constructor.models?.find((m) => m.tier === 'medium')
+    // Pick medium tier for higher-quality synthesis (fewer but better cycles)
+    const selectedModel = provider.constructor.models?.find((m) => m.tier === 'medium')
+      || provider.constructor.models?.find((m) => m.tier === 'light')
       || provider.constructor.models?.[0];
-    const modelId = lightModel?.id || null;
+    const modelId = selectedModel?.id || null;
 
     const headlessCmd = provider.buildHeadlessCommand(prompt, modelId);
     const { command, args, env, stdin: stdinData } = headlessCmd;
@@ -749,7 +779,7 @@ export class Journalist {
     // Pull recent rotation history from persistent memory (Layer 7).
     // Gives the new agent causal continuity: what the last 3 agents struggled
     // with, decided, and solved — not just what the current session did.
-    const recentChain = this.daemon.memory?.getRecentHandoffMarkdown(agent.role, 3, 3000, agent.workingDir) || '';
+    const recentChain = this.daemon.memory?.getRecentHandoffMarkdown(agent.role, 3, 3000, agent.workingDir, agent.teamId) || '';
 
     // Pull the user's recent messages scoped to this agent
     const agentFeedback = this.getUserFeedback(agent.id).slice(-5);

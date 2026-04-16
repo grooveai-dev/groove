@@ -31,6 +31,7 @@ export class Rotator extends EventEmitter {
     this.rotationHistory = [];
     this.rotating = new Set();
     this.lastRotationTime = new Map(); // agentId -> timestamp of last rotation
+    this._lastContextState = new Map(); // agentId -> { contextUsage, timestamp }
     this.enabled = false;
     this.liveScores = {};
     this.scoreHistory = {};
@@ -180,6 +181,25 @@ export class Rotator extends EventEmitter {
           continue;
         }
 
+        // Stale context fallback — safety net for providers (like Codex) that don't
+        // report intermediate contextUsage. If contextUsage hasn't changed in 120+
+        // seconds but tokens are being consumed, estimate from total tokens.
+        const knownCtx = this._lastContextState.get(agent.id);
+        if (!knownCtx || knownCtx.contextUsage !== agent.contextUsage) {
+          this._lastContextState.set(agent.id, { contextUsage: agent.contextUsage, timestamp: Date.now() });
+        } else if (agent.tokensUsed > 0 && (Date.now() - knownCtx.timestamp) >= 120_000) {
+          const providerClass = getProvider(agent.provider)?.constructor;
+          const models = providerClass?.models || [];
+          const model = models.find((m) => m.id === agent.model) || models[0];
+          const maxContext = model?.maxContext || 200000;
+          const estimatedContext = agent.tokensUsed / maxContext;
+          if (estimatedContext >= HARD_CEILING) {
+            console.log(`  Rotator: ${agent.name} estimated context ${Math.round(estimatedContext * 100)}% (stale contextUsage fallback)`);
+            await this.rotate(agent.id, { reason: 'estimated_context_ceiling' });
+            continue;
+          }
+        }
+
         // Cooldown — skip threshold/quality rotation if recently rotated
         if (this._isOnCooldown(agent.id)) continue;
 
@@ -274,7 +294,7 @@ export class Rotator extends EventEmitter {
           oldTokens: agent.tokensUsed,
           contextUsage: agent.contextUsage,
           brief: brief.slice(0, 4000),
-        }, agent.workingDir);
+        }, agent.workingDir, agent.teamId);
       }
 
       const record = {
@@ -312,6 +332,7 @@ export class Rotator extends EventEmitter {
           workingDir: agent.workingDir,
           name: agent.name,
           teamId: agent.teamId,
+          isRotation: true,
         });
       } catch (spawnErr) {
         // Spawn failed — re-add old agent so the user can see and retry.
@@ -499,6 +520,7 @@ export class Rotator extends EventEmitter {
     const naturalCompactions = this.rotationHistory.filter((r) => r.reason === 'natural_compaction').length;
     const hardCeilingRotations = this.rotationHistory.filter((r) => r.reason === 'hard_ceiling').length;
     const tokenCeilingRotations = this.rotationHistory.filter((r) => r.reason === 'token_ceiling').length;
+    const estimatedCeilingRotations = this.rotationHistory.filter((r) => r.reason === 'estimated_context_ceiling').length;
     return {
       enabled: this.enabled,
       totalRotations,
@@ -508,6 +530,7 @@ export class Rotator extends EventEmitter {
       naturalCompactions,
       hardCeilingRotations,
       tokenCeilingRotations,
+      estimatedCeilingRotations,
       rotating: Array.from(this.rotating),
       liveScores: this.liveScores,
       scoreHistory: this.scoreHistory,

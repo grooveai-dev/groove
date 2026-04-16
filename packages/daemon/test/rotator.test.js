@@ -335,6 +335,61 @@ describe('Rotator', () => {
     assert.equal(tokenCeilingRotations.length, 0);
   });
 
+  it('should trigger estimated_context_ceiling when contextUsage is stale', async () => {
+    // Simulates a Codex agent that never reports contextUsage updates.
+    // The agent has consumed 200K tokens (100% of maxContext) but contextUsage stayed at 0.
+    const agent = {
+      id: 'cx1', name: 'codex-stale', role: 'backend', status: 'running',
+      provider: 'codex', scope: [], model: 'gpt-5.4',
+      tokensUsed: 200_000, contextUsage: 0, workingDir: '/tmp',
+      lastActivity: new Date(Date.now() - 30_000).toISOString(),
+      spawnedAt: new Date(Date.now() - 300_000).toISOString(),
+    };
+    mockDaemon.registry.agents = [agent];
+
+    // First check — records the initial contextUsage state
+    await rotator.check();
+    assert.equal(rotator.getHistory().length, 0); // No rotation yet
+
+    // Simulate 120+ seconds of stale contextUsage by backdating the timestamp
+    const state = rotator._lastContextState.get('cx1');
+    state.timestamp = Date.now() - 130_000; // 130s ago
+
+    // Second check — stale context + high tokens should trigger estimated_context_ceiling
+    await rotator.check();
+
+    const history = rotator.getHistory();
+    assert.equal(history.length, 1);
+    assert.equal(history[0].reason, 'estimated_context_ceiling');
+  });
+
+  it('should NOT trigger estimated_context_ceiling when tokens are below HARD_CEILING', async () => {
+    const agent = {
+      id: 'cx2', name: 'codex-low', role: 'backend', status: 'running',
+      provider: 'codex', scope: [], model: 'gpt-5.4',
+      tokensUsed: 50_000, contextUsage: 0, workingDir: '/tmp',
+      lastActivity: new Date(Date.now() - 30_000).toISOString(),
+      spawnedAt: new Date(Date.now() - 300_000).toISOString(),
+    };
+    mockDaemon.registry.agents = [agent];
+
+    // First check to record state
+    await rotator.check();
+    const state = rotator._lastContextState.get('cx2');
+    state.timestamp = Date.now() - 130_000;
+
+    // Second check — 50K/200K = 25%, below 80% ceiling
+    await rotator.check();
+
+    const history = rotator.getHistory();
+    assert.equal(history.length, 0);
+  });
+
+  it('should include estimatedCeilingRotations in stats', () => {
+    const stats = rotator.getStats();
+    assert.equal(stats.estimatedCeilingRotations, 0);
+  });
+
   it('should record lastRotationTime after successful rotation', async () => {
     const agent = {
       id: 'a3', name: 'backend-3', role: 'backend',
@@ -351,5 +406,49 @@ describe('Rotator', () => {
     assert.equal(rotator.lastRotationTime.has(newAgent.id), true);
     const elapsed = Date.now() - rotator.lastRotationTime.get(newAgent.id);
     assert.ok(elapsed < 1000); // Should be very recent
+  });
+
+  it('should pass isRotation flag through spawn config', async () => {
+    let spawnConfig = null;
+    mockDaemon.processes.spawn = async (config) => {
+      spawnConfig = config;
+      return { id: 'new-' + config.role, name: config.name, ...config };
+    };
+
+    const agent = {
+      id: 'a4', name: 'backend-4', role: 'backend',
+      provider: 'claude-code', scope: [], model: null,
+      tokensUsed: 3000, contextUsage: 0.9, workingDir: '/tmp',
+      teamId: 'team-1',
+    };
+    mockDaemon.registry.agents = [agent];
+
+    await rotator.rotate('a4');
+
+    assert.ok(spawnConfig, 'spawn should have been called');
+    assert.equal(spawnConfig.isRotation, true, 'isRotation must be true for rotation spawns');
+    assert.equal(spawnConfig.teamId, 'team-1', 'teamId must be passed through');
+  });
+
+  it('should pass teamId to appendHandoffBrief', async () => {
+    let appendArgs = null;
+    mockDaemon.memory.appendHandoffBrief = (role, entry, workingDir, teamId) => {
+      appendArgs = { role, workingDir, teamId };
+      return true;
+    };
+
+    const agent = {
+      id: 'a5', name: 'backend-5', role: 'backend',
+      provider: 'claude-code', scope: [], model: null,
+      tokensUsed: 3000, contextUsage: 0.9, workingDir: '/tmp',
+      teamId: 'team-alpha',
+    };
+    mockDaemon.registry.agents = [agent];
+
+    await rotator.rotate('a5');
+
+    assert.ok(appendArgs, 'appendHandoffBrief should have been called');
+    assert.equal(appendArgs.teamId, 'team-alpha');
+    assert.equal(appendArgs.role, 'backend');
   });
 });

@@ -1466,10 +1466,15 @@ Keep responses concise. Help them think, don't lecture them about the system the
   });
 
   app.get('/api/integrations/oauth/callback', async (req, res) => {
+    const wantsJson = req.query.format === 'json' || (req.headers.accept && req.headers.accept.includes('application/json'));
     try {
       const { code, state } = req.query;
-      if (!code || !state) return res.status(400).send('Missing code or state parameter');
+      if (!code || !state) {
+        if (wantsJson) return res.status(400).json({ error: 'Missing code or state parameter' });
+        return res.status(400).send('Missing code or state parameter');
+      }
       await daemon.integrations.handleOAuthCallback(code, state);
+      if (wantsJson) return res.json({ ok: true });
       res.send(`<!DOCTYPE html><html><body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#1e2127;color:#e6e6e6">
         <div style="text-align:center">
           <div style="font-size:48px;margin-bottom:16px">&#10003;</div>
@@ -1479,6 +1484,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
         </div>
       </body></html>`);
     } catch (err) {
+      if (wantsJson) return res.status(400).json({ error: err.message });
       res.status(400).send(`<!DOCTYPE html><html><body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#1e2127;color:#e06c75">
         <div style="text-align:center">
           <h2>Connection Failed</h2>

@@ -998,6 +998,7 @@ ipcMain.handle('integration-oauth-start', async (_event, oauthUrl) => {
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
+        partition: 'persist:google-oauth',
       },
     });
 
@@ -1014,7 +1015,7 @@ ipcMain.handle('integration-oauth-start', async (_event, oauthUrl) => {
       const instances = workspaces?.getAll() || [];
       const inst = instances.find(i => i.port);
       const actualPort = inst ? inst.port : 31415;
-      fetch(`http://localhost:${actualPort}/api/integrations/oauth/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`)
+      fetch(`http://localhost:${actualPort}/api/integrations/oauth/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}&format=json`)
         .then(res => res.json())
         .then(() => {
           resolve({ ok: true });

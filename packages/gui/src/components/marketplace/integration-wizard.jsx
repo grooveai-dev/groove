@@ -386,6 +386,13 @@ function ConfigureStep({ item, status, onDone, onRefreshStatus }) {
     }
   }, [needsGoogleOAuth]);
 
+  const pollRef = useRef(null);
+
+  // Clean up polling on unmount
+  useEffect(() => {
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
+
   async function handleOAuthStart() {
     setAuthenticating(true);
     try {
@@ -394,14 +401,40 @@ function ConfigureStep({ item, status, onDone, onRefreshStatus }) {
         const result = await integrationOAuth(data.url);
         if (result?.error) {
           toast.error('Sign-in failed', result.error);
-        } else {
-          toast.success('Browser opened — complete sign-in there');
+          setAuthenticating(false);
+          return;
         }
+        toast.success('Browser opened — complete sign-in there');
+
+        // Poll for OAuth completion every 2s, up to 60s
+        let elapsed = 0;
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = setInterval(async () => {
+          elapsed += 2000;
+          if (elapsed > 60000) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+            setAuthenticating(false);
+            return;
+          }
+          try {
+            const s = await api.get(`/integrations/${item.id}/status`);
+            const keys = s?.envKeys || [];
+            const hasRefresh = keys.some((k) => k.key === 'GOOGLE_REFRESH_TOKEN' && k.set);
+            if (hasRefresh) {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+              toast.success('Connected!', `${item.name} is now authenticated`);
+              onRefreshStatus();
+              setAuthenticating(false);
+            }
+          } catch { /* ignore polling errors */ }
+        }, 2000);
       }
     } catch (err) {
       toast.error('Sign-in failed', err.message);
+      setAuthenticating(false);
     }
-    setAuthenticating(false);
   }
 
   // Check if all required keys are set

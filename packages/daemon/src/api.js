@@ -1473,7 +1473,8 @@ Keep responses concise. Help them think, don't lecture them about the system the
         if (wantsJson) return res.status(400).json({ error: 'Missing code or state parameter' });
         return res.status(400).send('Missing code or state parameter');
       }
-      await daemon.integrations.handleOAuthCallback(code, state);
+      const result = await daemon.integrations.handleOAuthCallback(code, state);
+      daemon.broadcast({ type: 'integration-oauth-complete', integrationIds: result.integrationIds });
       if (wantsJson) return res.json({ ok: true });
       res.send(`<!DOCTYPE html><html><body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#1e2127;color:#e6e6e6">
         <div style="text-align:center">

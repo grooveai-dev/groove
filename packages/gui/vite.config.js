@@ -17,9 +17,6 @@ export default defineConfig({
       },
     },
   },
-  resolve: {
-    dedupe: ['three'],
-  },
   build: {
     outDir: 'dist',
     rollupOptions: {
@@ -28,7 +25,6 @@ export default defineConfig({
           'codemirror': ['@codemirror/view', '@codemirror/state', '@codemirror/commands', '@codemirror/language', '@codemirror/search', '@codemirror/autocomplete', '@codemirror/theme-one-dark'],
           'xterm': ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links'],
           'reactflow': ['@xyflow/react'],
-          'three': ['three', '@react-three/fiber', '@react-three/drei'],
           'vendor': ['react', 'react-dom', 'zustand', 'framer-motion'],
         },
       },

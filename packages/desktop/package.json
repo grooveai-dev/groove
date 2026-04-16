@@ -16,12 +16,12 @@
     "dist:mac": "rm -rf /tmp/groove-dist && electron-builder --mac -c.directories.output=/tmp/groove-dist && mkdir -p dist && cp /tmp/groove-dist/*.dmg /tmp/groove-dist/*.zip /tmp/groove-dist/*.blockmap /tmp/groove-dist/*.yml dist/ 2>/dev/null; true"
   },
   "dependencies": {
-    "@groove-dev/daemon": "*"
+    "@groove-dev/daemon": "*",
+    "electron-updater": "^6.0.0"
   },
   "devDependencies": {
     "electron": "41.2.0",
-    "electron-builder": "^26.8.1",
-    "electron-updater": "^6.0.0"
+    "electron-builder": "^26.8.1"
   },
   "build": {
     "appId": "ai.groovedev.groove",

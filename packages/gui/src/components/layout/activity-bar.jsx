@@ -27,7 +27,7 @@ export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel
     <nav className="w-12 flex-shrink-0 flex flex-col bg-surface-3 border-r border-border">
       {/* Sidebar header — aligns with BreadcrumbBar */}
       {darwinTrafficLights && (
-        <div className="flex-shrink-0 flex items-center justify-center border-b border-border py-px">
+        <div className="flex-shrink-0 h-9 flex items-end justify-center pb-1.5 border-b border-border">
           <img src="/favicon.png" alt="Groove" className="h-6 w-6 rounded-full" />
         </div>
       )}

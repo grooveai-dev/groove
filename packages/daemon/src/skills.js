@@ -310,16 +310,26 @@ export class SkillStore {
       const res = await this._fetch(`${SKILLS_API}/skills/${skillId}/content`, { timeout: 10000 });
       if (res.ok) {
         const data = await res.json();
+        if (!data.content && data.requiresPurchase) {
+          throw new Error('This skill requires purchase. Buy it from the marketplace first.');
+        }
+        // API returned 200 but no content and not a paid skill — author hasn't uploaded content yet
+        if (!data.content && !data.requiresPurchase) {
+          throw new Error('This skill is not yet available. The author has not uploaded content for it.');
+        }
         content = data.content;
       }
-    } catch { /* fall through */ }
+    } catch (err) {
+      if (err.message.includes('requires purchase') || err.message.includes('not yet available')) throw err;
+      console.warn('[Groove:Skills] Install fetch failed:', err.message);
+    }
 
     // Fall back to contentUrl from registry entry
     if (!content && entry.contentUrl) {
       try {
         const res = await this._fetch(entry.contentUrl, { timeout: 10000 });
         if (res.ok) content = await res.text();
-      } catch { /* fall through */ }
+      } catch (err) { console.warn('[Groove:Skills] Install fetch failed:', err.message); }
     }
 
     // Fall back to local Claude plugins
@@ -328,7 +338,7 @@ export class SkillStore {
     }
 
     if (!content) {
-      throw new Error(`Could not download skill. Check your internet connection.`);
+      throw new Error(`Could not download skill content. The skill may not have content uploaded yet, or the server may be temporarily unavailable.`);
     }
 
     // Save to .groove/skills/<id>/SKILL.md
@@ -391,7 +401,7 @@ export class SkillStore {
     }
 
     if (!content) {
-      throw new Error('Could not download latest version. Check your internet connection.');
+      throw new Error('Could not download latest version. The server may be temporarily unavailable.');
     }
 
     // Overwrite local content

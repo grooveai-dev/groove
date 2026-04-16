@@ -208,9 +208,23 @@ export class Daemon {
       return enriched;
     });
 
-    // Broadcast registry changes over WebSocket
+    // Debounced file I/O for registry changes (at most once per 2s)
+    let _registryIoTimer = null;
+    const _debouncedRegistryIo = () => {
+      if (_registryIoTimer) return;
+      _registryIoTimer = setTimeout(() => {
+        _registryIoTimer = null;
+        this.introducer.writeRegistryFile(this.projectDir);
+        this.introducer.injectGrooveSection(this.projectDir);
+      }, 2000);
+    };
+
+    // Single unified registry change listener (broadcast + file I/O + coordination)
     this.registry.on('change', () => {
       this.broadcast({ type: 'state', data: enrichAgents(this.registry.getAll()) });
+      _debouncedRegistryIo();
+      this.teams.onAgentChange();
+      this.supervisor.checkQcThreshold();
     });
 
     // Send full state to new WebSocket clients + handle editor messages
@@ -286,14 +300,6 @@ export class Daemon {
         }
         this.terminalManager.cleanupClient(ws);
       });
-    });
-
-    // Auto-update AGENTS_REGISTRY.md and CLAUDE.md GROOVE section on changes
-    this.registry.on('change', () => {
-      this.introducer.writeRegistryFile(this.projectDir);
-      this.introducer.injectGrooveSection(this.projectDir);
-      this.teams.onAgentChange();
-      this.supervisor.checkQcThreshold();
     });
   }
 
@@ -463,13 +469,12 @@ export class Daemon {
           this._pollSubscription().catch(() => {});
         }, 30 * 60 * 1000);
 
-        // Classifier broadcasting — decoupled from stdout handler
-        // Runs every 30s, checks for classification changes, broadcasts to GUI
+        // Classifier broadcasting — batched into a single message per interval
         this._classifierInterval = setInterval(() => {
           try {
             const updates = this.classifier.getUpdates();
-            for (const update of updates) {
-              this.broadcast({ type: 'classifier:update', data: update });
+            if (updates.length > 0) {
+              this.broadcast({ type: 'classifier:batch', data: updates });
             }
           } catch {
             // Never let classifier broadcasting break the daemon

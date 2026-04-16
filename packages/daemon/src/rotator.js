@@ -152,6 +152,10 @@ export class Rotator extends EventEmitter {
     for (const agent of running) {
       if (this.rotating.has(agent.id)) continue;
 
+      // Skip agents idle for over 60s — no point scoring them every 15s
+      const idleMs = this._idleMs(agent);
+      if (idleMs > 60_000 && agent.contextUsage < HARD_CEILING) continue;
+
       // Determine if provider manages its own context (e.g. Claude Code compacts internally)
       const providerInstance = getProvider(agent.provider);
       const selfManagesContext = providerInstance?.constructor?.managesOwnContext ?? false;

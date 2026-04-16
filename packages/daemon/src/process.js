@@ -14,6 +14,8 @@ const SLIDES_ENGINE_SRC = resolve(__dirname, '../templates/groove-slides.cjs');
 
 const COMPACTION_DROP_THRESHOLD = 0.25; // 25% drop from peak = natural compaction
 const COMPACTION_MIN_PEAK = 0.15;       // Ignore compaction if peak was below 15%
+const MAX_BUFFER_SIZE = 1_048_576;      // 1MB — discard oldest half if exceeded
+const STREAM_THROTTLE_MS = 250;         // 4 broadcasts/sec per agent
 
 // Role-specific prompt prefixes — applied during spawn regardless of entry point
 // (SpawnPanel, chat continue, CLI, API) for consistency
@@ -281,6 +283,8 @@ export class ProcessManager {
     this.handles = new Map(); // agentId -> { proc, logStream }
     this.peakContextUsage = new Map(); // agentId -> highest contextUsage seen
     this.pendingMessages = new Map(); // agentId -> { message, timestamp }
+    this._streamThrottle = new Map(); // agentId -> { timer, pending }
+
   }
 
   async spawn(config) {
@@ -833,6 +837,11 @@ For normal file edits within your scope, proceed without review.
     if (!handle) return;
 
     handle.stdoutBuffer = (handle.stdoutBuffer || '') + chunk.toString();
+    if (handle.stdoutBuffer.length > MAX_BUFFER_SIZE) {
+      const half = Math.floor(handle.stdoutBuffer.length / 2);
+      const nextNewline = handle.stdoutBuffer.indexOf('\n', half);
+      handle.stdoutBuffer = nextNewline !== -1 ? handle.stdoutBuffer.slice(nextNewline + 1) : handle.stdoutBuffer.slice(half);
+    }
     const lastNewline = handle.stdoutBuffer.lastIndexOf('\n');
     if (lastNewline === -1) return;
 
@@ -908,7 +917,32 @@ For normal file edits within your scope, proceed without review.
     }
 
     registry.update(agentId, updates);
-    this.daemon.broadcast({ type: 'agent:output', agentId, data: output });
+
+    // Throttle streaming broadcasts to 4/sec per agent
+    const isStreaming = output.type !== 'result';
+    if (isStreaming) {
+      let throttle = this._streamThrottle.get(agentId);
+      if (!throttle) {
+        throttle = { timer: null, pending: null };
+        this._streamThrottle.set(agentId, throttle);
+      }
+      throttle.pending = output;
+      if (!throttle.timer) {
+        this.daemon.broadcast({ type: 'agent:output', agentId, data: output });
+        throttle.pending = null;
+        throttle.timer = setTimeout(() => {
+          const p = throttle.pending;
+          throttle.timer = null;
+          throttle.pending = null;
+          if (p) this.daemon.broadcast({ type: 'agent:output', agentId, data: p });
+        }, STREAM_THROTTLE_MS);
+      }
+    } else {
+      // Result messages always broadcast immediately and flush throttle
+      const throttle = this._streamThrottle.get(agentId);
+      if (throttle?.timer) { clearTimeout(throttle.timer); this._streamThrottle.delete(agentId); }
+      this.daemon.broadcast({ type: 'agent:output', agentId, data: output });
+    }
   }
 
   _extractRecommendedTeam(agent, logPath) {

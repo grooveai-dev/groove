@@ -428,7 +428,11 @@ export class ProcessManager {
     }
 
     // Generate introduction context (team awareness + negotiation)
-    const introContext = introducer.generateContext(agent, { taskNegotiation, hasTask: !!config.prompt });
+    // Always pass hasTask: true so Layer 7 discoveries and handoff history
+    // are injected for ALL agents, not just those with explicit prompts.
+    // Without this, first-generation agents spawned with just a role never
+    // receive prior discoveries and repeat mistakes Layer 7 already captured.
+    const introContext = introducer.generateContext(agent, { taskNegotiation, hasTask: true });
 
     // Track cold-start savings — agent gets context from planner/journalist/team
     // instead of exploring the codebase from scratch
@@ -571,6 +575,15 @@ For normal file edits within your scope, proceed without review.
         logStream.write(`[${new Date().toISOString()}] Agent loop exited: status=${status}\n`);
         logStream.end();
         this.handles.delete(agent.id);
+
+        // Clean up stream throttle so pending timers don't fire for dead agents
+        const throttle = this._streamThrottle.get(agent.id);
+        if (throttle?.timer) clearTimeout(throttle.timer);
+        this._streamThrottle.delete(agent.id);
+
+        // Clean up per-agent maps to prevent unbounded growth in long sessions
+        this.peakContextUsage.delete(agent.id);
+        this.pendingMessages.delete(agent.id);
         registry.update(agent.id, { status, pid: null });
 
         if (this.daemon.timeline) {
@@ -706,6 +719,10 @@ For normal file edits within your scope, proceed without review.
       const throttle = this._streamThrottle.get(agent.id);
       if (throttle?.timer) clearTimeout(throttle.timer);
       this._streamThrottle.delete(agent.id);
+
+      // Clean up per-agent maps to prevent unbounded growth in long sessions
+      this.peakContextUsage.delete(agent.id);
+      this.pendingMessages.delete(agent.id);
 
       // Release file-scope locks so they don't persist after agent death
       if (this.daemon.locks) this.daemon.locks.release(agent.id);
@@ -1402,6 +1419,12 @@ For normal file edits within your scope, proceed without review.
 
   async kill(agentId) {
     this.peakContextUsage.delete(agentId);
+
+    // Clean up stream throttle so pending timers don't fire for dead agents
+    const throttle = this._streamThrottle.get(agentId);
+    if (throttle?.timer) clearTimeout(throttle.timer);
+    this._streamThrottle.delete(agentId);
+    this.pendingMessages.delete(agentId);
 
     // Unregister ambassador if this agent was one
     const agent = this.daemon.registry.get(agentId);

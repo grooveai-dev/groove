@@ -19,6 +19,7 @@ export class LockManager {
   constructor(grooveDir) {
     this.path = resolve(grooveDir, 'locks.json');
     this.locks = new Map(); // agentId -> glob patterns[]
+    this._compiledPatterns = new Map(); // agentId -> RegExp[]
     this.operations = new Map(); // agentId -> { name, resources, acquiredAt, expiresAt }
     this.load();
   }
@@ -29,6 +30,7 @@ export class LockManager {
         const data = JSON.parse(readFileSync(this.path, 'utf8'));
         for (const [id, patterns] of Object.entries(data)) {
           this.locks.set(id, patterns);
+          this._compilePatterns(id, patterns);
         }
       } catch {
         // Start fresh
@@ -41,22 +43,32 @@ export class LockManager {
     writeFileSync(this.path, JSON.stringify(obj, null, 2));
   }
 
+  _compilePatterns(agentId, patterns) {
+    const compiled = patterns.map((p) => {
+      const re = minimatch.makeRe(p);
+      return { pattern: p, re };
+    });
+    this._compiledPatterns.set(agentId, compiled);
+  }
+
   register(agentId, patterns) {
     this.locks.set(agentId, patterns);
+    this._compilePatterns(agentId, patterns);
     this.save();
   }
 
   release(agentId) {
     this.locks.delete(agentId);
+    this._compiledPatterns.delete(agentId);
     this.operations.delete(agentId);
     this.save();
   }
 
   check(agentId, filePath) {
-    for (const [ownerId, patterns] of this.locks) {
+    for (const [ownerId, compiled] of this._compiledPatterns) {
       if (ownerId === agentId) continue;
-      for (const pattern of patterns) {
-        if (minimatch(filePath, pattern)) {
+      for (const { pattern, re } of compiled) {
+        if (re && re.test(filePath)) {
           return { conflict: true, owner: ownerId, pattern };
         }
       }
@@ -70,6 +82,7 @@ export class LockManager {
     for (const id of this.locks.keys()) {
       if (!alive.has(id)) {
         this.locks.delete(id);
+        this._compiledPatterns.delete(id);
         purged++;
       }
     }

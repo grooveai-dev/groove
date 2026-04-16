@@ -14,7 +14,7 @@ import { resolve, relative } from 'path';
 import { createHash } from 'crypto';
 
 const MAX_CONSTRAINTS = 50;
-const MAX_HANDOFF_ROTATIONS = 10;
+const MAX_HANDOFF_ROTATIONS = 25;
 const MAX_DISCOVERIES = 1000;
 const HANDOFF_BRIEF_MAX_CHARS = 4000;
 

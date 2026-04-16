@@ -214,6 +214,45 @@ export const useGrooveStore = create((set, get) => ({
           break;
         }
 
+        case 'state:delta': {
+          const { changed = [], removed = [] } = msg.data || {};
+          const st = get();
+          let agents = st.agents;
+          if (removed.length > 0) {
+            const removedSet = new Set(removed);
+            agents = agents.filter((a) => !removedSet.has(a.id));
+          }
+          if (changed.length > 0) {
+            const changedMap = new Map(changed.map((a) => [a.id, a]));
+            let found = 0;
+            agents = agents.map((a) => {
+              const upd = changedMap.get(a.id);
+              if (upd) { found++; return upd; }
+              return a;
+            });
+            // New agents not yet in the list
+            if (found < changed.length) {
+              for (const a of changed) {
+                if (!agents.some((ex) => ex.id === a.id)) agents.push(a);
+              }
+            }
+          }
+          const timeline = { ...st.tokenTimeline };
+          const now = Date.now();
+          for (const agent of changed) {
+            if (!timeline[agent.id]) timeline[agent.id] = [];
+            const arr = timeline[agent.id];
+            const last = arr[arr.length - 1];
+            if (!last || agent.tokensUsed !== last.v || now - last.t > 5000) {
+              arr.push({ t: now, v: agent.tokensUsed || 0 });
+              if (arr.length > 200) timeline[agent.id] = arr.slice(-200);
+            }
+          }
+          for (const id of removed) delete timeline[id];
+          set({ agents, tokenTimeline: timeline, hydrated: true });
+          break;
+        }
+
         case 'agent:output': {
           const { agentId, data } = msg;
 

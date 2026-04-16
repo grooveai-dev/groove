@@ -4,6 +4,8 @@
 import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
 
+const SAFE_FIELDS = new Set(['status', 'pid', 'tokensUsed', 'contextUsage', 'lastActivity', 'model', 'provider', 'name', 'routingMode', 'routingReason', 'sessionId', 'skills', 'integrations', 'repos', 'workingDir', 'effort', 'costUsd', 'durationMs', 'turns', 'inputTokens', 'outputTokens', 'teamId', 'permission', 'scope', 'integrationApproval', 'personality', 'metadata']);
+
 export class Registry extends EventEmitter {
   constructor(state) {
     super();
@@ -44,7 +46,7 @@ export class Registry extends EventEmitter {
     };
 
     this.agents.set(agent.id, agent);
-    this.emit('change', this.getAll());
+    this.emit('change', { changed: [agent.id] });
     return agent;
   }
 
@@ -61,14 +63,13 @@ export class Registry extends EventEmitter {
     if (!agent) return null;
 
     // Only allow known fields to prevent prototype pollution
-    const SAFE_FIELDS = ['status', 'pid', 'tokensUsed', 'contextUsage', 'lastActivity', 'model', 'provider', 'name', 'routingMode', 'routingReason', 'sessionId', 'skills', 'integrations', 'repos', 'workingDir', 'effort', 'costUsd', 'durationMs', 'turns', 'inputTokens', 'outputTokens', 'teamId', 'permission', 'scope', 'integrationApproval', 'personality', 'metadata'];
     for (const key of Object.keys(updates)) {
-      if (SAFE_FIELDS.includes(key)) {
+      if (SAFE_FIELDS.has(key)) {
         agent[key] = updates[key];
       }
     }
     agent.lastActivity = new Date().toISOString();
-    this.emit('change', this.getAll());
+    this.emit('change', { changed: [id] });
     return agent;
   }
 
@@ -77,7 +78,7 @@ export class Registry extends EventEmitter {
     if (!agent) return false;
 
     this.agents.delete(id);
-    this.emit('change', this.getAll());
+    this.emit('change', { removed: [id] });
     return true;
   }
 
@@ -100,7 +101,7 @@ export class Registry extends EventEmitter {
       this.agents.set(agent.id, agent);
     }
     if (agents.length > 0) {
-      this.emit('change', this.getAll());
+      this.emit('change', { changed: agents.map((a) => a.id) });
     }
   }
 }

@@ -14,6 +14,7 @@ export class Supervisor {
     this.counter = 0;
     this.qcActive = false;
     this.conflicts = [];
+    this._conflictWriteTimer = null;
   }
 
   // --- Approval System ---
@@ -107,8 +108,8 @@ export class Supervisor {
       ownerId,
     });
 
-    // Update GROOVE_CONFLICTS.md
-    this.writeConflictsFile();
+    // Update GROOVE_CONFLICTS.md (debounced — at most once per 5s)
+    this._debouncedWriteConflicts();
 
     this.daemon.broadcast({
       type: 'conflict:detected',
@@ -120,6 +121,14 @@ export class Supervisor {
 
   getConflicts() {
     return this.conflicts;
+  }
+
+  _debouncedWriteConflicts() {
+    if (this._conflictWriteTimer) return;
+    this._conflictWriteTimer = setTimeout(() => {
+      this._conflictWriteTimer = null;
+      this.writeConflictsFile();
+    }, 5000);
   }
 
   writeConflictsFile() {

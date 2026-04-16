@@ -220,8 +220,18 @@ export class Daemon {
     };
 
     // Single unified registry change listener (broadcast + file I/O + coordination)
-    this.registry.on('change', () => {
-      this.broadcast({ type: 'state', data: enrichAgents(this.registry.getAll()) });
+    this.registry.on('change', (delta) => {
+      if (delta && delta.removed) {
+        this.broadcast({ type: 'state:delta', data: { changed: [], removed: delta.removed } });
+      } else if (delta && delta.changed) {
+        const changedAgents = delta.changed
+          .map((id) => this.registry.get(id))
+          .filter(Boolean);
+        this.broadcast({ type: 'state:delta', data: { changed: enrichAgents(changedAgents), removed: [] } });
+      } else {
+        // Fallback: full state broadcast
+        this.broadcast({ type: 'state', data: enrichAgents(this.registry.getAll()) });
+      }
       _debouncedRegistryIo();
       this.teams.onAgentChange();
       this.supervisor.checkQcThreshold();
@@ -470,11 +480,22 @@ export class Daemon {
         }, 30 * 60 * 1000);
 
         // Classifier broadcasting — batched into a single message per interval
+        // Also bridges classifier tier changes to the router for mid-session suggestions
         this._classifierInterval = setInterval(() => {
           try {
             const updates = this.classifier.getUpdates();
             if (updates.length > 0) {
               this.broadcast({ type: 'classifier:batch', data: updates });
+              // Bridge: feed tier changes to router for auto-mode agents
+              for (const update of updates) {
+                const agent = this.registry.get(update.agentId);
+                if (agent && this.router.getMode(agent.id).mode === 'auto') {
+                  const rec = this.router.recommend(agent.id);
+                  if (rec && rec.model && rec.model.id !== agent.model) {
+                    this.broadcast({ type: 'routing:suggestion', data: { agentId: agent.id, ...rec } });
+                  }
+                }
+              }
             }
           } catch {
             // Never let classifier broadcasting break the daemon
@@ -516,9 +537,9 @@ export class Daemon {
     this._gcInterval = setInterval(() => this._gc(), 24 * 60 * 60 * 1000);
 
     // Periodic state save — crash protection (every 30s)
-    this._stateSaveInterval = setInterval(() => {
-      try { this.state.set('agents', this.registry.getAll()); this.state.save(); } catch {}
-    }, 30000);
+    this._stateSaveInterval = setInterval(async () => {
+      try { this.state.set('agents', this.registry.getAll()); await this.state.save(); } catch {}
+    }, 5000);
   }
 
   _gc() {
@@ -597,7 +618,7 @@ export class Daemon {
   async stop() {
     // Persist state before shutdown
     this.state.set('agents', this.registry.getAll());
-    this.state.save();
+    await this.state.save();
 
     // Stop background services
     await this.gateways.stop();

@@ -175,7 +175,7 @@ describe('Rotator', () => {
     const stats = rotator.getStats();
     assert.equal(stats.cooldownMs, 5 * 60 * 1000);
     assert.equal(stats.tokenCeiling, 5_000_000);
-    assert.deepEqual(stats.roleMultipliers, { planner: 10, fullstack: 4, security: 4, analyst: 5 });
+    assert.deepEqual(stats.roleMultipliers, { planner: 2, fullstack: 4, security: 4, analyst: 5 });
     assert.equal(stats.tokenCeilingRotations, 0);
   });
 
@@ -240,7 +240,7 @@ describe('Rotator', () => {
     assert.equal(history[0].reason, 'token_ceiling');
   });
 
-  it('should respect role multipliers — planner gets 50M ceiling', async () => {
+  it('should respect role multipliers — planner gets 10M ceiling', async () => {
     const agent = {
       id: 'g4', name: 'gemini-planner', role: 'planner', status: 'running',
       provider: 'gemini', scope: [], model: null,
@@ -252,17 +252,17 @@ describe('Rotator', () => {
 
     await rotator.check();
 
-    // 8M < 50M (planner ceiling = 5M * 10), should NOT token-ceiling rotate
+    // 8M < 10M (planner ceiling = 5M * 2), should NOT token-ceiling rotate
     const history = rotator.getHistory();
     const tokenCeilingRotations = history.filter((r) => r.reason === 'token_ceiling');
     assert.equal(tokenCeilingRotations.length, 0);
   });
 
-  it('should token ceiling rotate planner at 50M+', async () => {
+  it('should token ceiling rotate planner at 10M+', async () => {
     const agent = {
       id: 'g5', name: 'gemini-planner-2', role: 'planner', status: 'running',
       provider: 'gemini', scope: [], model: null,
-      tokensUsed: 55_000_000, contextUsage: 0.50, workingDir: '/tmp',
+      tokensUsed: 11_000_000, contextUsage: 0.50, workingDir: '/tmp',
       lastActivity: new Date(Date.now() - 30_000).toISOString(),
       spawnedAt: new Date(Date.now() - 300_000).toISOString(),
     };

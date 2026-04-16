@@ -229,6 +229,35 @@ export class AdaptiveThresholds {
     return signals;
   }
 
+  // Record post-rotation quality comparison. If rotation didn't improve quality,
+  // nudge the threshold down so future rotations trigger earlier (at a point
+  // where context is less degraded and rotation is more likely to help).
+  recordRotationOutcome(outcome) {
+    const profile = this.getProfile(outcome.provider, outcome.role);
+    if (!profile.rotationOutcomes) profile.rotationOutcomes = [];
+
+    profile.rotationOutcomes.push({
+      oldScore: outcome.oldScore,
+      newScore: outcome.newScore,
+      improved: outcome.improved,
+      reason: outcome.reason,
+      timestamp: outcome.timestamp,
+    });
+
+    // Keep last 50 outcomes
+    if (profile.rotationOutcomes.length > 50) {
+      profile.rotationOutcomes = profile.rotationOutcomes.slice(-50);
+    }
+
+    // If last 3 rotations didn't improve quality, nudge threshold down
+    const recent = profile.rotationOutcomes.slice(-3);
+    if (recent.length >= 3 && recent.every((r) => !r.improved)) {
+      profile.threshold = Math.max(profile.threshold - NUDGE_DOWN, MIN_THRESHOLD);
+    }
+
+    this.save();
+  }
+
   getAllProfiles() {
     return this.profiles;
   }

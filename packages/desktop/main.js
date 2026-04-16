@@ -13,6 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const IS_MAC = process.platform === 'darwin';
 const STUDIO_URL = 'https://studio.groovedev.ai';
 const SUBSCRIPTION_POLL_MS = 5 * 60 * 1000;
+let _lastSubCheck = 0;
 
 // macOS Electron apps launched from Finder inherit a minimal PATH missing user
 // shell additions. Resolve the real PATH and API key env vars once at startup
@@ -175,7 +176,7 @@ class WorkspaceManager {
       const daemonPath = resolveResourcePath('daemon', 'src', 'index.js');
 
       const proc = fork(bridgePath, ['0', projectDir], {
-        execArgv: ['--max-old-space-size=512'],
+        execArgv: ['--max-old-space-size=2048', '--max-semi-space-size=128'],
         stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
         env: {
           ...process.env,
@@ -298,6 +299,9 @@ class WorkspaceManager {
     });
 
     win.on('focus', () => {
+      const now = Date.now();
+      if (now - _lastSubCheck < 60_000) return;
+      _lastSubCheck = now;
       if (loadStoredToken()) checkSubscription();
     });
 
@@ -859,6 +863,8 @@ ipcMain.handle('home-open-recent', async (_event, dir) => {
     return { action: 'deny' };
   });
 
+  win.webContents.removeAllListeners('console-message');
+  win.webContents.removeAllListeners('render-process-gone');
   win.webContents.on('console-message', (event) => {
     const { level, message, lineNumber, sourceId } = event;
     if (level === 'error' || level === 'warning') {
@@ -883,6 +889,9 @@ ipcMain.handle('home-open-recent', async (_event, dir) => {
     if (inst) inst.window = null;
   });
   win.on('focus', () => {
+    const now = Date.now();
+    if (now - _lastSubCheck < 60_000) return;
+    _lastSubCheck = now;
     if (loadStoredToken()) checkSubscription();
   });
 

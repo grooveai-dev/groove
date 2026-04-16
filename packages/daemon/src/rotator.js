@@ -14,9 +14,10 @@ const MIN_EVENTS = 10;          // Minimum classifier events before scoring
 const MIN_AGE_SEC = 120;        // Minimum agent age before quality rotation
 const SCORE_HISTORY_MAX = 40;   // ~10 min at 15s intervals
 const COOLDOWN_MS = 5 * 60 * 1000;   // 5 minutes between rotations per agent
+const QUALITY_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes for quality degradation rotations
 const TOKEN_CEILING = 5_000_000;     // 5M tokens per agent (non-self-managing only)
 const ROLE_MULTIPLIERS = {
-  planner: 10,
+  planner: 2,
   fullstack: 4,
   security: 4,
   analyst: 5,
@@ -101,10 +102,10 @@ export class Rotator extends EventEmitter {
     this.enabled = false;
   }
 
-  _isOnCooldown(agentId) {
+  _isOnCooldown(agentId, cooldownMs = COOLDOWN_MS) {
     const lastTime = this.lastRotationTime.get(agentId);
     if (!lastTime) return false;
-    return (Date.now() - lastTime) < COOLDOWN_MS;
+    return (Date.now() - lastTime) < cooldownMs;
   }
 
   _getTokenCeiling(agent) {
@@ -195,12 +196,25 @@ export class Rotator extends EventEmitter {
         }
       }
 
-      // Cooldown — skip quality rotation for self-managing providers if recently rotated
-      if (this._isOnCooldown(agent.id)) continue;
+      // Quality rotation uses a shorter cooldown (2 min vs 5 min) so degraded
+      // agents don't persist producing bad output for 8-10 minutes
+      if (this._isOnCooldown(agent.id, QUALITY_COOLDOWN_MS)) continue;
 
       // All providers: quality-based rotation — detects degradation before tokens are wasted
       const quality = this.scoreLiveSession(agent);
       if (quality.hasEnoughData && quality.score < QUALITY_THRESHOLD) {
+        // Severe degradation (score < 25): rotate immediately regardless of idle state.
+        // The agent is producing bad output — waiting for idle is counterproductive.
+        if (quality.score < 25) {
+          console.log(`  Rotator: ${agent.name} quality=${quality.score} — FORCE rotating (severe degradation)`);
+          await this.rotate(agent.id, {
+            reason: 'quality_degradation',
+            qualityScore: quality.score,
+            signals: quality.signals,
+          });
+          continue;
+        }
+        // Moderate degradation (25-40): rotate when idle
         if (this._idleMs(agent) > 10_000) {
           console.log(`  Rotator: ${agent.name} quality=${quality.score} — rotating (quality)`);
           await this.rotate(agent.id, {
@@ -348,6 +362,13 @@ export class Rotator extends EventEmitter {
 
       this.emit('rotation', record);
 
+      // Schedule post-rotation quality validation: after the new agent produces
+      // enough events, compare its quality to the old agent's last score.
+      // If rotation didn't help, log a warning and record it for adaptive tuning.
+      if (options.qualityScore != null) {
+        this._schedulePostRotationCheck(newAgent.id, options.qualityScore, record);
+      }
+
       return newAgent;
     } catch (err) {
       this.daemon.broadcast({
@@ -359,6 +380,59 @@ export class Rotator extends EventEmitter {
     } finally {
       this.rotating.delete(agentId);
     }
+  }
+
+  _schedulePostRotationCheck(newAgentId, oldQualityScore, record) {
+    // Wait for the new agent to accumulate MIN_EVENTS classifier events,
+    // checking every 15s for up to 5 minutes (20 checks)
+    let checks = 0;
+    const maxChecks = 20;
+    const checkInterval = setInterval(() => {
+      checks++;
+      const agent = this.daemon.registry.get(newAgentId);
+      if (!agent || agent.status !== 'running' || checks >= maxChecks) {
+        clearInterval(checkInterval);
+        return;
+      }
+
+      const events = this.daemon.classifier.agentWindows[newAgentId] || [];
+      if (events.length < MIN_EVENTS) return; // not enough data yet
+
+      clearInterval(checkInterval);
+
+      const newQuality = this.scoreLiveSession(agent);
+      if (!newQuality.hasEnoughData) return;
+
+      if (newQuality.score < oldQualityScore) {
+        console.warn(`  Rotator: Post-rotation check — ${agent.name} quality ${newQuality.score} is LOWER than pre-rotation ${oldQualityScore}. Rotation did not improve quality.`);
+
+        // Record for adaptive threshold adjustment
+        if (this.daemon.adaptive) {
+          this.daemon.adaptive.recordRotationOutcome({
+            agentId: newAgentId,
+            role: agent.role,
+            provider: agent.provider,
+            oldScore: oldQualityScore,
+            newScore: newQuality.score,
+            improved: false,
+            reason: record.reason,
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        if (this.daemon.timeline) {
+          this.daemon.timeline.recordEvent('rotate', {
+            agentId: newAgentId,
+            agentName: agent.name,
+            role: agent.role,
+            reason: 'post_rotation_check',
+            qualityBefore: oldQualityScore,
+            qualityAfter: newQuality.score,
+            improved: false,
+          });
+        }
+      }
+    }, CHECK_INTERVAL);
   }
 
   recordNaturalCompaction(agent, peakUsage, currentUsage) {

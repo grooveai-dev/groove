@@ -5,8 +5,8 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { writeFile } from 'fs/promises';
 import { resolve } from 'path';
 
-const MAX_SNAPSHOTS = 2000;
-const MAX_EVENTS = 500;
+const MAX_SNAPSHOTS = 10000;
+const MAX_EVENTS = 2000;
 const SNAPSHOT_INTERVAL = 30_000; // 30 seconds
 
 export class TimelineTracker {

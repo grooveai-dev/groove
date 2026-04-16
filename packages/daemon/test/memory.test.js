@@ -111,13 +111,13 @@ describe('MemoryStore', () => {
       assert.equal(chain[2].rotationN, 1);
     });
 
-    it('caps chain at MAX_HANDOFF_ROTATIONS (10)', () => {
-      for (let i = 0; i < 15; i++) {
+    it('caps chain at MAX_HANDOFF_ROTATIONS (25)', () => {
+      for (let i = 0; i < 30; i++) {
         memory.appendHandoffBrief('backend', { brief: `rotation-${i}` });
       }
       const chain = memory.getHandoffChain('backend');
-      assert.equal(chain.length, 10);
-      assert.equal(chain[0].rotationN, 15);
+      assert.equal(chain.length, 25);
+      assert.equal(chain[0].rotationN, 30);
     });
 
     it('separate chains per role', () => {

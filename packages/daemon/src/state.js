@@ -1,7 +1,8 @@
 // GROOVE — State Persistence
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
+import { writeFile } from 'node:fs/promises';
 import { resolve } from 'path';
 
 export class StateManager {
@@ -20,8 +21,8 @@ export class StateManager {
     }
   }
 
-  save() {
-    writeFileSync(this.path, JSON.stringify(this.data, null, 2));
+  async save() {
+    await writeFile(this.path, JSON.stringify(this.data, null, 2));
   }
 
   get(key) {

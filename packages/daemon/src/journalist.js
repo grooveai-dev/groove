@@ -7,7 +7,7 @@ import { execFile, spawn as cpSpawn } from 'child_process';
 import { getProvider, getInstalledProviders } from './providers/index.js';
 
 const DEFAULT_INTERVAL = 120_000; // 2 minutes
-const MAX_LOG_CHARS = 40_000; // ~10k tokens budget for synthesis input
+const MAX_LOG_CHARS = 100_000; // ~25k tokens budget for synthesis input (captures 80-90% of recent activity)
 
 export class Journalist {
   constructor(daemon) {
@@ -206,15 +206,18 @@ export class Journalist {
               if (block.type === 'tool_use') {
                 const tool = block.name;
 
-                // Track exploration tools separately — they're noise for synthesis
-                // but valuable for handoff briefs (what files/patterns were examined)
+                // Exploration tools: track separately for detailed handoff briefs,
+                // but also include in main entries so synthesis captures what was
+                // examined. This prevents new agents from re-exploring the same files.
                 if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') {
-                  explorationEntries.push({
+                  const explorationEntry = {
                     type: 'exploration',
                     tool,
                     input: this.summarizeToolInput(tool, block.input),
                     timestamp: data.timestamp,
-                  });
+                  };
+                  explorationEntries.push(explorationEntry);
+                  entries.push(explorationEntry);
                   continue;
                 }
 
@@ -398,6 +401,8 @@ export class Journalist {
         return `- [user] ${(entry.text || '').slice(0, 300)}`;
       case 'thinking':
         return `- [thought] ${entry.text.slice(0, 300)}`;
+      case 'exploration':
+        return `- [explored] ${entry.tool}: ${(entry.input || '').slice(0, 200)}`;
       case 'result':
         return `- [result] ${entry.text.slice(0, 300)} (${entry.turns} turns, ${entry.duration}ms)`;
       default:

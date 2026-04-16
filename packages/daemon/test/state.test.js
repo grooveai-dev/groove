@@ -32,10 +32,10 @@ describe('StateManager', () => {
     assert.deepEqual(state.get('agents'), agents);
   });
 
-  it('should persist to disk and restore', () => {
+  it('should persist to disk and restore', async () => {
     state.set('agents', [{ id: 'a1', role: 'backend' }]);
     state.set('config', { port: 3141 });
-    state.save();
+    await state.save();
 
     // Verify file exists
     assert.ok(existsSync(join(tmpDir, 'state.json')));

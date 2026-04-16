@@ -29,12 +29,23 @@ exports.default = async function (context) {
     }
     // npm symlinks (.bin/, scoped-package links) break macOS codesign.
     // Remove all symlinks — not needed at runtime (require() resolves without them).
-    const symlinkResult = execSync(`find "${targetNM}" -type l -delete 2>&1; echo "exit:$?"`, { encoding: 'utf8' });
-    // Also remove .bin dirs explicitly in case find missed anything
-    const binDirs = execSync(`find "${targetNM}" -name ".bin" -type d 2>/dev/null`, { encoding: 'utf8' }).trim();
-    for (const binDir of binDirs.split('\n').filter(Boolean)) {
-      rmSync(binDir, { recursive: true, force: true });
+    // Uses Node.js fs instead of Unix find for Windows CI compatibility.
+    function stripSymlinksAndBinDirs(dir) {
+      if (!existsSync(dir)) return;
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isSymbolicLink()) {
+          rmSync(full, { force: true });
+        } else if (entry.isDirectory()) {
+          if (entry.name === '.bin') {
+            rmSync(full, { recursive: true, force: true });
+          } else {
+            stripSymlinksAndBinDirs(full);
+          }
+        }
+      }
     }
+    stripSymlinksAndBinDirs(targetNM);
     console.log(`  • afterPack: removed symlinks from daemon node_modules (codesign compat)`);
     console.log(`  • afterPack: restored ${count} packages (${critical.join(', ')} verified)`);
   } else {

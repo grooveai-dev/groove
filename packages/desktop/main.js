@@ -4,7 +4,7 @@ import pkg from 'electron-updater';
 const { autoUpdater } = pkg;
 import { createHash, randomBytes } from 'crypto';
 import { fork } from 'child_process';
-import { dirname, join, resolve } from 'path';
+import { basename, dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'fs';
 import { execSync } from 'child_process';
@@ -99,7 +99,7 @@ class WorkspaceManager {
     this.recentProjects = this.recentProjects.filter(r => r.dir !== projectDir);
     this.recentProjects.unshift({
       dir: projectDir,
-      name: name || projectDir.split('/').pop(),
+      name: name || basename(projectDir),
       lastOpened: new Date().toISOString(),
     });
     this._saveRecents();
@@ -132,7 +132,7 @@ class WorkspaceManager {
       }
       throw err;
     }
-    const name = projectDir.split('/').pop();
+    const name = basename(projectDir);
     const window = this._createWindow(id, port, projectDir);
 
     const inst = { id, port, projectDir, name, daemon: this._getDaemon(id), window };
@@ -223,7 +223,7 @@ class WorkspaceManager {
   }
 
   _createWindow(id, port, projectDir) {
-    const name = projectDir.split('/').pop();
+    const name = basename(projectDir);
     const win = new BrowserWindow({
       width: 1440,
       height: 900,
@@ -312,7 +312,7 @@ class WorkspaceManager {
     if (!tray) return;
     const instances = this.getAll();
     const instanceItems = instances.map(inst => ({
-      label: inst.name || inst.projectDir.split('/').pop(),
+      label: inst.name || basename(inst.projectDir),
       click: () => {
         if (inst.window && !inst.window.isDestroyed()) {
           inst.window.show();
@@ -325,7 +325,7 @@ class WorkspaceManager {
       .filter(r => !instances.some(i => i.projectDir === r.dir))
       .slice(0, 5)
       .map(r => ({
-        label: r.name || r.dir.split('/').pop(),
+        label: r.name || basename(r.dir),
         click: () => this.open(r.dir),
       }));
 
@@ -652,7 +652,7 @@ body {
   }
 
   function openProject(dir) {
-    setLoading(true, 'Opening ' + dir.split('/').pop() + '...');
+    setLoading(true, 'Opening ' + dir.split(/[\\/]/).pop() + '...');
     hideError();
     window.groove.home.openRecent(dir).catch(function(err) {
       setLoading(false);
@@ -693,7 +693,7 @@ body {
       return '<div class="ri" data-dir="' + esc(r.dir) + '">' +
         '<div class="ri-ic">' + FOLDER + '</div>' +
         '<div class="ri-info">' +
-          '<div class="ri-name">' + esc(r.name || r.dir.split('/').pop()) + '</div>' +
+          '<div class="ri-name">' + esc(r.name || r.dir.split(/[\\/]/).pop()) + '</div>' +
           '<div class="ri-path">' + esc(shortenPath(r.dir)) + '</div>' +
         '</div>' +
         '<div class="ri-time">' + (r.lastOpened ? timeAgo(r.lastOpened) : '') + '</div>' +
@@ -847,7 +847,7 @@ ipcMain.handle('home-open-recent', async (_event, dir) => {
     return { error: err.message };
   }
 
-  const name = dir.split('/').pop();
+  const name = basename(dir);
   const win = workspaces._homeWindow;
   if (!win || win.isDestroyed()) throw new Error('Window was closed');
 

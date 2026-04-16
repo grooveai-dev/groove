@@ -2,6 +2,7 @@
 import { existsSync, readdirSync } from 'fs';
 import { createRequire } from 'module';
 import { dirname, join } from 'path';
+import { pathToFileURL } from 'url';
 
 process.env.GROOVE_EDITION = 'pro';
 
@@ -47,7 +48,7 @@ async function main() {
 
   if (daemonPath) {
     preflightCheck(daemonPath);
-    const mod = await import(daemonPath);
+    const mod = await import(pathToFileURL(daemonPath).href);
     Daemon = mod.Daemon;
   } else {
     const mod = await import('@groove-dev/daemon');

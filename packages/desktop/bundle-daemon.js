@@ -35,8 +35,23 @@ writeFileSync(join(bundleDir, '.npmignore'), '');
 
 // Strip symlinks (.bin/, scoped-package links) — they break macOS codesign
 // when afterPack copies node_modules into the signed app bundle.
-execSync(`find "${join(bundleDir, 'node_modules')}" -type l -delete 2>/dev/null || true`, { stdio: 'pipe' });
-execSync(`find "${join(bundleDir, 'node_modules')}" -name ".bin" -type d -exec rm -rf {} + 2>/dev/null || true`, { stdio: 'pipe' });
+// Uses Node.js fs instead of Unix find for Windows CI compatibility.
+function stripSymlinksAndBinDirs(dir) {
+  if (!existsSync(dir)) return;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isSymbolicLink()) {
+      rmSync(full, { force: true });
+    } else if (entry.isDirectory()) {
+      if (entry.name === '.bin') {
+        rmSync(full, { recursive: true, force: true });
+      } else {
+        stripSymlinksAndBinDirs(full);
+      }
+    }
+  }
+}
+stripSymlinksAndBinDirs(join(bundleDir, 'node_modules'));
 
 const critical = ['express', 'ws', 'minimatch'];
 const nmDir = join(bundleDir, 'node_modules');

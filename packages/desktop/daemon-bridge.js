@@ -5,9 +5,8 @@ import { dirname, join } from 'path';
 
 process.env.GROOVE_EDITION = 'pro';
 
-const portArg = parseInt(process.argv[2], 10);
-const port = Number.isNaN(portArg) ? 31415 : portArg;
-const projectDir = process.argv[3] || process.cwd();
+const port = 31415;
+const projectDir = process.argv[2] || process.cwd();
 
 function preflightCheck(daemonPath) {
   if (!existsSync(daemonPath)) {

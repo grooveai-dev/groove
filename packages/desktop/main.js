@@ -175,7 +175,7 @@ class WorkspaceManager {
       const guiPath = app.isPackaged ? resolveResourcePath('gui') : resolveResourcePath('gui', 'dist');
       const daemonPath = resolveResourcePath('daemon', 'src', 'index.js');
 
-      const proc = fork(bridgePath, ['0', projectDir], {
+      const proc = fork(bridgePath, [projectDir], {
         execArgv: ['--max-old-space-size=2048', '--max-semi-space-size=128'],
         stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
         env: {

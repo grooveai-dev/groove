@@ -175,6 +175,7 @@ class WorkspaceManager {
       const daemonPath = resolveResourcePath('daemon', 'src', 'index.js');
 
       const proc = fork(bridgePath, ['0', projectDir], {
+        execArgv: ['--max-old-space-size=512'],
         stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
         env: {
           ...process.env,
@@ -236,6 +237,7 @@ class WorkspaceManager {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        backgroundThrottling: false,
       },
     });
 
@@ -374,6 +376,7 @@ class WorkspaceManager {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        backgroundThrottling: false,
       },
     });
 
@@ -990,56 +993,12 @@ ipcMain.handle('auth-status', () => {
 });
 
 ipcMain.handle('integration-oauth-start', async (_event, oauthUrl) => {
-  return new Promise((resolve) => {
-    const oauthWin = new BrowserWindow({
-      width: 800,
-      height: 700,
-      backgroundColor: '#0a0a0a',
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        partition: 'persist:google-oauth',
-      },
-    });
-
-    let resolved = false;
-
-    function handleRedirect(url) {
-      if (resolved) return;
-      if (!url.includes('localhost:31415/api/integrations/oauth/callback')) return;
-      resolved = true;
-      oauthWin.webContents.stop();
-      const parsed = new URL(url);
-      const code = parsed.searchParams.get('code');
-      const state = parsed.searchParams.get('state');
-      const instances = workspaces?.getAll() || [];
-      const inst = instances.find(i => i.port);
-      const actualPort = inst ? inst.port : 31415;
-      fetch(`http://localhost:${actualPort}/api/integrations/oauth/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}&format=json`)
-        .then(res => res.json())
-        .then(() => {
-          resolve({ ok: true });
-        })
-        .catch(err => {
-          resolve({ error: err.message });
-        })
-        .finally(() => {
-          if (!oauthWin.isDestroyed()) oauthWin.close();
-        });
-    }
-
-    oauthWin.webContents.on('will-redirect', (_e, url) => handleRedirect(url));
-    oauthWin.webContents.on('will-navigate', (_e, url) => handleRedirect(url));
-
-    oauthWin.on('closed', () => {
-      if (!resolved) {
-        resolved = true;
-        resolve({ error: 'cancelled' });
-      }
-    });
-
-    oauthWin.loadURL(oauthUrl);
-  });
+  try {
+    shell.openExternal(oauthUrl);
+    return { ok: true };
+  } catch (err) {
+    return { error: err.message };
+  }
 });
 
 function handleAuthCallback(url) {

@@ -13,7 +13,8 @@
     "build": "electron-builder",
     "predist": "node bundle-daemon.js",
     "dist": "electron-builder --mac --win --linux",
-    "dist:mac": "rm -rf /tmp/groove-dist && electron-builder --mac -c.directories.output=/tmp/groove-dist && mkdir -p dist && cp /tmp/groove-dist/*.dmg /tmp/groove-dist/*.zip /tmp/groove-dist/*.blockmap /tmp/groove-dist/*.yml dist/ 2>/dev/null; true"
+    "dist:mac": "rm -rf /tmp/groove-dist && electron-builder --mac -c.directories.output=/tmp/groove-dist && mkdir -p dist && cp /tmp/groove-dist/*.dmg /tmp/groove-dist/*.zip /tmp/groove-dist/*.blockmap /tmp/groove-dist/*.yml dist/ 2>/dev/null; true",
+    "test:local": "rm -rf /tmp/groove-test && node bundle-daemon.js && CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64 --config.mac.notarize=false -c.directories.output=/tmp/groove-test && open /tmp/groove-test/*.dmg"
   },
   "dependencies": {
     "@groove-dev/daemon": "*",

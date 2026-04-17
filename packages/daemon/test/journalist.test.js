@@ -201,7 +201,7 @@ describe('Journalist', () => {
       assert.ok(brief.includes('src/api/**'));
       assert.ok(brief.includes('5000'));
       assert.ok(brief.includes('Build the auth API'));
-      assert.ok(brief.includes('Write'));
+      assert.ok(brief.includes('Session Summary') || brief.includes('Write'));
     });
 
     it('instructs the agent to deliver the output, not passively wait', async () => {

@@ -166,7 +166,7 @@ export class Journalist {
     return false;
   }
 
-  collectFilteredLogs(agents) {
+  collectFilteredLogs(agents, { since } = {}) {
     const result = {};
 
     for (const agent of agents) {
@@ -181,7 +181,7 @@ export class Journalist {
         const size = Buffer.byteLength(content);
         this.lastLogSizes[agent.id] = size;
 
-        const { entries, explorationEntries } = this.filterLog(content, agent);
+        const { entries, explorationEntries } = this.filterLog(content, agent, { since });
         result[agent.id] = { agent, entries, explorationEntries };
       } catch {
         result[agent.id] = { agent, entries: [], explorationEntries: [] };
@@ -191,7 +191,7 @@ export class Journalist {
     return result;
   }
 
-  filterLog(rawLog, agent) {
+  filterLog(rawLog, agent, { since } = {}) {
     // Parse stream-json lines and extract meaningful events.
     // Focus on PROGRESS (writes, edits, commands with results) not EXPLORATION (reads, greps).
     // Exploration tools are tracked separately so handoff briefs can include what was examined.
@@ -200,12 +200,15 @@ export class Journalist {
     const lines = rawLog.split('\n');
     const toolResults = new Map(); // tool_use_id -> result text
 
+    const sinceDate = since ? new Date(since) : null;
+
     // First pass: collect tool results (and error flags) so we can attach them to tool calls
     const toolErrors = new Set(); // tool_use_ids that returned errors
     for (const line of lines) {
       if (!line.trim() || line.startsWith('[')) continue;
       try {
         const data = JSON.parse(line);
+        if (sinceDate && data.timestamp && new Date(data.timestamp) < sinceDate) continue;
         if (data.type === 'user' && data.message?.content) {
           const content = Array.isArray(data.message.content) ? data.message.content : [];
           for (const block of content) {
@@ -227,6 +230,7 @@ export class Journalist {
 
       try {
         const data = JSON.parse(line);
+        if (sinceDate && data.timestamp && new Date(data.timestamp) < sinceDate) continue;
 
         // Tool use — only keep WRITES, EDITS, and COMMANDS (progress, not exploration)
         if (data.type === 'assistant' && data.message?.content) {
@@ -410,6 +414,56 @@ export class Journalist {
         }
         parts.push('');
       }
+    }
+
+    return parts.join('\n');
+  }
+
+  buildRotationSynthesisPrompt(agent, entries, options = {}) {
+    const dir = agent.workingDir ? `\nWorking directory: ${agent.workingDir}` : '';
+    const reason = options.reason || 'manual rotation';
+
+    const parts = [
+      'You are briefing the next AI agent taking over this exact role.',
+      `The previous agent (${agent.name}, role: ${agent.role}) is being rotated out.`,
+      `Scope: ${agent.scope?.join(', ') || 'unrestricted'}${dir}`,
+      `Rotation reason: ${reason}`,
+      '',
+      'Analyze the session log below and produce a structured handoff brief.',
+      '',
+      'Output EXACTLY these sections:',
+      '',
+      '## Accomplishments',
+      '(What was completed. Name files, functions, and line numbers.)',
+      '',
+      '## In Progress',
+      '(What was actively being worked on when rotation happened.)',
+      '',
+      '## Key Decisions',
+      '(Architectural or implementation choices made and why.)',
+      '',
+      '## Blockers/Errors',
+      '(Unresolved errors, failed attempts, things that did not work.)',
+      '',
+      '## Next Steps',
+      '(What should be done next, in priority order.)',
+      '',
+      'Be specific. Name files, functions, and line numbers. Do not summarize vaguely.',
+      'Keep your response under 2000 characters.',
+      '',
+      '---',
+      '',
+      `### Session Log for ${agent.name} (${agent.role})`,
+      '',
+    ];
+
+    let totalChars = 0;
+    const cap = 30_000;
+    for (const entry of entries.slice(-200)) {
+      const line = this.formatEntry(entry);
+      if (totalChars + line.length > cap) break;
+      parts.push(line);
+      totalChars += line.length;
     }
 
     return parts.join('\n');
@@ -739,34 +793,9 @@ export class Journalist {
   // --- Handoff Brief for Context Rotation ---
 
   async generateHandoffBrief(agent, options = {}) {
-    const filteredLogs = this.collectFilteredLogs([agent]);
+    const filteredLogs = this.collectFilteredLogs([agent], { since: agent.spawnedAt });
     const agentLog = filteredLogs[agent.id];
     const entries = agentLog?.entries || [];
-
-    const errorSummary = entries
-      .filter((e) => e.type === 'error')
-      .map((e) => `- ${e.text}`)
-      .slice(-10)
-      .join('\n');
-
-    const resultSummary = entries
-      .filter((e) => e.type === 'result')
-      .map((e) => e.text)
-      .slice(-3)
-      .join('\n');
-
-    // Build file changes section — group Edit/Write operations by file path
-    const fileChanges = {};
-    for (const e of entries.filter((e) => e.type === 'tool' && (e.tool === 'Edit' || e.tool === 'Write'))) {
-      const file = e.input || 'unknown';
-      if (!fileChanges[file]) fileChanges[file] = [];
-      if (e.diff) fileChanges[file].push(e.diff);
-      else fileChanges[file].push(e.tool === 'Write' ? 'created' : 'modified');
-    }
-    const fileChangesSummary = Object.entries(fileChanges)
-      .map(([file, changes]) => `- **${file}**: ${changes.slice(0, 3).join('; ')}`)
-      .slice(0, 20)
-      .join('\n');
 
     // Layer 7 memory: discoveries, constraints, specializations
     const discoveries = this.daemon.memory?.getDiscoveriesMarkdown(agent.role, 10, 2000) || '';
@@ -776,26 +805,58 @@ export class Journalist {
       ? `- Quality profile: ${specialization.avgQualityScore}/100 across ${specialization.sessionCount} sessions`
       : '';
 
-    // Pull recent rotation history from persistent memory (Layer 7).
-    // Gives the new agent causal continuity: what the last 3 agents struggled
-    // with, decided, and solved — not just what the current session did.
     const recentChain = this.daemon.memory?.getRecentHandoffMarkdown(agent.role, 3, 3000, agent.workingDir, agent.teamId) || '';
 
-    // Pull the user's recent messages scoped to this agent
     const agentFeedback = this.getUserFeedback(agent.id).slice(-5);
     const conversationSummary = agentFeedback.length > 0
       ? agentFeedback.map((fb) => `- "${fb.message}"`).join('\n')
       : '';
 
-    // Compact last 5 tool calls (not full output, just tool + target)
-    const recentTools = entries
-      .filter((e) => e.type === 'tool' || e.type === 'error')
-      .slice(-5)
-      .map((e) => `- ${e.type === 'error' ? 'ERROR ' : ''}${e.tool}: ${(e.input || '').slice(0, 80)}`)
-      .join('\n');
+    // Try AI-synthesized session summary
+    let sessionSummary = '';
+    try {
+      const prompt = this.buildRotationSynthesisPrompt(agent, entries, options);
+      sessionSummary = await this.callHeadless(prompt, { trackAs: '__rotation__' });
+    } catch {
+      // Fallback: structural summary from raw logs
+      const errorSummary = entries
+        .filter((e) => e.type === 'error')
+        .map((e) => `- ${e.text}`)
+        .slice(-10)
+        .join('\n');
 
-    // Brief priority: errors > constraints > recent tools > accomplishments
-    // The rotator already wraps this with session continuation context
+      const resultSummary = entries
+        .filter((e) => e.type === 'result')
+        .map((e) => e.text)
+        .slice(-3)
+        .join('\n');
+
+      const fileChanges = {};
+      for (const e of entries.filter((e) => e.type === 'tool' && (e.tool === 'Edit' || e.tool === 'Write'))) {
+        const file = e.input || 'unknown';
+        if (!fileChanges[file]) fileChanges[file] = [];
+        if (e.diff) fileChanges[file].push(e.diff);
+        else fileChanges[file].push(e.tool === 'Write' ? 'created' : 'modified');
+      }
+      const fileChangesSummary = Object.entries(fileChanges)
+        .map(([file, changes]) => `- **${file}**: ${changes.slice(0, 3).join('; ')}`)
+        .slice(0, 20)
+        .join('\n');
+
+      const recentTools = entries
+        .filter((e) => e.type === 'tool' || e.type === 'error')
+        .slice(-5)
+        .map((e) => `- ${e.type === 'error' ? 'ERROR ' : ''}${e.tool}: ${(e.input || '').slice(0, 80)}`)
+        .join('\n');
+
+      const fallbackParts = [];
+      if (errorSummary) fallbackParts.push(`## Unresolved Errors\n\n${errorSummary}`);
+      if (recentTools) fallbackParts.push(`## Last 5 Tool Calls\n\n${recentTools}`);
+      if (fileChangesSummary) fallbackParts.push(`## Files Modified\n\n${fileChangesSummary}`);
+      if (resultSummary) fallbackParts.push(`## Accomplishments\n\n${resultSummary}`);
+      sessionSummary = fallbackParts.join('\n\n');
+    }
+
     return [
       `# Handoff Brief — ${agent.name} (${agent.role})`,
       ``,
@@ -804,13 +865,10 @@ export class Journalist {
       `Rotation: ${options.reason || 'manual'}${options.qualityScore ? ` (quality: ${options.qualityScore}/100)` : ''} | Tokens: ${agent.tokensUsed}`,
       specLine,
       ``,
-      errorSummary ? `## Unresolved Errors (fix these first)\n\n${errorSummary}\n` : '',
+      sessionSummary ? `## Session Summary\n\n${sessionSummary}\n` : '',
       constraints ? `## Project Constraints (must follow)\n\n${constraints}\n` : '',
       discoveries ? `## Known Issues & Fixes\n\n${discoveries}\n` : '',
       conversationSummary ? `## Recent User Messages\n\n${conversationSummary}\n` : '',
-      recentTools ? `## Last 5 Tool Calls\n\n${recentTools}\n` : '',
-      fileChangesSummary ? `## Files Modified\n\n${fileChangesSummary}\n` : '',
-      resultSummary ? `## Accomplishments\n\n${resultSummary}\n` : '',
       recentChain ? `## Rotation History\n\n${recentChain}\n` : '',
       agent.prompt ? `## Original Task\n\n${agent.prompt}\n` : '',
       ``,

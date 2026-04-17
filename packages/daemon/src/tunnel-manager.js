@@ -3,9 +3,18 @@
 
 import { execFileSync, spawn } from 'child_process';
 import { existsSync, writeFileSync, readFileSync, statSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { createConnection } from 'net';
 import crypto from 'crypto';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+function getLocalVersion() {
+  try {
+    const pkg = JSON.parse(readFileSync(join(__dirname, '..', '..', '..', 'package.json'), 'utf8'));
+    return pkg.version || '0.0.0';
+  } catch { return '0.0.0'; }
+}
 
 const REMOTE_PORT = 31415;
 const DEFAULT_LOCAL_PORT = 31416;
@@ -185,7 +194,7 @@ export class TunnelManager {
         '-o', 'StrictHostKeyChecking=accept-new',
         '-o', 'BatchMode=yes',
         target,
-        `curl -sf http://localhost:${REMOTE_PORT}/api/health 2>/dev/null || (which groove >/dev/null 2>&1 && echo __GROOVE_STOPPED__ || echo __GROOVE_NOT_INSTALLED__)`,
+        `bash -lc 'curl -sf http://localhost:${REMOTE_PORT}/api/health 2>/dev/null || (which groove >/dev/null 2>&1 && echo __GROOVE_VER__$(groove --version 2>/dev/null || echo unknown)__GROOVE_STOPPED__ || echo __GROOVE_NOT_INSTALLED__)'`,
       ], {
         encoding: 'utf8',
         timeout: 20000,
@@ -196,7 +205,9 @@ export class TunnelManager {
         return { reachable: true, daemonRunning: false, grooveInstalled: false };
       }
       if (result.includes('__GROOVE_STOPPED__')) {
-        return { reachable: true, daemonRunning: false, grooveInstalled: true };
+        const verMatch = result.match(/__GROOVE_VER__(.+?)__GROOVE_STOPPED__/);
+        const remoteVersion = verMatch ? verMatch[1].trim() : null;
+        return { reachable: true, daemonRunning: false, grooveInstalled: true, remoteVersion };
       }
       return { reachable: true, daemonRunning: true, grooveInstalled: true };
     } catch (err) {
@@ -236,6 +247,11 @@ export class TunnelManager {
       this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'installing' } });
       await this.remoteInstall(id);
     } else if (!testResult.daemonRunning && testResult.grooveInstalled) {
+      const localVer = getLocalVersion();
+      if (testResult.remoteVersion && testResult.remoteVersion !== localVer) {
+        this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'upgrading', from: testResult.remoteVersion, to: localVer } });
+        await this._remoteUpgrade(id, config);
+      }
       this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'starting' } });
       await this.autoStart(id);
     }
@@ -332,6 +348,24 @@ export class TunnelManager {
     }
   }
 
+  async _remoteUpgrade(id, config) {
+    const target = `${config.user}@${config.host}`;
+    const keyArgs = config.sshKeyPath ? ['-i', config.sshKeyPath] : [];
+    const sshBase = [...keyArgs, '-p', String(config.port || 22), '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes', target];
+    const installCmd = config.user === 'root' ? 'npm i -g groove-dev' : 'sudo npm i -g groove-dev';
+
+    try {
+      execFileSync('ssh', [...sshBase, `bash -lc '${installCmd}'`], {
+        encoding: 'utf8',
+        timeout: 120000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch (err) {
+      const output = err.stdout?.toString() || err.stderr?.toString() || err.message;
+      throw new Error(`Remote upgrade failed: ${output.slice(-400)}`);
+    }
+  }
+
   async autoStart(id) {
     const config = this.saved.get(id);
     if (!config) throw new Error(`Remote ${id} not found`);
@@ -346,7 +380,7 @@ export class TunnelManager {
         '-o', 'ConnectTimeout=10',
         '-o', 'BatchMode=yes',
         target,
-        `bash -lc 'nohup groove start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:${REMOTE_PORT}/api/health > /dev/null && echo __DAEMON_OK__ || echo __DAEMON_FAIL__'`,
+        `bash -lc 'nohup groove start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 5; curl -sf http://localhost:${REMOTE_PORT}/api/health > /dev/null && echo __DAEMON_OK__ || (echo __DAEMON_FAIL__; tail -20 /tmp/groove-daemon.log 2>/dev/null)'`,
       ], {
         encoding: 'utf8',
         timeout: 45000,
@@ -354,10 +388,12 @@ export class TunnelManager {
       });
 
       if (result.includes('__DAEMON_FAIL__')) {
-        throw new Error('Daemon process started but health check failed — check /tmp/groove-daemon.log on remote');
+        const logLines = result.split('__DAEMON_FAIL__')[1]?.trim() || '';
+        const detail = logLines ? `: ${logLines.slice(-300)}` : '';
+        throw new Error(`Remote daemon failed to start${detail}`);
       }
     } catch (err) {
-      if (err.message.includes('Daemon process started')) throw err;
+      if (err.message.includes('Remote daemon failed')) throw err;
       const output = err.stdout?.toString() || err.stderr?.toString() || err.message;
       throw new Error(`Failed to start remote daemon: ${output.slice(-300)}`);
     }
@@ -423,7 +459,7 @@ export class TunnelManager {
     try {
       const result = execFileSync('ssh', [
         ...sshBase,
-        remoteCmd(`nohup groove start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:${REMOTE_PORT}/api/health > /dev/null && echo __DAEMON_OK__ || echo __DAEMON_FAIL__`),
+        remoteCmd(`nohup groove start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 5; curl -sf http://localhost:${REMOTE_PORT}/api/health > /dev/null && echo __DAEMON_OK__ || (echo __DAEMON_FAIL__; tail -20 /tmp/groove-daemon.log 2>/dev/null)`),
       ], {
         encoding: 'utf8',
         timeout: 45000,
@@ -431,7 +467,9 @@ export class TunnelManager {
       });
 
       if (result.includes('__DAEMON_FAIL__')) {
-        throw new Error('Groove installed but daemon failed to start — check /tmp/groove-daemon.log on remote');
+        const logLines = result.split('__DAEMON_FAIL__')[1]?.trim() || '';
+        const detail = logLines ? `: ${logLines.slice(-300)}` : '';
+        throw new Error(`Groove installed but daemon failed to start${detail}`);
       }
     } catch (err) {
       if (err.message.includes('Groove installed')) throw err;

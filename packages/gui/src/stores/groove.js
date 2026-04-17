@@ -1106,13 +1106,24 @@ export const useGrooveStore = create((set, get) => ({
     const result = await api.post(`/tunnels/${encodeURIComponent(id)}/connect`);
     set({ activeTunnelId: id });
     get().fetchTunnels();
+    if (result.localPort && result.name) {
+      if (window.groove?.remote?.openWindow) {
+        window.groove.remote.openWindow(result.localPort, result.name);
+      } else {
+        window.open(`http://localhost:${result.localPort}?instance=${encodeURIComponent(result.name)}`, '_blank');
+      }
+    }
     return result;
   },
 
   async disconnectTunnel(id) {
+    const tunnel = get().savedTunnels.find(t => t.id === id);
     await api.post(`/tunnels/${encodeURIComponent(id)}/disconnect`);
     set({ activeTunnelId: null });
     get().fetchTunnels();
+    if (tunnel?.localPort && window.groove?.remote?.closeByPort) {
+      window.groove.remote.closeByPort(tunnel.localPort);
+    }
   },
 
   async installTunnel(id) {

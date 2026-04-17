@@ -4,7 +4,7 @@ import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Server, Radio, ExternalLink, Loader2, X, Plus, ArrowLeft,
+  Server, Radio, ExternalLink, Loader2, X, Plus, ArrowLeft, Unplug,
 } from 'lucide-react';
 import { StatusDot } from '../ui/status-dot';
 import { Button } from '../ui/button';
@@ -33,9 +33,12 @@ export function QuickConnect() {
   }
 
   function handleOpenRemote(server) {
-    const port = server.localPort;
-    const name = encodeURIComponent(server.name);
-    window.open(`http://localhost:${port}?instance=${name}`, '_blank');
+    if (window.groove?.remote?.openWindow) {
+      window.groove.remote.openWindow(server.localPort, server.name);
+    } else {
+      const name = encodeURIComponent(server.name);
+      window.open(`http://localhost:${server.localPort}?instance=${name}`, '_blank');
+    }
     toggle();
   }
 
@@ -127,36 +130,58 @@ export function QuickConnect() {
                   </div>
                 ) : (
                   savedTunnels.map((server) => (
-                    <button
+                    <div
                       key={server.id}
-                      onClick={() => server.active ? handleOpenRemote(server) : handleConnect(server.id)}
-                      disabled={connectingId === server.id}
                       className={cn(
-                        'w-full flex items-center gap-3 px-4 py-2.5 text-left cursor-pointer transition-colors',
+                        'w-full flex items-center gap-3 px-4 py-2.5 transition-colors',
                         'hover:bg-surface-5',
                         connectingId === server.id && 'opacity-60 pointer-events-none',
                       )}
                     >
                       <Server size={15} className={server.active ? 'text-success' : 'text-text-4'} />
-                      <div className="flex-1 min-w-0">
+                      <button
+                        onClick={() => server.active ? handleOpenRemote(server) : handleConnect(server.id)}
+                        disabled={connectingId === server.id}
+                        className="flex-1 min-w-0 text-left cursor-pointer"
+                      >
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-text-0 font-sans truncate">{server.name}</span>
                           {server.active && <StatusDot status="running" size="sm" />}
                         </div>
                         <span className="text-2xs text-text-4 font-mono">{server.user}@{server.host}</span>
-                      </div>
-                      <div className="flex-shrink-0">
+                      </button>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
                         {connectingId === server.id ? (
                           <Loader2 size={14} className="text-text-3 animate-spin" />
                         ) : server.active ? (
-                          <span className="flex items-center gap-1 text-2xs text-success font-sans">
-                            <ExternalLink size={11} /> Open
-                          </span>
+                          <>
+                            <button
+                              onClick={() => handleOpenRemote(server)}
+                              className="flex items-center gap-1 text-2xs text-success font-sans hover:text-success/80 cursor-pointer transition-colors"
+                            >
+                              <ExternalLink size={11} /> Open
+                            </button>
+                            <button
+                              onClick={async () => {
+                                await useGrooveStore.getState().disconnectTunnel(server.id);
+                                addToast('info', 'Disconnected', server.name);
+                              }}
+                              className="p-1 text-text-4 hover:text-danger cursor-pointer transition-colors rounded"
+                              title="Disconnect"
+                            >
+                              <Unplug size={12} />
+                            </button>
+                          </>
                         ) : (
-                          <span className="text-2xs text-text-3 font-sans">Connect</span>
+                          <button
+                            onClick={() => handleConnect(server.id)}
+                            className="text-2xs text-text-3 font-sans hover:text-text-1 cursor-pointer transition-colors"
+                          >
+                            Connect
+                          </button>
                         )}
                       </div>
-                    </button>
+                    </div>
                   ))
                 )}
               </div>

@@ -3,17 +3,29 @@ import { app, BrowserWindow, Tray, Menu, shell, nativeImage, dialog, ipcMain, sa
 import pkg from 'electron-updater';
 const { autoUpdater } = pkg;
 import { createHash, randomBytes } from 'crypto';
-import { fork } from 'child_process';
+import { fork, spawn, execFileSync } from 'child_process';
 import { basename, dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'fs';
 import { execSync } from 'child_process';
+import { createServer } from 'net';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const IS_MAC = process.platform === 'darwin';
 const STUDIO_URL = 'https://studio.groovedev.ai';
 const SUBSCRIPTION_POLL_MS = 5 * 60 * 1000;
 let _lastSubCheck = 0;
+
+function getAvailablePort() {
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address();
+      srv.close(() => resolve(port));
+    });
+    srv.on('error', reject);
+  });
+}
 
 // macOS Electron apps launched from Finder inherit a minimal PATH missing user
 // shell additions. Resolve the real PATH and API key env vars once at startup
@@ -65,6 +77,8 @@ class WorkspaceManager {
     this.instances = new Map();
     this._daemonProcesses = new Map();
     this.recentProjects = this._loadRecents();
+    this.sshConnections = this._loadSSH();
+    this._sshTunnels = new Map();
     this._homeWindow = null;
   }
 
@@ -143,6 +157,91 @@ class WorkspaceManager {
     return inst;
   }
 
+  openRemote(localPort, name) {
+    const id = `remote-${localPort}`;
+
+    if (this.instances.has(id)) {
+      const inst = this.instances.get(id);
+      if (inst.window && !inst.window.isDestroyed()) {
+        inst.window.show();
+        inst.window.focus();
+        return inst;
+      }
+    }
+
+    const win = new BrowserWindow({
+      width: 1440,
+      height: 900,
+      minWidth: 900,
+      minHeight: 600,
+      titleBarStyle: IS_MAC ? 'hiddenInset' : 'default',
+      backgroundColor: '#0a0a0a',
+      title: `${name} — Groove (Remote)`,
+      show: false,
+      webPreferences: {
+        preload: join(__dirname, 'preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        backgroundThrottling: false,
+      },
+    });
+
+    win.webContents.session.setPermissionRequestHandler((wc, permission, callback) => {
+      const url = wc.getURL();
+      const isLocal = url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1');
+      if (isLocal && (permission === 'media' || permission === 'microphone' || permission === 'audio-capture')) {
+        callback(true);
+        return;
+      }
+      if (!isLocal) { callback(false); return; }
+      callback(true);
+    });
+
+    win.webContents.session.setPermissionCheckHandler((wc, permission) => {
+      if (!wc) return false;
+      const url = wc.getURL();
+      const isLocal = url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1');
+      if (isLocal && (permission === 'media' || permission === 'microphone' || permission === 'audio-capture')) {
+        return true;
+      }
+      return isLocal;
+    });
+
+    win.loadURL(`http://localhost:${localPort}?instance=${encodeURIComponent(name)}`);
+    win.once('ready-to-show', () => win.show());
+
+    win.webContents.setWindowOpenHandler(({ url }) => {
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+          shell.openExternal(url);
+        }
+      } catch {}
+      return { action: 'deny' };
+    });
+
+    win.on('close', (e) => {
+      if (IS_MAC && !isQuitting) {
+        e.preventDefault();
+        win.hide();
+        this._showHomeIfNeeded(win);
+      }
+    });
+
+    win.on('closed', () => {
+      this.instances.delete(id);
+      this._updateTrayMenu();
+    });
+
+    const inst = { id, port: localPort, projectDir: null, name, daemon: null, window: win, remote: true };
+    this.instances.set(id, inst);
+    this._closeHomeWindow();
+    this._updateTrayMenu();
+
+    return inst;
+  }
+
   async close(id) {
     const inst = this.instances.get(id);
     if (!inst) return;
@@ -167,6 +266,130 @@ class WorkspaceManager {
 
   getAll() {
     return Array.from(this.instances.values());
+  }
+
+  // --- SSH Connections (stored in Electron userData, independent of any daemon) ---
+
+  _loadSSH() {
+    try {
+      return JSON.parse(readFileSync(join(app.getPath('userData'), 'ssh-connections.json'), 'utf8'));
+    } catch { return []; }
+  }
+
+  _saveSSH() {
+    writeFileSync(
+      join(app.getPath('userData'), 'ssh-connections.json'),
+      JSON.stringify(this.sshConnections, null, 2),
+      { mode: 0o600 },
+    );
+  }
+
+  addSSH(config) {
+    const id = createHash('sha256').update(`${config.user}@${config.host}:${config.port || 22}`).digest('hex').slice(0, 8);
+    const existing = this.sshConnections.find(c => c.id === id);
+    if (existing) {
+      Object.assign(existing, config, { id });
+      this._saveSSH();
+      return existing;
+    }
+    const entry = { id, ...config, port: config.port || 22, createdAt: new Date().toISOString() };
+    this.sshConnections.unshift(entry);
+    this._saveSSH();
+    return entry;
+  }
+
+  removeSSH(id) {
+    this.sshConnections = this.sshConnections.filter(c => c.id !== id);
+    this._saveSSH();
+  }
+
+  syncSSHFromDaemon(port) {
+    fetch(`http://localhost:${port}/api/tunnels`)
+      .then(r => r.json())
+      .then(tunnels => {
+        if (!Array.isArray(tunnels)) return;
+        const ids = new Set(this.sshConnections.map(c => c.id));
+        let changed = false;
+        for (const t of tunnels) {
+          if (!ids.has(t.id)) {
+            this.sshConnections.push({
+              id: t.id, name: t.name, host: t.host, user: t.user,
+              port: t.port || 22, sshKeyPath: t.sshKeyPath,
+              createdAt: t.createdAt,
+            });
+            changed = true;
+          }
+        }
+        if (changed) this._saveSSH();
+      })
+      .catch(() => {});
+  }
+
+  async connectSSH(id) {
+    const conn = this.sshConnections.find(c => c.id === id);
+    if (!conn) throw new Error('Connection not found');
+
+    const localPort = await getAvailablePort();
+    const keyArgs = conn.sshKeyPath ? ['-i', conn.sshKeyPath] : [];
+
+    const sshArgs = [
+      '-N', '-L', `${localPort}:localhost:31415`,
+      ...keyArgs,
+      '-p', String(conn.port || 22),
+      '-o', 'StrictHostKeyChecking=accept-new',
+      '-o', 'ConnectTimeout=15',
+      '-o', 'ServerAliveInterval=30',
+      '-o', 'BatchMode=yes',
+      `${conn.user}@${conn.host}`,
+    ];
+
+    const proc = spawn('ssh', sshArgs, { stdio: 'pipe' });
+    let exited = false;
+    proc.on('exit', () => { exited = true; });
+
+    await new Promise(r => setTimeout(r, 2500));
+    if (exited) throw new Error('SSH tunnel failed to establish — check host/key');
+
+    let healthy = false;
+    for (let i = 0; i < 4; i++) {
+      try {
+        const resp = await fetch(`http://localhost:${localPort}/api/health`, { signal: AbortSignal.timeout(3000) });
+        if (resp.ok) { healthy = true; break; }
+      } catch {}
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
+    if (!healthy) {
+      try {
+        execFileSync('ssh', [
+          ...keyArgs, '-p', String(conn.port || 22),
+          '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes',
+          `${conn.user}@${conn.host}`, 'groove start -d',
+        ], { timeout: 30000, stdio: 'pipe' });
+      } catch {}
+
+      await new Promise(r => setTimeout(r, 5000));
+      for (let i = 0; i < 3; i++) {
+        try {
+          const resp = await fetch(`http://localhost:${localPort}/api/health`, { signal: AbortSignal.timeout(3000) });
+          if (resp.ok) { healthy = true; break; }
+        } catch {}
+        if (i < 2) await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+
+    if (!healthy) {
+      proc.kill();
+      throw new Error('Remote daemon not responding — is Groove installed on the server?');
+    }
+
+    this._sshTunnels = this._sshTunnels || new Map();
+    this._sshTunnels.set(id, proc);
+
+    conn.lastConnected = new Date().toISOString();
+    this._saveSSH();
+
+    return { localPort, name: conn.name };
   }
 
   _startDaemon(id, projectDir) {
@@ -540,6 +763,12 @@ body {
 .btn-open:hover { background: #27272a; border-color: #3f3f46; }
 .btn-open:active { background: #333; }
 .m-ver { font-size: 10px; color: #27272a; }
+.m-update {
+  display: none; font-size: 11px; color: #33afbc; cursor: pointer;
+  font-weight: 500; -webkit-app-region: no-drag;
+}
+.m-update:hover { text-decoration: underline; }
+.m-update.active { display: block; }
 
 .m-loading {
   display: none; position: absolute; inset: 0; background: #141414;
@@ -553,6 +782,89 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-text { font-size: 13px; color: #71717a; }
+
+.ssh-div { height: 1px; background: #1e1e1e; margin: 12px 16px 8px; }
+.ssh-section { display: none; }
+.ssh-section.active { display: block; }
+.ssh-label {
+  padding: 0 16px; font-size: 11px; font-weight: 600; color: #52525b;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+}
+.ssh-badge {
+  font-size: 9px; font-weight: 600; color: #33afbc; background: rgba(51,175,188,0.12);
+  padding: 1px 5px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.si {
+  display: flex; align-items: center; gap: 10px; padding: 8px 16px;
+  cursor: pointer; transition: background 0.1s; border-radius: 4px; margin: 0 4px;
+}
+.si:hover { background: #1a1a1a; }
+.si.connecting { opacity: 0.5; pointer-events: none; }
+.si-ic { width: 32px; height: 32px; border-radius: 6px; background: #18181b; border: 1px solid #27272a;
+  display: flex; align-items: center; justify-content: center; color: #52525b; flex-shrink: 0; }
+.si-info { flex: 1; min-width: 0; }
+.si-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.si-host { font-size: 11px; color: #3f3f46; font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.si-spinner { width: 14px; height: 14px; border: 2px solid #27272a; border-top-color: #33afbc;
+  border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+
+.ssh-gate { padding: 16px; text-align: center; }
+.ssh-gate-text { font-size: 12px; color: #52525b; margin-bottom: 10px; }
+.btn-login {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 6px;
+  border: 1px solid #33afbc; background: rgba(51,175,188,0.08); color: #33afbc;
+  font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.12s;
+  -webkit-app-region: no-drag; font-family: inherit;
+}
+.btn-login:hover { background: rgba(51,175,188,0.15); }
+.btn-upgrade { border-color: #27272a; background: transparent; color: #71717a; }
+.btn-upgrade:hover { border-color: #3f3f46; color: #a1a1aa; }
+
+.btn-ssh {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 10px; border-radius: 8px;
+  border: 1px solid #27272a; background: #18181b;
+  color: #fafafa; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.12s;
+  -webkit-app-region: no-drag; font-family: inherit;
+}
+.btn-ssh:hover { background: #27272a; border-color: #3f3f46; }
+
+.ssh-form { display: none; padding: 12px 16px; }
+.ssh-form.active { display: block; }
+.ssh-form label { display: block; font-size: 11px; color: #71717a; margin-bottom: 4px; margin-top: 10px; }
+.ssh-form label:first-child { margin-top: 0; }
+.ssh-input {
+  width: 100%; padding: 7px 10px; border-radius: 6px; border: 1px solid #27272a;
+  background: #141414; color: #fafafa; font-size: 12px; font-family: inherit;
+  outline: none; transition: border-color 0.12s;
+}
+.ssh-input:focus { border-color: #33afbc; }
+.ssh-input-row { display: flex; gap: 8px; }
+.ssh-input-row .ssh-input { flex: 1; }
+.ssh-input-sm { width: 80px; flex: none !important; }
+.btn-pick-key {
+  padding: 7px 10px; border-radius: 6px; border: 1px solid #27272a;
+  background: #18181b; color: #71717a; font-size: 11px; cursor: pointer;
+  transition: all 0.12s; font-family: inherit; white-space: nowrap;
+}
+.btn-pick-key:hover { border-color: #3f3f46; color: #a1a1aa; }
+.ssh-form-actions { display: flex; gap: 8px; margin-top: 14px; }
+.btn-save-ssh {
+  flex: 1; padding: 8px; border-radius: 6px; border: none;
+  background: #33afbc; color: #0a0a0a; font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: opacity 0.12s; font-family: inherit;
+}
+.btn-save-ssh:hover { opacity: 0.9; }
+.btn-save-ssh:disabled { opacity: 0.4; cursor: default; }
+.btn-cancel-ssh {
+  padding: 8px 14px; border-radius: 6px; border: 1px solid #27272a;
+  background: transparent; color: #71717a; font-size: 12px; cursor: pointer;
+  transition: all 0.12s; font-family: inherit;
+}
+.btn-cancel-ssh:hover { border-color: #3f3f46; color: #a1a1aa; }
 </style>
 </head>
 <body>
@@ -589,6 +901,45 @@ body {
           <div class="m-body">
             <div class="sec-label" id="recents-label" style="display:none">Recent Projects</div>
             <div class="recents" id="recents"></div>
+
+            <div class="ssh-div"></div>
+            <div class="ssh-section" id="ssh-section">
+              <div class="ssh-label">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
+                SSH Servers
+                <span class="ssh-badge">PRO</span>
+              </div>
+              <div id="ssh-list"></div>
+              <button class="btn-ssh" id="btn-add-ssh" style="margin:8px 16px;width:calc(100% - 32px)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                Add Server
+              </button>
+              <div class="ssh-form" id="ssh-form">
+                <label>Name</label>
+                <input class="ssh-input" id="ssh-name" placeholder="My Server" autocomplete="off">
+                <label>Host</label>
+                <div class="ssh-input-row">
+                  <input class="ssh-input" id="ssh-host" placeholder="192.168.1.100">
+                  <input class="ssh-input ssh-input-sm" id="ssh-port" placeholder="22" value="22">
+                </div>
+                <label>Username</label>
+                <input class="ssh-input" id="ssh-user" placeholder="ubuntu">
+                <label>SSH Key (optional)</label>
+                <div class="ssh-input-row">
+                  <input class="ssh-input" id="ssh-key" placeholder="~/.ssh/id_rsa" readonly>
+                  <button class="btn-pick-key" id="btn-pick-key">Browse</button>
+                </div>
+                <div class="ssh-form-actions">
+                  <button class="btn-cancel-ssh" id="btn-cancel-ssh">Cancel</button>
+                  <button class="btn-save-ssh" id="btn-save-ssh">Save &amp; Connect</button>
+                </div>
+              </div>
+            </div>
+            <div class="ssh-gate" id="ssh-gate" style="display:none">
+              <div class="ssh-gate-text">SSH remote access requires a Pro or Team subscription</div>
+              <button class="btn-login" id="btn-gate-login">Log In</button>
+              <button class="btn-login btn-upgrade" id="btn-gate-upgrade" style="display:none;margin-top:8px">Upgrade to Pro</button>
+            </div>
           </div>
           <div class="m-foot">
             <button class="btn-open" id="open-folder">
@@ -597,6 +948,7 @@ body {
               </svg>
               Open Folder
             </button>
+            <div class="m-update" id="update-btn"></div>
             <div class="m-ver" id="version"></div>
           </div>
           <div class="m-loading" id="loading">
@@ -677,6 +1029,16 @@ body {
     document.getElementById('version').textContent = 'v' + v;
   }).catch(function() {});
 
+  if (window.groove.update) {
+    window.groove.update.onUpdateDownloaded(function(data) {
+      var btn = document.getElementById('update-btn');
+      btn.textContent = 'v' + data.version + ' ready — click to restart';
+      btn.className = 'm-update active';
+      btn.onclick = function() { window.groove.update.installUpdate(); };
+      document.getElementById('version').style.display = 'none';
+    });
+  }
+
   window.groove.home.getRecents().then(function(recents) {
     var c = document.getElementById('recents');
     var l = document.getElementById('recents-label');
@@ -707,6 +1069,120 @@ body {
   }).catch(function(err) {
     showError('Failed to load recent projects: ' + err.message);
   });
+
+  var SERVER_IC = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+    ' stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/>' +
+    '<rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>';
+  var sshSection = document.getElementById('ssh-section');
+  var sshGate = document.getElementById('ssh-gate');
+  var sshList = document.getElementById('ssh-list');
+  var sshFormEl = document.getElementById('ssh-form');
+  var btnAddSSH = document.getElementById('btn-add-ssh');
+
+  function renderSSH(connections) {
+    if (!connections || !connections.length) { sshList.innerHTML = ''; return; }
+    sshList.innerHTML = connections.map(function(c) {
+      return '<div class="si" data-id="' + esc(c.id) + '">' +
+        '<div class="si-ic">' + SERVER_IC + '</div>' +
+        '<div class="si-info">' +
+          '<div class="si-name">' + esc(c.name || c.host) + '</div>' +
+          '<div class="si-host">' + esc((c.user || 'root') + '@' + c.host + ':' + (c.port || 22)) + '</div>' +
+        '</div>' +
+        '<div class="si-spinner" style="display:none"></div>' +
+      '</div>';
+    }).join('');
+    sshList.querySelectorAll('.si').forEach(function(el) {
+      el.addEventListener('click', function() {
+        el.classList.add('connecting');
+        var sp = el.querySelector('.si-spinner');
+        if (sp) sp.style.display = '';
+        window.groove.home.connectSSH(el.getAttribute('data-id')).then(function(res) {
+          if (res && res.localPort) {
+            setLoading(true, 'Opening remote session...');
+            window.groove.remote.openWindow(res.localPort, res.name || 'Remote');
+          }
+        }).catch(function(err) {
+          el.classList.remove('connecting');
+          if (sp) sp.style.display = 'none';
+          showError(err.message || 'SSH connection failed');
+        });
+      });
+    });
+  }
+
+  window.groove.home.getCachedSub().then(function(sub) {
+    if (sub.authenticated && sub.active && (sub.plan === 'pro' || sub.plan === 'team')) {
+      sshSection.classList.add('active');
+      window.groove.home.getSSH().then(renderSSH).catch(function() {});
+    } else if (sub.authenticated) {
+      sshGate.style.display = '';
+      document.getElementById('btn-gate-upgrade').style.display = '';
+      document.getElementById('btn-gate-login').style.display = 'none';
+    } else {
+      sshGate.style.display = '';
+    }
+  }).catch(function() {});
+
+  document.getElementById('btn-gate-login').addEventListener('click', function() {
+    window.groove.auth.login();
+  });
+  document.getElementById('btn-gate-upgrade').addEventListener('click', function() {
+    window.groove.openExternal('https://groovedev.ai/#/pricing');
+  });
+
+  btnAddSSH.addEventListener('click', function() {
+    sshFormEl.classList.add('active');
+    btnAddSSH.style.display = 'none';
+    document.getElementById('ssh-name').focus();
+  });
+  document.getElementById('btn-cancel-ssh').addEventListener('click', function() {
+    sshFormEl.classList.remove('active');
+    btnAddSSH.style.display = '';
+  });
+  document.getElementById('btn-pick-key').addEventListener('click', function() {
+    window.groove.home.pickKeyFile().then(function(p) {
+      if (p) document.getElementById('ssh-key').value = p;
+    }).catch(function() {});
+  });
+  document.getElementById('btn-save-ssh').addEventListener('click', function() {
+    var host = document.getElementById('ssh-host').value.trim();
+    var user = document.getElementById('ssh-user').value.trim() || 'root';
+    if (!host) { showError('Host is required'); return; }
+    var config = {
+      name: document.getElementById('ssh-name').value.trim() || host,
+      host: host,
+      port: parseInt(document.getElementById('ssh-port').value) || 22,
+      user: user,
+      keyPath: document.getElementById('ssh-key').value.trim() || undefined
+    };
+    document.getElementById('btn-save-ssh').disabled = true;
+    window.groove.home.addSSH(config).then(function() {
+      sshFormEl.classList.remove('active');
+      btnAddSSH.style.display = '';
+      document.getElementById('ssh-name').value = '';
+      document.getElementById('ssh-host').value = '';
+      document.getElementById('ssh-port').value = '22';
+      document.getElementById('ssh-user').value = '';
+      document.getElementById('ssh-key').value = '';
+      document.getElementById('btn-save-ssh').disabled = false;
+      window.groove.home.getSSH().then(renderSSH);
+    }).catch(function(err) {
+      document.getElementById('btn-save-ssh').disabled = false;
+      showError(err.message || 'Failed to save');
+    });
+  });
+
+  if (window.groove.auth && window.groove.auth.onChanged) {
+    window.groove.auth.onChanged(function() {
+      window.groove.home.getCachedSub().then(function(sub) {
+        if (sub.authenticated && sub.active && (sub.plan === 'pro' || sub.plan === 'team')) {
+          sshGate.style.display = 'none';
+          sshSection.classList.add('active');
+          window.groove.home.getSSH().then(renderSSH).catch(function() {});
+        }
+      }).catch(function() {});
+    });
+  }
 })();
 </script>
 </body>
@@ -731,6 +1207,9 @@ function broadcastToAllWindows(channel, data) {
       inst.window.webContents.send(channel, data);
     }
   }
+  if (workspaces._homeWindow && !workspaces._homeWindow.isDestroyed()) {
+    workspaces._homeWindow.webContents.send(channel, data);
+  }
 }
 
 // --- IPC Handlers ---
@@ -741,7 +1220,10 @@ ipcMain.on('app-quit', () => {
 });
 
 ipcMain.handle('get-version', () => app.getVersion());
-ipcMain.handle('install-update', () => { autoUpdater.quitAndInstall(false, true); });
+ipcMain.handle('install-update', () => {
+  isQuitting = true;
+  autoUpdater.quitAndInstall(false, true);
+});
 
 autoUpdater.on('update-available', (info) => broadcastToAllWindows('update-available', { version: info.version }));
 autoUpdater.on('update-downloaded', (info) => broadcastToAllWindows('update-downloaded', { version: info.version }));
@@ -815,6 +1297,30 @@ ipcMain.handle('set-project-dir', async (event, dir) => {
   }
 });
 
+// --- Remote window IPC ---
+
+ipcMain.handle('open-remote-window', (_event, port, name) => {
+  if (!workspaces || !port || !name) return { error: 'Invalid params' };
+  try {
+    workspaces.openRemote(Number(port), String(name));
+    return { ok: true };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('close-remote-window', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win && !win.isDestroyed()) win.close();
+});
+
+ipcMain.handle('close-remote-by-port', (_event, port) => {
+  if (!workspaces || !port) return;
+  const id = `remote-${port}`;
+  const inst = workspaces.instances.get(id);
+  if (inst?.window && !inst.window.isDestroyed()) inst.window.close();
+});
+
 // --- Home window IPC ---
 
 ipcMain.handle('home-get-recents', () => {
@@ -846,6 +1352,8 @@ ipcMain.handle('home-open-recent', async (_event, dir) => {
       `${err.message}\n\nTry reinstalling Groove from groovedev.ai or rebuild with ./promote-local.sh`);
     return { error: err.message };
   }
+
+  setTimeout(() => workspaces.syncSSHFromDaemon(port), 3000);
 
   const name = basename(dir);
   const win = workspaces._homeWindow;
@@ -937,6 +1445,54 @@ ipcMain.handle('home-open-folder', async () => {
   return result.filePaths[0];
 });
 
+// --- Home SSH IPC ---
+
+ipcMain.handle('home-get-ssh', () => {
+  return workspaces?.sshConnections || [];
+});
+
+ipcMain.handle('home-add-ssh', (_event, config) => {
+  if (!workspaces || !config?.host || !config?.user) return { error: 'Invalid config' };
+  const entry = workspaces.addSSH(config);
+  return entry;
+});
+
+ipcMain.handle('home-remove-ssh', (_event, id) => {
+  if (!workspaces || !id) return { error: 'Invalid id' };
+  workspaces.removeSSH(id);
+  return { ok: true };
+});
+
+ipcMain.handle('home-connect-ssh', async (_event, id) => {
+  if (!workspaces || !id) throw new Error('Invalid id');
+  const { localPort, name } = await workspaces.connectSSH(id);
+  workspaces.openRemote(localPort, name);
+  return { ok: true, localPort, name };
+});
+
+ipcMain.handle('home-pick-key', async () => {
+  const parentWin = workspaces?._homeWindow && !workspaces._homeWindow.isDestroyed()
+    ? workspaces._homeWindow : null;
+  const result = await dialog.showOpenDialog(parentWin, {
+    title: 'Select SSH Key',
+    defaultPath: join(app.getPath('home'), '.ssh'),
+    properties: ['openFile', 'showHiddenFiles'],
+    filters: [{ name: 'All Files', extensions: ['*'] }],
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  return result.filePaths[0];
+});
+
+ipcMain.handle('home-get-cached-sub', () => {
+  const token = loadStoredToken();
+  const sub = getCachedSubscription();
+  return {
+    authenticated: !!token,
+    plan: sub?.plan || 'community',
+    active: sub?.active || false,
+  };
+});
+
 // --- Auth flow ---
 
 app.setAsDefaultProtocolClient('groove');
@@ -980,6 +1536,21 @@ function clearStoredToken() {
       }
     }
   }
+}
+
+function cacheSubscription(data) {
+  try {
+    writeFileSync(
+      join(app.getPath('userData'), 'subscription-cache.json'),
+      JSON.stringify(data), { mode: 0o600 },
+    );
+  } catch {}
+}
+
+function getCachedSubscription() {
+  try {
+    return JSON.parse(readFileSync(join(app.getPath('userData'), 'subscription-cache.json'), 'utf8'));
+  } catch { return null; }
 }
 
 ipcMain.handle('auth-login', () => {
@@ -1051,12 +1622,14 @@ async function checkSubscription() {
   try {
     const resp = await fetch(`http://localhost:${inst.port}/api/subscription/status`);
     const data = await resp.json();
-    broadcastToAllWindows('subscription-status', {
+    const sub = {
       active: data.active || false,
       plan: data.plan || 'community',
       features: data.features || [],
       seats: data.seats || 1,
-    });
+    };
+    cacheSubscription(sub);
+    broadcastToAllWindows('subscription-status', sub);
   } catch {}
 }
 

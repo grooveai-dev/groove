@@ -17,6 +17,17 @@ contextBridge.exposeInMainWorld('groove', {
     getRecents: () => ipcRenderer.invoke('home-get-recents'),
     openRecent: (dir) => ipcRenderer.invoke('home-open-recent', dir),
     openFolder: () => ipcRenderer.invoke('home-open-folder'),
+    getSSH: () => ipcRenderer.invoke('home-get-ssh'),
+    connectSSH: (id) => ipcRenderer.invoke('home-connect-ssh', id),
+    addSSH: (config) => ipcRenderer.invoke('home-add-ssh', config),
+    removeSSH: (id) => ipcRenderer.invoke('home-remove-ssh', id),
+    pickKeyFile: () => ipcRenderer.invoke('home-pick-key'),
+    getCachedSub: () => ipcRenderer.invoke('home-get-cached-sub'),
+  },
+  remote: {
+    openWindow: (port, name) => ipcRenderer.invoke('open-remote-window', port, name),
+    close: () => ipcRenderer.invoke('close-remote-window'),
+    closeByPort: (port) => ipcRenderer.invoke('close-remote-by-port', port),
   },
   auth: {
     login: () => ipcRenderer.invoke('auth-login'),

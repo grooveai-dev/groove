@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Terminal, BookOpen, Radio, Plug, Globe, ArrowUpCircle } from 'lucide-react';
+import { Terminal, BookOpen, Radio, Plug, Globe, ArrowUpCircle, X, Unplug } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/status-dot';
 import { fmtUptime } from '../../lib/format';
@@ -15,6 +15,7 @@ export function StatusBar({
   onToggleTerminal,
 }) {
   const savedTunnels = useGrooveStore((s) => s.savedTunnels);
+  const tunneled = useGrooveStore((s) => s.tunneled);
   const version = useGrooveStore((s) => s.version);
   const updateReady = useGrooveStore((s) => s.updateReady);
   const installUpdate = useGrooveStore((s) => s.installUpdate);
@@ -48,21 +49,39 @@ export function StatusBar({
           <span className="text-text-4">{runningCount}/{agentCount} agents</span>
         )}
         {activeTunnel ? (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => {
+                const port = activeTunnel.localPort;
+                const name = encodeURIComponent(activeTunnel.name);
+                openExternal(`http://localhost:${port}?instance=${name}`);
+              }}
+              className="flex items-center gap-1.5 text-text-3 hover:text-text-1 cursor-pointer transition-colors"
+              title="Open remote GUI"
+            >
+              <Radio size={10} className="text-success" />
+              <span>{activeTunnel.name}</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-success" />
+              {activeTunnel.latencyMs != null && (
+                <span className="text-text-4">{activeTunnel.latencyMs}ms</span>
+              )}
+            </button>
+            <button
+              onClick={() => useGrooveStore.getState().disconnectTunnel(activeTunnel.id)}
+              className="p-0.5 text-text-4 hover:text-danger cursor-pointer transition-colors rounded"
+              title="Disconnect"
+            >
+              <X size={10} />
+            </button>
+          </div>
+        ) : tunneled ? (
           <button
-            onClick={() => {
-              const port = activeTunnel.localPort;
-              const name = encodeURIComponent(activeTunnel.name);
-              openExternal(`http://localhost:${port}?instance=${name}`);
-            }}
-            className="flex items-center gap-1.5 text-text-3 hover:text-text-1 cursor-pointer transition-colors"
-            title="Open remote GUI"
+            onClick={() => window.groove?.remote?.close?.() || window.close()}
+            className="flex items-center gap-1.5 text-text-3 hover:text-danger cursor-pointer transition-colors"
+            title="Close remote connection"
           >
-            <Radio size={10} className="text-success" />
-            <span>{activeTunnel.name}</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-success" />
-            {activeTunnel.latencyMs != null && (
-              <span className="text-text-4">{activeTunnel.latencyMs}ms</span>
-            )}
+            <Unplug size={10} />
+            <span>Disconnect</span>
           </button>
         ) : savedTunnels.length > 0 && (
           <button

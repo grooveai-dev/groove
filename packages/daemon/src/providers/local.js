@@ -93,14 +93,16 @@ export class LocalProvider extends Provider {
 
   static _hasOllama() {
     try {
-      execSync('which ollama', { stdio: 'ignore' });
+      const cmd = process.platform === 'win32' ? 'where ollama' : 'which ollama';
+      execSync(cmd, { stdio: 'ignore' });
       return true;
     } catch { return false; }
   }
 
   static _hasLlamaServer() {
     try {
-      execSync('which llama-server', { stdio: 'ignore' });
+      const cmd = process.platform === 'win32' ? 'where llama-server' : 'which llama-server';
+      execSync(cmd, { stdio: 'ignore' });
       return true;
     } catch { return false; }
   }

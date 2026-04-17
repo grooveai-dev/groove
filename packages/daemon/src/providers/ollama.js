@@ -52,7 +52,8 @@ export class OllamaProvider extends Provider {
 
   static isInstalled() {
     try {
-      execSync('which ollama', { stdio: 'ignore' });
+      const cmd = process.platform === 'win32' ? 'where ollama' : 'which ollama';
+      execSync(cmd, { stdio: 'ignore' });
       return true;
     } catch {
       return false;
@@ -66,6 +67,9 @@ export class OllamaProvider extends Provider {
     }
     if (platform === 'linux') {
       return { command: 'curl -fsSL https://ollama.ai/install.sh | sh', platform: 'Linux' };
+    }
+    if (platform === 'win32') {
+      return { command: 'winget install Ollama.Ollama', alt: 'Or download from https://ollama.ai/download', platform: 'Windows' };
     }
     return { command: 'Download from https://ollama.ai/download', platform: 'other' };
   }
@@ -98,6 +102,22 @@ export class OllamaProvider extends Provider {
         }
       }
     }
+    if (platform === 'win32') {
+      try {
+        let cmd = 'ollama';
+        try {
+          execSync('where ollama', { stdio: 'ignore' });
+        } catch {
+          const localAppData = process.env.LOCALAPPDATA || '';
+          const fallback = localAppData + '\\Programs\\Ollama\\ollama.exe';
+          cmd = fallback;
+        }
+        execFile(cmd, ['serve'], { stdio: 'ignore', detached: true, shell: true }).unref();
+        return { started: true, method: 'ollama serve' };
+      } catch {
+        return { started: false, command: 'ollama serve' };
+      }
+    }
     // Linux / other
     try {
       execFile('ollama', ['serve'], { stdio: 'ignore', detached: true }).unref();
@@ -109,6 +129,14 @@ export class OllamaProvider extends Provider {
 
   static stopServer() {
     const platform = process.platform;
+    if (platform === 'win32') {
+      try {
+        execSync('taskkill /IM ollama.exe /F', { stdio: 'ignore', timeout: 5000 });
+        return { stopped: true, method: 'taskkill' };
+      } catch {
+        return { stopped: false };
+      }
+    }
     if (platform === 'darwin') {
       try {
         execSync('brew services stop ollama', { stdio: 'ignore', timeout: 10000 });
@@ -135,7 +163,11 @@ export class OllamaProvider extends Provider {
       minRAM: 4,
       recommendedRAM: 16,
       gpuRecommended: true,
-      note: 'Apple Silicon Macs use unified memory — all RAM is GPU RAM. NVIDIA GPUs recommended on Linux.',
+      note: process.platform === 'win32'
+        ? 'NVIDIA or AMD GPUs recommended. Ensure GPU drivers are up to date.'
+        : process.platform === 'darwin'
+          ? 'Apple Silicon Macs use unified memory — all RAM is GPU RAM.'
+          : 'NVIDIA GPUs recommended on Linux.',
     };
   }
 
@@ -151,7 +183,7 @@ export class OllamaProvider extends Provider {
     let gpu = null;
     if (isAppleSilicon) {
       gpu = { type: 'apple-silicon', name: cpuModel.replace(/Apple /g, ''), vram: totalRamGb, note: 'Unified memory — all RAM available to GPU' };
-    } else if (platform === 'linux') {
+    } else if (platform === 'linux' || platform === 'win32') {
       try {
         const out = execSync('nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits', { encoding: 'utf8', timeout: 5000 });
         const [name, vram] = out.trim().split(', ');

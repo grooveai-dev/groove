@@ -426,7 +426,10 @@ export function createApi(app, daemon) {
   app.post('/api/providers/ollama/pull', async (req, res) => {
     const { model } = req.body;
     if (!model) return res.status(400).json({ error: 'model is required' });
-    if (!OllamaProvider.isInstalled()) return res.status(400).json({ error: 'Ollama is not installed. Install with: brew install ollama' });
+    if (!OllamaProvider.isInstalled()) {
+      const install = OllamaProvider.installCommand();
+      return res.status(400).json({ error: `Ollama is not installed. Install with: ${install.command}` });
+    }
     const broadcast = daemon.broadcast.bind(daemon);
     try {
       // Auto-start Ollama server if not running

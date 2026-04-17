@@ -7,12 +7,40 @@ The open-source orchestration layer for AI coding tools. Spawn teams of agents, 
 [![npm](https://img.shields.io/npm/v/groove-dev)](https://www.npmjs.com/package/groove-dev)
 [![License](https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue)](LICENSE)
 
+## Get Started
+
+### Download the App
+
+No terminal needed. Download, install, open a project folder.
+
+- [**macOS** (.dmg)](https://github.com/grooveai-dev/groove/releases/latest) — Intel and Apple Silicon
+- [**Windows** (.exe)](https://github.com/grooveai-dev/groove/releases/latest) — one-click installer
+- [**Linux** (.AppImage)](https://github.com/grooveai-dev/groove/releases/latest) — x64 and ARM
+
+Everything is bundled — daemon, GUI, auto-updates. No Node.js required.
+
+### Developer Install
+
 ```bash
 npm i -g groove-dev
 groove start
 ```
 
 The GUI opens at `http://localhost:31415`. On a VPS? groove detects it and tells you exactly what to do.
+
+---
+
+## Desktop App
+
+The desktop app is the easiest way to use groove — no terminal, no dependencies, no setup.
+
+- **Full GUI dashboard** — agent tree, chat, editor, telemetry, marketplace, all in one window
+- **Bundled daemon** — starts automatically when you open a project, stops when you close it
+- **System tray** — quick access to recent projects, daemon status, and controls
+- **Automatic updates** — new versions install silently in the background
+- **Multi-workspace** — open any project folder; manages one daemon per project
+- **Platform support** — macOS (Intel + Apple Silicon), Windows (x64 + ARM64), Linux (x64 + ARM64)
+- **No dependencies** — everything is bundled. No Node.js, no terminal knowledge needed
 
 ---
 

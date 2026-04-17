@@ -9,7 +9,9 @@ import { spawn, execFile } from 'child_process';
 import { lookup as mimeLookup } from './mimetypes.js';
 import { listProviders, getProvider } from './providers/index.js';
 import { OllamaProvider } from './providers/ollama.js';
+import { ClaudeCodeProvider } from './providers/claude-code.js';
 import { validateAgentConfig } from './validate.js';
+import { ROLE_INTEGRATIONS } from './process.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkgVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -179,6 +181,88 @@ export function createApi(app, daemon) {
     res.json({ ok: true });
   });
 
+  // --- Role-to-Integration Mapping ---
+
+  app.get('/api/roles/integrations', (req, res) => {
+    const roleFilter = req.query.role;
+    const entries = roleFilter ? { [roleFilter]: ROLE_INTEGRATIONS[roleFilter] || [] } : ROLE_INTEGRATIONS;
+    const result = {};
+    for (const [role, ids] of Object.entries(entries)) {
+      result[role] = (ids || []).map((id) => {
+        const status = daemon.integrations.getStatus(id);
+        const entry = daemon.integrations.registry.find((r) => r.id === id);
+        return {
+          id,
+          name: entry?.name || id,
+          installed: status?.installed || false,
+          configured: status?.configured || false,
+          authenticated: status?.authenticated || false,
+        };
+      });
+    }
+    if (roleFilter) return res.json(result[roleFilter] || []);
+    res.json(result);
+  });
+
+  app.post('/api/agents/preflight', (req, res) => {
+    const { role, integrations } = req.body || {};
+    if (!role || !Array.isArray(integrations)) {
+      return res.status(400).json({ error: 'role and integrations[] required' });
+    }
+    const issues = [];
+    for (const id of integrations) {
+      const status = daemon.integrations.getStatus(id);
+      const entry = daemon.integrations.registry.find((r) => r.id === id);
+      const name = entry?.name || id;
+      if (!status || !status.installed) {
+        issues.push({ integrationId: id, name, problem: 'not_installed' });
+      } else if (!status.configured) {
+        issues.push({ integrationId: id, name, problem: 'not_configured' });
+      } else if (!status.authenticated) {
+        issues.push({ integrationId: id, name, problem: 'not_authenticated' });
+      }
+    }
+    res.json({ ready: issues.length === 0, issues });
+  });
+
+  // --- Agent Integration Attach/Detach ---
+
+  app.post('/api/agents/:id/integrations/:integrationId', (req, res) => {
+    const agent = daemon.registry.get(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    const integrationId = req.params.integrationId;
+    const status = daemon.integrations.getStatus(integrationId);
+    if (!status || !status.installed) {
+      return res.status(400).json({ error: `Integration not installed: ${integrationId}` });
+    }
+
+    const integrations = new Set(agent.integrations || []);
+    integrations.add(integrationId);
+    const updated = Array.from(integrations);
+
+    daemon.registry.update(req.params.id, { integrations: updated });
+    daemon.integrations.writeMcpJson(daemon.integrations.getActiveIntegrations());
+    daemon.integrations.refreshMcpJson();
+    daemon.audit.log('agent.integration.attach', { agentId: req.params.id, integrationId });
+    daemon.broadcast({ type: 'agent:integration:attach', agentId: req.params.id, integrationId });
+    res.json({ ok: true, integrations: updated });
+  });
+
+  app.delete('/api/agents/:id/integrations/:integrationId', (req, res) => {
+    const agent = daemon.registry.get(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    const integrationId = req.params.integrationId;
+    const integrations = (agent.integrations || []).filter((id) => id !== integrationId);
+
+    daemon.registry.update(req.params.id, { integrations });
+    daemon.integrations.refreshMcpJson();
+    daemon.audit.log('agent.integration.detach', { agentId: req.params.id, integrationId });
+    daemon.broadcast({ type: 'agent:integration:detach', agentId: req.params.id, integrationId });
+    res.json({ ok: true, integrations });
+  });
+
   // Lock management
   app.get('/api/locks', (req, res) => {
     res.json(daemon.locks.getAll());
@@ -307,8 +391,23 @@ export function createApi(app, daemon) {
     // Enrich with credential status
     for (const p of providers) {
       p.hasKey = daemon.credentials.hasKey(p.id);
+      if (p.id === 'claude-code') {
+        p.authStatus = ClaudeCodeProvider.getAuthStatus();
+      }
     }
     res.json(providers);
+  });
+
+  // --- Claude Code Auth ---
+
+  app.get('/api/providers/claude-code/auth', (req, res) => {
+    res.json(ClaudeCodeProvider.getAuthStatus());
+  });
+
+  app.post('/api/providers/claude-code/login', (req, res) => {
+    ClaudeCodeProvider.triggerLogin();
+    daemon.audit.log('claude-code.login.started', {});
+    res.json({ ok: true });
   });
 
   // --- Ollama ---

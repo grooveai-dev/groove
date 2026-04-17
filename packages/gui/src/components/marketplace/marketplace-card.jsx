@@ -4,42 +4,7 @@ import { cn } from '../../lib/cn';
 import { Badge } from '../ui/badge';
 import { fmtNum } from '../../lib/format';
 
-// Well-known integration logos via CDN (simple-icons on cdn.simpleicons.org)
-export const INTEGRATION_LOGOS = {
-  'google-workspace': 'https://cdn.simpleicons.org/google/white',
-  github:      'https://cdn.simpleicons.org/github/white',
-  stripe:      'https://cdn.simpleicons.org/stripe/635BFF',
-  gmail:       'https://cdn.simpleicons.org/gmail/EA4335',
-  'google-calendar': 'https://cdn.simpleicons.org/googlecalendar/4285F4',
-  'google-drive':    'https://cdn.simpleicons.org/googledrive/4285F4',
-  'google-docs':     'https://cdn.simpleicons.org/googledocs/4285F4',
-  'google-sheets':   'https://cdn.simpleicons.org/googlesheets/34A853',
-  'google-slides':   'https://cdn.simpleicons.org/googleslides/FBBC04',
-  'google-maps':     'https://cdn.simpleicons.org/googlemaps/4285F4',
-  postgres:    'https://cdn.simpleicons.org/postgresql/4169E1',
-  notion:      'https://cdn.simpleicons.org/notion/white',
-  linear:      'https://cdn.simpleicons.org/linear/5E6AD2',
-  'brave-search': 'https://cdn.simpleicons.org/brave/FB542B',
-  'home-assistant': 'https://cdn.simpleicons.org/homeassistant/18BCF2',
-  sentry:      'https://cdn.simpleicons.org/sentry/362D59',
-  elevenlabs:  'https://cdn.simpleicons.org/elevenlabs/white',
-  hubspot:     'https://cdn.simpleicons.org/hubspot/FF7A59',
-  jira:        'https://cdn.simpleicons.org/jira/0052CC',
-  sendgrid:    'https://cdn.simpleicons.org/sendgrid/1A82E2',
-  resend:      'https://cdn.simpleicons.org/resend/white',
-  replicate:   'https://cdn.simpleicons.org/replicate/white',
-  vercel:      'https://cdn.simpleicons.org/vercel/white',
-  supabase:    'https://cdn.simpleicons.org/supabase/3FCF8E',
-  mixpanel:    'https://cdn.simpleicons.org/mixpanel/7856FF',
-  datadog:     'https://cdn.simpleicons.org/datadog/632CA6',
-  airtable:    'https://cdn.simpleicons.org/airtable/18BFFF',
-  zendesk:     'https://cdn.simpleicons.org/zendesk/03363D',
-  intercom:    'https://cdn.simpleicons.org/intercom/6AFDEF',
-  twilio:      'https://cdn.simpleicons.org/twilio/F22F46',
-  telnyx:      'https://cdn.simpleicons.org/telnyx/00C08B',
-  aws:         'https://cdn.simpleicons.org/amazonaws/FF9900',
-  plaid:       'https://cdn.simpleicons.org/plaid/white',
-};
+import { INTEGRATION_LOGOS } from '../../lib/integration-logos';
 
 function ItemIcon({ item, size = 40 }) {
   const logoUrl = INTEGRATION_LOGOS[item.id];

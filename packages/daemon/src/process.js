@@ -266,6 +266,18 @@ IMPORTANT: Do not use markdown formatting like ** or ### in your output. Write i
 `,
 };
 
+// Role-to-integration mapping — recommended integrations per role for onboarding preflight
+export const ROLE_INTEGRATIONS = {
+  ea: ['gmail', 'google-calendar'],
+  cmo: ['gmail', 'slack', 'hubspot'],
+  cfo: ['stripe', 'google-sheets'],
+  support: ['gmail', 'slack', 'zendesk'],
+  analyst: ['google-sheets', 'postgres', 'mixpanel'],
+  home: ['home-assistant'],
+  slides: ['google-slides'],
+  creative: ['google-docs'],
+};
+
 // Permission-level prompt instructions
 // "auto" = PM reviews risky ops via API. "full" = no reviews, max speed.
 const PERMISSION_PROMPTS = {

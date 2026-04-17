@@ -6,6 +6,7 @@ import {
   AlertCircle, Layers, Activity,
   RotateCw, Skull, Copy, Trash2,
   Sparkles, Calendar, Plug, MessageCircle, Save, GitBranch,
+  ExternalLink, Loader2,
 } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { Badge } from '../ui/badge';
@@ -15,6 +16,7 @@ import { api } from '../../lib/api';
 import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
 import { OllamaSetup } from './ollama-setup';
+import { INTEGRATION_LOGOS } from '../../lib/integration-logos';
 
 /* ── Segmented Control ─────────────────────────────────────── */
 
@@ -164,13 +166,21 @@ export function AgentConfig({ agent }) {
   const [personalityLoaded, setPersonalityLoaded] = useState(false);
   const [personalities, setPersonalities] = useState([]);
   const [savingPersonality, setSavingPersonality] = useState(false);
+  const [installedIntegrations, setInstalledIntegrations] = useState([]);
+  const [claudeAuth, setClaudeAuth] = useState(null);
+  const [claudeAuthLoading, setClaudeAuthLoading] = useState(false);
+  const [claudeAuthPolling, setClaudeAuthPolling] = useState(false);
 
   const isAlive = agent.status === 'running' || agent.status === 'starting';
 
   useEffect(() => {
     loadProviders();
     api.get('/skills/installed').then((data) => setInstalledSkills(Array.isArray(data) ? data : data.skills || [])).catch(() => {});
+    api.get('/integrations/installed').then((data) => setInstalledIntegrations(Array.isArray(data) ? data : [])).catch(() => {});
     api.get('/repos/imported').then((data) => setImportedRepos((Array.isArray(data) ? data : []).filter((r) => r.status === 'active'))).catch(() => {});
+    if (agent.provider === 'claude-code') {
+      api.get('/providers/claude-code/auth').then((data) => setClaudeAuth(data)).catch(() => setClaudeAuth(null));
+    }
     function onChanged() { loadProviders(); }
     window.addEventListener('groove:providers-changed', onChanged);
     return () => window.removeEventListener('groove:providers-changed', onChanged);
@@ -205,6 +215,23 @@ export function AgentConfig({ agent }) {
       setPersonalities(Array.isArray(data) ? data : data.personalities || []);
     }).catch(() => {});
   }, [agent.id, agent.name]);
+
+  useEffect(() => {
+    if (!claudeAuthPolling) return;
+    const start = Date.now();
+    const interval = setInterval(() => {
+      if (Date.now() - start > 300000) { setClaudeAuthPolling(false); clearInterval(interval); return; }
+      api.get('/providers/claude-code/auth').then((data) => {
+        if (data?.authenticated) {
+          setClaudeAuth(data);
+          setClaudeAuthPolling(false);
+          setClaudeAuthLoading(false);
+          clearInterval(interval);
+        }
+      }).catch(() => {});
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [claudeAuthPolling]);
 
   const currentProvider = providers.find((p) => p.id === agent.provider);
 
@@ -273,6 +300,16 @@ export function AgentConfig({ agent }) {
       window.dispatchEvent(new CustomEvent('groove:providers-changed'));
     } catch (err) {
       addToast('error', 'Failed to set key', err.message);
+    }
+  }
+
+  async function handleClaudeLogin() {
+    setClaudeAuthLoading(true);
+    try {
+      await api.post('/providers/claude-code/login');
+      setClaudeAuthPolling(true);
+    } catch {
+      setClaudeAuthLoading(false);
     }
   }
 
@@ -430,6 +467,33 @@ export function AgentConfig({ agent }) {
         )}
       </ConfigSection>
 
+      {/* ── Claude Code Auth ──────────────────────────────── */}
+      {agent.provider === 'claude-code' && claudeAuth && !claudeAuth.authenticated && (
+        <div className="rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={13} className="text-warning flex-shrink-0" />
+            <span className="text-xs font-semibold text-text-0 font-sans">Claude Code is not signed in</span>
+          </div>
+          {claudeAuthLoading ? (
+            <div className="flex items-center gap-2 text-2xs text-text-2 font-sans">
+              <Loader2 size={12} className="animate-spin text-accent" />
+              Waiting for browser authentication...
+            </div>
+          ) : (
+            <Button variant="primary" size="sm" onClick={handleClaudeLogin} className="text-2xs gap-1.5">
+              <ExternalLink size={10} />
+              Sign in to Claude
+            </Button>
+          )}
+        </div>
+      )}
+      {agent.provider === 'claude-code' && claudeAuth?.authenticated && (
+        <div className="flex items-center gap-2 text-2xs text-text-2 font-sans">
+          <div className="w-2 h-2 rounded-full bg-success flex-shrink-0" />
+          Signed in as {claudeAuth.email || 'Claude user'} ({claudeAuth.subscriptionType || 'subscription'})
+        </div>
+      )}
+
       {/* ── Working Directory ──────────────────────────────── */}
       <ConfigSection label="Working Directory" icon={FolderOpen} description="The root directory this agent operates in.">
         <div className="flex gap-2">
@@ -460,27 +524,6 @@ export function AgentConfig({ agent }) {
           }}
         />
       </ConfigSection>
-
-      {/* ── Integration Approvals ────────────────────────────── */}
-      {agent.integrations?.length > 0 && (
-        <ConfigSection label="Integration Approvals" icon={Plug} description="Manual = you approve dangerous actions. Auto = agent acts freely.">
-          <SegmentedControl
-            options={[
-              { value: 'manual', label: 'Manual' },
-              { value: 'auto', label: 'Auto' },
-            ]}
-            value={agent.integrationApproval || 'manual'}
-            onChange={async (val) => {
-              try {
-                await api.patch(`/agents/${agent.id}`, { integrationApproval: val });
-                addToast('success', `Integration approvals → ${val === 'auto' ? 'Auto' : 'Manual'}`);
-              } catch (err) {
-                addToast('error', 'Update failed', err.message);
-              }
-            }}
-          />
-        </ConfigSection>
-      )}
 
       {/* ── Model Routing ────────────────────────────────────── */}
       <ConfigSection label="Model Routing" icon={Activity} description="How Groove selects models for this agent's tasks.">
@@ -635,6 +678,89 @@ export function AgentConfig({ agent }) {
             <span className="text-2xs text-text-4 font-sans">No skills installed — browse the Marketplace</span>
           )}
         </div>
+      </ConfigSection>
+
+      {/* ── Integrations ─────────────────────────────────── */}
+      <ConfigSection label="Integrations" icon={Plug} description="Attach MCP integrations for external services.">
+        <div className="flex flex-wrap gap-1.5">
+          {(agent.integrations || []).map((integrationId) => {
+            const logoUrl = INTEGRATION_LOGOS[integrationId];
+            const integration = installedIntegrations.find((i) => i.id === integrationId);
+            return (
+              <Badge key={integrationId} variant="accent" className="font-mono text-xs gap-1.5 px-2.5 py-1">
+                {logoUrl ? (
+                  <img src={logoUrl} alt="" className="w-2.5 h-2.5" />
+                ) : (
+                  <Plug size={9} />
+                )}
+                {integration?.name || integrationId}
+                <button
+                  onClick={async () => {
+                    try {
+                      await api.delete(`/agents/${agent.id}/integrations/${integrationId}`);
+                      addToast('success', `Detached ${integration?.name || integrationId}`);
+                    } catch (err) { addToast('error', 'Detach failed', err.message); }
+                  }}
+                  className="hover:text-danger cursor-pointer"
+                >
+                  <X size={10} />
+                </button>
+              </Badge>
+            );
+          })}
+          {installedIntegrations.filter((i) => i.configured !== false && !(agent.integrations || []).includes(i.id)).length > 0 && (
+            <div className="relative group">
+              <button className="w-7 h-7 flex items-center justify-center rounded-md bg-surface-4 border border-border-subtle text-text-3 hover:text-accent cursor-pointer transition-colors">
+                <Plus size={12} />
+              </button>
+              <div className="absolute top-full left-0 mt-1 z-20 hidden group-hover:block bg-surface-2 border border-border-subtle rounded-lg shadow-xl py-1 min-w-[200px]">
+                {installedIntegrations.filter((i) => i.configured !== false && !(agent.integrations || []).includes(i.id)).map((integration) => {
+                  const logoUrl = INTEGRATION_LOGOS[integration.id];
+                  return (
+                    <button
+                      key={integration.id}
+                      onClick={async () => {
+                        try {
+                          await api.post(`/agents/${agent.id}/integrations/${integration.id}`);
+                          addToast('success', `Attached ${integration.name || integration.id}`);
+                        } catch (err) { addToast('error', 'Attach failed', err.message); }
+                      }}
+                      className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs font-sans text-text-1 hover:bg-surface-4 cursor-pointer transition-colors"
+                    >
+                      {logoUrl ? (
+                        <img src={logoUrl} alt="" className="w-3.5 h-3.5 flex-shrink-0" />
+                      ) : (
+                        <Plug size={12} className="text-text-3 flex-shrink-0" />
+                      )}
+                      {integration.name || integration.id}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {(agent.integrations || []).length === 0 && installedIntegrations.length === 0 && (
+            <span className="text-2xs text-text-4 font-sans">No integrations installed — browse the Marketplace</span>
+          )}
+        </div>
+        {(agent.integrations || []).length > 0 && (
+          <div className="mt-3">
+            <label className="text-2xs font-medium text-text-3 font-sans block mb-1.5">Integration Approvals</label>
+            <SegmentedControl
+              options={[
+                { value: 'auto', label: 'Auto' },
+                { value: 'manual', label: 'Manual' },
+              ]}
+              value={agent.integrationApproval || 'manual'}
+              onChange={async (val) => {
+                try {
+                  await api.patch(`/agents/${agent.id}`, { integrationApproval: val });
+                  addToast('success', `Integration approvals → ${val === 'auto' ? 'Auto' : 'Manual'}`);
+                } catch (err) { addToast('error', 'Update failed', err.message); }
+              }}
+            />
+          </div>
+        )}
       </ConfigSection>
 
       {/* ── Repos ─────────────────────────────────────────── */}

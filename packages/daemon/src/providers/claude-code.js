@@ -1,7 +1,7 @@
 // GROOVE — Claude Code Provider
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { execSync } from 'child_process';
+import { execSync, spawn as cpSpawn } from 'child_process';
 import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { homedir } from 'os';
@@ -222,5 +222,30 @@ export class ClaudeCodeProvider extends Provider {
     if (totalCacheCreation > 0) merged.cacheCreationTokens = totalCacheCreation;
 
     return merged;
+  }
+
+  static getAuthStatus() {
+    try {
+      const out = execSync('claude auth status --json', { encoding: 'utf8', timeout: 10_000, stdio: ['pipe', 'pipe', 'pipe'] });
+      const data = JSON.parse(out);
+      return {
+        authenticated: true,
+        authMethod: data.authMethod || data.auth_method || 'unknown',
+        email: data.email || null,
+        subscriptionType: data.subscriptionType || data.subscription_type || null,
+        orgName: data.orgName || data.org_name || null,
+      };
+    } catch (err) {
+      return { authenticated: false, error: err.message };
+    }
+  }
+
+  static triggerLogin() {
+    const child = cpSpawn('claude', ['auth', 'login', '--claudeai'], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+    return { pid: child.pid };
   }
 }

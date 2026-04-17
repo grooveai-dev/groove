@@ -12,25 +12,7 @@ import {
   Key, Shield, Trash2, ChevronRight, X, Copy, RefreshCw,
 } from 'lucide-react';
 
-// Reuse integration logos from marketplace-card
-const INTEGRATION_LOGOS = {
-  slack:       'https://cdn.simpleicons.org/slack/E01E5A',
-  github:      'https://cdn.simpleicons.org/github/white',
-  stripe:      'https://cdn.simpleicons.org/stripe/635BFF',
-  gmail:       'https://cdn.simpleicons.org/gmail/EA4335',
-  'google-calendar': 'https://cdn.simpleicons.org/googlecalendar/4285F4',
-  'google-drive':    'https://cdn.simpleicons.org/googledrive/4285F4',
-  'google-docs':     'https://cdn.simpleicons.org/googledocs/4285F4',
-  'google-sheets':   'https://cdn.simpleicons.org/googlesheets/34A853',
-  'google-slides':   'https://cdn.simpleicons.org/googleslides/FBBC04',
-  'google-maps':     'https://cdn.simpleicons.org/googlemaps/4285F4',
-  postgres:    'https://cdn.simpleicons.org/postgresql/4169E1',
-  notion:      'https://cdn.simpleicons.org/notion/white',
-  discord:     'https://cdn.simpleicons.org/discord/5865F2',
-  linear:      'https://cdn.simpleicons.org/linear/5E6AD2',
-  'brave-search': 'https://cdn.simpleicons.org/brave/FB542B',
-  'home-assistant': 'https://cdn.simpleicons.org/homeassistant/18BCF2',
-};
+import { INTEGRATION_LOGOS } from '../../lib/integration-logos';
 
 function IntegrationIcon({ item, size = 48 }) {
   const logoUrl = INTEGRATION_LOGOS[item.id];
@@ -333,6 +315,14 @@ function GoogleOAuthSetup({ integrationId, onConfigured }) {
           <strong className="text-text-1">One-time setup</strong> — these same credentials work for
           Gmail, Calendar, Drive, Docs, Sheets, and Slides. You only need to do this once.
           For each integration, just enable the matching API in your Google Cloud project.
+        </p>
+      </div>
+
+      <div className="bg-warning/8 border border-warning/15 rounded-md px-4 py-2.5">
+        <p className="text-2xs text-text-2 font-sans leading-relaxed">
+          <strong className="text-text-1">Google &quot;unverified app&quot; warning</strong> — when signing in, Google may show a warning
+          that the app isn&apos;t verified. This is normal for personal OAuth apps. Click <strong>Advanced</strong>, then <strong>Go
+          to [your app name] (unsafe)</strong> to continue. Your credentials stay local and are never sent to Groove servers.
         </p>
       </div>
 

@@ -12,45 +12,11 @@ import {
   Shield, Database, Megaphone, Calculator, UserCheck,
   Headphones, BarChart3, Rocket, ChevronDown, Pen, Presentation,
   Sparkles, X, Search, AlertTriangle, Plug, MessageCircle, GitBranch, Globe,
+  Check, ExternalLink, Loader2,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Dialog, DialogContent } from '../ui/dialog';
-
-const INTEGRATION_LOGOS = {
-  'google-workspace': 'https://cdn.simpleicons.org/google/white',
-  github:      'https://cdn.simpleicons.org/github/white',
-  stripe:      'https://cdn.simpleicons.org/stripe/635BFF',
-  gmail:       'https://cdn.simpleicons.org/gmail/EA4335',
-  'google-calendar': 'https://cdn.simpleicons.org/googlecalendar/4285F4',
-  'google-drive':    'https://cdn.simpleicons.org/googledrive/4285F4',
-  'google-docs':     'https://cdn.simpleicons.org/googledocs/4285F4',
-  'google-sheets':   'https://cdn.simpleicons.org/googlesheets/34A853',
-  'google-slides':   'https://cdn.simpleicons.org/googleslides/FBBC04',
-  'google-maps':     'https://cdn.simpleicons.org/googlemaps/4285F4',
-  postgres:    'https://cdn.simpleicons.org/postgresql/4169E1',
-  notion:      'https://cdn.simpleicons.org/notion/white',
-  linear:      'https://cdn.simpleicons.org/linear/5E6AD2',
-  'brave-search': 'https://cdn.simpleicons.org/brave/FB542B',
-  'home-assistant': 'https://cdn.simpleicons.org/homeassistant/18BCF2',
-  sentry:      'https://cdn.simpleicons.org/sentry/362D59',
-  elevenlabs:  'https://cdn.simpleicons.org/elevenlabs/white',
-  hubspot:     'https://cdn.simpleicons.org/hubspot/FF7A59',
-  jira:        'https://cdn.simpleicons.org/jira/0052CC',
-  sendgrid:    'https://cdn.simpleicons.org/sendgrid/1A82E2',
-  resend:      'https://cdn.simpleicons.org/resend/white',
-  replicate:   'https://cdn.simpleicons.org/replicate/white',
-  vercel:      'https://cdn.simpleicons.org/vercel/white',
-  supabase:    'https://cdn.simpleicons.org/supabase/3FCF8E',
-  mixpanel:    'https://cdn.simpleicons.org/mixpanel/7856FF',
-  datadog:     'https://cdn.simpleicons.org/datadog/632CA6',
-  airtable:    'https://cdn.simpleicons.org/airtable/18BFFF',
-  zendesk:     'https://cdn.simpleicons.org/zendesk/03363D',
-  intercom:    'https://cdn.simpleicons.org/intercom/6AFDEF',
-  twilio:      'https://cdn.simpleicons.org/twilio/F22F46',
-  telnyx:      'https://cdn.simpleicons.org/telnyx/00C08B',
-  aws:         'https://cdn.simpleicons.org/amazonaws/FF9900',
-  plaid:       'https://cdn.simpleicons.org/plaid/white',
-};
+import { INTEGRATION_LOGOS } from '../../lib/integration-logos';
 
 const ROLE_PRESETS = [
   { id: 'chat',      label: 'Chat',       desc: 'Companion, assistant, conversation', icon: MessageCircle, tier: 'Medium' },
@@ -114,14 +80,23 @@ export function SpawnWizard() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [spawning, setSpawning] = useState(false);
   const [selectedPeerId, setSelectedPeerId] = useState('');
+  const [recommendations, setRecommendations] = useState([]);
+  const [preflightDialog, setPreflightDialog] = useState(null);
+  const [claudeAuth, setClaudeAuth] = useState(null);
+  const [claudeAuthLoading, setClaudeAuthLoading] = useState(false);
+  const [claudeAuthPolling, setClaudeAuthPolling] = useState(false);
   const federation = useGrooveStore((s) => s.federation);
+
+  const selectedRole = role || customRole;
+  const selectedProvider = providers.find((p) => p.id === provider);
+  const availableModels = selectedProvider?.models || [];
+  const installedProviders = providers.filter((p) => p.installed);
 
   useEffect(() => {
     if (open) {
       fetchProviders().then((data) => {
         const list = Array.isArray(data) ? data : data.providers || [];
         setProviders(list);
-        // Auto-select first installed provider
         const installed = list.filter((p) => p.installed);
         if (installed.length > 0 && !provider) {
           const priority = ['claude-code', 'gemini', 'codex', 'ollama'];
@@ -149,16 +124,53 @@ export function SpawnWizard() {
       setSelectedPersonality('');
       setSelectedPeerId('');
       setShowAdvanced(false);
+      setRecommendations([]);
+      setPreflightDialog(null);
+      setClaudeAuth(null);
+      setClaudeAuthLoading(false);
+      setClaudeAuthPolling(false);
     }
   }, [open, fetchProviders]);
 
-  const selectedRole = role || customRole;
-  const selectedProvider = providers.find((p) => p.id === provider);
-  const availableModels = selectedProvider?.models || [];
-  const installedProviders = providers.filter((p) => p.installed);
+  useEffect(() => {
+    if (!selectedRole || !open) { setRecommendations([]); return; }
+    api.get(`/roles/integrations?role=${encodeURIComponent(selectedRole)}`).then((data) => {
+      const recs = Array.isArray(data) ? data : data?.recommendations || [];
+      setRecommendations(recs);
+      const autoSelect = recs
+        .filter((r) => r.installed && r.configured && r.authenticated)
+        .map((r) => r.id);
+      if (autoSelect.length > 0) {
+        setSelectedIntegrations((prev) => [...new Set([...prev, ...autoSelect])]);
+      }
+    }).catch(() => setRecommendations([]));
+  }, [selectedRole, open]);
 
-  async function handleSpawn() {
-    if (!selectedRole) return;
+  useEffect(() => {
+    if (!open || provider !== 'claude-code') { setClaudeAuth(null); return; }
+    api.get('/providers/claude-code/auth').then((data) => {
+      setClaudeAuth(data);
+    }).catch(() => setClaudeAuth(null));
+  }, [open, provider]);
+
+  useEffect(() => {
+    if (!claudeAuthPolling) return;
+    const start = Date.now();
+    const interval = setInterval(() => {
+      if (Date.now() - start > 300000) { setClaudeAuthPolling(false); clearInterval(interval); return; }
+      api.get('/providers/claude-code/auth').then((data) => {
+        if (data?.authenticated) {
+          setClaudeAuth(data);
+          setClaudeAuthPolling(false);
+          setClaudeAuthLoading(false);
+          clearInterval(interval);
+        }
+      }).catch(() => {});
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [claudeAuthPolling]);
+
+  async function runSpawn() {
     setSpawning(true);
     try {
       const config = {
@@ -179,6 +191,33 @@ export function SpawnWizard() {
     } catch { /* toast handles */ }
     setSpawning(false);
   }
+
+  async function handleSpawn() {
+    if (!selectedRole) return;
+    try {
+      const preflight = await api.post('/agents/preflight', {
+        role: selectedRole,
+        integrations: selectedIntegrations,
+      });
+      if (preflight?.issues?.length > 0) {
+        setPreflightDialog(preflight.issues);
+        return;
+      }
+    } catch { /* preflight endpoint may not exist yet — proceed */ }
+    runSpawn();
+  }
+
+  async function handleClaudeLogin() {
+    setClaudeAuthLoading(true);
+    try {
+      await api.post('/providers/claude-code/login');
+      setClaudeAuthPolling(true);
+    } catch {
+      setClaudeAuthLoading(false);
+    }
+  }
+
+  const claudeNotAuthed = provider === 'claude-code' && claudeAuth && !claudeAuth.authenticated;
 
   return (
     <Sheet open={open} onOpenChange={(o) => { if (!o) closeDetail(); }}>
@@ -236,6 +275,77 @@ export function SpawnWizard() {
                 />
               </div>
             </div>
+
+            {/* Recommended Integrations */}
+            {selectedRole && recommendations.length > 0 && (
+              <div>
+                <label className="text-xs font-semibold text-text-2 font-sans uppercase tracking-wider block mb-2">
+                  Recommended Integrations
+                </label>
+                <div className="space-y-1.5">
+                  {recommendations.map((rec) => {
+                    const logoUrl = INTEGRATION_LOGOS[rec.id];
+                    if (rec.installed && rec.configured && rec.authenticated) {
+                      return (
+                        <div key={rec.id} className="flex items-center gap-2.5 px-3 py-2 rounded-md bg-success/5 border border-success/20">
+                          <Check size={13} className="text-success flex-shrink-0" />
+                          {logoUrl ? (
+                            <img src={logoUrl} alt="" className="w-3.5 h-3.5 flex-shrink-0" />
+                          ) : (
+                            <Plug size={12} className="text-text-3 flex-shrink-0" />
+                          )}
+                          <span className="text-xs font-semibold text-text-0 font-sans">{rec.name || rec.id}</span>
+                          <Badge variant="success" className="text-2xs ml-auto">Ready</Badge>
+                        </div>
+                      );
+                    }
+                    if (rec.installed) {
+                      return (
+                        <div key={rec.id} className="flex items-center gap-2.5 px-3 py-2 rounded-md bg-warning/5 border border-warning/20">
+                          <AlertTriangle size={13} className="text-warning flex-shrink-0" />
+                          {logoUrl ? (
+                            <img src={logoUrl} alt="" className="w-3.5 h-3.5 flex-shrink-0" />
+                          ) : (
+                            <Plug size={12} className="text-text-3 flex-shrink-0" />
+                          )}
+                          <span className="text-xs font-semibold text-text-0 font-sans">{rec.name || rec.id}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="ml-auto text-2xs text-warning h-6 px-2"
+                            onClick={() => {
+                              closeDetail();
+                              useGrooveStore.getState().setActiveView('marketplace');
+                            }}
+                          >
+                            Configure
+                          </Button>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={rec.id} className="flex items-center gap-2.5 px-3 py-2 rounded-md bg-surface-1 border border-border-subtle">
+                        {logoUrl ? (
+                          <img src={logoUrl} alt="" className="w-3.5 h-3.5 flex-shrink-0 opacity-40" />
+                        ) : (
+                          <Plug size={12} className="text-text-4 flex-shrink-0" />
+                        )}
+                        <span className="text-xs text-text-3 font-sans">{rec.name || rec.id}</span>
+                        <button
+                          onClick={() => {
+                            closeDetail();
+                            useGrooveStore.getState().setActiveView('marketplace');
+                          }}
+                          className="ml-auto text-2xs text-accent hover:underline font-sans cursor-pointer"
+                        >
+                          Install in Marketplace
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Ambassador server picker */}
             {selectedRole === 'ambassador' && (() => {
@@ -337,6 +447,33 @@ export function SpawnWizard() {
                     ) : (
                       <Badge variant="warning">No API key — set with: groove set-key {provider} YOUR_KEY</Badge>
                     )}
+                  </div>
+                )}
+
+                {/* Claude Code Auth */}
+                {claudeNotAuthed && (
+                  <div className="rounded-lg border border-warning/30 bg-warning/5 px-4 py-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertTriangle size={13} className="text-warning flex-shrink-0" />
+                      <span className="text-xs font-semibold text-text-0 font-sans">Claude Code is not signed in</span>
+                    </div>
+                    {claudeAuthLoading ? (
+                      <div className="flex items-center gap-2 text-2xs text-text-2 font-sans">
+                        <Loader2 size={12} className="animate-spin text-accent" />
+                        Waiting for browser authentication...
+                      </div>
+                    ) : (
+                      <Button variant="primary" size="sm" onClick={handleClaudeLogin} className="text-2xs gap-1.5">
+                        <ExternalLink size={10} />
+                        Sign in to Claude
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {provider === 'claude-code' && claudeAuth?.authenticated && (
+                  <div className="flex items-center gap-2 text-2xs text-text-2 font-sans">
+                    <div className="w-2 h-2 rounded-full bg-success flex-shrink-0" />
+                    Signed in as {claudeAuth.email || 'Claude user'} ({claudeAuth.subscriptionType || 'subscription'})
                   </div>
                 )}
 
@@ -742,7 +879,7 @@ export function SpawnWizard() {
               variant="primary"
               size="lg"
               onClick={handleSpawn}
-              disabled={!selectedRole || spawning || installedProviders.length === 0}
+              disabled={!selectedRole || spawning || installedProviders.length === 0 || claudeNotAuthed}
               className="w-full"
             >
               {spawning ? 'Spawning...' : 'Spawn Agent'}
@@ -750,6 +887,31 @@ export function SpawnWizard() {
           </div>
         </div>
       </SheetContent>
+
+      {/* Preflight confirmation dialog */}
+      <Dialog open={!!preflightDialog} onOpenChange={(o) => { if (!o) setPreflightDialog(null); }}>
+        <DialogContent title="Integration Warning" className="max-w-sm">
+          <div className="space-y-4 p-4">
+            <div className="space-y-2">
+              {(preflightDialog || []).map((issue, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs text-text-1 font-sans">
+                  <AlertTriangle size={13} className="text-warning flex-shrink-0 mt-0.5" />
+                  <span>{issue.name ? `${issue.name}: ${issue.problem === 'not_installed' ? 'not installed' : issue.problem === 'not_configured' ? 'not configured' : 'not authenticated'}` : issue.message || String(issue)}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-2xs text-text-3 font-sans">Continue anyway?</p>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="md" onClick={() => setPreflightDialog(null)} className="flex-1">
+                Cancel
+              </Button>
+              <Button variant="warning" size="md" onClick={() => { setPreflightDialog(null); runSpawn(); }} className="flex-1">
+                Spawn Anyway
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 }

@@ -1483,9 +1483,28 @@ ipcMain.handle('home-pick-key', async () => {
   return result.filePaths[0];
 });
 
-ipcMain.handle('home-get-cached-sub', () => {
+ipcMain.handle('home-get-cached-sub', async () => {
   const token = loadStoredToken();
-  const sub = getCachedSubscription();
+  let sub = getCachedSubscription();
+  if (token && (!sub || !sub.validatedAt || Date.now() - sub.validatedAt > 3600_000)) {
+    try {
+      const resp = await fetch('https://docs.groovedev.ai/api/v1/subscription/status', {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        sub = {
+          plan: data.plan || 'community',
+          active: data.status === 'active' || data.status === 'trialing',
+          features: data.features || [],
+          seats: data.seats || 1,
+          validatedAt: Date.now(),
+        };
+        cacheSubscription(sub);
+      }
+    } catch {}
+  }
   return {
     authenticated: !!token,
     plan: sub?.plan || 'community',

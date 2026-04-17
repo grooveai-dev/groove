@@ -2206,10 +2206,19 @@ Keep responses concise. Help them think, don't lecture them about the system the
       const entries = [];
 
       // Dirs first (sorted), then files (sorted)
-      const dirs = raw.filter((e) => e.isDirectory() && !IGNORED_NAMES.has(e.name) && !e.name.startsWith('.'))
+      const isDir = (e) => {
+        if (e.isDirectory()) return true;
+        if (e.isSymbolicLink()) { try { return statSync(resolve(fullPath, e.name)).isDirectory(); } catch { return false; } }
+        return false;
+      };
+      const dirs = raw.filter((e) => isDir(e) && !IGNORED_NAMES.has(e.name) && !e.name.startsWith('.'))
         .sort((a, b) => a.name.localeCompare(b.name));
-      const files = raw.filter((e) => e.isFile() && !e.name.startsWith('.'))
-        .sort((a, b) => a.name.localeCompare(b.name));
+      const files = raw.filter((e) => {
+        if (e.name.startsWith('.')) return false;
+        if (e.isFile()) return true;
+        if (e.isSymbolicLink()) { try { return statSync(resolve(fullPath, e.name)).isFile(); } catch { return false; } }
+        return false;
+      }).sort((a, b) => a.name.localeCompare(b.name));
 
       for (const d of dirs) {
         const childPath = relPath ? `${relPath}/${d.name}` : d.name;

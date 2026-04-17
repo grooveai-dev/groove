@@ -999,7 +999,7 @@ export default function SettingsView() {
   const connectedCount = providers.filter((p) => {
     if (p.authType === 'local') return p.installed;
     if (p.authType === 'subscription') return p.installed;
-    return p.hasKey;
+    return p.installed && p.hasKey;
   }).length;
 
   // Rotation threshold display: 0 = auto, otherwise show as percentage
@@ -1074,7 +1074,7 @@ export default function SettingsView() {
                     onChange={(e) => updateConfig('defaultProvider', e.target.value)}
                     className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
                   >
-                    {providers.filter((p) => p.installed || p.hasKey).map((p) => (
+                    {providers.filter((p) => p.installed && (p.authType === 'local' || p.authType === 'subscription' || p.hasKey)).map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </select>

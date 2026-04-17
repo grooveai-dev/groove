@@ -90,14 +90,14 @@ export function SpawnWizard() {
   const selectedRole = role || customRole;
   const selectedProvider = providers.find((p) => p.id === provider);
   const availableModels = selectedProvider?.models || [];
-  const installedProviders = providers.filter((p) => p.installed);
+  const installedProviders = providers.filter((p) => p.authType === 'api-key' ? (p.installed && p.hasKey) : p.installed);
 
   useEffect(() => {
     if (open) {
       fetchProviders().then((data) => {
         const list = Array.isArray(data) ? data : data.providers || [];
         setProviders(list);
-        const installed = list.filter((p) => p.installed);
+        const installed = list.filter((p) => p.authType === 'api-key' ? (p.installed && p.hasKey) : p.installed);
         if (installed.length > 0 && !provider) {
           const priority = ['claude-code', 'gemini', 'codex', 'ollama'];
           const best = priority.find((pid) => installed.some((p) => p.id === pid)) || installed[0].id;
@@ -408,8 +408,8 @@ export function SpawnWizard() {
                       >
                         <option value="">Auto</option>
                         {providers.map((p) => (
-                          <option key={p.id} value={p.id} disabled={!p.installed}>
-                            {p.name}{!p.installed ? ' (not installed)' : ''}
+                          <option key={p.id} value={p.id} disabled={p.authType === 'api-key' ? !(p.installed && p.hasKey) : !p.installed}>
+                            {p.name}{!p.installed ? ' (Not installed)' : (p.authType === 'api-key' && !p.hasKey) ? ' (No API key)' : ''}
                           </option>
                         ))}
                       </select>

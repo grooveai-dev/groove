@@ -8,14 +8,15 @@ import { TerminalPanel } from '../layout/terminal-panel';
 
 const THEME = {
   background: '#1a1e25',
-  foreground: '#bcc2cd',
+  foreground: '#c8ccd4',
   cursor: '#33afbc',
   cursorAccent: '#1a1e25',
-  selectionBackground: 'rgba(51, 175, 188, 0.25)',
+  selectionBackground: 'rgba(51, 175, 188, 0.3)',
+  selectionForeground: '#ffffff',
   black: '#1a1e25', red: '#e06c75', green: '#4ae168', yellow: '#e5c07b',
-  blue: '#61afef', magenta: '#c678dd', cyan: '#33afbc', white: '#bcc2cd',
-  brightBlack: '#505862', brightRed: '#e06c75', brightGreen: '#4ae168', brightYellow: '#e5c07b',
-  brightBlue: '#61afef', brightMagenta: '#c678dd', brightCyan: '#33afbc', brightWhite: '#e6e6e6',
+  blue: '#61afef', magenta: '#c678dd', cyan: '#33afbc', white: '#abb2bf',
+  brightBlack: '#5c6370', brightRed: '#f07178', brightGreen: '#4ae168', brightYellow: '#e5c07b',
+  brightBlue: '#61afef', brightMagenta: '#c678dd', brightCyan: '#56b6c2', brightWhite: '#ffffff',
 };
 
 let tabCounter = 0;
@@ -35,12 +36,19 @@ function TerminalInstance({ tabId, visible }) {
     const term = new XTerm({
       theme: THEME,
       fontFamily: "'JetBrains Mono Variable', 'SF Mono', monospace",
-      fontSize: 13,
-      lineHeight: 1.4,
+      fontSize: 12,
+      lineHeight: 1.1,
+      letterSpacing: 0,
       cursorBlink: true,
       cursorStyle: 'bar',
-      scrollback: 5000,
+      cursorWidth: 1,
+      scrollback: 10000,
       allowProposedApi: true,
+      minimumContrastRatio: 1,
+      drawBoldTextInBrightColors: true,
+      fontWeight: '400',
+      fontWeightBold: '600',
+      overviewRulerWidth: 0,
     });
 
     const fitAddon = new FitAddon();
@@ -49,10 +57,6 @@ function TerminalInstance({ tabId, visible }) {
     term.open(containerRef.current);
     termRef.current = term;
     fitRef.current = fitAddon;
-
-    requestAnimationFrame(() => {
-      try { fitAddon.fit(); } catch {}
-    });
 
     let spawnAttempts = 0;
     function trySpawn() {
@@ -97,7 +101,11 @@ function TerminalInstance({ tabId, visible }) {
       });
     }
 
-    trySpawn();
+    // Fit first, then spawn — ensures PTY gets correct column count
+    requestAnimationFrame(() => {
+      try { fitAddon.fit(); } catch {}
+      trySpawn();
+    });
 
     const observer = new ResizeObserver(() => {
       requestAnimationFrame(() => { try { fitAddon.fit(); } catch {} });

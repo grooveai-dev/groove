@@ -1068,7 +1068,6 @@ export const useGrooveStore = create((set, get) => ({
     const result = await api.post(`/tunnels/${encodeURIComponent(id)}/connect`);
     set({ activeTunnelId: id });
     get().fetchTunnels();
-    if (result.url) window.open(result.url, '_blank');
     return result;
   },
 

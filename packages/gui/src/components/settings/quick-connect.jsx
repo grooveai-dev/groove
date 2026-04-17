@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -17,6 +17,7 @@ export function QuickConnect() {
   const addToast = useGrooveStore((s) => s.addToast);
   const [connectingId, setConnectingId] = useState(null);
   const [showWizard, setShowWizard] = useState(false);
+  const wizardTunnelId = useRef(null);
 
   if (!open) return null;
 
@@ -25,7 +26,9 @@ export function QuickConnect() {
     try {
       await useGrooveStore.getState().connectTunnel(id);
       toggle();
-    } catch {}
+    } catch (err) {
+      addToast('error', 'Connection failed', err?.message || 'Unknown error');
+    }
     setConnectingId(null);
   }
 
@@ -81,24 +84,28 @@ export function QuickConnect() {
             <SSHWizard
               server={null}
               onSave={async (data) => {
-                if (data.id) {
-                  await useGrooveStore.getState().updateTunnel(data.id, data);
+                const existingId = data.id || wizardTunnelId.current;
+                if (existingId) {
+                  await useGrooveStore.getState().updateTunnel(existingId, data);
+                  addToast('success', 'Server updated');
                 } else {
-                  await useGrooveStore.getState().saveTunnel(data);
+                  const result = await useGrooveStore.getState().saveTunnel(data);
+                  if (result?.id) wizardTunnelId.current = result.id;
+                  addToast('success', 'Server added');
                 }
-                addToast('success', data.id ? 'Server updated' : 'Server added');
               }}
               onTest={() => {
-                const tunnels = useGrooveStore.getState().savedTunnels;
-                const last = tunnels[tunnels.length - 1];
-                if (last?.id) return useGrooveStore.getState().testTunnel(last.id);
+                const id = wizardTunnelId.current;
+                if (id) return useGrooveStore.getState().testTunnel(id);
               }}
               onConnect={() => {
-                const tunnels = useGrooveStore.getState().savedTunnels;
-                const last = tunnels[tunnels.length - 1];
-                if (last?.id) return useGrooveStore.getState().connectTunnel(last.id);
+                const id = wizardTunnelId.current;
+                if (id) return useGrooveStore.getState().connectTunnel(id);
               }}
-              onCancel={() => setShowWizard(false)}
+              onCancel={() => {
+                wizardTunnelId.current = null;
+                setShowWizard(false);
+              }}
             />
           ) : (
             <>
@@ -112,7 +119,7 @@ export function QuickConnect() {
                     <Button
                       variant="primary"
                       size="sm"
-                      onClick={() => setShowWizard(true)}
+                      onClick={() => { wizardTunnelId.current = null; setShowWizard(true); }}
                       className="h-8 text-xs gap-1.5 mt-3"
                     >
                       <Plus size={12} /> Add Connection
@@ -157,7 +164,7 @@ export function QuickConnect() {
               {/* Footer with Add button */}
               <div className="px-4 py-2.5 border-t border-border-subtle">
                 <button
-                  onClick={() => setShowWizard(true)}
+                  onClick={() => { wizardTunnelId.current = null; setShowWizard(true); }}
                   className="flex items-center gap-1.5 text-2xs text-accent hover:text-accent/80 font-sans font-medium cursor-pointer transition-colors"
                 >
                   <Plus size={10} /> Add new connection

@@ -3330,7 +3330,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   app.post('/api/tunnels/:id/connect', proOnly, async (req, res) => {
     try {
-      const result = await daemon.tunnelManager.connect(req.params.id);
+      const opts = {};
+      if (req.body?.skipTest && req.body?.testResult) {
+        opts.skipTest = true;
+        opts.testResult = req.body.testResult;
+      }
+      const result = await daemon.tunnelManager.connect(req.params.id, opts);
       res.json(result);
     } catch (err) {
       const body = { error: err.message };

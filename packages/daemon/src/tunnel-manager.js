@@ -211,7 +211,7 @@ export class TunnelManager {
     }
   }
 
-  async connect(id) {
+  async connect(id, opts = {}) {
     const config = this.saved.get(id);
     if (!config) throw new Error(`Remote ${id} not found`);
 
@@ -220,7 +220,14 @@ export class TunnelManager {
       return { localPort: existing.localPort, pid: existing.pid };
     }
 
-    const testResult = await this.test(id);
+    this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'testing' } });
+
+    let testResult;
+    if (opts.skipTest && opts.testResult) {
+      testResult = opts.testResult;
+    } else {
+      testResult = await this.test(id);
+    }
     if (!testResult.reachable) {
       throw new Error(testResult.error || 'Host unreachable');
     }
@@ -232,6 +239,8 @@ export class TunnelManager {
       this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'starting' } });
       await this.autoStart(id);
     }
+
+    this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'connecting' } });
 
     const localPort = await this._findAvailablePort();
     const target = `${config.user}@${config.host}`;
@@ -257,13 +266,16 @@ export class TunnelManager {
     let stderrBuf = '';
     tunnel.stderr.on('data', (chunk) => { stderrBuf += chunk.toString(); });
 
-    await new Promise((r) => setTimeout(r, 2000));
-
-    if (tunnel.exitCode !== null) {
-      throw new Error(`Tunnel failed to start: ${stderrBuf.trim() || 'unknown error'}`);
+    let tunnelUp = false;
+    for (let elapsed = 0; elapsed < 8000; elapsed += 500) {
+      await new Promise((r) => setTimeout(r, 500));
+      if (tunnel.exitCode !== null) {
+        throw new Error(`Tunnel failed to start: ${stderrBuf.trim() || 'unknown error'}`);
+      }
+      tunnelUp = await this._isPortInUse(localPort);
+      if (tunnelUp) break;
     }
 
-    const tunnelUp = await this._isPortInUse(localPort);
     if (!tunnelUp) {
       try { process.kill(tunnel.pid); } catch { /* ignore */ }
       throw new Error('Tunnel started but port forward not active');

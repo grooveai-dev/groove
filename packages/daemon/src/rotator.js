@@ -309,6 +309,7 @@ export class Rotator extends EventEmitter {
         timestamp: new Date().toISOString(),
       };
 
+      processes._rotatingAgents.add(agentId);
       await processes.kill(agentId);
 
       const routingMode = this.daemon.router.getMode(agentId);

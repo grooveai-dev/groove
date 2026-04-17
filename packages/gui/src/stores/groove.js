@@ -107,6 +107,11 @@ export const useGrooveStore = create((set, get) => ({
   // ── Toasts ────────────────────────────────────────────────
   toasts: [],
 
+  // ── Project Directory ───────────────────────────────────────
+  projectDir: null,
+  recentProjects: [],
+  showProjectPicker: false,
+
   // ── Tunnels ────────────────────────────────────────────────
   savedTunnels: [],
   activeTunnelId: null,
@@ -140,9 +145,11 @@ export const useGrooveStore = create((set, get) => ({
         const updates = {};
         if (s.host && s.host !== '127.0.0.1') updates.daemonHost = s.host;
         const browserPort = window.location.port || '80';
-        if (String(s.port) !== browserPort) updates.tunneled = true;
+        const isTunneled = String(s.port) !== browserPort;
+        if (isTunneled) updates.tunneled = true;
         if (s.version) updates.version = s.version;
         if (Object.keys(updates).length > 0) set(updates);
+        if (isTunneled) get().fetchProjectDir();
       }).catch(() => {});
       get().fetchTeams();
       get().fetchApprovals();
@@ -500,6 +507,10 @@ export const useGrooveStore = create((set, get) => ({
               pouchLog: [...s.federation.pouchLog, msg.data].slice(-200),
             },
           }));
+          break;
+
+        case 'project-dir:changed':
+          set({ projectDir: msg.data?.projectDir, showProjectPicker: false });
           break;
 
         case 'tunnel.connected':
@@ -1032,6 +1043,33 @@ export const useGrooveStore = create((set, get) => ({
   async hardNukeRepo(importId, deleteFiles = true) {
     await api.delete(`/repos/${encodeURIComponent(importId)}/nuke?deleteFiles=${deleteFiles}`);
     get().fetchImportedRepos();
+  },
+
+  // ── Project Directory ────────────────────────────────────
+
+  async fetchProjectDir() {
+    try {
+      const data = await api.get('/project-dir');
+      const isHome = /^\/home\/[^/]+$/.test(data.projectDir) || data.projectDir === '/root';
+      set({
+        projectDir: data.projectDir,
+        recentProjects: data.recentProjects || [],
+        showProjectPicker: isHome || (data.recentProjects || []).length === 0,
+      });
+    } catch {}
+  },
+
+  async setProjectDir(path) {
+    const data = await api.post('/project-dir', { path });
+    set({
+      projectDir: data.projectDir,
+      recentProjects: data.recentProjects || [],
+      showProjectPicker: false,
+    });
+  },
+
+  toggleProjectPicker() {
+    set((s) => ({ showProjectPicker: !s.showProjectPicker }));
   },
 
   // ── Tunnels ──────────────────────────────────────────────

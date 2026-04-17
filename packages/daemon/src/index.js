@@ -337,6 +337,20 @@ export class Daemon {
     }
   }
 
+  setProjectDir(dirPath) {
+    if (!dirPath || typeof dirPath !== 'string') throw new Error('Invalid path');
+    const resolved = resolve(dirPath);
+    if (!existsSync(resolved) || !statSync(resolved).isDirectory()) {
+      throw new Error('Directory does not exist');
+    }
+    this.projectDir = resolved;
+    const recents = (this.config.recentProjects || []).filter((r) => r.path !== resolved);
+    recents.unshift({ path: resolved, name: resolved.split('/').pop(), openedAt: new Date().toISOString() });
+    this.config.recentProjects = recents.slice(0, 10);
+    saveConfig(this.grooveDir, this.config);
+    this.broadcast({ type: 'project-dir:changed', data: { projectDir: resolved } });
+  }
+
   async _pollSubscription() {
     if (!this.authToken) return;
     const API_BASE = 'https://docs.groovedev.ai/api/v1';

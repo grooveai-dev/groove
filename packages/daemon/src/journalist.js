@@ -22,6 +22,7 @@ export class Journalist {
     this.history = []; // recent synthesis summaries
     this._debounceTimer = null;
     this._debounceReason = null;
+    this._forceNextCycle = false;
   }
 
   start(intervalMs = DEFAULT_INTERVAL) {
@@ -61,6 +62,9 @@ export class Journalist {
   }
 
   requestSynthesis(reason = 'unknown') {
+    if (reason === 'completion' || reason === 'rotation_complete') {
+      this._forceNextCycle = true;
+    }
     if (this._debounceTimer) {
       this._debounceReason = reason;
       return;
@@ -84,7 +88,10 @@ export class Journalist {
   }
 
   async cycle() {
-    if (this.synthesizing) return; // Don't overlap
+    if (this.synthesizing) {
+      console.log('  Journalist: skipping cycle (already synthesizing)');
+      return;
+    }
 
     const agents = this.daemon.registry.getAll();
     const running = agents.filter((a) => a.status === 'running');
@@ -99,14 +106,19 @@ export class Journalist {
     const activeAgents = [...running, ...recentlyCompleted];
 
     // Skip if no agents to synthesize
-    if (activeAgents.length === 0) return;
+    if (activeAgents.length === 0) {
+      console.log('  Journalist: skipping cycle (no active agents)');
+      return;
+    }
 
-    // Smart scheduling: skip if no new log output since last cycle
-    if (this.lastCycleAt && !this.hasNewActivity(activeAgents)) {
+    // Smart scheduling: skip if no new log output since last cycle (unless forced by completion/rotation)
+    if (this.lastCycleAt && !this._forceNextCycle && !this.hasNewActivity(activeAgents)) {
+      console.log('  Journalist: skipping cycle (no new activity)');
       return;
     }
 
     this.synthesizing = true;
+    this._forceNextCycle = false;
     this.cycleCount++;
     this.lastCycleAt = Date.now();
 

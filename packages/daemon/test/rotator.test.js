@@ -23,6 +23,7 @@ describe('Rotator', () => {
     mockDaemon = {
       registry: mockRegistry,
       processes: {
+        _rotatingAgents: new Set(),
         async kill(id) { /* mock */ },
         async spawn(config) { return { id: 'new-' + config.role, name: config.name, ...config }; },
       },

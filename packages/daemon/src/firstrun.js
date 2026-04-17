@@ -25,6 +25,7 @@ const DEFAULT_CONFIG = {
     autoRotate: true,
     tokenCeilingPerAgent: 5_000_000,
   },
+  recentProjects: [],
 };
 
 export function isFirstRun(grooveDir) {

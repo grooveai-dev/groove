@@ -296,6 +296,7 @@ export class ProcessManager {
     this.peakContextUsage = new Map(); // agentId -> highest contextUsage seen
     this.pendingMessages = new Map(); // agentId -> { message, timestamp }
     this._streamThrottle = new Map(); // agentId -> { timer, pending }
+    this._rotatingAgents = new Set(); // agentIds currently being rotated (rotator wrote handoff)
 
   }
 
@@ -623,7 +624,11 @@ For normal file edits within your scope, proceed without review.
           const files = this.daemon.journalist?.getAgentFiles(agent) || [];
           if (files.length > 0) this._triggerIdleQC(agent);
           this._processHandoffs(agent);
-          this._writeCompletionHandoff(agent);
+          if (this._rotatingAgents.has(agent.id)) {
+            this._rotatingAgents.delete(agent.id);
+          } else {
+            this._writeCompletionHandoff(agent).catch(err => console.error(`[Groove] Completion handoff failed for ${agent.name}:`, err.message));
+          }
         }
       });
 
@@ -815,7 +820,11 @@ For normal file edits within your scope, proceed without review.
         const files = this.daemon.journalist?.getAgentFiles(agent) || [];
         if (files.length > 0) this._triggerIdleQC(agent);
         this._processHandoffs(agent);
-        this._writeCompletionHandoff(agent);
+        if (this._rotatingAgents.has(agent.id)) {
+          this._rotatingAgents.delete(agent.id);
+        } else {
+          this._writeCompletionHandoff(agent).catch(err => console.error(`[Groove] Completion handoff failed for ${agent.name}:`, err.message));
+        }
       }
 
       // Update Layer 7 specialization profile for this agent's session
@@ -1149,34 +1158,41 @@ For normal file edits within your scope, proceed without review.
     });
   }
 
-  _writeCompletionHandoff(agent) {
+  async _writeCompletionHandoff(agent) {
     if (!this.daemon.memory || !this.daemon.journalist) return;
     try {
       const agentData = this.daemon.registry.get(agent.id);
-      const filteredLogs = this.daemon.journalist.collectFilteredLogs([agent]);
-      const agentLog = filteredLogs[agent.id];
-      const entries = agentLog?.entries || [];
-      const files = this.daemon.journalist.getAgentFiles(agent) || [];
 
-      const toolSummary = entries
-        .filter(e => e.type === 'tool')
-        .map(e => `- ${e.tool}: ${e.input}`)
-        .slice(-15)
-        .join('\n');
+      let brief;
+      try {
+        brief = await this.daemon.journalist.generateHandoffBrief(agent, { reason: 'completed' });
+      } catch {
+        // Fallback to structural brief if AI synthesis fails
+        const filteredLogs = this.daemon.journalist.collectFilteredLogs([agent]);
+        const agentLog = filteredLogs[agent.id];
+        const entries = agentLog?.entries || [];
+        const files = this.daemon.journalist.getAgentFiles(agent) || [];
 
-      const errorSummary = entries
-        .filter(e => e.type === 'error')
-        .map(e => `- ${e.text}`)
-        .slice(-5)
-        .join('\n');
+        const toolSummary = entries
+          .filter(e => e.type === 'tool')
+          .map(e => `- ${e.tool}: ${e.input}`)
+          .slice(-15)
+          .join('\n');
 
-      const brief = [
-        `Agent ${agent.name} (${agent.role}) completed.`,
-        agent.prompt ? `Task: ${agent.prompt.slice(0, 300)}` : '',
-        files.length > 0 ? `\nFiles modified:\n${files.slice(0, 15).map(f => '- ' + f).join('\n')}` : '',
-        toolSummary ? `\nRecent actions:\n${toolSummary}` : '',
-        errorSummary ? `\nErrors encountered:\n${errorSummary}` : '',
-      ].filter(Boolean).join('\n');
+        const errorSummary = entries
+          .filter(e => e.type === 'error')
+          .map(e => `- ${e.text}`)
+          .slice(-5)
+          .join('\n');
+
+        brief = [
+          `Agent ${agent.name} (${agent.role}) completed.`,
+          agent.prompt ? `Task: ${agent.prompt.slice(0, 300)}` : '',
+          files.length > 0 ? `\nFiles modified:\n${files.slice(0, 15).map(f => '- ' + f).join('\n')}` : '',
+          toolSummary ? `\nRecent actions:\n${toolSummary}` : '',
+          errorSummary ? `\nErrors encountered:\n${errorSummary}` : '',
+        ].filter(Boolean).join('\n');
+      }
 
       this.daemon.memory.appendHandoffBrief(agent.role, {
         timestamp: new Date().toISOString(),
@@ -1184,7 +1200,7 @@ For normal file edits within your scope, proceed without review.
         reason: 'completed',
         oldTokens: agentData?.tokensUsed || 0,
         contextUsage: agentData?.contextUsage || 0,
-        brief: brief.slice(0, 4000),
+        brief: (typeof brief === 'string' ? brief : '').slice(0, 4000),
       }, agent.workingDir, agent.teamId);
     } catch { /* best-effort */ }
   }

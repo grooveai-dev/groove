@@ -165,12 +165,13 @@ export class MemoryStore {
       const entries = [];
       const blocks = content.split(/\n(?=## Rotation )/);
       for (const block of blocks) {
-        const headerMatch = block.match(/^## Rotation (\d+) —/);
+        const headerMatch = block.match(/^## Rotation (\d+) — [^(]*\(([\w?-]+) →/);
         if (!headerMatch) continue;
         const body = block.replace(/\n---\s*$/, '').trim();
         entries.push({
           rotationN: parseInt(headerMatch[1], 10),
           body,
+          agentId: headerMatch[2] || null,
         });
       }
       return entries;
@@ -182,6 +183,10 @@ export class MemoryStore {
   appendHandoffBrief(role, entry, workingDir, teamId) {
     if (!role || !entry) return false;
     const chain = this.getHandoffChain(role, workingDir, teamId);
+
+    // Dedup: prevent the same agent from having multiple entries in the chain
+    if (entry.agentId && chain.some(c => c.agentId === entry.agentId)) return false;
+
     const nextN = (chain[0]?.rotationN || 0) + 1;
 
     const block = [

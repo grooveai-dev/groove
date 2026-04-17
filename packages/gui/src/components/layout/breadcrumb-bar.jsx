@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useEffect, useRef } from 'react';
-import { Search, ChevronRight, LogIn, LogOut, User, ExternalLink, BookOpen, ChevronDown } from 'lucide-react';
+import { Search, ChevronRight, LogIn, LogOut, User, ExternalLink, BookOpen, ChevronDown, FolderOpen } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useGrooveStore } from '../../stores/groove';
 import { isElectron, getPlatform } from '../../lib/electron';
@@ -130,10 +130,13 @@ const VIEW_LABELS = {
 export function BreadcrumbBar({
   activeView,
   connected,
+  tunneled,
   daemonHost,
   editorActiveFile,
   onOpenCommandPalette,
 }) {
+  const projectDir = useGrooveStore((s) => s.projectDir);
+  const toggleProjectPicker = useGrooveStore((s) => s.toggleProjectPicker);
   const crumbs = ['Groove', VIEW_LABELS[activeView] || activeView];
   if (activeView === 'editor' && editorActiveFile) {
     crumbs.push(editorActiveFile.split('/').pop());
@@ -180,6 +183,18 @@ export function BreadcrumbBar({
         <span className="text-2xs font-mono font-semibold text-text-3 bg-surface-5 px-1.5 py-0.5 rounded flex-shrink-0">
           {daemonHost}
         </span>
+      )}
+
+      {/* Project dir badge — remote sessions, clickable to change */}
+      {tunneled && projectDir && (
+        <button
+          onClick={toggleProjectPicker}
+          className="flex items-center gap-1 text-2xs font-mono font-medium text-text-2 bg-surface-5 px-1.5 py-0.5 rounded flex-shrink-0 hover:bg-surface-4 hover:text-text-0 transition-colors cursor-pointer"
+          title={projectDir}
+        >
+          <FolderOpen size={11} />
+          {projectDir.split('/').pop() || '/'}
+        </button>
       )}
 
       <div className="flex-1 min-w-4" />

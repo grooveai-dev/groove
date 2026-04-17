@@ -695,6 +695,28 @@ export function createApi(app, daemon) {
     });
   });
 
+  // --- Project Directory ---
+
+  app.get('/api/project-dir', (req, res) => {
+    res.json({
+      projectDir: daemon.projectDir,
+      recentProjects: daemon.config.recentProjects || [],
+    });
+  });
+
+  app.post('/api/project-dir', (req, res) => {
+    const { path: dirPath } = req.body || {};
+    if (!dirPath || typeof dirPath !== 'string') {
+      return res.status(400).json({ error: 'path is required' });
+    }
+    try {
+      daemon.setProjectDir(dirPath);
+      res.json({ projectDir: daemon.projectDir, recentProjects: daemon.config.recentProjects || [] });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // --- Teams (live agent groups) ---
 
   app.get('/api/teams', (req, res) => {

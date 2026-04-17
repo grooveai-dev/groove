@@ -19,7 +19,7 @@ export async function start(options) {
       setupKeys = result.keys || {};
     } catch (err) {
       // If stdin is not interactive (piped), skip wizard
-      if (err.code === 'ERR_USE_AFTER_CLOSE') {
+      if (err.code === 'ERR_USE_AFTER_CLOSE' || !process.stdin.isTTY) {
         console.log(chalk.dim('  Non-interactive mode — skipping setup wizard.'));
       } else {
         throw err;

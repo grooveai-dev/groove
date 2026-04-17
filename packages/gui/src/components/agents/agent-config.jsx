@@ -366,7 +366,7 @@ export function AgentConfig({ agent }) {
         <div className="space-y-1.5">
           {providers.map((p) => {
             const isActive = p.id === agent.provider;
-            const available = p.installed || p.hasKey;
+            const available = p.authType === 'subscription' ? (p.installed || p.authStatus?.authenticated) : p.authType === 'local' ? p.installed : (p.installed && p.hasKey);
             const isExpanded = expandedProvider === p.id;
             const models = p.models || [];
             return (
@@ -381,7 +381,7 @@ export function AgentConfig({ agent }) {
                     {p.name || p.id}
                   </span>
                   {isActive && <Badge variant="accent" className="text-2xs">Active</Badge>}
-                  {!available && <span className="text-2xs text-text-4 font-sans">{p.authType === 'local' ? 'Not installed' : 'No key'}</span>}
+                  {!available && <span className="text-2xs text-text-4 font-sans">{!p.installed ? 'Not installed' : 'No key'}</span>}
                   <ChevronDown size={12} className={cn('text-text-4 transition-transform', isExpanded && 'rotate-180')} />
                 </button>
 

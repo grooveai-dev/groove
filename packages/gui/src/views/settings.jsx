@@ -52,7 +52,7 @@ function ProviderCard({ provider, onKeyChange }) {
   const isSubscription = provider.authType === 'subscription';
   const isReady = isLocal ? provider.installed
     : isSubscription ? (provider.installed || provider.authStatus?.authenticated)
-    : provider.hasKey;
+    : (provider.installed && provider.hasKey);
 
   async function handleSetKey() {
     if (!keyInput.trim()) return;
@@ -149,7 +149,7 @@ function ProviderCard({ provider, onKeyChange }) {
         {isReady ? (
           <Badge variant="success" className="text-2xs gap-1"><Check size={8} /> Ready</Badge>
         ) : (
-          <Badge variant="default" className="text-2xs">{isSubscription ? 'Not installed' : 'No key'}</Badge>
+          <Badge variant="default" className="text-2xs">{!provider.installed ? 'Not installed' : isSubscription ? 'Not authenticated' : 'No key'}</Badge>
         )}
       </div>
 

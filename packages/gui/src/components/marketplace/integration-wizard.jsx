@@ -272,8 +272,6 @@ function GoogleOAuthSetup({ integrationId, onConfigured }) {
     setSaving(false);
   }
 
-  const redirectUri = 'http://localhost:31415/api/integrations/oauth/callback';
-
   const steps = [
     { text: 'Go to the Google Cloud Console and sign in with your Google account',
       link: { url: 'https://console.cloud.google.com', label: 'Open Google Cloud Console' } },
@@ -283,9 +281,8 @@ function GoogleOAuthSetup({ integrationId, onConfigured }) {
     { text: <>Go to <strong>Credentials</strong> and click <strong>Create Credentials</strong> &rarr; <strong>OAuth client ID</strong></>,
       link: { url: 'https://console.cloud.google.com/apis/credentials', label: 'Open Credentials page' } },
     { text: <>If prompted to configure the consent screen, choose <strong>External</strong>, fill in an app name (e.g. &quot;Groove&quot;), your email, and save. You can skip optional fields.</> },
-    { text: <>For Application type, choose <strong>Web application</strong>. Give it any name.</> },
-    { text: <>Under <strong>Authorized redirect URIs</strong>, click <strong>Add URI</strong> and paste this exact URL:</>,
-      copyable: redirectUri },
+    { text: <>Go to <strong>Audience</strong> and click <strong>Publish App</strong>. Then scroll down to <strong>Test users</strong>, click <strong>Add Users</strong>, enter your Google email address, and save.</> },
+    { text: <>For Application type, choose <strong>Desktop app</strong> (not Web application). Give it any name.</> },
     { text: <>Click <strong>Create</strong>, then copy the <strong>Client ID</strong> and <strong>Client Secret</strong> and paste them below.</> },
   ];
 

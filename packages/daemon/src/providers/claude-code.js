@@ -149,19 +149,22 @@ export class ClaudeCodeProvider extends Provider {
           const cacheReadTokens = usage?.cache_read_input_tokens || 0;
           const cacheCreationTokens = usage?.cache_creation_input_tokens || 0;
           const outputTokens = usage?.output_tokens || 0;
+          // tokensUsed = new processing tokens only (input + output). Cache reads are
+          // the same bytes re-read every turn and must NOT be accumulated — doing so
+          // inflated agent.tokensUsed ~50× and created the phantom "freeze at 1M".
+          // totalIn still drives contextUsage because cached bytes DO occupy context.
           const totalIn = inputTokens + cacheReadTokens + cacheCreationTokens;
           events.push({
             type: 'activity',
             subtype: 'assistant',
             data: data.message?.content || '',
-            tokensUsed: totalIn + outputTokens,
+            tokensUsed: inputTokens + outputTokens,
             inputTokens,
             outputTokens,
             cacheReadTokens,
             cacheCreationTokens,
             model: data.message?.model,
           });
-          // Compute context usage from assistant message usage
           if (totalIn > 0) {
             const modelId = data.message?.model || '';
             const modelMeta = ClaudeCodeProvider.models.find((m) => modelId.includes(m.id));
@@ -172,21 +175,12 @@ export class ClaudeCodeProvider extends Provider {
             });
           }
         } else if (data.type === 'result') {
-          // Result has cumulative usage for the full session
-          const usage = data.usage;
-          const inputTokens = usage?.input_tokens || 0;
-          const cacheReadTokens = usage?.cache_read_input_tokens || 0;
-          const cacheCreationTokens = usage?.cache_creation_input_tokens || 0;
-          const outputTokens = usage?.output_tokens || 0;
-          const totalIn = inputTokens + cacheReadTokens + cacheCreationTokens;
+          // Result carries cumulative session usage — per-turn counts were already
+          // accumulated from assistant events, so we do NOT emit tokensUsed here
+          // (that was the double-count). Only emit session-level metadata.
           events.push({
             type: 'result',
             data: data.result,
-            tokensUsed: totalIn + outputTokens,
-            inputTokens,
-            outputTokens,
-            cacheReadTokens,
-            cacheCreationTokens,
             cost: data.total_cost_usd,
             duration: data.duration_ms,
             turns: data.num_turns,

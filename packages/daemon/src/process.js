@@ -16,6 +16,8 @@ const COMPACTION_DROP_THRESHOLD = 0.25; // 25% drop from peak = natural compacti
 const COMPACTION_MIN_PEAK = 0.15;       // Ignore compaction if peak was below 15%
 const MAX_BUFFER_SIZE = 1_048_576;      // 1MB — discard oldest half if exceeded
 const STREAM_THROTTLE_MS = 250;         // 4 broadcasts/sec per agent
+const STALL_CHECK_INTERVAL_MS = 60_000; // Poll for stuck agents every 60s
+const STALL_THRESHOLD_MS = 5 * 60_000;  // 5 min of silence on a live PID = stalled stream
 
 // Role-specific prompt prefixes — applied during spawn regardless of entry point
 // (SpawnPanel, chat continue, CLI, API) for consistency
@@ -297,7 +299,44 @@ export class ProcessManager {
     this.pendingMessages = new Map(); // agentId -> { message, timestamp }
     this._streamThrottle = new Map(); // agentId -> { timer, pending }
     this._rotatingAgents = new Set(); // agentIds currently being rotated (rotator wrote handoff)
+    this._stalledAgents = new Set(); // agentIds already flagged as stalled (avoids duplicate broadcasts)
 
+    this._stallWatchdog = setInterval(() => this._checkStalls(), STALL_CHECK_INTERVAL_MS);
+    if (this._stallWatchdog.unref) this._stallWatchdog.unref();
+  }
+
+  _checkStalls() {
+    const { registry } = this.daemon;
+    const now = Date.now();
+    for (const agentId of this.handles.keys()) {
+      const agent = registry.get(agentId);
+      if (!agent || agent.status !== 'running') continue;
+      const lastActivity = agent.lastActivity ? new Date(agent.lastActivity).getTime() : now;
+      const silentMs = now - lastActivity;
+      if (silentMs < STALL_THRESHOLD_MS) {
+        if (this._stalledAgents.has(agentId)) {
+          this._stalledAgents.delete(agentId);
+          registry.update(agentId, { stalled: false });
+        }
+        continue;
+      }
+      if (this._stalledAgents.has(agentId)) continue;
+      this._stalledAgents.add(agentId);
+      registry.update(agentId, { stalled: true, stalledSince: new Date(lastActivity).toISOString() });
+      if (this.daemon.timeline) {
+        this.daemon.timeline.recordEvent('stall', {
+          agentId, agentName: agent.name, role: agent.role, silentMs,
+        });
+      }
+      this.daemon.broadcast({
+        type: 'agent:stalled',
+        agentId,
+        agentName: agent.name,
+        silentMs,
+        lastActivity: agent.lastActivity,
+      });
+      console.warn(`[Groove] Agent ${agent.name} (${agentId}) silent for ${Math.round(silentMs / 1000)}s — possible stalled API stream`);
+    }
   }
 
   async spawn(config) {
@@ -746,6 +785,7 @@ For normal file edits within your scope, proceed without review.
       // Clean up per-agent maps to prevent unbounded growth in long sessions
       this.peakContextUsage.delete(agent.id);
       this.pendingMessages.delete(agent.id);
+      this._stalledAgents.delete(agent.id);
 
       // Release file-scope locks so they don't persist after agent death
       if (this.daemon.locks) this.daemon.locks.release(agent.id);
@@ -916,6 +956,12 @@ For normal file edits within your scope, proceed without review.
     classifier.addEvent(agentId, output);
 
     const updates = { lastActivity: new Date().toISOString() };
+
+    // Clear stall flag — output means the stream is alive again
+    if (this._stalledAgents.has(agentId)) {
+      this._stalledAgents.delete(agentId);
+      updates.stalled = false;
+    }
 
     // Token tracking — feed subsystems with full breakdown
     if (output.tokensUsed !== undefined && output.tokensUsed > 0) {
@@ -1398,6 +1444,7 @@ For normal file edits within your scope, proceed without review.
       logStream.write(`[${new Date().toISOString()}] Process exited: code=${code} signal=${signal}\n`);
       logStream.end();
       this.handles.delete(newAgent.id);
+      this._stalledAgents.delete(newAgent.id);
       const finalStatus = signal === 'SIGTERM' || signal === 'SIGKILL' ? 'killed' : code === 0 ? 'completed' : 'crashed';
       registry.update(newAgent.id, { status: finalStatus, pid: null });
       this.daemon.broadcast({ type: 'agent:exit', agentId: newAgent.id, code, signal, status: finalStatus });
@@ -1410,6 +1457,7 @@ For normal file edits within your scope, proceed without review.
       logStream.write(`[error] ${err.message}\n`);
       logStream.end();
       this.handles.delete(newAgent.id);
+      this._stalledAgents.delete(newAgent.id);
       registry.update(newAgent.id, { status: 'crashed', pid: null });
     });
 
@@ -1548,6 +1596,10 @@ For normal file edits within your scope, proceed without review.
   async killAll() {
     const ids = Array.from(this.handles.keys());
     await Promise.all(ids.map((id) => this.kill(id)));
+    if (this._stallWatchdog) {
+      clearInterval(this._stallWatchdog);
+      this._stallWatchdog = null;
+    }
   }
 
   isRunning(agentId) {

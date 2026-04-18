@@ -330,25 +330,61 @@ class WorkspaceManager {
     if (!conn) throw new Error('Connection not found');
 
     const localPort = await getAvailablePort();
+    const knownHostsPath = join(app.getPath('userData'), 'ssh-known-hosts');
     const keyArgs = conn.sshKeyPath ? ['-i', conn.sshKeyPath] : [];
 
-    const sshArgs = [
-      '-N', '-L', `${localPort}:localhost:31415`,
-      ...keyArgs,
-      '-p', String(conn.port || 22),
-      '-o', 'StrictHostKeyChecking=accept-new',
-      '-o', 'ConnectTimeout=15',
-      '-o', 'ServerAliveInterval=30',
-      '-o', 'BatchMode=yes',
-      `${conn.user}@${conn.host}`,
-    ];
+    const spawnTunnel = () => {
+      const sshArgs = [
+        '-N', '-L', `${localPort}:localhost:31415`,
+        ...keyArgs,
+        '-p', String(conn.port || 22),
+        '-o', 'StrictHostKeyChecking=accept-new',
+        '-o', `UserKnownHostsFile=${knownHostsPath}`,
+        '-o', 'ConnectTimeout=15',
+        '-o', 'ServerAliveInterval=30',
+        '-o', 'BatchMode=yes',
+        `${conn.user}@${conn.host}`,
+      ];
+      const p = spawn('ssh', sshArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+      const state = { proc: p, exited: false, exitCode: null, stderr: '' };
+      p.stderr.on('data', (chunk) => { state.stderr += chunk.toString(); });
+      p.on('exit', (code) => { state.exited = true; state.exitCode = code; });
+      return state;
+    };
 
-    const proc = spawn('ssh', sshArgs, { stdio: 'pipe' });
-    let exited = false;
-    proc.on('exit', () => { exited = true; });
+    const removeStaleHostKey = () => {
+      try {
+        const hostSpec = (conn.port && conn.port !== 22)
+          ? `[${conn.host}]:${conn.port}`
+          : conn.host;
+        execFileSync('ssh-keygen', ['-R', hostSpec, '-f', knownHostsPath], {
+          stdio: 'pipe', timeout: 5000,
+        });
+        return true;
+      } catch { return false; }
+    };
 
+    let tunnel = spawnTunnel();
     await new Promise(r => setTimeout(r, 2500));
-    if (exited) throw new Error('SSH tunnel failed to establish — check host/key');
+    if (tunnel.exited) {
+      const errText = tunnel.stderr.trim();
+      if (/host key verification failed|remote host identification has changed/i.test(errText)) {
+        if (removeStaleHostKey()) {
+          tunnel = spawnTunnel();
+          await new Promise(r => setTimeout(r, 2500));
+          if (tunnel.exited) {
+            const retryErr = tunnel.stderr.trim() || 'unknown SSH error';
+            throw new Error(`SSH tunnel failed after clearing stale host key: ${retryErr}`);
+          }
+        } else {
+          throw new Error(`SSH host key verification failed and could not clear stale entry: ${errText}`);
+        }
+      } else {
+        const detail = errText || `exit code ${tunnel.exitCode}`;
+        throw new Error(`SSH tunnel failed to establish: ${detail}`);
+      }
+    }
+    const proc = tunnel.proc;
 
     let healthy = false;
     for (let i = 0; i < 4; i++) {
@@ -364,6 +400,7 @@ class WorkspaceManager {
         execFileSync('ssh', [
           ...keyArgs, '-p', String(conn.port || 22),
           '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes',
+          '-o', `UserKnownHostsFile=${knownHostsPath}`,
           `${conn.user}@${conn.host}`, 'groove start -d',
         ], { timeout: 30000, stdio: 'pipe' });
       } catch {}
@@ -1483,19 +1520,22 @@ ipcMain.handle('home-pick-key', async () => {
 });
 
 ipcMain.handle('home-get-cached-sub', async () => {
-  // One source of truth: the daemon's subscription cache, written by the
+  // Primary source of truth: the daemon's subscription cache, written by the
   // daemon's authenticated poll of the backend. When a project is open we
-  // query it live; otherwise we read the last value it wrote to disk via
-  // checkSubscription(). The splash does NOT call the backend directly —
-  // that used to resolve tokens differently than the daemon and produce
-  // mismatched Pro/community answers. Keep it simple: account = subscription.
+  // query it live; otherwise we read the last value it wrote to disk.
+  //
+  // Splash-screen fallback: when no daemon is running and the disk cache is
+  // stale/missing, we call the backend directly so a just-returning Pro user
+  // isn't mis-classified as community until they open a project.
   const token = loadStoredToken();
   let sub = getCachedSubscription();
 
+  let daemonQueried = false;
   try {
     const instances = workspaces?.getAll() || [];
     const inst = instances.find(i => i.daemon && !i.daemon.killed && i.port);
     if (inst) {
+      daemonQueried = true;
       const resp = await fetch(`http://localhost:${inst.port}/api/subscription/status`, {
         signal: AbortSignal.timeout(3_000),
       });
@@ -1512,6 +1552,28 @@ ipcMain.handle('home-get-cached-sub', async () => {
       }
     }
   } catch {}
+
+  const CACHE_TTL_MS = 60 * 60 * 1000;
+  const cacheStale = !sub?.validatedAt || (Date.now() - sub.validatedAt) > CACHE_TTL_MS;
+  if (token && !daemonQueried && cacheStale) {
+    try {
+      const resp = await fetch('https://docs.groovedev.ai/api/v1/subscription/status', {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        sub = {
+          plan: data.plan || 'community',
+          active: data.active === true || data.status === 'active' || data.status === 'trialing',
+          features: data.features || [],
+          seats: data.seats || 1,
+          validatedAt: Date.now(),
+        };
+        cacheSubscription(sub);
+      }
+    } catch {}
+  }
 
   return {
     authenticated: !!token,

@@ -60,9 +60,11 @@ async function main() {
 
   process.on('message', (msg) => {
     if (msg.type === 'auth-token') {
-      try { daemon.setAuthToken(msg.token); } catch (err) {
-        process.stderr.write(`[daemon-bridge] setAuthToken failed: ${err.message}\n`);
-      }
+      (async () => {
+        try { await daemon.setAuthToken(msg.token); } catch (err) {
+          process.stderr.write(`[daemon-bridge] setAuthToken failed: ${err.message}\n`);
+        }
+      })();
     }
   });
 

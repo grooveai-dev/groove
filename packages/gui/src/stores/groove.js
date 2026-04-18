@@ -585,6 +585,7 @@ export const useGrooveStore = create((set, get) => ({
               },
             });
           }).catch(() => {});
+          get().fetchTunnels();
           break;
         }
 

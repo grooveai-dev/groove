@@ -64,6 +64,18 @@ function ToastItem({ toast }) {
           <p className="text-xs text-text-3 font-sans mt-0.5">{toast.detail}</p>
         )}
       </div>
+      {toast.action?.url && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            try { window.open(toast.action.url, '_blank', 'noopener'); } catch {}
+            removeToast(toast.id);
+          }}
+          className="text-xs font-medium text-accent hover:text-accent-hover bg-surface-5 hover:bg-surface-6 px-3 py-1.5 rounded transition-colors cursor-pointer flex-shrink-0 whitespace-nowrap"
+        >
+          {toast.action.label || 'Open'}
+        </button>
+      )}
       <button
         onClick={(e) => { e.stopPropagation(); removeToast(toast.id); }}
         className="p-1.5 text-text-4 hover:text-text-1 hover:bg-surface-5 rounded transition-colors cursor-pointer flex-shrink-0 z-10"

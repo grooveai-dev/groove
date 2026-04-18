@@ -2656,14 +2656,16 @@ Keep responses concise. Help them think, don't lecture them about the system the
       // Delete immediately after reading to prevent duplicate launches from poll races
       try { unlinkSync(found.path); } catch { /* already gone */ }
 
-      // Support both old format (bare array) and new format ({ projectDir, agents })
+      // Support both old format (bare array) and new format ({ projectDir, agents, preview })
       let agentConfigs;
       let projectDir = null;
+      let previewBlock = null;
       if (Array.isArray(raw)) {
         agentConfigs = raw;
       } else if (raw && Array.isArray(raw.agents)) {
         agentConfigs = raw.agents;
         projectDir = raw.projectDir || null;
+        previewBlock = raw.preview || null;
       } else {
         return res.status(400).json({ error: 'Invalid recommended team format' });
       }
@@ -2826,14 +2828,44 @@ Keep responses concise. Help them think, don't lecture them about the system the
         }
       }
 
+      // Stash the preview block so the daemon can launch it when the team
+      // finishes. The plan file gets deleted seconds after this endpoint returns.
+      if (previewBlock && daemon.preview && defaultTeamId) {
+        daemon.preview.stashPlan(defaultTeamId, previewBlock, projectWorkingDir);
+      }
+
       daemon.audit.log('team.launch', {
         phase1: spawned.length, reused: reused.length, phase2Pending: phase2.length, failed: failed.length,
-        agents: [...spawned, ...reused].map((a) => a.role), projectDir: projectDir || null,
+        agents: [...spawned, ...reused].map((a) => a.role), projectDir: projectDir || null, preview: !!previewBlock,
       });
-      res.json({ launched: spawned.length, reused: reused.length, phase2Pending: phase2.length, agents: [...spawned, ...reused], failed, projectDir: projectDir || null });
+      res.json({ launched: spawned.length, reused: reused.length, phase2Pending: phase2.length, agents: [...spawned, ...reused], failed, projectDir: projectDir || null, preview: previewBlock ? previewBlock.kind : null });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // Preview service — one-click View Site for completed teams
+  app.get('/api/preview', (req, res) => {
+    res.json({ previews: daemon.preview?.list() || [] });
+  });
+
+  app.get('/api/preview/:teamId', (req, res) => {
+    const entry = daemon.preview?.get(req.params.teamId);
+    if (!entry) return res.status(404).json({ error: 'No preview for this team' });
+    res.json(entry);
+  });
+
+  app.delete('/api/preview/:teamId', async (req, res) => {
+    const killed = await daemon.preview?.kill(req.params.teamId);
+    res.json({ stopped: !!killed });
+  });
+
+  // Manually (re)launch the preview for a team using the stashed plan.
+  app.post('/api/preview/:teamId/launch', async (req, res) => {
+    const plan = daemon.preview?.getPlan(req.params.teamId);
+    if (!plan) return res.status(404).json({ error: 'No preview plan stashed for this team' });
+    const result = await daemon.preview.launch(req.params.teamId, plan.workingDir, plan.preview);
+    res.json(result);
   });
 
   // Clean up stale artifacts (old plans, recommended teams, etc.)

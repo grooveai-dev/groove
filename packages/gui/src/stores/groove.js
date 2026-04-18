@@ -381,6 +381,39 @@ export const useGrooveStore = create((set, get) => ({
           get().addToast('info', `QC agent ${msg.name} auto-spawned`, 'Auditing phase 1 work');
           break;
 
+        case 'preview:ready':
+          get().addToast(
+            'success',
+            'Project ready to preview',
+            msg.url,
+            { label: 'View Site', url: msg.url },
+          );
+          break;
+
+        case 'preview:failed':
+          get().addToast(
+            'warning',
+            'Preview could not launch',
+            msg.reason ? String(msg.reason).slice(0, 200) : 'Unknown error',
+          );
+          break;
+
+        case 'preview:stopped':
+          break;
+
+        case 'agent:stalled': {
+          const name = msg.agentName || msg.agentId;
+          const secs = Math.round((msg.silentMs || 0) / 1000);
+          get().addToast('warning', `${name} may be stalled`, `No output for ${secs}s — API stream may be hung`);
+          break;
+        }
+
+        case 'knock:denied': {
+          const name = msg.agentName || msg.agentId;
+          get().addToast('warning', `${name} blocked`, `${msg.toolName} on ${msg.target} — ${msg.reason || 'scope conflict'}`);
+          break;
+        }
+
         case 'phase2:failed':
           get().addToast('error', `QC agent failed to spawn`, msg.error || 'Unknown error');
           break;
@@ -725,9 +758,9 @@ export const useGrooveStore = create((set, get) => ({
 
   // ── Toasts ────────────────────────────────────────────────
 
-  addToast(type, message, detail) {
+  addToast(type, message, detail, action) {
     const id = ++toastCounter;
-    set((s) => ({ toasts: [...s.toasts, { id, type, message, detail }] }));
+    set((s) => ({ toasts: [...s.toasts, { id, type, message, detail, action }] }));
   },
   removeToast(id) {
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));

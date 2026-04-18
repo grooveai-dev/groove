@@ -224,8 +224,25 @@ For MODE 1 (team creation):
     { "role": "frontend", "phase": 1, "scope": ["src/components/**", "src/views/**"], "prompt": "Build the frontend: [specific tasks]" },
     { "role": "backend", "phase": 1, "scope": ["src/api/**", "src/server/**"], "prompt": "Build the backend: [specific tasks]" },
     { "role": "fullstack", "phase": 2, "scope": [], "prompt": "QC Senior Dev: Audit all changes from phase 1 agents. Verify correctness, fix issues, run tests, verify the build compiles (npm run build). Do NOT start long-running dev servers. Commit all changes." }
-  ]
+  ],
+  "preview": {
+    "kind": "dev-server",
+    "command": "npm run dev",
+    "cwd": "<projectDir>",
+    "urlPattern": "https?://(localhost|127\\.0\\.0\\.1):\\d+",
+    "readyText": "Local:",
+    "openPath": "/"
+  }
 }
+
+The "preview" block is how GROOVE launches a one-click preview for the user after the team finishes. Pick EXACTLY ONE kind based on what the project will produce:
+
+  - "dev-server"   — web app, API, anything that needs a running process (Vite, Next, Express, FastAPI, Rails, etc.). Set command to the exact shell command to start it. Set cwd to the subdir containing the runnable project (relative to the team working dir), or "" if it runs at the root. Set urlPattern to a regex that matches the URL in the command's stdout. Set readyText to a short substring that signals the server is up (optional but helps). Set openPath to the path the user should land on ("/").
+  - "static-html"  — slide deck, static site, anything where a browser opens index.html directly. Set command to "" and openPath to the relative path of the entry HTML (e.g. "index.html" or "slides/index.html"). GROOVE will serve the directory on a local port.
+  - "cli"          — library, CLI tool, anything with no visible preview. Set command to "" and let the kind signal no auto-launch.
+  - "none"         — explicitly no preview.
+
+NEVER invent preview kinds. Use these four exact strings.
 
 For MODE 2 (task routing to existing team):
 Only include the agents that need to do work. Use their EXISTING role — the system will find and reuse them.
@@ -883,6 +900,13 @@ For normal file edits within your scope, proceed without review.
       // Phase 2 auto-spawn: check if all phase 1 agents for a team are done
       this._checkPhase2(agent.id);
 
+      // Preview launch: when every agent in this team is in a terminal state,
+      // kick off the one-click preview (dev server or static serve) the planner
+      // staged in the team plan. Fires once per team launch.
+      if (finalStatus === 'completed' && agent.teamId) {
+        this._checkPreviewReady(agent.teamId);
+      }
+
       // Auto-trigger idle QC: if this agent modified files and there's an idle QC
       // in the same team, activate it to verify the changes
       if (finalStatus === 'completed') {
@@ -1066,6 +1090,54 @@ For normal file edits within your scope, proceed without review.
       if (throttle?.timer) { clearTimeout(throttle.timer); this._streamThrottle.delete(agentId); }
       this.daemon.broadcast({ type: 'agent:output', agentId, data: output });
     }
+  }
+
+  /**
+   * Fire the one-click preview when the whole team has finished building.
+   * Requirements:
+   *   - The daemon has a preview plan stashed for this team (planner wrote one).
+   *   - No pending phase 2 groups for this team (QC hasn't spawned yet).
+   *   - Every non-planner team agent is in a terminal state.
+   *   - At least one non-planner agent completed successfully (something to preview).
+   * Clears the plan after launching so repeated completions don't re-fire.
+   */
+  _checkPreviewReady(teamId) {
+    const preview = this.daemon.preview;
+    if (!preview) return;
+    const plan = preview.getPlan(teamId);
+    if (!plan) return;
+
+    // If a phase 2 group for this team is still pending, let it spawn first.
+    const pendingPhase2 = this.daemon._pendingPhase2 || [];
+    for (const group of pendingPhase2) {
+      for (const id of group.waitFor) {
+        const a = this.daemon.registry.get(id);
+        if (a?.teamId === teamId) return;
+      }
+    }
+
+    const teamAgents = this.daemon.registry.getAll().filter((a) => a.teamId === teamId && a.role !== 'planner');
+    if (teamAgents.length === 0) return;
+    const terminal = new Set(['completed', 'crashed', 'stopped', 'killed']);
+    const allDone = teamAgents.every((a) => terminal.has(a.status));
+    const anyCompleted = teamAgents.some((a) => a.status === 'completed');
+    if (!allDone || !anyCompleted) return;
+
+    preview.clearPlan(teamId);
+    const workingDir = plan.workingDir;
+    preview.launch(teamId, workingDir, plan.preview).then((result) => {
+      if (!result.launched) {
+        console.warn(`[Groove] Preview for team ${teamId} did not launch: ${result.reason}`);
+        this.daemon.broadcast({
+          type: 'preview:failed',
+          teamId,
+          kind: plan.preview?.kind,
+          reason: result.reason,
+        });
+      }
+    }).catch((err) => {
+      console.error(`[Groove] Preview launch error for team ${teamId}:`, err.message);
+    });
   }
 
   _extractRecommendedTeam(agent, logPath) {

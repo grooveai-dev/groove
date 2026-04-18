@@ -16,6 +16,7 @@ import { Introducer } from './introducer.js';
 import { LockManager } from './lockmanager.js';
 import { Supervisor } from './supervisor.js';
 import { Journalist } from './journalist.js';
+import { PreviewService } from './preview.js';
 import { TokenTracker } from './tokentracker.js';
 import { Rotator } from './rotator.js';
 import { AdaptiveThresholds } from './adaptive.js';
@@ -137,6 +138,7 @@ export class Daemon {
     this.fileWatcher = new FileWatcher(this);
     this.terminalManager = new TerminalManager(this);
     this.gateways = new GatewayManager(this);
+    this.preview = new PreviewService(this);
     this.modelManager = new ModelManager(this);
     this.llamaServer = new LlamaServerManager(this);
     this.mcpManager = new McpManager(this);
@@ -657,6 +659,7 @@ export class Daemon {
 
     // Kill all agent processes, stop MCP servers, and stop inference servers
     await this.processes.killAll();
+    if (this.preview) await this.preview.killAll();
     this.mcpManager.stopAll();
     await this.llamaServer.stopAll();
 

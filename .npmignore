@@ -34,3 +34,18 @@ test-*
 *.tgz
 .env*
 docs/
+
+# Working dirs created during local testing / planning — never publish
+trial/
+plans/
+.groove-staging/
+bug-team/
+agents-team/
+electron-app/
+my-workspace/
+slides/
+slides-creator/
+elite-landscapes/
+ryans-beans/
+groove-dev/
+archive/

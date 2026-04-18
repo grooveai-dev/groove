@@ -76,6 +76,50 @@ export class LockManager {
     return { conflict: false };
   }
 
+  /**
+   * Prefix-based overlap test between two scope pattern sets.
+   * Two scopes overlap if any pair of patterns has a prefix containment
+   * relationship (one prefix is a parent dir of the other) or shares an
+   * identical prefix. An empty/broad pattern (e.g. `**`) always overlaps.
+   *
+   * Used at spawn time to block two agents claiming the same files.
+   * Intentionally conservative: returns overlap for ambiguous cases so
+   * collisions fail loud rather than silently.
+   */
+  static scopesOverlap(patternsA, patternsB) {
+    if (!Array.isArray(patternsA) || !Array.isArray(patternsB)) return false;
+    if (patternsA.length === 0 || patternsB.length === 0) return false;
+    const prefixOf = (p) => {
+      const idx = p.search(/[*?[{]/);
+      const head = idx === -1 ? p : p.slice(0, idx);
+      return head.replace(/\/+$/, '');
+    };
+    for (const a of patternsA) {
+      const pa = prefixOf(a);
+      for (const b of patternsB) {
+        const pb = prefixOf(b);
+        if (pa === pb) return { overlap: true, a, b };
+        if (pa === '' || pb === '') return { overlap: true, a, b };
+        const longer = pa.length > pb.length ? pa : pb;
+        const shorter = pa.length > pb.length ? pb : pa;
+        if (longer.startsWith(shorter + '/')) return { overlap: true, a, b };
+      }
+    }
+    return { overlap: false };
+  }
+
+  /**
+   * Find any currently-locked agent whose scope overlaps with candidateScope.
+   * Returns { overlap: true, owner, ... } for the first conflict, else {overlap:false}.
+   */
+  findOverlappingOwner(candidateScope) {
+    for (const [ownerId, patterns] of this.locks) {
+      const res = LockManager.scopesOverlap(candidateScope, patterns);
+      if (res.overlap) return { overlap: true, owner: ownerId, ownerScope: patterns, ...res };
+    }
+    return { overlap: false };
+  }
+
   purgeOrphans(aliveAgentIds) {
     const alive = new Set(aliveAgentIds);
     let purged = 0;

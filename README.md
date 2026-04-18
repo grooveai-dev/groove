@@ -240,9 +240,9 @@ Open the dashboard after starting the daemon (local or remote):
 
 ## Plans
 
-groove is free. Not free-with-limits, not free-trial, not freemium. The full product — unlimited agents, teams, context rotation, Layer 7 memory, model routing, dashboard, all providers, skills marketplace, scheduling — ships in the free tier. No feature walls. No agent caps.
+groove's core orchestration is free. Unlimited agents, teams, context rotation, Layer 7 memory, model routing, dashboard, all providers, skills marketplace, and scheduling all ship in the free tier. No agent caps.
 
-Pro and Team add infrastructure for users who outgrow a single machine.
+Pro and Team add the infrastructure for users who outgrow a single machine — remote access, federation, and multi-device sync.
 
 | Feature | Free | Pro | Team |
 |---------|:----:|:---:|:----:|

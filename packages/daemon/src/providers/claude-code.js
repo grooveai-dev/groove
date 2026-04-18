@@ -3,9 +3,12 @@
 
 import { execSync, spawn as cpSpawn } from 'child_process';
 import { writeFileSync, readFileSync, existsSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { homedir } from 'os';
 import { Provider } from './base.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export class ClaudeCodeProvider extends Provider {
   static name = 'claude-code';
@@ -52,11 +55,15 @@ export class ClaudeCodeProvider extends Provider {
     //   --dangerously-skip-permissions  (autonomous operation)
     //   --output-format stream-json     (structured stdout for parsing)
     //   --verbose                       (richer output for journalist)
+    //   --settings {hooks:{PreToolUse:...}}  (knock protocol enforcement)
     //
     // The initial prompt is passed as a positional argument.
     // GROOVE context is injected via an append-only section in CLAUDE.md.
 
     const args = ['--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
+
+    const knockSettings = ClaudeCodeProvider._buildKnockSettings();
+    if (knockSettings) args.push('--settings', knockSettings);
 
     if (agent.model) {
       args.push('--model', agent.model);
@@ -83,9 +90,37 @@ export class ClaudeCodeProvider extends Provider {
     // Resume a previous session — preserves full conversation history
     // No cold start, no handoff brief needed
     const args = ['--resume', sessionId, '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
+    const knockSettings = ClaudeCodeProvider._buildKnockSettings();
+    if (knockSettings) args.push('--settings', knockSettings);
     if (model) args.push('--model', model);
     if (prompt) args.push(prompt);
     return { command: 'claude', args, env: {} };
+  }
+
+  /**
+   * Build the --settings JSON that registers the GROOVE knock hook as a
+   * PreToolUse handler. The hook script forwards each Bash/Write/Edit tool
+   * call to the daemon, which decides allow/deny based on scope + active
+   * locks. Fails open if the daemon is unreachable.
+   */
+  static _buildKnockSettings() {
+    try {
+      const hookPath = resolve(__dirname, '..', '..', 'templates', 'knock-hook.cjs');
+      if (!existsSync(hookPath)) return null;
+      const settings = {
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: 'Bash|Write|Edit|NotebookEdit|MultiEdit',
+              hooks: [{ type: 'command', command: `node ${hookPath}`, timeout: 5 }],
+            },
+          ],
+        },
+      };
+      return JSON.stringify(settings);
+    } catch {
+      return null;
+    }
   }
 
   buildHeadlessCommand(prompt, model) {

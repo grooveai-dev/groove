@@ -360,6 +360,24 @@ export class ProcessManager {
       }
     }
 
+    // Scope collision check: refuse to spawn if another running agent already
+    // claims overlapping files. Oversight roles (planner, QC, security) and
+    // the ambassador bypass since their job requires broad access.
+    const SCOPE_BYPASS_ROLES = new Set(['planner', 'fullstack', 'qc', 'pm', 'supervisor', 'security', 'ambassador']);
+    if (config.scope && config.scope.length > 0 && !SCOPE_BYPASS_ROLES.has(config.role) && !config.allowScopeOverlap) {
+      const conflict = locks.findOverlappingOwner(config.scope);
+      if (conflict.overlap) {
+        const owner = registry.get(conflict.owner);
+        if (owner && owner.status === 'running') {
+          const ownerScope = Array.isArray(conflict.ownerScope) ? conflict.ownerScope.join(', ') : '';
+          throw new Error(
+            `Scope collision: ${config.role} scope [${config.scope.join(', ')}] overlaps with ${owner.name} (${owner.role}) which owns [${ownerScope}]. ` +
+            `Two agents cannot edit the same files. Either narrow the scope or wait for ${owner.name} to finish.`
+          );
+        }
+      }
+    }
+
     // Clean stale recommended-team.json when spawning a new planner
     if (config.role === 'planner') {
       const dirs = [this.daemon.grooveDir];
@@ -655,7 +673,11 @@ For normal file edits within your scope, proceed without review.
 
         this.daemon.broadcast({ type: 'agent:exit', agentId: agent.id, code: code || 0, signal, status });
         if (this.daemon.integrations) this.daemon.integrations.refreshMcpJson();
-        if (status === 'completed' && this.daemon.journalist) this.daemon.journalist.requestSynthesis('completion');
+        if (status === 'completed' && this.daemon.journalist) {
+          const turns = agentData?.turns || 0;
+          const tok = agentData?.tokensUsed || 0;
+          if (turns > 1 || tok >= 100) this.daemon.journalist.requestSynthesis('completion');
+        }
         this._checkPhase2(agent.id);
 
         // Auto-trigger idle QC + process cross-scope handoffs
@@ -724,7 +746,7 @@ For normal file edits within your scope, proceed without review.
     // Spawn the process (use pipe for stdin if provider needs to send prompt via stdin)
     const proc = cpSpawn(command, args, {
       cwd: agent.workingDir || this.daemon.projectDir,
-      env: { ...process.env, ...env, ...integrationEnv, GROOVE_AGENT_ID: agent.id, GROOVE_AGENT_NAME: agent.name },
+      env: { ...process.env, ...env, ...integrationEnv, GROOVE_AGENT_ID: agent.id, GROOVE_AGENT_NAME: agent.name, GROOVE_DAEMON_HOST: this.daemon.host || '127.0.0.1', GROOVE_DAEMON_PORT: String(this.daemon.port || 31415) },
       stdio: [stdinData ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       detached: false,
     });
@@ -846,9 +868,16 @@ For normal file edits within your scope, proceed without review.
         }
       }
 
-      // Trigger journalist synthesis on completion (event-driven, debounced)
+      // Trigger journalist synthesis on completion (event-driven, debounced).
+      // Skip trivial sessions — a greeting-only completion (user never gave a task)
+      // has nothing worth synthesizing and wastes a $0.04+ headless claude call.
       if (finalStatus === 'completed' && this.daemon.journalist) {
-        this.daemon.journalist.requestSynthesis('completion');
+        const a = registry.get(agent.id);
+        const turns = a?.turns || 0;
+        const tok = a?.tokensUsed || 0;
+        if (turns > 1 || tok >= 100) {
+          this.daemon.journalist.requestSynthesis('completion');
+        }
       }
 
       // Phase 2 auto-spawn: check if all phase 1 agents for a team are done
@@ -1209,6 +1238,13 @@ For normal file edits within your scope, proceed without review.
     try {
       const agentData = this.daemon.registry.get(agent.id);
 
+      // Skip sessions that did no meaningful work — a "greeting-only" completion
+      // (agent introduced itself, user gave no task) should not overwrite the chain
+      // with a useless brief. Gate on turns and tokens used in this session.
+      const turns = agentData?.turns || 0;
+      const tokens = agentData?.tokensUsed || 0;
+      if (turns <= 1 && tokens < 100) return;
+
       let brief;
       try {
         brief = await this.daemon.journalist.generateHandoffBrief(agent, { reason: 'completed' });
@@ -1408,7 +1444,7 @@ For normal file edits within your scope, proceed without review.
     // Spawn the resumed process
     const proc = cpSpawn(command, args, {
       cwd: config.workingDir || this.daemon.projectDir,
-      env: { ...process.env, ...env, GROOVE_AGENT_ID: newAgent.id, GROOVE_AGENT_NAME: newAgent.name },
+      env: { ...process.env, ...env, GROOVE_AGENT_ID: newAgent.id, GROOVE_AGENT_NAME: newAgent.name, GROOVE_DAEMON_HOST: this.daemon.host || '127.0.0.1', GROOVE_DAEMON_PORT: String(this.daemon.port || 31415) },
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
     });
@@ -1449,7 +1485,37 @@ For normal file edits within your scope, proceed without review.
       registry.update(newAgent.id, { status: finalStatus, pid: null });
       this.daemon.broadcast({ type: 'agent:exit', agentId: newAgent.id, code, signal, status: finalStatus });
       if (finalStatus === 'completed' && this.daemon.journalist) {
-        this.daemon.journalist.requestSynthesis('completion');
+        const a = registry.get(newAgent.id);
+        const turns = a?.turns || 0;
+        const tok = a?.tokensUsed || 0;
+        if (turns > 1 || tok >= 100) this.daemon.journalist.requestSynthesis('completion');
+      }
+
+      // Persist Layer 7 state for resumed-session completions too, not just fresh spawns.
+      // Without this, every resume after the first loses its work from the handoff chain.
+      if (finalStatus === 'completed' && !this._rotatingAgents.has(newAgent.id)) {
+        this._writeCompletionHandoff(newAgent).catch(err =>
+          console.error(`[Groove] Completion handoff failed for ${newAgent.name}:`, err.message));
+      }
+      if (this._rotatingAgents.has(newAgent.id)) {
+        this._rotatingAgents.delete(newAgent.id);
+      }
+      if (this.daemon.memory && (finalStatus === 'completed' || finalStatus === 'crashed')) {
+        try {
+          const events = this.daemon.classifier?.agentWindows?.[newAgent.id] || [];
+          const signals = events.length >= 6
+            ? this.daemon.adaptive.extractSignals(events, newAgent.scope)
+            : null;
+          const score = signals ? this.daemon.adaptive.scoreSession(signals) : null;
+          const files = this.daemon.journalist?.getAgentFiles(newAgent) || [];
+          this.daemon.memory.updateSpecialization(newAgent.id, {
+            role: newAgent.role,
+            qualityScore: score,
+            filesTouched: files,
+            signals,
+            threshold: this.daemon.adaptive?.getThreshold(newAgent.provider, newAgent.role),
+          });
+        } catch { /* best-effort */ }
       }
     });
 

@@ -268,6 +268,49 @@ export function createApi(app, daemon) {
     res.json(daemon.locks.getAll());
   });
 
+  // Knock protocol: Claude Code PreToolUse hook POSTs every Bash/Write/Edit
+  // tool call here. The daemon checks the target path (for file ops) against
+  // the agent's declared scope and against other agents' active locks, and
+  // allows or denies. Non-Claude providers don't hit this path.
+  app.post('/api/knock', (req, res) => {
+    const body = req.body || {};
+    const agentId = body.grooveAgentId;
+    const toolName = body.tool_name || body.toolName || '';
+    const toolInput = body.tool_input || body.toolInput || {};
+
+    // Unknown / no agent id → fail open (don't wedge an agent we can't identify)
+    if (!agentId) return res.json({ allow: true });
+    const agent = daemon.registry.get(agentId);
+    if (!agent) return res.json({ allow: true });
+
+    // Extract the target file paths from the tool input
+    const targets = [];
+    if (toolInput.file_path) targets.push(String(toolInput.file_path));
+    if (toolInput.path) targets.push(String(toolInput.path));
+    if (Array.isArray(toolInput.edits)) {
+      for (const e of toolInput.edits) if (e?.file_path) targets.push(String(e.file_path));
+    }
+
+    // Scope guard: if agent has a declared scope and the op targets a path,
+    // verify the path matches the scope or belongs to no one.
+    if (agent.scope && agent.scope.length > 0 && targets.length > 0) {
+      for (const target of targets) {
+        const conflict = daemon.locks.check(agentId, target);
+        if (conflict.conflict) {
+          daemon.audit.log('knock.denied', { agentId, toolName, target, owner: conflict.owner, pattern: conflict.pattern });
+          daemon.broadcast({ type: 'knock:denied', agentId, agentName: agent.name, toolName, target, owner: conflict.owner, reason: 'scope_conflict' });
+          return res.json({
+            allow: false,
+            reason: `GROOVE PM: ${target} is owned by another agent (pattern ${conflict.pattern}). Use the handoff protocol (write .groove/handoffs/<role>.md) or request approval instead of editing it directly.`,
+          });
+        }
+      }
+    }
+
+    daemon.audit.log('knock.allowed', { agentId, toolName, targets });
+    res.json({ allow: true });
+  });
+
   // Coordination protocol — agents declare intent on shared resources
   // (npm install, server restart, package.json edit) to prevent races.
   // Returns 423 Locked if another agent holds a conflicting resource.

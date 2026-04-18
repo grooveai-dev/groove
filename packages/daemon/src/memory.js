@@ -19,6 +19,12 @@ const MAX_HANDOFF_ROTATIONS = 25;
 const MAX_DISCOVERIES = 1000;
 const HANDOFF_BRIEF_MAX_CHARS = 4000;
 
+// Legacy auto-extraction (since disabled) captured raw user prompts into a
+// "user-directive" constraint. Existing entries still live in projects that
+// predate the fix and would otherwise leak into every new agent's brief.
+// Suppressed at render time so stored state doesn't need migration.
+const SUPPRESSED_CONSTRAINT_CATEGORIES = new Set(['user-directive']);
+
 function hashText(text) {
   return createHash('sha1').update(text.trim().toLowerCase()).digest('hex').slice(0, 12);
 }
@@ -76,6 +82,9 @@ export class MemoryStore {
 
   addConstraint({ text, category = 'general' }) {
     if (!text || typeof text !== 'string') return { added: false, error: 'text required' };
+    if (SUPPRESSED_CONSTRAINT_CATEGORIES.has(category)) {
+      return { added: false, error: `category "${category}" suppressed — not a real constraint` };
+    }
     const trimmed = text.trim();
     if (trimmed.length < 3) return { added: false, error: 'text too short' };
     if (trimmed.length > 500) return { added: false, error: 'text too long (max 500 chars)' };
@@ -117,7 +126,8 @@ export class MemoryStore {
   }
 
   getConstraintsMarkdown(maxChars = 4000) {
-    const constraints = this.listConstraints();
+    const constraints = this.listConstraints()
+      .filter((c) => !SUPPRESSED_CONSTRAINT_CATEGORIES.has(c.category));
     if (constraints.length === 0) return '';
     const byCategory = {};
     for (const c of constraints) {
@@ -165,13 +175,14 @@ export class MemoryStore {
       const entries = [];
       const blocks = content.split(/\n(?=## Rotation )/);
       for (const block of blocks) {
-        const headerMatch = block.match(/^## Rotation (\d+) — [^(]*\(([\w?-]+) →/);
+        const headerMatch = block.match(/^## Rotation (\d+) — (\S+) \(([\w?-]+) →/);
         if (!headerMatch) continue;
         const body = block.replace(/\n---\s*$/, '').trim();
         entries.push({
           rotationN: parseInt(headerMatch[1], 10),
           body,
-          agentId: headerMatch[2] || null,
+          timestamp: headerMatch[2] || null,
+          agentId: headerMatch[3] || null,
         });
       }
       return entries;
@@ -184,8 +195,14 @@ export class MemoryStore {
     if (!role || !entry) return false;
     const chain = this.getHandoffChain(role, workingDir, teamId);
 
-    // Dedup: prevent the same agent from having multiple entries in the chain
-    if (entry.agentId && chain.some(c => c.agentId === entry.agentId)) return false;
+    // Guard only the pathological double-write case: identical agent AND timestamp
+    // means the same event fired twice (e.g. race). A resumed agent that legitimately
+    // completes multiple sessions produces distinct timestamps and must be kept —
+    // that's how the chain records continuous work across resumes.
+    if (entry.agentId && entry.timestamp
+        && chain.some(c => c.agentId === entry.agentId && c.timestamp === entry.timestamp)) {
+      return false;
+    }
 
     const nextN = (chain[0]?.rotationN || 0) + 1;
 

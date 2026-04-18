@@ -76,28 +76,46 @@ export class PreviewService {
    * preview upfront at launch time and hand it back when the team completes.
    */
   async launch(teamId, workingDir, preview) {
+    this.daemon.audit?.log('preview.attempt', { teamId, workingDir, preview });
+
     if (!preview || !preview.kind || preview.kind === 'none' || preview.kind === 'cli') {
-      return { launched: false, reason: preview?.kind || 'no_preview' };
+      const result = { launched: false, reason: preview?.kind || 'no_preview' };
+      this.daemon.audit?.log('preview.skipped', { teamId, reason: result.reason });
+      return result;
     }
 
-    // Kill any existing preview for this team
     await this.kill(teamId);
 
-    const baseDir = preview.cwd
-      ? resolve(workingDir || this.daemon.projectDir, preview.cwd)
-      : resolve(workingDir || this.daemon.projectDir);
+    // Resolve cwd with a sensible fallback. The planner sometimes names the
+    // cwd after projectDir which is applied by api/launch → the actual project
+    // root. If that specific subdir doesn't exist, try workingDir itself.
+    const root = resolve(workingDir || this.daemon.projectDir);
+    const candidates = [];
+    if (preview.cwd) candidates.push(resolve(root, preview.cwd));
+    candidates.push(root);
+    const baseDir = candidates.find((p) => existsSync(p));
 
-    if (!existsSync(baseDir)) {
-      return { launched: false, reason: `cwd_missing: ${baseDir}` };
+    if (!baseDir) {
+      const result = { launched: false, reason: `cwd_missing: tried ${candidates.join(' and ')}` };
+      this.daemon.audit?.log('preview.failed', { teamId, reason: result.reason });
+      return result;
     }
 
+    let result;
     if (preview.kind === 'static-html') {
-      return this._launchStatic(teamId, baseDir, preview);
+      result = await this._launchStatic(teamId, baseDir, preview);
+    } else if (preview.kind === 'dev-server') {
+      result = await this._launchDevServer(teamId, baseDir, preview);
+    } else {
+      result = { launched: false, reason: `unknown_kind: ${preview.kind}` };
     }
-    if (preview.kind === 'dev-server') {
-      return this._launchDevServer(teamId, baseDir, preview);
+
+    if (result.launched) {
+      this.daemon.audit?.log('preview.launched', { teamId, url: result.url, kind: result.kind, baseDir });
+    } else {
+      this.daemon.audit?.log('preview.failed', { teamId, reason: result.reason, baseDir });
     }
-    return { launched: false, reason: `unknown_kind: ${preview.kind}` };
+    return result;
   }
 
   _launchStatic(teamId, baseDir, preview) {
@@ -238,6 +256,7 @@ export class PreviewService {
       if (entry.server) entry.server.close();
       if (entry.proc) entry.proc.kill('SIGTERM');
     } catch { /* best-effort */ }
+    this.daemon.audit?.log('preview.stopped', { teamId });
     this.daemon.broadcast({ type: 'preview:stopped', teamId });
     return true;
   }

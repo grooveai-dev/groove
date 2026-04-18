@@ -377,18 +377,21 @@ export class ProcessManager {
       }
     }
 
-    // Scope collision check: refuse to spawn if another running agent already
-    // claims overlapping files. Oversight roles (planner, QC, security) and
-    // the ambassador bypass since their job requires broad access.
+    // Scope collision check: refuse to spawn if another running agent in the
+    // SAME working directory already claims overlapping files. Scopes are
+    // relative patterns rooted at the agent's workingDir, so two agents in
+    // different workingDirs can't step on each other even if their patterns
+    // look identical. Oversight roles (planner, QC, security) and ambassadors
+    // bypass entirely since their job requires broad access.
     const SCOPE_BYPASS_ROLES = new Set(['planner', 'fullstack', 'qc', 'pm', 'supervisor', 'security', 'ambassador']);
     if (config.scope && config.scope.length > 0 && !SCOPE_BYPASS_ROLES.has(config.role) && !config.allowScopeOverlap) {
       const conflict = locks.findOverlappingOwner(config.scope);
       if (conflict.overlap) {
         const owner = registry.get(conflict.owner);
-        if (owner && owner.status === 'running') {
+        if (owner && owner.status === 'running' && owner.workingDir === config.workingDir) {
           const ownerScope = Array.isArray(conflict.ownerScope) ? conflict.ownerScope.join(', ') : '';
           throw new Error(
-            `Scope collision: ${config.role} scope [${config.scope.join(', ')}] overlaps with ${owner.name} (${owner.role}) which owns [${ownerScope}]. ` +
+            `Scope collision: ${config.role} scope [${config.scope.join(', ')}] overlaps with ${owner.name} (${owner.role}) which owns [${ownerScope}] in the same workspace. ` +
             `Two agents cannot edit the same files. Either narrow the scope or wait for ${owner.name} to finish.`
           );
         }
@@ -1098,16 +1101,25 @@ For normal file edits within your scope, proceed without review.
    *   - The daemon has a preview plan stashed for this team (planner wrote one).
    *   - No pending phase 2 groups for this team (QC hasn't spawned yet).
    *   - Every non-planner team agent is in a terminal state.
-   *   - At least one non-planner agent completed successfully (something to preview).
-   * Clears the plan after launching so repeated completions don't re-fire.
+   *   - At least one non-planner agent completed successfully.
+   *
+   * The plan is intentionally NOT cleared on failure so the user can hit the
+   * "Launch Preview" button manually after fixing whatever blocked the auto
+   * attempt (wrong cwd, missing deps, etc). We guard against infinite re-fires
+   * with _previewAttempted per teamId.
    */
   _checkPreviewReady(teamId) {
     const preview = this.daemon.preview;
     if (!preview) return;
-    const plan = preview.getPlan(teamId);
-    if (!plan) return;
+    if (!this._previewAttempted) this._previewAttempted = new Set();
+    if (this._previewAttempted.has(teamId)) return;
 
-    // If a phase 2 group for this team is still pending, let it spawn first.
+    const plan = preview.getPlan(teamId);
+    if (!plan) {
+      this.daemon.audit?.log('preview.skipped', { teamId, reason: 'no_plan_stashed' });
+      return;
+    }
+
     const pendingPhase2 = this.daemon._pendingPhase2 || [];
     for (const group of pendingPhase2) {
       for (const id of group.waitFor) {
@@ -1123,7 +1135,7 @@ For normal file edits within your scope, proceed without review.
     const anyCompleted = teamAgents.some((a) => a.status === 'completed');
     if (!allDone || !anyCompleted) return;
 
-    preview.clearPlan(teamId);
+    this._previewAttempted.add(teamId);
     const workingDir = plan.workingDir;
     preview.launch(teamId, workingDir, plan.preview).then((result) => {
       if (!result.launched) {
@@ -1137,6 +1149,7 @@ For normal file edits within your scope, proceed without review.
       }
     }).catch((err) => {
       console.error(`[Groove] Preview launch error for team ${teamId}:`, err.message);
+      this.daemon.broadcast({ type: 'preview:failed', teamId, reason: err.message });
     });
   }
 

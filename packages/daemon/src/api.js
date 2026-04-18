@@ -2650,11 +2650,15 @@ Keep responses concise. Help them think, don't lecture them about the system the
     if (!found) {
       return res.status(404).json({ error: 'No recommended team found. Run a planner first.' });
     }
+    const planPath = found.path;
+    const planContents = readFileSync(planPath, 'utf8');
     try {
-      const raw = JSON.parse(readFileSync(found.path, 'utf8'));
+      const raw = JSON.parse(planContents);
 
-      // Delete immediately after reading to prevent duplicate launches from poll races
-      try { unlinkSync(found.path); } catch { /* already gone */ }
+      // Delete immediately after reading to prevent duplicate launches from poll races.
+      // If every spawn below fails, we'll restore the plan from planContents so the
+      // user can retry without re-prompting the planner.
+      try { unlinkSync(planPath); } catch { /* already gone */ }
 
       // Support both old format (bare array) and new format ({ projectDir, agents, preview })
       let agentConfigs;
@@ -2832,6 +2836,14 @@ Keep responses concise. Help them think, don't lecture them about the system the
       // finishes. The plan file gets deleted seconds after this endpoint returns.
       if (previewBlock && daemon.preview && defaultTeamId) {
         daemon.preview.stashPlan(defaultTeamId, previewBlock, projectWorkingDir);
+      }
+
+      // Restore the plan if nothing actually spawned or was reused — deleting
+      // it on a total failure leaves the team with no recovery path. A failed
+      // spawn (scope collision, provider unavailable, etc.) should be retryable
+      // once the user fixes the condition.
+      if (spawned.length === 0 && reused.length === 0 && failed.length > 0) {
+        try { writeFileSync(planPath, planContents); } catch { /* best-effort */ }
       }
 
       daemon.audit.log('team.launch', {

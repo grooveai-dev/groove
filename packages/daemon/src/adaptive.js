@@ -3,6 +3,11 @@
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
+import { minimatch } from 'minimatch';
+
+// Treat these scope entries as "unrestricted" — agent can touch any file
+// under its workingDir without counting as a scope violation.
+const UNRESTRICTED_SCOPE_PATTERNS = new Set(['**', '**/*', '*', '']);
 
 const DEFAULT_THRESHOLD = 0.75;
 const NUDGE_UP = 0.02;   // Good session → allow more context
@@ -186,14 +191,28 @@ export class AdaptiveThresholds {
           signals.toolFailures++;
         }
 
-        // Scope violations: writes outside declared scope
+        // Scope violations: writes outside declared scope. Use real glob matching
+        // (the naive substring check flagged every write when scope was `["**"]`
+        // because `file.includes("**")` is always false — which tanked the
+        // quality score and triggered false-positive rotations). An unrestricted
+        // scope (`**`, `**/*`, empty pattern) skips the check entirely.
         if (agentScope && agentScope.length > 0 && entry.input) {
           if (entry.tool === 'Write' || entry.tool === 'Edit') {
             const file = entry.input;
-            const inScope = agentScope.some((pattern) =>
-              file.includes(pattern.replace('/**', '').replace('**/', ''))
-            );
-            if (!inScope) signals.scopeViolations++;
+            const unrestricted = agentScope.some((p) => UNRESTRICTED_SCOPE_PATTERNS.has(String(p).trim()));
+            if (!unrestricted) {
+              const inScope = agentScope.some((pattern) => {
+                try {
+                  if (minimatch(file, pattern, { matchBase: true, dot: true })) return true;
+                  // Also try matching the basename and any path suffix, since
+                  // scope patterns are relative to the agent's workingDir and
+                  // the recorded input may be absolute.
+                  const idx = file.indexOf('/' + pattern.replace(/\/?\*\*\/?/g, '').replace(/^\//, ''));
+                  return idx >= 0;
+                } catch { return true; } // if the pattern is malformed, don't penalize
+              });
+              if (!inScope) signals.scopeViolations++;
+            }
           }
         }
       }

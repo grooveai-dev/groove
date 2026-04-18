@@ -1486,6 +1486,34 @@ ipcMain.handle('home-pick-key', async () => {
 ipcMain.handle('home-get-cached-sub', async () => {
   const token = loadStoredToken();
   let sub = getCachedSubscription();
+
+  // Prefer the running daemon's live subscription state when any instance is
+  // open — the user most commonly signs in via the daemon's web auth flow, so
+  // that's the source of truth for subscription status. The desktop's local
+  // OAuth token may be absent even when the user is Pro.
+  try {
+    const instances = workspaces?.getAll() || [];
+    const inst = instances.find(i => i.daemon && !i.daemon.killed && i.port);
+    if (inst) {
+      const resp = await fetch(`http://localhost:${inst.port}/api/subscription/status`, {
+        signal: AbortSignal.timeout(3_000),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        sub = {
+          plan: data.plan || 'community',
+          active: data.active === true || data.status === 'active' || data.status === 'trialing',
+          features: data.features || [],
+          seats: data.seats || 1,
+          validatedAt: Date.now(),
+        };
+        cacheSubscription(sub);
+      }
+    }
+  } catch {}
+
+  // Fall back to the marketplace fetch when we have a desktop token and the
+  // cache is stale or missing (first launch, no project open yet).
   if (token && (!sub || !sub.validatedAt || Date.now() - sub.validatedAt > 3600_000)) {
     try {
       const resp = await fetch('https://docs.groovedev.ai/api/v1/subscription/status', {
@@ -1505,8 +1533,16 @@ ipcMain.handle('home-get-cached-sub', async () => {
       }
     } catch {}
   }
+
+  // Authenticated = has desktop token OR has a valid active cached sub.
+  // The latter covers the common case: user signed in via the daemon's web
+  // auth flow (not the desktop OAuth), daemon marked them active, cache was
+  // written during a prior project session. Without this, returning Pro users
+  // see the "sign in" gate on every splash.
+  const authenticated = !!token || (sub?.active === true && !!sub?.plan && sub.plan !== 'community');
+
   return {
-    authenticated: !!token,
+    authenticated,
     plan: sub?.plan || 'community',
     active: sub?.active || false,
   };

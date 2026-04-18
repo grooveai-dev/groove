@@ -158,7 +158,7 @@ export class ToolExecutor {
   _checkWriteScope(resolvedPath) {
     if (!this.daemon?.locks) return;
     const rel = relative(this.workingDir, resolvedPath);
-    const result = this.daemon.locks.check(this.agentId, rel);
+    const result = this.daemon.locks.check(this.agentId, rel, this.workingDir);
     if (result.conflict) {
       // Record conflict for supervisor + token savings
       if (this.daemon.supervisor) {

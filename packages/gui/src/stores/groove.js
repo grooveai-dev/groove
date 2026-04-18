@@ -387,6 +387,7 @@ export const useGrooveStore = create((set, get) => ({
             'Project ready to preview',
             msg.url,
             { label: 'View Site', url: msg.url },
+            { persistent: true },
           );
           break;
 
@@ -660,11 +661,13 @@ export const useGrooveStore = create((set, get) => ({
 
   async deleteTeam(id) {
     const team = get().teams.find((t) => t.id === id);
-    if (team?.isDefault) { get().addToast('warning', 'Cannot delete the default team'); return; }
     try {
       await api.delete(`/teams/${encodeURIComponent(id)}`);
-      // WS team:deleted handler removes from array and switches activeTeamId
-      get().addToast('info', `Team "${team?.name}" deleted`);
+      // WS team:deleted handler removes from array and switches activeTeamId.
+      // Deleting the default team regenerates a fresh one server-side; the
+      // team:created event arrives separately so the list stays populated.
+      const wiped = team?.isDefault ? 'wiped' : 'deleted';
+      get().addToast('info', `Team "${team?.name}" ${wiped}`);
     } catch (err) {
       get().addToast('error', 'Failed to delete team', err.message);
     }
@@ -758,9 +761,11 @@ export const useGrooveStore = create((set, get) => ({
 
   // ── Toasts ────────────────────────────────────────────────
 
-  addToast(type, message, detail, action) {
+  addToast(type, message, detail, action, options = {}) {
     const id = ++toastCounter;
-    set((s) => ({ toasts: [...s.toasts, { id, type, message, detail, action }] }));
+    const persistent = !!options.persistent;
+    const duration = options.duration;
+    set((s) => ({ toasts: [...s.toasts, { id, type, message, detail, action, persistent, duration }] }));
   },
   removeToast(id) {
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));

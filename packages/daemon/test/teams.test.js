@@ -135,9 +135,19 @@ describe('Teams', () => {
     assert.equal(msg.teamId, team.id);
   });
 
-  it('should throw when deleting the default team', () => {
-    const d = teams.getDefault();
-    assert.throws(() => teams.delete(d.id), /Cannot delete the default/);
+  it('should regenerate a fresh default team when the default is deleted', () => {
+    const original = teams.getDefault();
+    broadcasts.length = 0;
+
+    teams.delete(original.id);
+
+    const fresh = teams.getDefault();
+    assert.ok(fresh, 'a new default team should be created');
+    assert.notEqual(fresh.id, original.id);
+    assert.equal(fresh.isDefault, true);
+    assert.equal(teams.list().length, 1);
+    assert.ok(broadcasts.find((b) => b.type === 'team:deleted' && b.teamId === original.id));
+    assert.ok(broadcasts.find((b) => b.type === 'team:created' && b.team?.id === fresh.id));
   });
 
   it('should throw when deleting nonexistent team', () => {

@@ -15,13 +15,15 @@ import { ROLE_INTEGRATIONS } from './process.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkgVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
-const isPro = process.env.GROOVE_EDITION === 'pro';
 
 let _daemon = null;
 
+// Single source of truth for Pro features: the signed-in user's subscription
+// status, populated by the daemon polling the backend with the stored JWT.
+// There is no build-time "Pro edition" flag — one binary, account-gated.
 function proOnly(req, res, next) {
   const sub = _daemon?.subscriptionCache || {};
-  if (isPro || sub.active) return next();
+  if (sub.active) return next();
   return res.status(403).json({
     error: 'Pro subscription required',
     edition: 'community',
@@ -128,6 +130,10 @@ export function createApi(app, daemon) {
       if (!config.workingDir) {
         const team = daemon.teams.get(config.teamId);
         if (team?.workingDir) config.workingDir = team.workingDir;
+      }
+      // Inherit configured default model if the request didn't pick one
+      if (!config.model && daemon.config?.defaultModel) {
+        config.model = daemon.config.defaultModel;
       }
       const agent = await daemon.processes.spawn(config);
       daemon.audit.log('agent.spawn', { id: agent.id, role: agent.role, provider: agent.provider });
@@ -295,7 +301,7 @@ export function createApi(app, daemon) {
     // verify the path matches the scope or belongs to no one.
     if (agent.scope && agent.scope.length > 0 && targets.length > 0) {
       for (const target of targets) {
-        const conflict = daemon.locks.check(agentId, target);
+        const conflict = daemon.locks.check(agentId, target, agent.workingDir);
         if (conflict.conflict) {
           daemon.audit.log('knock.denied', { agentId, toolName, target, owner: conflict.owner, pattern: conflict.pattern });
           daemon.broadcast({ type: 'knock:denied', agentId, agentName: agent.name, toolName, target, owner: conflict.owner, reason: 'scope_conflict' });
@@ -711,7 +717,7 @@ export function createApi(app, daemon) {
   app.get('/api/edition', (req, res) => {
     const sub = daemon.subscriptionCache || {};
     res.json({
-      edition: (isPro || sub.active) ? 'pro' : 'community',
+      edition: sub.active ? 'pro' : 'community',
       plan: sub.plan || 'community',
       subscriptionActive: sub.active || false,
       features: sub.features || [],
@@ -734,7 +740,7 @@ export function createApi(app, daemon) {
       host: daemon.host,
       port: daemon.port,
       projectDir: daemon.projectDir,
-      edition: (isPro || sub.active) ? 'pro' : 'community',
+      edition: sub.active ? 'pro' : 'community',
     });
   });
 

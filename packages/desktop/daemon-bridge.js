@@ -4,8 +4,6 @@ import { createRequire } from 'module';
 import { dirname, join } from 'path';
 import { pathToFileURL } from 'url';
 
-process.env.GROOVE_EDITION = 'pro';
-
 const port = 31415;
 const projectDir = process.argv[2] || process.cwd();
 

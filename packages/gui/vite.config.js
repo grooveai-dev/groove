@@ -4,9 +4,6 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [tailwindcss(), react()],
-  define: {
-    __GROOVE_EDITION__: JSON.stringify(process.env.GROOVE_EDITION || 'community'),
-  },
   server: {
     port: 3142,
     proxy: {

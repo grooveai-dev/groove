@@ -36,7 +36,7 @@ const DURATIONS = {
 function ToastItem({ toast }) {
   const removeToast = useGrooveStore((s) => s.removeToast);
   const Icon = ICONS[toast.type] || Info;
-  const duration = DURATIONS[toast.type];
+  const duration = toast.persistent ? 0 : (toast.duration ?? DURATIONS[toast.type]);
 
   useEffect(() => {
     if (!duration) return;

@@ -239,14 +239,10 @@ export function TeamTabBar() {
               <ContextMenuItem onSelect={() => cloneTeam(team.id)}>
                 <Copy size={12} /> Clone
               </ContextMenuItem>
-              {!team.isDefault && (
-                <>
-                  <ContextMenuSeparator />
-                  <ContextMenuItem danger onSelect={() => deleteTeam(team.id)}>
-                    <Trash2 size={12} /> Delete
-                  </ContextMenuItem>
-                </>
-              )}
+              <ContextMenuSeparator />
+              <ContextMenuItem danger onSelect={() => deleteTeam(team.id)}>
+                <Trash2 size={12} /> {team.isDefault ? 'Wipe' : 'Delete'}
+              </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
         );

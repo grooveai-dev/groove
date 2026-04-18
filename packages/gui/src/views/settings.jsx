@@ -1080,6 +1080,19 @@ export default function SettingsView() {
                   </select>
                 </ConfigCard>
 
+                <ConfigCard icon={Cpu} label="Default Model" description="Model used for new agents. Auto routes by role.">
+                  <select
+                    value={config.defaultModel || ''}
+                    onChange={(e) => updateConfig('defaultModel', e.target.value || null)}
+                    className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
+                  >
+                    <option value="">Auto (route by role)</option>
+                    {(providers.find((p) => p.id === (config.defaultProvider || 'claude-code'))?.models || []).map((m) => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                </ConfigCard>
+
                 <ConfigCard icon={FolderOpen} label="Working Directory" description="Default root directory for new agents.">
                   <div className="flex items-center gap-1.5">
                     <code className="flex-1 h-8 px-2 flex items-center bg-surface-0 border border-border-subtle rounded-md text-2xs font-mono text-text-2 truncate min-w-0">

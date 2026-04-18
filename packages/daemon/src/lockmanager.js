@@ -18,7 +18,7 @@ const DEFAULT_OPERATION_TTL_MS = 10 * 60 * 1000; // 10 minutes
 export class LockManager {
   constructor(grooveDir) {
     this.path = resolve(grooveDir, 'locks.json');
-    this.locks = new Map(); // agentId -> glob patterns[]
+    this.locks = new Map(); // agentId -> { patterns, workingDir }
     this._compiledPatterns = new Map(); // agentId -> RegExp[]
     this.operations = new Map(); // agentId -> { name, resources, acquiredAt, expiresAt }
     this.load();
@@ -28,9 +28,11 @@ export class LockManager {
     if (existsSync(this.path)) {
       try {
         const data = JSON.parse(readFileSync(this.path, 'utf8'));
-        for (const [id, patterns] of Object.entries(data)) {
-          this.locks.set(id, patterns);
-          this._compilePatterns(id, patterns);
+        for (const [id, val] of Object.entries(data)) {
+          // Backward compat: old format stored just patterns array
+          const entry = Array.isArray(val) ? { patterns: val, workingDir: null } : val;
+          this.locks.set(id, entry);
+          this._compilePatterns(id, entry.patterns);
         }
       } catch {
         // Start fresh
@@ -51,8 +53,8 @@ export class LockManager {
     this._compiledPatterns.set(agentId, compiled);
   }
 
-  register(agentId, patterns) {
-    this.locks.set(agentId, patterns);
+  register(agentId, patterns, workingDir = null) {
+    this.locks.set(agentId, { patterns, workingDir: workingDir || null });
     this._compilePatterns(agentId, patterns);
     this.save();
   }
@@ -64,9 +66,13 @@ export class LockManager {
     this.save();
   }
 
-  check(agentId, filePath) {
+  // Scopes are per-team — only conflict with owners in the same workingDir.
+  // Pass workingDir=null to skip the filter (legacy behavior).
+  check(agentId, filePath, workingDir = null) {
     for (const [ownerId, compiled] of this._compiledPatterns) {
       if (ownerId === agentId) continue;
+      const ownerEntry = this.locks.get(ownerId);
+      if (workingDir && ownerEntry?.workingDir && ownerEntry.workingDir !== workingDir) continue;
       for (const { pattern, re } of compiled) {
         if (re && re.test(filePath)) {
           return { conflict: true, owner: ownerId, pattern };
@@ -111,11 +117,13 @@ export class LockManager {
   /**
    * Find any currently-locked agent whose scope overlaps with candidateScope.
    * Returns { overlap: true, owner, ... } for the first conflict, else {overlap:false}.
+   * Pass workingDir to limit the search to the same team folder (scopes are per-team).
    */
-  findOverlappingOwner(candidateScope) {
-    for (const [ownerId, patterns] of this.locks) {
-      const res = LockManager.scopesOverlap(candidateScope, patterns);
-      if (res.overlap) return { overlap: true, owner: ownerId, ownerScope: patterns, ...res };
+  findOverlappingOwner(candidateScope, workingDir = null) {
+    for (const [ownerId, entry] of this.locks) {
+      if (workingDir && entry.workingDir && entry.workingDir !== workingDir) continue;
+      const res = LockManager.scopesOverlap(candidateScope, entry.patterns);
+      if (res.overlap) return { overlap: true, owner: ownerId, ownerScope: entry.patterns, ...res };
     }
     return { overlap: false };
   }
@@ -140,7 +148,9 @@ export class LockManager {
   }
 
   getAll() {
-    return Object.fromEntries(this.locks);
+    const obj = {};
+    for (const [id, entry] of this.locks) obj[id] = entry.patterns;
+    return obj;
   }
 
   // --- Operation locks (coordination protocol) ---

@@ -385,7 +385,7 @@ export class ProcessManager {
     // bypass entirely since their job requires broad access.
     const SCOPE_BYPASS_ROLES = new Set(['planner', 'fullstack', 'qc', 'pm', 'supervisor', 'security', 'ambassador']);
     if (config.scope && config.scope.length > 0 && !SCOPE_BYPASS_ROLES.has(config.role) && !config.allowScopeOverlap) {
-      const conflict = locks.findOverlappingOwner(config.scope);
+      const conflict = locks.findOverlappingOwner(config.scope, config.workingDir);
       if (conflict.overlap) {
         const owner = registry.get(conflict.owner);
         if (owner && owner.status === 'running' && owner.workingDir === config.workingDir) {
@@ -463,7 +463,7 @@ export class ProcessManager {
 
     // Register file locks for the agent's scope
     if (agent.scope && agent.scope.length > 0) {
-      locks.register(agent.id, agent.scope);
+      locks.register(agent.id, agent.scope, agent.workingDir);
     }
 
     // Register ambassador with federation system
@@ -1523,7 +1523,7 @@ For normal file edits within your scope, proceed without review.
 
     // Re-register locks
     if (newAgent.scope && newAgent.scope.length > 0) {
-      locks.register(newAgent.id, newAgent.scope);
+      locks.register(newAgent.id, newAgent.scope, newAgent.workingDir);
     }
 
     // Spawn the resumed process

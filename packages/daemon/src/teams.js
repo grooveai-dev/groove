@@ -34,13 +34,29 @@ export class Teams {
   }
 
   _ensureDefault() {
-    const hasDefault = [...this.teams.values()].some((t) => t.isDefault);
-    if (!hasDefault) {
+    const defaultDir = resolve(this.daemon.projectDir, 'default');
+    const existing = [...this.teams.values()].find((t) => t.isDefault);
+
+    if (!existing) {
+      try { mkdirSync(defaultDir, { recursive: true }); } catch { /* may exist */ }
       const id = randomUUID().slice(0, 8);
-      const team = { id, name: 'Default', isDefault: true, createdAt: new Date().toISOString() };
-      // Default team uses the project directory (no subdirectory)
-      team.workingDir = this.daemon.projectDir;
+      const team = {
+        id,
+        name: 'Default',
+        isDefault: true,
+        workingDir: defaultDir,
+        createdAt: new Date().toISOString(),
+      };
       this.teams.set(id, team);
+      this._save();
+      return;
+    }
+
+    // Migrate legacy default teams that pointed at the project root — give them
+    // their own folder so generated files don't pile up alongside source code.
+    if (!existing.workingDir || existing.workingDir === this.daemon.projectDir) {
+      try { mkdirSync(defaultDir, { recursive: true }); } catch { /* may exist */ }
+      existing.workingDir = defaultDir;
       this._save();
     }
   }
@@ -125,12 +141,13 @@ export class Teams {
   }
 
   /**
-   * Delete a team — removes directory and all contents, moves agents to default.
+   * Delete a team — kills its agents, removes its directory, drops it from the
+   * registry. Deleting the default team regenerates a fresh empty one so users
+   * can wipe accumulated state and keep working without restarting the daemon.
    */
   delete(id) {
     const team = this.teams.get(id);
     if (!team) throw new Error('Team not found');
-    if (team.isDefault) throw new Error('Cannot delete the default team');
 
     // Kill any running agents in this team
     const agents = this.daemon.registry.getAll().filter((a) => a.teamId === id);
@@ -145,8 +162,13 @@ export class Teams {
       this.daemon.registry.remove(agent.id);
     }
 
-    // Remove the working directory
-    if (team.workingDir && !team.isDefault && existsSync(team.workingDir)) {
+    // Remove the team's working directory — refuse to nuke the project root
+    // (legacy default teams that were never migrated point there).
+    if (
+      team.workingDir &&
+      team.workingDir !== this.daemon.projectDir &&
+      existsSync(team.workingDir)
+    ) {
       try {
         rmSync(team.workingDir, { recursive: true, force: true });
       } catch (err) {
@@ -157,6 +179,13 @@ export class Teams {
     this.teams.delete(id);
     this._save();
     this.daemon.broadcast({ type: 'team:deleted', teamId: id });
+
+    // Always keep a default team available — regenerate one with a clean folder
+    if (team.isDefault) {
+      this._ensureDefault();
+      const fresh = this.getDefault();
+      if (fresh) this.daemon.broadcast({ type: 'team:created', team: fresh });
+    }
 
     // Clean up orphaned logs immediately — don't wait for the 24h GC cycle
     try { this.daemon._gc(); } catch { /* gc should never block deletion */ }

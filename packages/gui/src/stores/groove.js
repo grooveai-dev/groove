@@ -1035,8 +1035,13 @@ export const useGrooveStore = create((set, get) => ({
           thinkingAgents: new Set([...s.thinkingAgents, ...launchedAgents.map((a) => a.id)]),
         }));
       }
-      // Clean up stale files
-      api.post('/cleanup').catch(() => {});
+      // Clean up stale files — scoped to the launched team so plans in other
+      // teams' workspaces survive. The launch endpoint already unlinks the
+      // exact plan it read; this is a belt-and-suspenders sweep.
+      const launchedTeamId = body?.teamId || result?.teamId || null;
+      if (launchedTeamId) {
+        api.post('/cleanup', { teamId: launchedTeamId }).catch(() => {});
+      }
       return result;
     } catch (err) {
       get().addToast('error', 'Launch failed', err.message);

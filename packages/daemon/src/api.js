@@ -2868,23 +2868,28 @@ Keep responses concise. Help them think, don't lecture them about the system the
     res.json(result);
   });
 
-  // Clean up stale artifacts (old plans, recommended teams, etc.)
+  // Clean up stale artifacts. Scope to a single team when teamId is provided —
+  // wiping every agent's working dir on a global cleanup would delete other
+  // in-flight teams' unlaunched plans. When called with no teamId, only the
+  // daemon-root plan file is touched (safe baseline).
   app.post('/api/cleanup', (req, res) => {
+    const teamId = req.body?.teamId || req.query?.teamId || null;
     let cleaned = 0;
-    // Clean recommended-team.json from all known locations
     const locations = [resolve(daemon.grooveDir, 'recommended-team.json')];
-    for (const agent of daemon.registry.getAll()) {
-      if (agent.workingDir) {
-        locations.push(resolve(agent.workingDir, '.groove', 'recommended-team.json'));
+
+    if (teamId) {
+      // Only agents in this team get their workspace scanned
+      for (const agent of daemon.registry.getAll()) {
+        if (agent.teamId === teamId && agent.workingDir) {
+          locations.push(resolve(agent.workingDir, '.groove', 'recommended-team.json'));
+        }
       }
     }
-    const defaultDir = daemon.config?.defaultWorkingDir;
-    if (defaultDir) locations.push(resolve(defaultDir, '.groove', 'recommended-team.json'));
 
     for (const p of locations) {
       if (existsSync(p)) { try { unlinkSync(p); cleaned++; } catch { /* */ } }
     }
-    daemon.audit.log('cleanup', { cleaned });
+    daemon.audit.log('cleanup', { cleaned, teamId });
     res.json({ ok: true, cleaned });
   });
 

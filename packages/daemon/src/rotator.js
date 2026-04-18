@@ -10,8 +10,10 @@ const DEFAULT_THRESHOLD = 0.65;      // For non-self-managing providers (was 0.7
 const HARD_CEILING = 0.80;           // Force rotate (was 0.85) — only for non-self-managing
 const CHECK_INTERVAL = 15_000;
 const QUALITY_THRESHOLD = 40;   // Score below this triggers quality rotation
-const MIN_EVENTS = 10;          // Minimum classifier events before scoring
-const MIN_AGE_SEC = 120;        // Minimum agent age before quality rotation
+const MIN_EVENTS = 20;          // Minimum classifier events before scoring
+const MIN_AGE_SEC = 300;        // Minimum agent age before quality rotation (5 min)
+const QUALITY_MIN_TOKENS = 20_000; // Minimum real token work before quality rotation can fire
+const QUALITY_MIN_FILES = 3;    // Or: 3 successful file writes proves the agent is productive
 const SCORE_HISTORY_MAX = 40;   // ~10 min at 15s intervals
 const COOLDOWN_MS = 5 * 60 * 1000;   // 5 minutes between rotations per agent
 const QUALITY_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes for quality degradation rotations
@@ -128,7 +130,20 @@ export class Rotator extends EventEmitter {
       return { score: 70, signals: {}, hasEnoughData: false, ageSec: Math.round(ageSec), eventCount: events.length };
     }
 
-    const signals = this.daemon.adaptive.extractSignals(events, agent.scope);
+    // Productive-work floor: don't even score an agent that hasn't produced
+    // enough to judge. A frontend agent scaffolding a project naturally emits
+    // noisy signals (npm install warnings, Write retries) in its first few
+    // minutes; killing it mid-scaffold destroys the context it was building.
+    // Only allow the score to gate rotation once EITHER substantial tokens
+    // have flowed OR the agent has already written multiple files successfully.
+    const tokens = agent.tokensUsed || 0;
+    const signalsEarly = this.daemon.adaptive.extractSignals(events, agent.scope);
+    const filesWritten = signalsEarly.filesWritten || 0;
+    if (tokens < QUALITY_MIN_TOKENS && filesWritten < QUALITY_MIN_FILES) {
+      return { score: 70, signals: signalsEarly, hasEnoughData: false, ageSec: Math.round(ageSec), eventCount: events.length, reason: 'below_productive_floor' };
+    }
+
+    const signals = signalsEarly;
     let score = this.daemon.adaptive.scoreSession(signals);
 
     if (ageSec > 1800) score -= 5;

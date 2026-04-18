@@ -19,6 +19,11 @@ import { lookup as mimeLookup } from './mimetypes.js';
 
 const READY_TIMEOUT_MS = 60_000;  // give dev servers a minute to boot
 const MAX_STDOUT_BYTES = 256 * 1024;
+// Strip CSI/OSC/other ANSI escape sequences — Vite prints URLs with inline
+// bold/color codes (e.g. "http://localhost:\x1b[1m5175\x1b[22m/") which would
+// otherwise break port-number regexes.
+const ANSI_REGEX = /[\u001B\u009B][[\]()#;?]*(?:(?:(?:(?:;[-a-zA-Z\d/#&.:=?%@~_]+)*|[a-zA-Z\d]+(?:;[-a-zA-Z\d/#&.:=?%@~_]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
+function stripAnsi(s) { return s.replace(ANSI_REGEX, ''); }
 
 export class PreviewService {
   constructor(daemon) {
@@ -168,11 +173,12 @@ export class PreviewService {
       };
 
       const timer = setTimeout(() => {
-        finish({ launched: false, reason: `timeout waiting for url in stdout; last stderr: ${stderrBuf.slice(-400)}` });
+        const tail = stripAnsi(stderrBuf).slice(-400) || stripAnsi(stdoutBuf).slice(-400) || '(no output)';
+        finish({ launched: false, reason: `timeout waiting for url in stdout; last output: ${tail}` });
       }, READY_TIMEOUT_MS);
 
       const tryMatch = () => {
-        const combined = stdoutBuf + '\n' + stderrBuf;
+        const combined = stripAnsi(stdoutBuf + '\n' + stderrBuf);
         if (readyText && !combined.includes(readyText)) return;
         const m = combined.match(urlPattern);
         if (!m) return;

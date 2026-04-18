@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import { Maximize2, Minimize2, Plus, X, Terminal } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
@@ -16,8 +16,11 @@ export function TerminalPanel({
   onCloseTab,
   onToggleFullHeight,
   onMinimize,
+  onRenameTab,
 }) {
   const dragging = useRef(false);
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
   const startY = useRef(0);
   const startH = useRef(0);
 
@@ -63,23 +66,38 @@ export function TerminalPanel({
       )}
 
       {/* Header bar */}
-      <div className="flex items-center h-9 bg-surface-1 border-b border-border flex-shrink-0 px-3">
+      <div className="flex items-center h-9 bg-surface-1 border-b border-border flex-shrink-0 pl-0 pr-3">
         {/* Tabs */}
         <div className="flex items-center gap-0 flex-1 min-w-0 overflow-x-auto scrollbar-none h-full">
           {tabList.map((tab) => (
             <button
               key={tab.id}
               onClick={() => onSelectTab?.(tab.id)}
+              onDoubleClick={() => { setRenamingId(tab.id); setRenameValue(tab.label); }}
               className={cn(
-                'inline-flex items-center gap-1.5 px-3 h-full text-xs font-medium font-sans cursor-pointer select-none transition-colors duration-100 flex-shrink-0',
-                'border-t',
+                'inline-flex items-center gap-1.5 px-3 h-full text-[11px] font-medium font-sans cursor-pointer select-none transition-colors duration-100 flex-shrink-0',
                 tab.id === activeTab
-                  ? 'text-text-0 border-accent'
-                  : 'text-text-2 border-transparent hover:text-text-0 hover:bg-surface-5/50',
+                  ? 'text-text-0 bg-surface-3'
+                  : 'text-text-2 hover:text-text-0 hover:bg-surface-5/50',
               )}
             >
               <Terminal size={11} />
-              <span className="truncate max-w-[100px]">{tab.label}</span>
+              {renamingId === tab.id ? (
+                <input
+                  className="bg-transparent border border-border rounded px-1 text-[11px] text-text-0 outline-none w-20 font-sans"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={() => { if (renameValue.trim()) onRenameTab?.(tab.id, renameValue.trim()); setRenamingId(null); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { if (renameValue.trim()) onRenameTab?.(tab.id, renameValue.trim()); setRenamingId(null); }
+                    if (e.key === 'Escape') setRenamingId(null);
+                  }}
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <span className="truncate max-w-[100px]">{tab.label}</span>
+              )}
               {tabList.length > 1 && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onCloseTab?.(tab.id); }}

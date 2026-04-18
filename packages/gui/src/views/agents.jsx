@@ -181,7 +181,7 @@ export function TeamTabBar() {
                 className={cn(
                   'relative flex items-center gap-2 px-3 h-9 text-xs font-sans cursor-pointer select-none transition-colors flex-shrink-0',
                   isActive
-                    ? 'text-text-0 font-semibold border-x border-x-border bg-[#242830]'
+                    ? 'text-text-0 font-semibold border-x border-x-[#242830] bg-[#242830]'
                     : 'text-text-3 hover:text-text-1 hover:bg-surface-3/50',
                   dragId === team.id && 'opacity-40',
                   dragOverId === team.id && dragId !== team.id && 'border-l-2 !border-l-accent',

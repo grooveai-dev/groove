@@ -163,6 +163,10 @@ export function TerminalManager() {
     setActiveTab(id);
   }, []);
 
+  const renameTab = useCallback((id, newLabel) => {
+    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, label: newLabel } : t)));
+  }, []);
+
   const closeTab = useCallback((id) => {
     setTabs((prev) => {
       const next = prev.filter((t) => t.id !== id);
@@ -190,6 +194,7 @@ export function TerminalManager() {
       onSelectTab={setActiveTab}
       onAddTab={addTab}
       onCloseTab={closeTab}
+      onRenameTab={renameTab}
       onToggleFullHeight={() => setFullHeight(true)}
       onMinimize={() => setFullHeight(false)}
     >

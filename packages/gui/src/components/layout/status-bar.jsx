@@ -19,6 +19,8 @@ export function StatusBar({
   const version = useGrooveStore((s) => s.version);
   const updateReady = useGrooveStore((s) => s.updateReady);
   const installUpdate = useGrooveStore((s) => s.installUpdate);
+  const subscription = useGrooveStore((s) => s.subscription);
+  const navigate = useGrooveStore((s) => s.setActiveView);
   const activeTunnel = savedTunnels.find((t) => t.active);
   const electron = isElectron();
 
@@ -91,6 +93,16 @@ export function StatusBar({
           >
             <Plug size={10} />
             <span>Connect</span>
+          </button>
+        )}
+        {subscription?.active && (subscription.plan === 'pro' || subscription.plan === 'team') && (
+          <button
+            onClick={() => navigate('federation')}
+            className="flex items-center gap-1.5 text-text-4 hover:text-text-1 cursor-pointer transition-colors"
+            title="Federation"
+          >
+            <Globe size={10} />
+            <span>Federation</span>
           </button>
         )}
       </div>

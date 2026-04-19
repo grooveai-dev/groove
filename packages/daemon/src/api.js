@@ -12,6 +12,7 @@ import { lookup as mimeLookup } from './mimetypes.js';
 import { listProviders, getProvider } from './providers/index.js';
 import { OllamaProvider } from './providers/ollama.js';
 import { ClaudeCodeProvider } from './providers/claude-code.js';
+import { supportsSignalFlag, compareSemver, parseSemver } from './providers/groove-network.js';
 import { validateAgentConfig } from './validate.js';
 import { ROLE_INTEGRATIONS } from './process.js';
 
@@ -3993,9 +3994,10 @@ Keep responses concise. Help them think, don't lecture them about the system the
       return res.status(400).json({ error: `Deploy path not found: ${deployPath}` });
     }
 
+    const signalFlag = supportsSignalFlag(cfg.version) ? '--signal' : '--relay';
     const args = [
       '-m', 'src.node.server',
-      '--signal', signal,
+      signalFlag, signal,
       '--device', device,
       '--max-context', String(maxContext),
     ];
@@ -4354,6 +4356,232 @@ Keep responses concise. Help them think, don't lecture them about the system the
     daemon.audit.log('network.uninstall', { path: installPath });
     res.json({ status: 'uninstalled' });
   });
+
+  // --- Network package update check / update ---
+
+  // 5-minute cache of the latest-tag lookup so startup + GUI polls don't
+  // hammer GitHub. Shape: { latest, fetchedAt }. null until first check.
+  let networkUpdateCache = null;
+  const NETWORK_UPDATE_CACHE_MS = 5 * 60 * 1000;
+
+  // Run `git ls-remote --tags <repo>` and return the highest semver tag.
+  // Resolves to null on git errors / network failure; caller decides how to
+  // surface that. Uses spawn with array args — no shell interpolation.
+  function fetchLatestNetworkTag() {
+    return new Promise((resolvePromise) => {
+      const proc = spawn('git', ['ls-remote', '--tags', NETWORK_REPO_URL], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      });
+      let stdout = '';
+      let stderr = '';
+      proc.stdout.on('data', (c) => { stdout += c.toString(); });
+      proc.stderr.on('data', (c) => { stderr += c.toString(); });
+      const timeout = setTimeout(() => {
+        try { proc.kill('SIGTERM'); } catch { /* ignore */ }
+      }, 10_000);
+      proc.on('error', () => { clearTimeout(timeout); resolvePromise(null); });
+      proc.on('close', (code) => {
+        clearTimeout(timeout);
+        if (code !== 0) return resolvePromise(null);
+        const tags = [];
+        for (const line of stdout.split('\n')) {
+          // Format: <sha>\trefs/tags/v0.1.0 (or .../v0.1.0^{} for annotated)
+          const m = line.match(/refs\/tags\/(v?\d+\.\d+\.\d+[^\s^]*)(?:\^\{\})?$/);
+          if (m && parseSemver(m[1])) tags.push(m[1]);
+        }
+        if (tags.length === 0) return resolvePromise(null);
+        tags.sort(compareSemver);
+        resolvePromise(tags[tags.length - 1]);
+      });
+    });
+  }
+
+  async function getLatestNetworkTag(force = false) {
+    if (!force && networkUpdateCache && (Date.now() - networkUpdateCache.fetchedAt) < NETWORK_UPDATE_CACHE_MS) {
+      return networkUpdateCache.latest;
+    }
+    const latest = await fetchLatestNetworkTag();
+    if (latest) networkUpdateCache = { latest, fetchedAt: Date.now() };
+    return latest;
+  }
+
+  app.get('/api/network/update/check', networkGate, async (req, res) => {
+    const installed = daemon.config?.networkBeta?.version || null;
+    const force = req.query.force === '1' || req.query.force === 'true';
+    const latest = await getLatestNetworkTag(force);
+    if (!latest) {
+      return res.status(502).json({
+        installed,
+        latest: null,
+        updateAvailable: false,
+        error: 'Could not reach github.com to check for updates',
+      });
+    }
+    const updateAvailable = !!installed && compareSemver(latest, installed) > 0;
+    res.json({ installed, latest, updateAvailable });
+  });
+
+  function broadcastUpdateProgress(step, message, percent) {
+    daemon.broadcast({
+      type: 'network:update:progress',
+      data: { step, message, percent },
+    });
+  }
+
+  app.post('/api/network/update', networkGate, async (req, res) => {
+    if (daemon.networkInstall?.running) {
+      return res.status(409).json({ error: 'Install/update already in progress' });
+    }
+    if (!daemon.config?.networkBeta?.installed) {
+      return res.status(400).json({ error: 'Network package not installed' });
+    }
+
+    const installPath = networkRoot();
+    if (!existsSync(installPath) || !isInsideGrooveHome(installPath)) {
+      return res.status(400).json({ error: 'Install path missing or invalid' });
+    }
+
+    const latest = await getLatestNetworkTag(true);
+    if (!latest) {
+      return res.status(502).json({ error: 'Could not reach github.com to check for updates' });
+    }
+    const current = daemon.config.networkBeta.version || null;
+    if (current && compareSemver(latest, current) <= 0) {
+      return res.status(400).json({ error: 'Already at latest version', installed: current, latest });
+    }
+
+    daemon.networkInstall = { running: true, startedAt: Date.now(), kind: 'update' };
+    res.status(200).json({ status: 'updating', from: current, to: latest });
+
+    (async () => {
+      const fail = (message) => {
+        broadcastUpdateProgress('error', message, -1);
+        daemon.audit.log('network.update.failed', { message, from: current, to: latest });
+        daemon.networkInstall = { running: false };
+      };
+
+      try {
+        // Stop the running node first so we don't update files under its feet.
+        try {
+          const node = daemon.networkNode;
+          if (node?.active && node.proc && !node.proc.killed) {
+            try { node.proc.kill('SIGINT'); } catch { /* ignore */ }
+            daemon.networkNode.status = 'stopping';
+            pushNodeEvent('stopping', { pid: node.pid, reason: 'update' });
+            broadcastNodeStatus();
+            // Small grace window for the process to exit cleanly.
+            await new Promise((r) => setTimeout(r, 500));
+          }
+        } catch { /* ignore */ }
+
+        broadcastUpdateProgress('fetching', `Fetching ${latest}...`, 5);
+
+        const fetchProc = spawn('git', ['-C', installPath, 'fetch', '--tags', '--force'], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        });
+        let fetchErr = '';
+        fetchProc.stderr.on('data', (c) => { fetchErr += c.toString(); });
+        const fetchCode = await new Promise((r) => {
+          fetchProc.on('error', (e) => r({ code: -1, err: e.message }));
+          fetchProc.on('close', (code) => r({ code }));
+        });
+        if (fetchCode.code !== 0) {
+          const hint = fetchErr.trim().split('\n').slice(-1)[0] || 'git fetch failed';
+          return fail(`Fetch failed: ${hint}`);
+        }
+
+        broadcastUpdateProgress('checkout', `Checking out ${latest}...`, 20);
+
+        const checkoutProc = spawn('git', ['-C', installPath, 'checkout', latest], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        });
+        let checkoutErr = '';
+        checkoutProc.stderr.on('data', (c) => { checkoutErr += c.toString(); });
+        const checkoutCode = await new Promise((r) => {
+          checkoutProc.on('error', (e) => r({ code: -1, err: e.message }));
+          checkoutProc.on('close', (code) => r({ code }));
+        });
+        if (checkoutCode.code !== 0) {
+          const hint = checkoutErr.trim().split('\n').slice(-1)[0] || 'git checkout failed';
+          return fail(`Checkout failed: ${hint}`);
+        }
+
+        broadcastUpdateProgress('deps', 'Updating dependencies...', 30);
+
+        const setup = spawn('bash', ['setup.sh', '--json'], {
+          cwd: installPath,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, PYTHONUNBUFFERED: '1' },
+        });
+
+        daemon.networkInstall.proc = setup;
+
+        let stdoutBuf = '';
+        setup.stdout.on('data', (chunk) => {
+          stdoutBuf += chunk.toString();
+          let idx;
+          while ((idx = stdoutBuf.indexOf('\n')) !== -1) {
+            const line = stdoutBuf.slice(0, idx).trim();
+            stdoutBuf = stdoutBuf.slice(idx + 1);
+            if (!line || line[0] !== '{') continue;
+            try {
+              const event = JSON.parse(line);
+              const step = typeof event.step === 'string' ? event.step : 'progress';
+              const message = typeof event.message === 'string' ? event.message : '';
+              const percent = Number.isFinite(event.percent) ? event.percent : null;
+              broadcastUpdateProgress(step, message, percent);
+            } catch { /* non-JSON line, ignore */ }
+          }
+        });
+
+        let stderrBuf = '';
+        setup.stderr.on('data', (chunk) => { stderrBuf += chunk.toString(); });
+
+        const setupResult = await new Promise((r) => {
+          setup.on('error', (e) => r({ code: -1, err: e.message }));
+          setup.on('close', (code) => r({ code }));
+        });
+
+        if (setupResult.code !== 0) {
+          const hint = stderrBuf.trim().split('\n').slice(-1)[0] || `setup.sh exited ${setupResult.code}`;
+          return fail(`Setup failed: ${hint}`);
+        }
+
+        daemon.config.networkBeta = {
+          ...(daemon.config.networkBeta || {}),
+          version: latest,
+        };
+        await persistConfig();
+        // Invalidate the update cache now that we've moved forward.
+        networkUpdateCache = { latest, fetchedAt: Date.now() };
+        daemon.networkUpdateAvailable = { latest, updateAvailable: false, installed: latest };
+        daemon.broadcast({ type: 'config:updated' });
+        daemon.broadcast({ type: 'network:update:available', data: daemon.networkUpdateAvailable });
+        broadcastUpdateProgress('done', `Updated to ${latest}`, 100);
+        daemon.audit.log('network.update', { from: current, to: latest, path: installPath });
+        daemon.networkInstall = { running: false };
+      } catch (err) {
+        fail(err?.message || 'Update failed');
+      }
+    })();
+  });
+
+  // Startup hook — called from index.js once the server is up. Non-blocking;
+  // updates daemon.networkUpdateAvailable and broadcasts so the GUI can badge.
+  daemon.checkNetworkUpdate = async function checkNetworkUpdate() {
+    if (!daemon.config?.networkBeta?.installed) return;
+    try {
+      const latest = await getLatestNetworkTag(true);
+      if (!latest) return;
+      const installed = daemon.config.networkBeta.version || null;
+      const updateAvailable = !!installed && compareSemver(latest, installed) > 0;
+      daemon.networkUpdateAvailable = { installed, latest, updateAvailable };
+      daemon.broadcast({ type: 'network:update:available', data: daemon.networkUpdateAvailable });
+    } catch { /* non-fatal */ }
+  };
 
   // Serve GUI static files (built GUI) — no-cache headers to prevent stale bundles
   const guiPath = process.env.GROOVE_GUI_PATH || resolve(__dirname, '../../gui/dist');

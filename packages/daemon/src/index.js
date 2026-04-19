@@ -523,6 +523,13 @@ export class Daemon {
           this.revalidateBetaCode().catch(() => {});
         }
 
+        // Non-blocking check for a newer Network package release. Result is
+        // stored on daemon.networkUpdateAvailable and broadcast so the GUI
+        // can show an update badge without having to poll on open.
+        if (typeof this.checkNetworkUpdate === 'function') {
+          this.checkNetworkUpdate().catch(() => {});
+        }
+
         // Classifier broadcasting — batched into a single message per interval
         // Also bridges classifier tier changes to the router for mid-session suggestions
         this._classifierInterval = setInterval(() => {

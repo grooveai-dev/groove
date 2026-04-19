@@ -23,6 +23,41 @@ function getConfig() {
   return _daemonRef?.config?.networkBeta || null;
 }
 
+// Parse a version tag like 'v0.1.0' or '0.2.0-rc1' into [major, minor, patch].
+// Non-numeric suffixes are stripped. Returns null if unparseable.
+export function parseSemver(v) {
+  if (!v || typeof v !== 'string') return null;
+  const m = v.trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return null;
+  return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
+}
+
+// Returns negative / 0 / positive, like String.prototype.localeCompare.
+// Unparseable versions compare as "lower" than parseable ones.
+export function compareSemver(a, b) {
+  const pa = parseSemver(a);
+  const pb = parseSemver(b);
+  if (!pa && !pb) return 0;
+  if (!pa) return -1;
+  if (!pb) return 1;
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] !== pb[i]) return pa[i] - pb[i];
+  }
+  return 0;
+}
+
+// v0.2.0+ renamed the `--relay` flag to `--signal`. Older installs still need
+// `--relay` until the user updates. Unparseable / missing versions are treated
+// as pre-0.2.0 to stay compatible with existing v0.1.0 installs.
+export function supportsSignalFlag(version) {
+  return compareSemver(version, '0.2.0') >= 0;
+}
+
+function signalFlagName() {
+  const cfg = getConfig() || {};
+  return supportsSignalFlag(cfg.version) ? '--signal' : '--relay';
+}
+
 export class GrooveNetworkProvider extends Provider {
   static name = 'groove-network';
   static displayName = 'Groove Network';
@@ -53,7 +88,7 @@ export class GrooveNetworkProvider extends Provider {
 
     const args = [
       '-m', 'src.consumer.client',
-      '--signal', signal,
+      signalFlagName(), signal,
       '--model', model,
       '--prompt', prompt,
       '--max-tokens', String(maxTokens),
@@ -77,7 +112,7 @@ export class GrooveNetworkProvider extends Provider {
       command: join(deployPath, 'venv', 'bin', 'python3.12'),
       args: [
         '-m', 'src.consumer.client',
-        '--signal', signal,
+        signalFlagName(), signal,
         '--model', m,
         '--prompt', prompt,
         '--max-tokens', '500',

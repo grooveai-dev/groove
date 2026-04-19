@@ -1018,7 +1018,7 @@ function EarlyAccessSection() {
           </div>
         )}
         {error && !networkUnlocked && (
-          <div className="mt-2 text-2xs text-danger font-sans">Invalid code</div>
+          <div className="mt-2 text-2xs text-danger font-sans">{error}</div>
         )}
       </div>
     </div>

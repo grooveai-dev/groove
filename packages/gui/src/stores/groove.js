@@ -1627,6 +1627,9 @@ export const useGrooveStore = create((set, get) => ({
 
   async activateBeta(code) {
     const data = await api.post('/beta/activate', { code });
+    if (!data?.unlocked) {
+      throw new Error(data?.message || 'Invalid invite code');
+    }
     set({ networkUnlocked: true });
     return data;
   },

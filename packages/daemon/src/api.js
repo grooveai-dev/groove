@@ -6,6 +6,8 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream, copyFileSync, realpathSync } from 'fs';
 import { spawn, execFile } from 'child_process';
+import { createHash } from 'crypto';
+import { hostname, networkInterfaces } from 'os';
 import { lookup as mimeLookup } from './mimetypes.js';
 import { listProviders, getProvider } from './providers/index.js';
 import { OllamaProvider } from './providers/ollama.js';
@@ -3722,13 +3724,51 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   // --- Groove Network (Beta) ---
 
-  const BETA_CODES = new Set([
+  // Offline fallback allowlist — used only when groovedev.ai is unreachable
+  // so beta testers aren't locked out by network failures.
+  const BETA_CODES_FALLBACK = new Set([
     'GROOVE-NET-ALPHA-001',
     'GROOVE-NET-ALPHA-002',
     'GROOVE-NET-ALPHA-003',
     'GROOVE-NET-ALPHA-004',
     'GROOVE-NET-ALPHA-005',
   ]);
+
+  const BETA_VALIDATE_URL = 'https://groovedev.ai/api/beta/validate';
+
+  function getMachineId() {
+    const nets = networkInterfaces();
+    const macs = [];
+    for (const name of Object.keys(nets)) {
+      for (const iface of nets[name] || []) {
+        if (iface.mac && iface.mac !== '00:00:00:00:00:00') macs.push(iface.mac);
+      }
+    }
+    macs.sort();
+    return createHash('sha256').update(`${hostname()}|${macs.join(',')}`).digest('hex');
+  }
+
+  async function validateCodeWithServer(code) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch(BETA_VALIDATE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, machineId: getMachineId() }),
+        signal: controller.signal,
+      });
+      if (!response.ok && response.status !== 200) {
+        return { ok: false, reason: 'http', status: response.status };
+      }
+      const body = await response.json();
+      return { ok: true, result: body };
+    } catch (err) {
+      return { ok: false, reason: 'network', error: err.message };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 
   function isNetworkUnlocked() {
     return !!(daemon.config?.networkBeta?.unlocked);
@@ -3754,19 +3794,87 @@ Keep responses concise. Help them think, don't lecture them about the system the
     if (typeof code !== 'string' || code.length > 64 || !/^[A-Z0-9-]+$/.test(code)) {
       return res.status(400).json({ error: 'Invalid code format' });
     }
-    if (!BETA_CODES.has(code)) {
-      return res.status(403).json({ error: 'Invalid beta code' });
+
+    const remote = await validateCodeWithServer(code);
+
+    let valid = false;
+    let message = 'Invalid invite code';
+    let expiresAt = null;
+    let features = [];
+    let source = 'server';
+
+    if (remote.ok && remote.result && typeof remote.result === 'object') {
+      valid = remote.result.valid === true;
+      if (typeof remote.result.message === 'string') message = remote.result.message;
+      if (typeof remote.result.expiresAt === 'string' || remote.result.expiresAt === null) {
+        expiresAt = remote.result.expiresAt || null;
+      }
+      if (Array.isArray(remote.result.features)) features = remote.result.features;
+    } else {
+      // Offline fallback — only trust the hardcoded list when we can't reach the server
+      source = 'fallback';
+      if (BETA_CODES_FALLBACK.has(code)) {
+        valid = true;
+        message = 'Activated (offline)';
+        features = ['network-node', 'network-consumer'];
+      } else {
+        message = 'Invalid invite code';
+      }
     }
+
+    if (!valid) {
+      daemon.audit.log('beta.activate.denied', { codePrefix: code.slice(0, 10), source });
+      return res.status(200).json({ unlocked: false, message });
+    }
+
     daemon.config.networkBeta = {
       ...(daemon.config.networkBeta || {}),
       unlocked: true,
       code,
+      expiresAt,
+      features,
     };
     await persistConfig();
-    daemon.audit.log('beta.activate', { code });
+    daemon.audit.log('beta.activate', { codePrefix: code.slice(0, 10), source, features });
     daemon.broadcast({ type: 'config:updated' });
-    res.json({ unlocked: true });
+    res.json({ unlocked: true, message, expiresAt, features });
   });
+
+  // Re-validate stored code against groovedev.ai. Called at daemon startup
+  // so revoked or expired codes lock the feature automatically. Non-blocking.
+  daemon.revalidateBetaCode = async function revalidateBetaCode() {
+    const cfg = daemon.config?.networkBeta;
+    if (!cfg?.unlocked || !cfg?.code) return;
+    const remote = await validateCodeWithServer(cfg.code);
+    // If we couldn't reach the server, keep the current unlocked state —
+    // network failures must not lock out beta users.
+    if (!remote.ok || !remote.result || typeof remote.result !== 'object') return;
+    if (remote.result.valid === true) {
+      // Refresh features/expiresAt from server in case they changed
+      const next = {
+        ...cfg,
+        expiresAt: typeof remote.result.expiresAt === 'string' ? remote.result.expiresAt : null,
+        features: Array.isArray(remote.result.features) ? remote.result.features : (cfg.features || []),
+      };
+      if (JSON.stringify(next) !== JSON.stringify(cfg)) {
+        daemon.config.networkBeta = next;
+        await persistConfig();
+        daemon.broadcast({ type: 'config:updated' });
+      }
+      return;
+    }
+    // Server says invalid — revoke
+    daemon.config.networkBeta = {
+      ...cfg,
+      unlocked: false,
+      code: null,
+      expiresAt: null,
+      features: [],
+    };
+    await persistConfig();
+    daemon.audit.log('beta.revoked', { reason: remote.result.message || 'server denied' });
+    daemon.broadcast({ type: 'config:updated' });
+  };
 
   app.post('/api/beta/deactivate', async (req, res) => {
     // Stop the node if it's running before locking the feature away.

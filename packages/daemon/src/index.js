@@ -517,6 +517,12 @@ export class Daemon {
           this._pollSubscription().catch(() => {});
         }, 30 * 60 * 1000);
 
+        // Re-validate stored Network beta code against groovedev.ai so
+        // revoked codes lock the feature without requiring a re-activate.
+        if (typeof this.revalidateBetaCode === 'function') {
+          this.revalidateBetaCode().catch(() => {});
+        }
+
         // Classifier broadcasting — batched into a single message per interval
         // Also bridges classifier tier changes to the router for mid-session suggestions
         this._classifierInterval = setInterval(() => {

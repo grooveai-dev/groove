@@ -607,9 +607,11 @@ export const useGrooveStore = create((set, get) => ({
           get().addToast('warning', 'Session expired', 'Please sign in again');
           break;
 
-        case 'network:node:status':
-          set({ networkNode: { ...get().networkNode, ...(msg.data || {}) } });
+        case 'network:node:status': {
+          const { __proto__: _a, constructor: _b, prototype: _c, ...safeData } = msg.data || {};
+          set({ networkNode: { ...get().networkNode, ...safeData } });
           break;
+        }
 
         case 'network:node:event': {
           const ev = msg.data || {};
@@ -620,13 +622,12 @@ export const useGrooveStore = create((set, get) => ({
         }
 
         case 'signal_connected': {
-          const ev = msg.data || msg || {};
+          const ev = msg.data || {};
           set((s) => ({
             networkEvents: [...s.networkEvents, {
               level: 'connected',
-              msg: ev.msg || ev.message || 'Connected to signal',
-              detail: ev.detail || ev.url,
-              ...ev,
+              msg: String(ev.msg || ev.message || 'Connected to signal').slice(0, 500),
+              detail: ev.detail || ev.url || undefined,
               timestamp: ev.timestamp || Date.now(),
             }].slice(-100),
           }));
@@ -634,13 +635,12 @@ export const useGrooveStore = create((set, get) => ({
         }
 
         case 'matched': {
-          const ev = msg.data || msg || {};
+          const ev = msg.data || {};
           set((s) => ({
             networkEvents: [...s.networkEvents, {
               level: 'session',
-              msg: ev.msg || ev.message || 'Session matched',
-              detail: ev.detail || ev.peer || ev.nodeId,
-              ...ev,
+              msg: String(ev.msg || ev.message || 'Session matched').slice(0, 500),
+              detail: ev.detail || ev.peer || ev.nodeId || undefined,
               timestamp: ev.timestamp || Date.now(),
             }].slice(-100),
           }));

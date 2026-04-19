@@ -740,7 +740,7 @@ For normal file edits within your scope, proceed without review.
     }
 
     const spawnCmd = provider.buildSpawnCommand(spawnConfig);
-    const { command, args, env, stdin: stdinData } = spawnCmd;
+    const { command, args, env, stdin: stdinData, cwd: providerCwd } = spawnCmd;
 
     // Log the spawn command (mask anything that looks like an API key)
     const maskArg = (a) => /^(sk-|AIza|key-|token-)/.test(a) ? '***' : a;
@@ -765,7 +765,7 @@ For normal file edits within your scope, proceed without review.
 
     // Spawn the process (use pipe for stdin if provider needs to send prompt via stdin)
     const proc = cpSpawn(command, args, {
-      cwd: agent.workingDir || this.daemon.projectDir,
+      cwd: providerCwd || agent.workingDir || this.daemon.projectDir,
       env: { ...process.env, ...env, ...integrationEnv, GROOVE_AGENT_ID: agent.id, GROOVE_AGENT_NAME: agent.name, GROOVE_DAEMON_HOST: this.daemon.host || '127.0.0.1', GROOVE_DAEMON_PORT: String(this.daemon.port || 31415) },
       stdio: [stdinData ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       detached: false,

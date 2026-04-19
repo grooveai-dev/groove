@@ -3866,7 +3866,14 @@ Keep responses concise. Help them think, don't lecture them about the system the
   // so revoked or expired codes lock the feature automatically. Non-blocking.
   daemon.revalidateBetaCode = async function revalidateBetaCode() {
     const cfg = daemon.config?.networkBeta;
-    if (!cfg?.unlocked || !cfg?.code) return;
+    if (!cfg?.unlocked) return;
+    if (!cfg?.code) {
+      daemon.config.networkBeta = { ...cfg, unlocked: false, expiresAt: null, features: [] };
+      await persistConfig();
+      daemon.audit.log('beta.revoked', { reason: 'missing code' });
+      daemon.broadcast({ type: 'config:updated' });
+      return;
+    }
     const remote = await validateCodeWithServer(cfg.code);
     // If we couldn't reach the server, keep the current unlocked state —
     // network failures must not lock out beta users.
@@ -4016,6 +4023,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
     if (!existsSync(deployPath)) {
       return res.status(400).json({ error: `Deploy path not found: ${deployPath}` });
+    }
+    if (!isInsideGrooveHome(deployPath) && !deployPath.startsWith(resolve(process.env.HOME || '', 'Desktop'))) {
+      return res.status(400).json({ error: 'Deploy path outside allowed directories' });
     }
 
     const signalFlag = supportsSignalFlag(cfg.version) ? '--signal' : '--relay';
@@ -4206,8 +4216,53 @@ Keep responses concise. Help them think, don't lecture them about the system the
           };
         }) : [];
         const primaryModel = Array.isArray(data.models) && data.models[0] ? data.models[0] : {};
+
+        // Enrich local node state from signal's authoritative topology.
+        // Signal truncates IDs (e.g. "0xf608fd..."), so match by prefix.
+        if (daemon.networkNode?.active && daemon.networkNode.nodeId) {
+          const selfId = daemon.networkNode.nodeId;
+          const signalNodes = Array.isArray(data.nodes) ? data.nodes : [];
+          const self = signalNodes.find((n) => {
+            const nid = n.node_id || n.nodeId || '';
+            const prefix = nid.replace(/\.{2,}$/, '');
+            return selfId === nid || (prefix.length >= 6 && selfId.startsWith(prefix));
+          });
+          let changed = false;
+          if (self) {
+            if (Array.isArray(self.layers) && self.layers.length === 2) {
+              daemon.networkNode.layers = self.layers;
+              changed = true;
+            }
+            if (self.device) {
+              daemon.networkNode.hardware = {
+                device: self.device,
+                memory: daemon.networkNode.hardware?.memory || null,
+                gpu: daemon.networkNode.hardware?.gpu || null,
+              };
+              changed = true;
+            }
+          }
+          const availModel = Array.isArray(data.models)
+            ? data.models.find((m) => m && m.available !== false)
+            : null;
+          if (availModel && !daemon.networkNode.model) {
+            daemon.networkNode.model = availModel.name || null;
+            changed = true;
+          }
+          if (changed) broadcastNodeStatus();
+        }
+
+        const capStr = (s, max = 200) => (typeof s === 'string' ? s.slice(0, max) : s);
+        const safeNodes = (Array.isArray(data.nodes) ? data.nodes : []).map((n) => ({
+          node_id: capStr(n.node_id || n.nodeId),
+          device: capStr(n.device),
+          layers: Array.isArray(n.layers) ? n.layers.slice(0, 2) : n.layers,
+          status: capStr(n.status, 50),
+          active_sessions: n.active_sessions ?? 0,
+        }));
+
         return res.json({
-          nodes: Array.isArray(data.nodes) ? data.nodes : [],
+          nodes: safeNodes,
           models,
           coverage: data.covered_layers ?? primaryModel.covered_layers ?? data.coverage ?? 0,
           totalLayers: data.total_layers ?? primaryModel.total_layers ?? data.totalLayers ?? 24,
@@ -4313,15 +4368,8 @@ Keep responses concise. Help them think, don't lecture them about the system the
       };
 
       try {
-        // Build clone URL with optional PAT
         const pat = daemon.credentials?.getKey?.('github-pat') || null;
-        const cloneUrl = pat
-          ? NETWORK_REPO_URL.replace('https://', `https://${pat}@`)
-          : NETWORK_REPO_URL;
 
-        // Resolve the latest released tag so fresh installs track new releases
-        // without requiring a code change. Falls back to NETWORK_VERSION if the
-        // remote lookup fails (offline, rate-limited, no tags yet).
         let installVersion;
         try {
           installVersion = (await getLatestNetworkTag()) || NETWORK_VERSION;
@@ -4331,10 +4379,16 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
         broadcastInstallProgress('cloning', `Cloning network package ${installVersion}...`, 0);
 
-        const cloneArgs = ['clone', '--branch', installVersion, '--depth', '1', cloneUrl, installPath];
+        const cloneArgs = ['clone', '--branch', installVersion, '--depth', '1', NETWORK_REPO_URL, installPath];
+        const cloneEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
+        if (pat) {
+          cloneEnv.GIT_CONFIG_COUNT = '1';
+          cloneEnv.GIT_CONFIG_KEY_0 = 'http.extraHeader';
+          cloneEnv.GIT_CONFIG_VALUE_0 = `Authorization: token ${pat}`;
+        }
         const clone = spawn('git', cloneArgs, {
           stdio: ['ignore', 'pipe', 'pipe'],
-          env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+          env: cloneEnv,
         });
 
         const stripCredentials = (s) => s.replace(/https:\/\/[^@]+@/g, 'https://***@');

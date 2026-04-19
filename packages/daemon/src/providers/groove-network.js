@@ -66,6 +66,11 @@ function stripScheme(url) {
   return url.replace(/^wss?:\/\//i, '').replace(/\/.*$/, '');
 }
 
+function isAllowedSignalHost(host) {
+  const h = (host || '').replace(/^(wss?|https?):\/\//i, '').replace(/\/.*$/, '').toLowerCase();
+  return h === 'signal.groovedev.ai' || h.endsWith('.groovedev.ai');
+}
+
 export class GrooveNetworkProvider extends Provider {
   static name = 'groove-network';
   static displayName = 'Groove Network';
@@ -88,6 +93,7 @@ export class GrooveNetworkProvider extends Provider {
   buildSpawnCommand(agent) {
     const cfg = getConfig() || {};
     const signal = stripScheme(cfg.signalUrl);
+    if (!isAllowedSignalHost(signal)) throw new Error('Invalid signal host');
     const model = agent.model || GrooveNetworkProvider.models[0].id;
     const maxTokens = agent.maxTokens || 500;
     const prompt = agent.prompt || '';
@@ -115,6 +121,7 @@ export class GrooveNetworkProvider extends Provider {
   buildHeadlessCommand(prompt, model) {
     const cfg = getConfig() || {};
     const signal = stripScheme(cfg.signalUrl);
+    if (!isAllowedSignalHost(signal)) throw new Error('Invalid signal host');
     const m = model || GrooveNetworkProvider.models[0].id;
     const deployPath = expandHome(cfg.deployPath) || resolve(homedir(), 'Desktop/groove-deploy');
     return {

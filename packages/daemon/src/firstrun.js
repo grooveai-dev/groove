@@ -155,5 +155,5 @@ export function loadConfig(grooveDir) {
 }
 
 export function saveConfig(grooveDir, config) {
-  writeFileSync(resolve(grooveDir, 'config.json'), JSON.stringify(config, null, 2));
+  writeFileSync(resolve(grooveDir, 'config.json'), JSON.stringify(config, null, 2), { mode: 0o600 });
 }

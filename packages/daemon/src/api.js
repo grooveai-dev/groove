@@ -3675,7 +3675,13 @@ Keep responses concise. Help them think, don't lecture them about the system the
   // --- Config ---
 
   app.get('/api/config', (req, res) => {
-    res.json(daemon.config || {});
+    const cfg = daemon.config || {};
+    const sanitized = { ...cfg };
+    if (sanitized.networkBeta) {
+      sanitized.networkBeta = { ...sanitized.networkBeta };
+      delete sanitized.networkBeta.code;
+    }
+    res.json(sanitized);
   });
 
   app.patch('/api/config', async (req, res) => {
@@ -3725,17 +3731,25 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   // --- Groove Network (Beta) ---
 
-  // Offline fallback allowlist — used only when groovedev.ai is unreachable
-  // so beta testers aren't locked out by network failures.
-  const BETA_CODES_FALLBACK = new Set([
-    'GROOVE-NET-ALPHA-001',
-    'GROOVE-NET-ALPHA-002',
-    'GROOVE-NET-ALPHA-003',
-    'GROOVE-NET-ALPHA-004',
-    'GROOVE-NET-ALPHA-005',
+  // Offline fallback allowlist — SHA-256 hashes of valid codes so plaintext
+  // codes aren't exposed in source. Used only when groovedev.ai is unreachable.
+  const BETA_CODES_FALLBACK_HASHES = new Set([
+    '2dd41c615fd155f322e8381fed28f346ed6592e2bbab1c068f156fa225c02110',
+    '034d771385b608bb85d8f0225c561fe3c084b8ce7851221b01f9c2226dfe3e7b',
+    'fad2c7b09f9161db518d8c9a8d338831eb3894ef0f36e2c7cb1884cffbb05768',
+    '0ff4c9c1d224e59ac370d6f4bf315ae2ec750af014758c8206f38980cb7603ba',
+    '08b2ffe7f40afe2894db335860d67af877fa31201b3e2c25736480eb3f7c58ef',
   ]);
 
+  function hashCode(code) {
+    return createHash('sha256').update(code).digest('hex');
+  }
+
   const BETA_VALIDATE_URL = 'https://groovedev.ai/api/beta/validate';
+
+  const betaAttempts = [];
+  const BETA_RATE_LIMIT = 5;
+  const BETA_RATE_WINDOW_MS = 60_000;
 
   function getMachineId() {
     const nets = networkInterfaces();
@@ -3791,6 +3805,13 @@ Keep responses concise. Help them think, don't lecture them about the system the
   });
 
   app.post('/api/beta/activate', async (req, res) => {
+    const now = Date.now();
+    while (betaAttempts.length && betaAttempts[0] < now - BETA_RATE_WINDOW_MS) betaAttempts.shift();
+    if (betaAttempts.length >= BETA_RATE_LIMIT) {
+      return res.status(429).json({ error: 'Too many attempts. Try again in a minute.' });
+    }
+    betaAttempts.push(now);
+
     const { code } = req.body || {};
     if (typeof code !== 'string' || code.length > 64 || !/^[A-Z0-9-]+$/.test(code)) {
       return res.status(400).json({ error: 'Invalid code format' });
@@ -3812,9 +3833,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
       }
       if (Array.isArray(remote.result.features)) features = remote.result.features;
     } else {
-      // Offline fallback — only trust the hardcoded list when we can't reach the server
+      // Offline fallback — only trust the hashed list when we can't reach the server
       source = 'fallback';
-      if (BETA_CODES_FALLBACK.has(code)) {
+      if (BETA_CODES_FALLBACK_HASHES.has(hashCode(code))) {
         valid = true;
         message = 'Activated (offline)';
         features = ['network-node', 'network-consumer'];
@@ -3979,6 +4000,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
     const cfg = daemon.config.networkBeta || {};
     const signal = cfg.signalUrl || 'signal.groovedev.ai';
+    if (!isAllowedSignalHost(signal)) {
+      return res.status(400).json({ error: 'Invalid signal host' });
+    }
     const device = cfg.devicePreference || 'auto';
     const maxContext = Number.isFinite(cfg.maxContext) ? cfg.maxContext : 4096;
 
@@ -4113,9 +4137,19 @@ Keep responses concise. Help them think, don't lecture them about the system the
     res.json({ stopping: true });
   });
 
+  function isAllowedSignalHost(host) {
+    const h = (host || '').replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
+    return h === 'signal.groovedev.ai' || h.endsWith('.groovedev.ai');
+  }
+
   app.get('/api/network/status', networkGate, async (req, res) => {
     const cfg = daemon.config.networkBeta || {};
     const signalHost = cfg.signalUrl || 'signal.groovedev.ai';
+
+    if (!isAllowedSignalHost(signalHost)) {
+      return res.status(400).json({ error: 'Invalid signal host' });
+    }
+
     const statusUrl = /^https?:\/\//i.test(signalHost)
       ? `${signalHost.replace(/\/$/, '')}/status`
       : `https://${signalHost}/status`;
@@ -4159,10 +4193,15 @@ Keep responses concise. Help them think, don't lecture them about the system the
   }
 
   // Defensive: only permit fs ops on paths that resolve inside ~/.groove/.
+  // Uses realpathSync when the path exists to defeat symlink escapes.
   function isInsideGrooveHome(target) {
     const home = resolve(homedir(), '.groove') + '/';
-    const full = resolve(target) + '/';
-    return full.startsWith(home);
+    const resolved = resolve(target);
+    let full;
+    try { full = existsSync(resolved) ? realpathSync(resolved) + '/' : resolved + '/'; }
+    catch { full = resolved + '/'; }
+    const realHome = existsSync(home.slice(0, -1)) ? realpathSync(home.slice(0, -1)) + '/' : home;
+    return full.startsWith(realHome);
   }
 
   function broadcastInstallProgress(step, message, percent) {
@@ -4235,13 +4274,15 @@ Keep responses concise. Help them think, don't lecture them about the system the
           env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
         });
 
+        const stripCredentials = (s) => s.replace(/https:\/\/[^@]+@/g, 'https://***@');
+
         let cloneErr = '';
         clone.stderr.on('data', (chunk) => {
           const s = chunk.toString();
           cloneErr += s;
           // git writes progress to stderr — relay last line as status.
           const line = s.split('\n').map((l) => l.trim()).filter(Boolean).pop();
-          if (line) broadcastInstallProgress('cloning', line, 5);
+          if (line) broadcastInstallProgress('cloning', stripCredentials(line), 5);
         });
 
         const cloneCode = await new Promise((resolveClone) => {
@@ -4250,7 +4291,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
         });
 
         if (cloneCode.code !== 0) {
-          const hint = cloneErr.trim().split('\n').slice(-1)[0] || 'git clone failed';
+          const hint = stripCredentials(cloneErr.trim().split('\n').slice(-1)[0] || 'git clone failed');
           return fail(`Clone failed: ${hint}`);
         }
 

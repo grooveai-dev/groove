@@ -152,19 +152,31 @@ export class GrooveNetworkProvider extends Provider {
     }
     try {
       const msg = JSON.parse(trimmed);
-      if (msg && typeof msg === 'object' && typeof msg.type === 'string') {
-        return {
-          type: msg.type,
-          text: msg.text,
-          sessionId: msg.session_id,
-          tokensGenerated: msg.tokens_generated,
-          error: msg.error,
-          signal: msg.signal,
-          nodesAvailable: msg.nodes_available,
-          nodes: msg.nodes,
-          raw: msg,
-        };
+      if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') {
+        return { type: 'activity', data: trimmed };
       }
+
+      if (msg.type === 'token' && msg.text) {
+        return { type: 'activity', subtype: 'text', data: msg.text, tokensGenerated: msg.tokens_generated };
+      }
+      if (msg.type === 'complete' || msg.type === 'result') {
+        return { type: 'result', text: msg.text || '', tokensGenerated: msg.tokens_generated, sessionId: msg.session_id };
+      }
+      if (msg.type === 'error') {
+        return { type: 'activity', subtype: 'error', data: msg.error || msg.message || 'Unknown error' };
+      }
+
+      const labels = {
+        signal_connected: `Connected to ${msg.signal || 'signal'}`,
+        matched: `Matched with ${Array.isArray(msg.nodes) ? msg.nodes.length : '?'} nodes`,
+        connected: `Session ${(msg.session_id || '').slice(0, 8) || 'started'}`,
+        pipeline: `Pipeline ready — ${Array.isArray(msg.nodes) ? msg.nodes.length : '?'} nodes`,
+      };
+      if (labels[msg.type]) {
+        return { type: 'activity', data: labels[msg.type], sessionId: msg.session_id };
+      }
+
+      return { type: 'activity', data: msg.text || msg.message || msg.type, raw: msg };
     } catch { /* not JSON, fall through */ }
     return { type: 'activity', data: trimmed };
   }

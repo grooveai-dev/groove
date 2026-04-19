@@ -26,7 +26,7 @@ function getConfig() {
 export class GrooveNetworkProvider extends Provider {
   static name = 'groove-network';
   static displayName = 'Groove Network';
-  static command = 'python';
+  static command = 'python3';
   static authType = 'none';
 
   static models = [
@@ -60,7 +60,7 @@ export class GrooveNetworkProvider extends Provider {
     ];
 
     return {
-      command: 'python',
+      command: 'python3',
       args,
       env: { PYTHONUNBUFFERED: '1' },
       cwd: deployPath,
@@ -73,7 +73,7 @@ export class GrooveNetworkProvider extends Provider {
     const m = model || GrooveNetworkProvider.models[0].id;
     const deployPath = expandHome(cfg.deployPath) || resolve(homedir(), 'Desktop/groove-deploy');
     return {
-      command: 'python',
+      command: 'python3',
       args: [
         '-m', 'src.consumer.client',
         '--relay', relay,

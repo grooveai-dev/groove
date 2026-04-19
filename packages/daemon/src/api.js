@@ -4002,7 +4002,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
     let proc;
     try {
-      proc = spawn('python', args, {
+      proc = spawn('python3', args, {
         cwd: deployPath,
         env: { ...process.env, PYTHONUNBUFFERED: '1' },
         stdio: ['ignore', 'pipe', 'pipe'],

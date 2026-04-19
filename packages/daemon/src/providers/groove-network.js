@@ -58,10 +58,12 @@ function signalFlagName() {
   return supportsSignalFlag(cfg.version) ? '--signal' : '--relay';
 }
 
-function normalizeSignalUrl(url) {
-  if (!url) return 'wss://signal.groovedev.ai';
-  if (url.startsWith('wss://') || url.startsWith('ws://')) return url;
-  return 'wss://' + url;
+// The Python client prepends the scheme itself — daemon passes a bare host
+// and adds `--tls` to request wss://. Strip any ws:// or wss:// a user may
+// have left in the stored signalUrl (e.g. from an older daemon default).
+function stripScheme(url) {
+  if (!url) return 'signal.groovedev.ai';
+  return url.replace(/^wss?:\/\//i, '').replace(/\/.*$/, '');
 }
 
 export class GrooveNetworkProvider extends Provider {
@@ -85,7 +87,7 @@ export class GrooveNetworkProvider extends Provider {
 
   buildSpawnCommand(agent) {
     const cfg = getConfig() || {};
-    const signal = normalizeSignalUrl(cfg.signalUrl);
+    const signal = stripScheme(cfg.signalUrl);
     const model = agent.model || GrooveNetworkProvider.models[0].id;
     const maxTokens = agent.maxTokens || 500;
     const prompt = agent.prompt || '';
@@ -95,6 +97,7 @@ export class GrooveNetworkProvider extends Provider {
     const args = [
       '-m', 'src.consumer.client',
       signalFlagName(), signal,
+      '--tls',
       '--model', model,
       '--prompt', prompt,
       '--max-tokens', String(maxTokens),
@@ -111,7 +114,7 @@ export class GrooveNetworkProvider extends Provider {
 
   buildHeadlessCommand(prompt, model) {
     const cfg = getConfig() || {};
-    const signal = normalizeSignalUrl(cfg.signalUrl);
+    const signal = stripScheme(cfg.signalUrl);
     const m = model || GrooveNetworkProvider.models[0].id;
     const deployPath = expandHome(cfg.deployPath) || resolve(homedir(), 'Desktop/groove-deploy');
     return {
@@ -119,6 +122,7 @@ export class GrooveNetworkProvider extends Provider {
       args: [
         '-m', 'src.consumer.client',
         signalFlagName(), signal,
+        '--tls',
         '--model', m,
         '--prompt', prompt,
         '--max-tokens', '500',

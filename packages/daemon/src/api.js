@@ -3999,7 +3999,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
 
     const cfg = daemon.config.networkBeta || {};
-    const signal = normalizeSignalUrl(cfg.signalUrl);
+    const signal = stripScheme(cfg.signalUrl);
     if (!isAllowedSignalHost(signal)) {
       return res.status(400).json({ error: 'Invalid signal host' });
     }
@@ -4022,6 +4022,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     const args = [
       '-m', 'src.node.server',
       signalFlag, signal,
+      '--tls',
       '--device', device,
       '--max-context', String(maxContext),
     ];
@@ -4142,10 +4143,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
     return h === 'signal.groovedev.ai' || h.endsWith('.groovedev.ai');
   }
 
-  function normalizeSignalUrl(url) {
-    if (!url) return 'wss://signal.groovedev.ai';
-    if (url.startsWith('wss://') || url.startsWith('ws://')) return url;
-    return 'wss://' + url;
+  // The Python node/client code prepends the scheme itself from `--tls`.
+  // Daemon must pass a BARE host to --relay/--signal; otherwise the Python
+  // side ends up with a double-scheme URI like wss://wss://host.
+  function stripScheme(url) {
+    if (!url) return 'signal.groovedev.ai';
+    return url.replace(/^wss?:\/\//i, '').replace(/\/.*$/, '');
   }
 
   app.get('/api/network/status', networkGate, async (req, res) => {

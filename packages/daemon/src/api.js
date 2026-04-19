@@ -4064,7 +4064,33 @@ Keep responses concise. Help them think, don't lecture them about the system the
         stderrBuf = stderrBuf.slice(idx + 1);
         if (!line) continue;
         if (line[0] !== '{') {
+          // Python node emits plain-text logs like "Node identity: abc123",
+          // "shard loaded: layers 0-12", "registered with signal". Parse those
+          // here so the GUI reflects reality even without structured logging.
+          let changed = false;
+          const idMatch = line.match(/Node identity:\s*([A-Za-z0-9_\-:.]+)/i);
+          if (idMatch && idMatch[1] !== daemon.networkNode.nodeId) {
+            daemon.networkNode.nodeId = idMatch[1]; changed = true;
+          }
+          const layerMatch = line.match(/layers?\s*(\d+)\s*[-–to]+\s*(\d+)/i);
+          if (layerMatch) {
+            const start = parseInt(layerMatch[1], 10);
+            const end = parseInt(layerMatch[2], 10);
+            if (Number.isFinite(start) && Number.isFinite(end)) {
+              daemon.networkNode.layers = [start, end]; changed = true;
+            }
+          }
+          const modelMatch = line.match(/model[:\s]+([A-Za-z0-9_\-./]+\/[A-Za-z0-9_\-.]+)/i);
+          if (modelMatch && modelMatch[1] !== daemon.networkNode.model) {
+            daemon.networkNode.model = modelMatch[1]; changed = true;
+          }
+          if (/\bregistered\b/i.test(line) || /\bconnected\b/i.test(line)) {
+            if (daemon.networkNode.status !== 'connected') {
+              daemon.networkNode.status = 'connected'; changed = true;
+            }
+          }
           pushNodeEvent('log', { line });
+          if (changed) broadcastNodeStatus();
           continue;
         }
         let entry;
@@ -4169,7 +4195,24 @@ Keep responses concise. Help them think, don't lecture them about the system the
       clearTimeout(timer);
       if (r.ok) {
         const data = await r.json();
-        return res.json(data);
+        // Signal service returns snake_case; GUI expects camelCase.
+        const models = Array.isArray(data.models) ? data.models.map((m) => {
+          if (!m || typeof m !== 'object') return m;
+          const { covered_layers, total_layers, ...rest } = m;
+          return {
+            ...rest,
+            ...(covered_layers !== undefined ? { coveredLayers: covered_layers } : {}),
+            ...(total_layers !== undefined ? { totalLayers: total_layers } : {}),
+          };
+        }) : [];
+        return res.json({
+          nodes: Array.isArray(data.nodes) ? data.nodes : [],
+          models,
+          coverage: data.covered_layers ?? data.coverage ?? 0,
+          totalLayers: data.total_layers ?? data.totalLayers ?? 24,
+          activeSessions: data.active_sessions ?? data.activeSessions ?? 0,
+          totalNodes: data.total_nodes ?? data.totalNodes ?? (Array.isArray(data.nodes) ? data.nodes.length : 0),
+        });
       }
     } catch { /* fall through to local snapshot */ }
 
@@ -4188,6 +4231,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       coverage,
       totalLayers: 24,
       activeSessions: node.sessions || 0,
+      totalNodes: selfNode.length,
     });
   });
 

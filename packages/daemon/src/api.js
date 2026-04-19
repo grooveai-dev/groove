@@ -3977,7 +3977,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
 
     const cfg = daemon.config.networkBeta || {};
-    const relay = cfg.relayUrl || 'localhost:8770';
+    const signal = cfg.signalUrl || 'signal.groovedev.ai';
     const device = cfg.devicePreference || 'auto';
     const maxContext = Number.isFinite(cfg.maxContext) ? cfg.maxContext : 4096;
 
@@ -3995,7 +3995,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
     const args = [
       '-m', 'src.node.server',
-      '--relay', relay,
+      '--signal', signal,
       '--device', device,
       '--max-context', String(maxContext),
     ];
@@ -4025,7 +4025,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       events: [],
     };
 
-    pushNodeEvent('starting', { pid: proc.pid, relay, device });
+    pushNodeEvent('starting', { pid: proc.pid, signal, device });
     broadcastNodeStatus();
 
     let stderrBuf = '';
@@ -4090,7 +4090,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       broadcastNodeStatus();
     });
 
-    daemon.audit.log('network.node.start', { pid: proc.pid, relay, device });
+    daemon.audit.log('network.node.start', { pid: proc.pid, signal, device });
     res.status(202).json({ started: true, ...snapshotNode() });
   });
 
@@ -4111,9 +4111,25 @@ Keep responses concise. Help them think, don't lecture them about the system the
     res.json({ stopping: true });
   });
 
-  app.get('/api/network/status', networkGate, (req, res) => {
-    // Mocked relay status until the relay /status HTTP endpoint lands.
-    // Shape matches the spec in groove-comms/GETTING-STARTED.md.
+  app.get('/api/network/status', networkGate, async (req, res) => {
+    const cfg = daemon.config.networkBeta || {};
+    const signalHost = cfg.signalUrl || 'signal.groovedev.ai';
+    const statusUrl = /^https?:\/\//i.test(signalHost)
+      ? `${signalHost.replace(/\/$/, '')}/status`
+      : `https://${signalHost}/status`;
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      const r = await fetch(statusUrl, { signal: controller.signal });
+      clearTimeout(timer);
+      if (r.ok) {
+        const data = await r.json();
+        return res.json(data);
+      }
+    } catch { /* fall through to local snapshot */ }
+
+    // Fallback: local node snapshot when signal is unreachable.
     const node = daemon.networkNode || {};
     const selfNode = node.active && node.nodeId ? [{
       node_id: node.nodeId,

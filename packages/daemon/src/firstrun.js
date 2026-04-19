@@ -28,7 +28,7 @@ const DEFAULT_CONFIG = {
   networkBeta: {
     unlocked: false,
     code: null,
-    relayUrl: 'localhost:8770',
+    signalUrl: 'signal.groovedev.ai',
     devicePreference: 'auto',
     maxContext: 4096,
     deployPath: null,

@@ -44,7 +44,7 @@ export class GrooveNetworkProvider extends Provider {
 
   buildSpawnCommand(agent) {
     const cfg = getConfig() || {};
-    const relay = cfg.relayUrl || 'localhost:8770';
+    const signal = cfg.signalUrl || 'signal.groovedev.ai';
     const model = agent.model || GrooveNetworkProvider.models[0].id;
     const maxTokens = agent.maxTokens || 500;
     const prompt = agent.prompt || '';
@@ -53,10 +53,11 @@ export class GrooveNetworkProvider extends Provider {
 
     const args = [
       '-m', 'src.consumer.client',
-      '--relay', relay,
+      '--signal', signal,
       '--model', model,
       '--prompt', prompt,
       '--max-tokens', String(maxTokens),
+      '--json',
     ];
 
     return {
@@ -69,17 +70,18 @@ export class GrooveNetworkProvider extends Provider {
 
   buildHeadlessCommand(prompt, model) {
     const cfg = getConfig() || {};
-    const relay = cfg.relayUrl || 'localhost:8770';
+    const signal = cfg.signalUrl || 'signal.groovedev.ai';
     const m = model || GrooveNetworkProvider.models[0].id;
     const deployPath = expandHome(cfg.deployPath) || resolve(homedir(), 'Desktop/groove-deploy');
     return {
       command: join(deployPath, 'venv', 'bin', 'python3.12'),
       args: [
         '-m', 'src.consumer.client',
-        '--relay', relay,
+        '--signal', signal,
         '--model', m,
         '--prompt', prompt,
         '--max-tokens', '500',
+        '--json',
       ],
       env: { PYTHONUNBUFFERED: '1' },
       cwd: deployPath,
@@ -105,6 +107,9 @@ export class GrooveNetworkProvider extends Provider {
           sessionId: msg.session_id,
           tokensGenerated: msg.tokens_generated,
           error: msg.error,
+          signal: msg.signal,
+          nodesAvailable: msg.nodes_available,
+          nodes: msg.nodes,
           raw: msg,
         };
       }

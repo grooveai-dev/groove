@@ -616,6 +616,34 @@ export const useGrooveStore = create((set, get) => ({
           break;
         }
 
+        case 'signal_connected': {
+          const ev = msg.data || msg || {};
+          set((s) => ({
+            networkEvents: [...s.networkEvents, {
+              level: 'connected',
+              msg: ev.msg || ev.message || 'Connected to signal',
+              detail: ev.detail || ev.url,
+              ...ev,
+              timestamp: ev.timestamp || Date.now(),
+            }].slice(-100),
+          }));
+          break;
+        }
+
+        case 'matched': {
+          const ev = msg.data || msg || {};
+          set((s) => ({
+            networkEvents: [...s.networkEvents, {
+              level: 'session',
+              msg: ev.msg || ev.message || 'Session matched',
+              detail: ev.detail || ev.peer || ev.nodeId,
+              ...ev,
+              timestamp: ev.timestamp || Date.now(),
+            }].slice(-100),
+          }));
+          break;
+        }
+
         case 'network:status':
           set({ networkStatus: { ...get().networkStatus, ...(msg.data || {}) } });
           break;

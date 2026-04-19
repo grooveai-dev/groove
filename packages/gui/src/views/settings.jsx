@@ -1081,7 +1081,8 @@ export default function SettingsView() {
     );
   }
 
-  const connectedCount = providers.filter((p) => {
+  const visibleProviders = providers.filter((p) => p.id !== 'groove-network');
+  const connectedCount = visibleProviders.filter((p) => {
     if (p.authType === 'local') return p.installed;
     if (p.authType === 'subscription') return p.installed;
     return p.installed && p.hasKey;
@@ -1117,10 +1118,10 @@ export default function SettingsView() {
             <div className="flex items-center gap-2 mb-2.5 px-0.5">
               <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Providers</span>
               <div className="flex-1 h-px bg-border-subtle" />
-              <span className="text-2xs text-text-4 font-sans">{connectedCount}/{providers.length} connected</span>
+              <span className="text-2xs text-text-4 font-sans">{connectedCount}/{visibleProviders.length} connected</span>
             </div>
             <div className="grid grid-cols-4 gap-3">
-              {providers.map((p) => (
+              {visibleProviders.map((p) => (
                 <ProviderCard key={p.id} provider={p} onKeyChange={loadProviders} />
               ))}
             </div>
@@ -1159,7 +1160,7 @@ export default function SettingsView() {
                     onChange={(e) => updateConfig('defaultProvider', e.target.value)}
                     className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
                   >
-                    {providers.filter((p) => p.installed && (p.authType === 'local' || p.authType === 'subscription' || p.hasKey)).map((p) => (
+                    {visibleProviders.filter((p) => p.installed && (p.authType === 'local' || p.authType === 'subscription' || p.hasKey)).map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </select>

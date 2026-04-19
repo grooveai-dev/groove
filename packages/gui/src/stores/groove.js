@@ -92,7 +92,10 @@ export const useGrooveStore = create((set, get) => ({
   networkInstallProgress: { installing: false, step: null, message: null, percent: 0, error: null },
   networkNode: { active: false, status: 'disconnected', nodeId: null, layers: null, model: null, sessions: 0, hardware: null },
   networkStatus: { nodes: [], coverage: 0, totalLayers: 0, models: [], activeSessions: 0 },
+  networkStatusReachable: false,
   networkEvents: [],
+  networkVersion: { installed: null, latest: null, updateAvailable: false },
+  networkUpdateProgress: { updating: false, step: null, message: null, percent: 0, error: null },
 
   // ── Marketplace Auth ───────────────────────────────────────
   marketplaceUser: null,        // { id, displayName, avatar, ... } or null
@@ -673,6 +676,55 @@ export const useGrooveStore = create((set, get) => ({
                 step: step || 'progress',
                 message: message || '',
                 percent: Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : get().networkInstallProgress.percent,
+                error: null,
+              },
+            });
+          }
+          break;
+        }
+
+        case 'network:update:available': {
+          const { installed, latest, updateAvailable } = msg.data || {};
+          set({
+            networkVersion: {
+              installed: installed ?? get().networkVersion.installed,
+              latest: latest ?? get().networkVersion.latest,
+              updateAvailable: !!updateAvailable,
+            },
+          });
+          break;
+        }
+
+        case 'network:update:progress': {
+          const { step, message, percent, version, error } = msg.data || {};
+          if (step === 'done') {
+            set({
+              networkUpdateProgress: { updating: false, step: null, message: null, percent: 0, error: null },
+              networkVersion: {
+                ...get().networkVersion,
+                installed: version || get().networkVersion.latest || get().networkVersion.installed,
+                updateAvailable: false,
+              },
+            });
+            get().addToast('success', 'Network package updated');
+          } else if (step === 'error') {
+            set({
+              networkUpdateProgress: {
+                updating: false,
+                step: 'error',
+                message: message || error || 'Update failed',
+                percent: 0,
+                error: message || error || 'Update failed',
+              },
+            });
+            get().addToast('error', 'Network update failed', message || error);
+          } else {
+            set({
+              networkUpdateProgress: {
+                updating: true,
+                step: step || 'progress',
+                message: message || '',
+                percent: Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : get().networkUpdateProgress.percent,
                 error: null,
               },
             });
@@ -1777,9 +1829,56 @@ export const useGrooveStore = create((set, get) => ({
   async fetchNetworkStatus() {
     try {
       const data = await api.get('/network/status');
-      set({ networkStatus: { ...get().networkStatus, ...(data || {}) } });
+      set({
+        networkStatus: { ...get().networkStatus, ...(data || {}) },
+        networkStatusReachable: true,
+      });
+      return data;
+    } catch {
+      set({ networkStatusReachable: false });
+      return null;
+    }
+  },
+
+  async checkNetworkUpdate() {
+    try {
+      const data = await api.get('/network/update/check');
+      if (!data) return null;
+      set({
+        networkVersion: {
+          installed: data.installed ?? null,
+          latest: data.latest ?? null,
+          updateAvailable: !!data.updateAvailable,
+        },
+      });
       return data;
     } catch { return null; }
+  },
+
+  async updateNetworkPackage() {
+    set({
+      networkUpdateProgress: {
+        updating: true,
+        step: 'starting',
+        message: 'Starting update…',
+        percent: 0,
+        error: null,
+      },
+    });
+    try {
+      await api.post('/network/update');
+    } catch (err) {
+      set({
+        networkUpdateProgress: {
+          updating: false,
+          step: 'error',
+          message: err.message,
+          percent: 0,
+          error: err.message,
+        },
+      });
+      get().addToast('error', 'Update failed', err.message);
+    }
   },
 
   async startNetworkNode() {

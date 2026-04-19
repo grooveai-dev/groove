@@ -121,22 +121,25 @@ export function NodeToggle() {
             </div>
 
             {/* Identity */}
-            <div>
-              <div className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider mb-1.5">Node Identity</div>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 h-8 px-2.5 flex items-center bg-surface-0 border border-border-subtle rounded-md text-xs font-mono text-text-1">
-                  {shortAddress(node.nodeId)}
-                </code>
-                <Tooltip content={copied ? 'Copied' : 'Copy full address'} side="top">
-                  <button
-                    onClick={handleCopy}
-                    className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-border-subtle bg-surface-0 text-text-3 hover:text-accent hover:border-accent/40 cursor-pointer transition-colors"
-                  >
-                    {copied ? <Check size={12} /> : <Copy size={12} />}
-                  </button>
-                </Tooltip>
+            {node.nodeId && (
+              <div className="rounded-md border border-border-subtle bg-surface-0 px-3 py-2.5">
+                <div className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider mb-1.5">Your Node Identity</div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 h-8 px-2.5 flex items-center bg-surface-1 border border-border-subtle rounded-md text-xs font-mono text-text-1">
+                    {shortAddress(node.nodeId)}
+                  </code>
+                  <Tooltip content={copied ? 'Copied' : 'Copy full address'} side="top">
+                    <button
+                      onClick={handleCopy}
+                      className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-border-subtle bg-surface-1 text-text-3 hover:text-accent hover:border-accent/40 cursor-pointer transition-colors"
+                    >
+                      {copied ? <Check size={12} /> : <Copy size={12} />}
+                    </button>
+                  </Tooltip>
+                </div>
+                <div className="mt-1.5 text-2xs font-sans text-text-4">This is your network wallet address</div>
               </div>
-            </div>
+            )}
 
             {/* Sessions + memory */}
             <div className="grid grid-cols-2 gap-2">

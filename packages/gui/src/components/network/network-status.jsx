@@ -40,6 +40,7 @@ function KpiTile({ icon: Icon, label, value, sub }) {
 export function NetworkStatus() {
   const status = useGrooveStore((s) => s.networkStatus);
   const ownNodeId = useGrooveStore((s) => s.networkNode.nodeId);
+  const signalReachable = useGrooveStore((s) => s.networkStatusReachable);
   const [nodesOpen, setNodesOpen] = useState(true);
 
   const nodes = Array.isArray(status.nodes) ? status.nodes : [];
@@ -51,6 +52,17 @@ export function NetworkStatus() {
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Signal connection indicator */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-surface-1">
+        <StatusDot status={signalReachable ? 'running' : 'crashed'} size="sm" />
+        <span className="text-2xs font-sans text-text-3">Signal:</span>
+        <span className="text-2xs font-mono text-text-1">signal.groovedev.ai</span>
+        <div className="flex-1" />
+        <span className={cn('text-2xs font-sans', signalReachable ? 'text-success' : 'text-danger')}>
+          {signalReachable ? 'Connected' : 'Unreachable'}
+        </span>
+      </div>
+
       {/* KPI strip */}
       <div className="grid grid-cols-3 gap-2">
         <KpiTile icon={Globe}   label="Nodes"    value={fmtNum(nodes.length)} sub={`${nodes.filter((n) => n.status === 'active').length} active`} />

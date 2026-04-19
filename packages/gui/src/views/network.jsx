@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogTrigger } from '../components/ui/dialog';
 import { NodeToggle } from '../components/network/node-toggle';
 import { NodeDetails } from '../components/network/node-details';
 import { NetworkStatus } from '../components/network/network-status';
-import { Globe, Download, Check, AlertCircle, Loader2, Trash2 } from 'lucide-react';
+import { Globe, Download, Check, AlertCircle, Loader2, Trash2, ArrowUpCircle } from 'lucide-react';
 
 const REQUIREMENTS = [
   'Python 3.10 or higher',
@@ -113,6 +113,79 @@ function InstallGate() {
   );
 }
 
+function UpdateProgress({ progress }) {
+  const percent = Math.max(0, Math.min(100, Number.isFinite(progress.percent) ? progress.percent : 0));
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-border-subtle bg-surface-0">
+      <Loader2 size={11} className="animate-spin text-accent flex-shrink-0" />
+      <div className="flex flex-col min-w-0">
+        <span className="text-2xs font-sans text-text-1 truncate">{progress.message || 'Updating…'}</span>
+        <div className="h-1 w-32 rounded-full bg-surface-3 overflow-hidden mt-0.5">
+          <div
+            className="h-full rounded-full bg-accent transition-all duration-500 ease-out"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+      </div>
+      <span className="text-2xs font-mono text-text-3 tabular-nums">{percent}%</span>
+    </div>
+  );
+}
+
+function UpdateButton() {
+  const [open, setOpen] = useState(false);
+  const version = useGrooveStore((s) => s.networkVersion);
+  const progress = useGrooveStore((s) => s.networkUpdateProgress);
+  const updateNetworkPackage = useGrooveStore((s) => s.updateNetworkPackage);
+
+  if (progress.updating) {
+    return <UpdateProgress progress={progress} />;
+  }
+
+  if (!version.updateAvailable) return null;
+
+  const confirm = async () => {
+    try {
+      await updateNetworkPackage();
+      setOpen(false);
+    } catch { /* toast handled */ }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1"
+          title={`Update to ${version.latest}`}
+        >
+          <Badge variant="warning" className="cursor-pointer">
+            <ArrowUpCircle size={10} />
+            Update Available
+          </Badge>
+        </button>
+      </DialogTrigger>
+      <DialogContent title="Update Network Package" description="Confirm update">
+        <div className="px-5 py-4 flex flex-col gap-3">
+          <p className="text-sm text-text-1 font-sans leading-relaxed">
+            Update to <span className="font-mono text-accent">{version.latest}</span>?
+          </p>
+          <p className="text-xs text-text-3 font-sans leading-relaxed">
+            You are currently running <span className="font-mono">{version.installed || 'unknown'}</span>. Your node will be stopped during the update and restarted after.
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border-subtle bg-surface-0">
+          <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="primary" size="sm" onClick={confirm}>
+            <ArrowUpCircle size={12} />
+            Update
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function UninstallButton() {
   const [open, setOpen] = useState(false);
   const uninstallNetworkPackage = useGrooveStore((s) => s.uninstallNetworkPackage);
@@ -162,17 +235,20 @@ function UninstallButton() {
 export default function NetworkView() {
   const fetchNetworkNodeStatus = useGrooveStore((s) => s.fetchNetworkNodeStatus);
   const fetchNetworkStatus = useGrooveStore((s) => s.fetchNetworkStatus);
+  const checkNetworkUpdate = useGrooveStore((s) => s.checkNetworkUpdate);
   const node = useGrooveStore((s) => s.networkNode);
   const installed = useGrooveStore((s) => s.networkInstalled);
+  const version = useGrooveStore((s) => s.networkVersion);
 
   useEffect(() => {
     fetchNetworkNodeStatus();
     if (installed) {
       fetchNetworkStatus();
+      checkNetworkUpdate();
       const interval = setInterval(() => { fetchNetworkStatus(); }, 10000);
       return () => clearInterval(interval);
     }
-  }, [fetchNetworkNodeStatus, fetchNetworkStatus, installed]);
+  }, [fetchNetworkNodeStatus, fetchNetworkStatus, checkNetworkUpdate, installed]);
 
   return (
     <div className="flex flex-col h-full">
@@ -181,6 +257,10 @@ export default function NetworkView() {
         <Globe size={14} className="text-accent" />
         <h2 className="text-sm font-semibold text-text-0 font-sans">Groove Network</h2>
         <Badge variant="purple">Early Access</Badge>
+        {installed && version.installed && (
+          <span className="text-2xs font-mono text-text-3 tabular-nums">v{String(version.installed).replace(/^v/, '')}</span>
+        )}
+        {installed && <UpdateButton />}
         <div className="flex-1" />
         {installed && (
           <>

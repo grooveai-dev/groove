@@ -2,7 +2,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { homedir } from 'os';
-import { resolve } from 'path';
+import { resolve, join } from 'path';
 import { existsSync } from 'fs';
 import { Provider } from './base.js';
 
@@ -60,7 +60,7 @@ export class GrooveNetworkProvider extends Provider {
     ];
 
     return {
-      command: 'python3.12',
+      command: join(deployPath, 'venv', 'bin', 'python3.12'),
       args,
       env: { PYTHONUNBUFFERED: '1' },
       cwd: deployPath,
@@ -73,7 +73,7 @@ export class GrooveNetworkProvider extends Provider {
     const m = model || GrooveNetworkProvider.models[0].id;
     const deployPath = expandHome(cfg.deployPath) || resolve(homedir(), 'Desktop/groove-deploy');
     return {
-      command: 'python3.12',
+      command: join(deployPath, 'venv', 'bin', 'python3.12'),
       args: [
         '-m', 'src.consumer.client',
         '--relay', relay,

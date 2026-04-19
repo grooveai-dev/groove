@@ -2,7 +2,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import express from 'express';
-import { resolve, dirname } from 'path';
+import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream, copyFileSync, realpathSync } from 'fs';
 import { spawn, execFile } from 'child_process';
@@ -4002,7 +4002,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
     let proc;
     try {
-      proc = spawn('python3.12', args, {
+      proc = spawn(join(deployPath, 'venv', 'bin', 'python3.12'), args, {
         cwd: deployPath,
         env: { ...process.env, PYTHONUNBUFFERED: '1' },
         stdio: ['ignore', 'pipe', 'pipe'],

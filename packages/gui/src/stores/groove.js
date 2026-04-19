@@ -88,6 +88,7 @@ export const useGrooveStore = create((set, get) => ({
 
   // ── Network (Early Access) ────────────────────────────────
   networkUnlocked: false,
+  networkInstalled: false,
   networkNode: { active: false, status: 'disconnected', nodeId: null, layers: null, model: null, sessions: 0, hardware: null },
   networkStatus: { nodes: [], coverage: 0, totalLayers: 0, models: [], activeSessions: 0 },
   networkEvents: [],
@@ -1650,9 +1651,17 @@ export const useGrooveStore = create((set, get) => ({
   async fetchNetworkNodeStatus() {
     try {
       const data = await api.get('/network/node/status');
-      set({ networkNode: { ...get().networkNode, ...(data || {}) } });
+      const update = { networkNode: { ...get().networkNode, ...(data || {}) } };
+      if (data && typeof data.installed === 'boolean') {
+        update.networkInstalled = data.installed;
+      }
+      set(update);
       return data;
     } catch { return null; }
+  },
+
+  async installNetworkPackage() {
+    get().addToast('info', 'Network package installation coming soon', 'The groove-deploy team is building the install flow');
   },
 
   async fetchNetworkStatus() {

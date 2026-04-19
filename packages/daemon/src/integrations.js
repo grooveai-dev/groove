@@ -128,7 +128,7 @@ export class IntegrationStore {
 
     if (entry.npmPackage) {
       try {
-        execFileSync('npm', ['install', entry.npmPackage], {
+        execFileSync('npm', ['install', '--legacy-peer-deps', entry.npmPackage], {
           cwd: this.integrationsDir,
           stdio: 'pipe',
           timeout: 120_000,
@@ -165,7 +165,7 @@ export class IntegrationStore {
     const entry = this.registry.find((s) => s.id === integrationId);
     if (entry?.npmPackage) {
       try {
-        execFileSync('npm', ['uninstall', entry.npmPackage], {
+        execFileSync('npm', ['uninstall', '--legacy-peer-deps', entry.npmPackage], {
           cwd: this.integrationsDir,
           stdio: 'pipe',
           timeout: 60_000,

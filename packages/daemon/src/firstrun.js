@@ -25,6 +25,14 @@ const DEFAULT_CONFIG = {
     autoRotate: true,
     tokenCeilingPerAgent: 5_000_000,
   },
+  networkBeta: {
+    unlocked: false,
+    code: null,
+    relayUrl: 'localhost:8770',
+    devicePreference: 'auto',
+    maxContext: 4096,
+    deployPath: null,
+  },
   recentProjects: [],
 };
 
@@ -137,6 +145,7 @@ export function loadConfig(grooveDir) {
     const merged = { ...DEFAULT_CONFIG, ...saved };
     // Deep-merge safety subtree so partial user config doesn't drop defaults
     merged.safety = { ...DEFAULT_CONFIG.safety, ...(saved.safety || {}) };
+    merged.networkBeta = { ...DEFAULT_CONFIG.networkBeta, ...(saved.networkBeta || {}) };
     return merged;
   } catch {
     return { ...DEFAULT_CONFIG };

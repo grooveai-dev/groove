@@ -7,6 +7,7 @@ import { CodexProvider } from './codex.js';
 import { GeminiProvider } from './gemini.js';
 import { OllamaProvider } from './ollama.js';
 import { LocalProvider } from './local.js';
+import { GrooveNetworkProvider } from './groove-network.js';
 
 // Electron forks may not inherit the full shell PATH, causing `which` to miss
 // globally-installed CLI tools. Augment PATH with common npm global bin dirs.
@@ -30,6 +31,7 @@ const providers = {
   'gemini': new GeminiProvider(),
   'ollama': new OllamaProvider(),
   'local': new LocalProvider(),
+  'groove-network': new GrooveNetworkProvider(),
 };
 
 export function getProvider(name) {

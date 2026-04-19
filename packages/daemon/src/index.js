@@ -43,6 +43,7 @@ import { LlamaServerManager } from './llama-server.js';
 import { RepoImporter } from './repo-import.js';
 import { Toys } from './toys.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
+import { bindDaemon as bindGrooveNetworkDaemon } from './providers/groove-network.js';
 
 const DEFAULT_PORT = 31415;
 const DEFAULT_HOST = '127.0.0.1';
@@ -149,6 +150,27 @@ export class Daemon {
     // Subscription state (populated by Electron IPC or direct auth)
     this.authToken = null;
     this.subscriptionCache = { plan: 'community', status: 'none', features: [], active: false, validatedAt: 0 };
+
+    // Groove Network beta: decentralized inference node/consumer state.
+    // Tracked on the daemon (not the agent registry) — this is a background
+    // service, not a spawned agent.
+    this.networkNode = {
+      active: false,
+      status: 'stopped', // stopped | starting | connected | error
+      pid: null,
+      proc: null,
+      nodeId: null,
+      layers: null,
+      model: null,
+      sessions: 0,
+      hardware: null,
+      startedAt: null,
+      events: [], // recent log events (capped)
+    };
+
+    // Give the groove-network provider a handle to the daemon so it can read
+    // networkBeta config at spawn time without a circular import.
+    bindGrooveNetworkDaemon(this);
 
     // HTTP + WebSocket server
     this.app = express();

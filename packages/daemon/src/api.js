@@ -3720,6 +3720,308 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
+  // --- Groove Network (Beta) ---
+
+  const BETA_CODES = new Set([
+    'GROOVE-NET-ALPHA-001',
+    'GROOVE-NET-ALPHA-002',
+    'GROOVE-NET-ALPHA-003',
+    'GROOVE-NET-ALPHA-004',
+    'GROOVE-NET-ALPHA-005',
+  ]);
+
+  function isNetworkUnlocked() {
+    return !!(daemon.config?.networkBeta?.unlocked);
+  }
+
+  function networkGate(req, res, next) {
+    // Return 404 (not 403) so the feature is invisible until unlocked.
+    if (!isNetworkUnlocked()) return res.status(404).json({ error: 'Not found' });
+    next();
+  }
+
+  async function persistConfig() {
+    const { saveConfig } = await import('./firstrun.js');
+    saveConfig(daemon.grooveDir, daemon.config);
+  }
+
+  app.get('/api/beta/status', (req, res) => {
+    res.json({ unlocked: isNetworkUnlocked() });
+  });
+
+  app.post('/api/beta/activate', async (req, res) => {
+    const { code } = req.body || {};
+    if (typeof code !== 'string' || code.length > 64 || !/^[A-Z0-9-]+$/.test(code)) {
+      return res.status(400).json({ error: 'Invalid code format' });
+    }
+    if (!BETA_CODES.has(code)) {
+      return res.status(403).json({ error: 'Invalid beta code' });
+    }
+    daemon.config.networkBeta = {
+      ...(daemon.config.networkBeta || {}),
+      unlocked: true,
+      code,
+    };
+    await persistConfig();
+    daemon.audit.log('beta.activate', { code });
+    daemon.broadcast({ type: 'config:updated' });
+    res.json({ unlocked: true });
+  });
+
+  app.post('/api/beta/deactivate', async (req, res) => {
+    // Stop the node if it's running before locking the feature away.
+    try {
+      if (daemon.networkNode?.proc && !daemon.networkNode.proc.killed) {
+        daemon.networkNode.proc.kill('SIGINT');
+      }
+    } catch { /* ignore */ }
+    daemon.networkNode = {
+      active: false, status: 'stopped', pid: null, proc: null,
+      nodeId: null, layers: null, model: null, sessions: 0,
+      hardware: null, startedAt: null, events: [],
+    };
+    daemon.config.networkBeta = {
+      ...(daemon.config.networkBeta || {}),
+      unlocked: false,
+      code: null,
+    };
+    await persistConfig();
+    daemon.audit.log('beta.deactivate', {});
+    daemon.broadcast({ type: 'config:updated' });
+    res.json({ unlocked: false });
+  });
+
+  // Network node lifecycle (gated)
+
+  function snapshotNode() {
+    const n = daemon.networkNode || {};
+    return {
+      active: !!n.active,
+      status: n.status || 'stopped',
+      nodeId: n.nodeId || null,
+      layers: n.layers || null,
+      model: n.model || null,
+      sessions: n.sessions || 0,
+      hardware: n.hardware || null,
+    };
+  }
+
+  function eventLevel(event) {
+    if (event === 'error' || event === 'crashed') return 'error';
+    if (event === 'exit' || event === 'stopping' || event === 'disconnected') return 'warning';
+    if (event === 'connected' || event === 'node registered' || event === 'shard loaded') return 'success';
+    if (event === 'serving session' || event === 'session complete' || event === 'session ended') return 'session';
+    return 'info';
+  }
+
+  function pushNodeEvent(event, details) {
+    const d = details || {};
+    const message = typeof d.msg === 'string' ? d.msg
+      : typeof d.message === 'string' ? d.message
+      : typeof d.line === 'string' ? d.line
+      : event;
+    const entry = {
+      timestamp: new Date().toISOString(),
+      event,
+      level: eventLevel(event),
+      message,
+      details: details || null,
+    };
+    daemon.networkNode.events = daemon.networkNode.events || [];
+    daemon.networkNode.events.push(entry);
+    if (daemon.networkNode.events.length > 200) {
+      daemon.networkNode.events = daemon.networkNode.events.slice(-200);
+    }
+    daemon.broadcast({ type: 'network:node:event', data: entry });
+  }
+
+  function normalizeHardware(caps) {
+    if (!caps || typeof caps !== 'object') return null;
+    const formatMb = (mb) => (Number.isFinite(mb) && mb > 0)
+      ? (mb >= 1024 ? `${(mb / 1024).toFixed(mb >= 10240 ? 0 : 1)} GB` : `${mb} MB`)
+      : null;
+    const vram = formatMb(caps.vram_mb);
+    const ram = formatMb(caps.ram_mb);
+    return {
+      device: caps.device || null,
+      gpu: caps.gpu_model || null,
+      memory: vram || ram || null,
+      vram,
+      ram,
+      cpuCores: caps.cpu_cores || null,
+      bandwidthMbps: caps.bandwidth_mbps || null,
+      maxContext: caps.max_context_length || null,
+    };
+  }
+
+  function broadcastNodeStatus() {
+    daemon.broadcast({ type: 'network:node:status', data: snapshotNode() });
+  }
+
+  app.get('/api/network/node/status', networkGate, (req, res) => {
+    res.json(snapshotNode());
+  });
+
+  app.post('/api/network/node/start', networkGate, (req, res) => {
+    if (daemon.networkNode?.active) {
+      return res.status(409).json({ error: 'Node already running' });
+    }
+
+    const cfg = daemon.config.networkBeta || {};
+    const relay = cfg.relayUrl || 'localhost:8770';
+    const device = cfg.devicePreference || 'auto';
+    const maxContext = Number.isFinite(cfg.maxContext) ? cfg.maxContext : 4096;
+
+    // Resolve deploy path (handles ~ and defaults to ~/Desktop/groove-deploy)
+    let deployPath = cfg.deployPath || null;
+    if (!deployPath) {
+      deployPath = resolve(process.env.HOME || '', 'Desktop/groove-deploy');
+    } else if (deployPath.startsWith('~/')) {
+      deployPath = resolve(process.env.HOME || '', deployPath.slice(2));
+    }
+
+    if (!existsSync(deployPath)) {
+      return res.status(400).json({ error: `Deploy path not found: ${deployPath}` });
+    }
+
+    const args = [
+      '-m', 'src.node.server',
+      '--relay', relay,
+      '--device', device,
+      '--max-context', String(maxContext),
+    ];
+
+    let proc;
+    try {
+      proc = spawn('python', args, {
+        cwd: deployPath,
+        env: { ...process.env, PYTHONUNBUFFERED: '1' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (err) {
+      return res.status(500).json({ error: `Failed to spawn node: ${err.message}` });
+    }
+
+    daemon.networkNode = {
+      active: true,
+      status: 'starting',
+      pid: proc.pid,
+      proc,
+      nodeId: null,
+      layers: null,
+      model: null,
+      sessions: 0,
+      hardware: null,
+      startedAt: Date.now(),
+      events: [],
+    };
+
+    pushNodeEvent('starting', { pid: proc.pid, relay, device });
+    broadcastNodeStatus();
+
+    let stderrBuf = '';
+    proc.stderr.on('data', (chunk) => {
+      stderrBuf += chunk.toString();
+      let idx;
+      while ((idx = stderrBuf.indexOf('\n')) !== -1) {
+        const line = stderrBuf.slice(0, idx).trim();
+        stderrBuf = stderrBuf.slice(idx + 1);
+        if (!line) continue;
+        if (line[0] !== '{') {
+          pushNodeEvent('log', { line });
+          continue;
+        }
+        let entry;
+        try { entry = JSON.parse(line); } catch { pushNodeEvent('log', { line }); continue; }
+        const msg = entry.msg || entry.event || '';
+        let changed = false;
+        if (entry.node_id && entry.node_id !== daemon.networkNode.nodeId) {
+          daemon.networkNode.nodeId = entry.node_id; changed = true;
+        }
+        if (msg === 'node registered' || msg === 'connected') {
+          daemon.networkNode.status = 'connected'; changed = true;
+        }
+        if (msg === 'shard loaded' || entry.layer_start !== undefined) {
+          if (entry.layer_start !== undefined && entry.layer_end !== undefined) {
+            daemon.networkNode.layers = [entry.layer_start, entry.layer_end]; changed = true;
+          }
+          if (entry.model_name) { daemon.networkNode.model = entry.model_name; changed = true; }
+        }
+        if (msg === 'serving session') {
+          daemon.networkNode.sessions = (daemon.networkNode.sessions || 0) + 1; changed = true;
+        }
+        if (msg === 'session complete' || msg === 'session ended') {
+          daemon.networkNode.sessions = Math.max(0, (daemon.networkNode.sessions || 0) - 1); changed = true;
+        }
+        if (entry.capabilities || entry.hardware) {
+          daemon.networkNode.hardware = normalizeHardware(entry.capabilities || entry.hardware); changed = true;
+        }
+        pushNodeEvent(msg || 'log', entry);
+        if (changed) broadcastNodeStatus();
+      }
+    });
+
+    proc.stdout.on('data', (chunk) => {
+      const line = chunk.toString().trim();
+      if (line) pushNodeEvent('stdout', { line });
+    });
+
+    proc.on('error', (err) => {
+      daemon.networkNode.status = 'error';
+      pushNodeEvent('error', { message: err.message });
+      broadcastNodeStatus();
+    });
+
+    proc.on('exit', (code, signal) => {
+      daemon.networkNode.active = false;
+      daemon.networkNode.status = 'stopped';
+      daemon.networkNode.pid = null;
+      daemon.networkNode.proc = null;
+      pushNodeEvent('exit', { code, signal });
+      broadcastNodeStatus();
+    });
+
+    daemon.audit.log('network.node.start', { pid: proc.pid, relay, device });
+    res.status(202).json({ started: true, ...snapshotNode() });
+  });
+
+  app.post('/api/network/node/stop', networkGate, (req, res) => {
+    const node = daemon.networkNode;
+    if (!node?.active || !node.proc) {
+      return res.status(409).json({ error: 'Node not running' });
+    }
+    try {
+      node.proc.kill('SIGINT');
+    } catch (err) {
+      return res.status(500).json({ error: `Failed to stop node: ${err.message}` });
+    }
+    daemon.networkNode.status = 'stopping';
+    pushNodeEvent('stopping', { pid: node.pid });
+    broadcastNodeStatus();
+    daemon.audit.log('network.node.stop', { pid: node.pid });
+    res.json({ stopping: true });
+  });
+
+  app.get('/api/network/status', networkGate, (req, res) => {
+    // Mocked relay status until the relay /status HTTP endpoint lands.
+    // Shape matches the spec in groove-comms/GETTING-STARTED.md.
+    const node = daemon.networkNode || {};
+    const selfNode = node.active && node.nodeId ? [{
+      node_id: node.nodeId,
+      device: node.hardware?.device || 'auto',
+      layers: node.layers || [0, 0],
+      status: node.status === 'connected' ? 'active' : node.status,
+    }] : [];
+    const coverage = node.layers ? (node.layers[1] - node.layers[0]) : 0;
+    res.json({
+      nodes: selfNode,
+      models: ['Qwen/Qwen2.5-0.5B'],
+      coverage,
+      totalLayers: 24,
+      activeSessions: node.sessions || 0,
+    });
+  });
+
   // Serve GUI static files (built GUI) — no-cache headers to prevent stale bundles
   const guiPath = process.env.GROOVE_GUI_PATH || resolve(__dirname, '../../gui/dist');
   app.use(express.static(guiPath, { etag: false, maxAge: 0, lastModified: false }));

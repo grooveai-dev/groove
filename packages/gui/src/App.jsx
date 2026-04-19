@@ -18,6 +18,7 @@ import SettingsView from './views/settings';
 import ModelsView from './views/models';
 import FederationView from './views/federation';
 import ToysView from './views/toys';
+import NetworkView from './views/network';
 
 // Agent components
 import { AgentPanel } from './components/agents/agent-panel';
@@ -55,6 +56,7 @@ function ViewRouter() {
   const activeView = useGrooveStore((s) => s.activeView);
   const detailPanel = useGrooveStore((s) => s.detailPanel);
   const agents = useGrooveStore((s) => s.agents);
+  const networkUnlocked = useGrooveStore((s) => s.networkUnlocked);
 
   // Render active view
   let content;
@@ -68,6 +70,7 @@ function ViewRouter() {
     case 'models':      content = <ModelsView />;      break;
     case 'federation':  content = <FederationView />;  break;
     case 'settings':    content = <SettingsView />;    break;
+    case 'network':     content = networkUnlocked ? <NetworkView /> : <AgentsView />; break;
     default:            content = <AgentsView />;
   }
 

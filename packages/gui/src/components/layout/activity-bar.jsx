@@ -1,10 +1,11 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Network, Code2, ChartSpline, Puzzle, Gamepad2, Users, Box, Newspaper, Settings } from 'lucide-react';
+import { Network, Code2, ChartSpline, Puzzle, Gamepad2, Users, Box, Newspaper, Settings, Globe } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Tooltip } from '../ui/tooltip';
+import { useGrooveStore } from '../../stores/groove';
 import { isElectron, getPlatform } from '../../lib/electron';
 
-const NAV_ITEMS = [
+const BASE_NAV_ITEMS = [
   { id: 'agents',      icon: Network,   label: 'Agents' },
   { id: 'editor',      icon: Code2,     label: 'Editor' },
   { id: 'dashboard',   icon: ChartSpline, label: 'Dashboard' },
@@ -14,6 +15,8 @@ const NAV_ITEMS = [
   { id: 'teams',       icon: Users,     label: 'Teams' },
 ];
 
+const NETWORK_NAV_ITEM = { id: 'network', icon: Globe, label: 'Network' };
+
 const UTIL_ITEMS = [
   { id: 'journalist', icon: Newspaper, label: 'Journalist', panel: true },
   { id: 'settings',   icon: Settings,  label: 'Settings',   nav: true },
@@ -21,6 +24,8 @@ const UTIL_ITEMS = [
 
 export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel }) {
   const darwinTrafficLights = isElectron() && getPlatform() === 'darwin';
+  const networkUnlocked = useGrooveStore((s) => s.networkUnlocked);
+  const NAV_ITEMS = networkUnlocked ? [...BASE_NAV_ITEMS, NETWORK_NAV_ITEM] : BASE_NAV_ITEMS;
 
   return (
     <nav className="w-12 flex-shrink-0 flex flex-col bg-surface-3 border-r border-border">

@@ -15,7 +15,7 @@ import { fmtUptime } from '../lib/format';
 import {
   Key, Eye, EyeOff, Check, Cpu,
   FolderOpen, FolderSearch, Users, Gauge,
-  ShieldCheck, Settings,
+  ShieldCheck, Settings, Lock,
   Newspaper, Radio, Send, MessageSquare, MessageCircle,
   Plus, Trash2, Plug, PlugZap, TestTube, X, HelpCircle, ExternalLink,
 } from 'lucide-react';
@@ -940,6 +940,91 @@ function AddGatewayCard({ existingTypes, onAdd }) {
   );
 }
 
+/* ── Early Access Section ─────────────────────────────────── */
+
+function EarlyAccessSection() {
+  const networkUnlocked = useGrooveStore((s) => s.networkUnlocked);
+  const activateBeta = useGrooveStore((s) => s.activateBeta);
+  const deactivateBeta = useGrooveStore((s) => s.deactivateBeta);
+  const [code, setCode] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(''), 3000);
+    return () => clearTimeout(t);
+  }, [error]);
+
+  async function handleSubmit() {
+    const trimmed = code.trim();
+    if (!trimmed || submitting) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      await activateBeta(trimmed);
+      setCode('');
+    } catch (err) {
+      setError(err.message || 'Invalid code');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDeactivate() {
+    try { await deactivateBeta(); } catch { /* toast handled in store */ }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2.5 px-0.5">
+        <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Early Access</span>
+        <div className="flex-1 h-px bg-border-subtle" />
+      </div>
+      <div className="rounded-lg border border-border-subtle bg-surface-1 px-4 py-3.5 max-w-md">
+        {networkUnlocked ? (
+          <div className="flex items-center gap-2.5">
+            <div className="w-6 h-6 rounded-full bg-success/10 flex items-center justify-center flex-shrink-0">
+              <Check size={12} className="text-success" />
+            </div>
+            <div className="flex-1 text-xs font-sans text-text-1">Early access enabled</div>
+            <button
+              onClick={handleDeactivate}
+              className="text-2xs text-text-4 hover:text-danger cursor-pointer font-sans"
+            >
+              Deactivate
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Lock size={12} className="text-text-4 flex-shrink-0" />
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+              type="text"
+              placeholder="Enter invite code"
+              className="flex-1 h-8 px-2.5 text-xs bg-surface-0 border border-border rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleSubmit}
+              disabled={!code.trim() || submitting}
+              className="h-8 text-xs px-3"
+            >
+              {submitting ? '...' : 'Submit'}
+            </Button>
+          </div>
+        )}
+        {error && !networkUnlocked && (
+          <div className="mt-2 text-2xs text-danger font-sans">Invalid code</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Main Settings View ────────────────────────────────────── */
 
 export default function SettingsView() {
@@ -1200,6 +1285,8 @@ export default function SettingsView() {
             </div>
           )}
 
+          {/* ═══════ EARLY ACCESS ═══════ */}
+          <EarlyAccessSection />
 
         </div>
       </ScrollArea>

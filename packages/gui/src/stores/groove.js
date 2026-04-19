@@ -86,6 +86,12 @@ export const useGrooveStore = create((set, get) => ({
   // ── Journalist ────────────────────────────────────────────
   journalistStatus: null, // { cycleCount, lastCycleTime, history, lastSynthesis }
 
+  // ── Network (Early Access) ────────────────────────────────
+  networkUnlocked: false,
+  networkNode: { active: false, status: 'disconnected', nodeId: null, layers: null, model: null, sessions: 0, hardware: null },
+  networkStatus: { nodes: [], coverage: 0, totalLayers: 0, models: [], activeSessions: 0 },
+  networkEvents: [],
+
   // ── Marketplace Auth ───────────────────────────────────────
   marketplaceUser: null,        // { id, displayName, avatar, ... } or null
   marketplaceAuthenticated: false,
@@ -155,6 +161,7 @@ export const useGrooveStore = create((set, get) => ({
       get().fetchApprovals();
       get().checkMarketplaceAuth();
       get().fetchTunnels();
+      get().fetchBetaStatus();
       if (!get().onboardingComplete) get().fetchOnboardingStatus();
       if (window.groove?.auth?.onSubscriptionStatus) {
         window.groove.auth.onSubscriptionStatus((data) => {
@@ -592,6 +599,26 @@ export const useGrooveStore = create((set, get) => ({
         case 'auth:expired':
           set({ marketplaceAuthenticated: false, marketplaceUser: null });
           get().addToast('warning', 'Session expired', 'Please sign in again');
+          break;
+
+        case 'network:node:status':
+          set({ networkNode: { ...get().networkNode, ...(msg.data || {}) } });
+          break;
+
+        case 'network:node:event': {
+          const ev = msg.data || {};
+          set((s) => ({
+            networkEvents: [...s.networkEvents, { ...ev, timestamp: ev.timestamp || Date.now() }].slice(-100),
+          }));
+          break;
+        }
+
+        case 'network:status':
+          set({ networkStatus: { ...get().networkStatus, ...(msg.data || {}) } });
+          break;
+
+        case 'config:updated':
+          get().fetchBetaStatus();
           break;
       }
     };
@@ -1585,6 +1612,75 @@ export const useGrooveStore = create((set, get) => ({
       return result;
     } catch (err) {
       get().addToast('error', 'Pouch send failed', err.message);
+      throw err;
+    }
+  },
+
+  // ── Network (Early Access) ────────────────────────────────
+
+  async fetchBetaStatus() {
+    try {
+      const data = await api.get('/beta/status');
+      set({ networkUnlocked: !!data?.unlocked });
+    } catch { /* endpoint may not exist yet */ }
+  },
+
+  async activateBeta(code) {
+    const data = await api.post('/beta/activate', { code });
+    set({ networkUnlocked: true });
+    return data;
+  },
+
+  async deactivateBeta() {
+    try {
+      await api.post('/beta/deactivate');
+      set({
+        networkUnlocked: false,
+        activeView: get().activeView === 'network' ? 'agents' : get().activeView,
+      });
+    } catch (err) {
+      get().addToast('error', 'Deactivate failed', err.message);
+      throw err;
+    }
+  },
+
+  async fetchNetworkNodeStatus() {
+    try {
+      const data = await api.get('/network/node/status');
+      set({ networkNode: { ...get().networkNode, ...(data || {}) } });
+      return data;
+    } catch { return null; }
+  },
+
+  async fetchNetworkStatus() {
+    try {
+      const data = await api.get('/network/status');
+      set({ networkStatus: { ...get().networkStatus, ...(data || {}) } });
+      return data;
+    } catch { return null; }
+  },
+
+  async startNetworkNode() {
+    set({ networkNode: { ...get().networkNode, status: 'connecting' } });
+    try {
+      const data = await api.post('/network/node/start');
+      set({ networkNode: { ...get().networkNode, active: true, ...(data || {}) } });
+      get().addToast('success', 'Node started', 'Connecting to the Groove network');
+      return data;
+    } catch (err) {
+      set({ networkNode: { ...get().networkNode, status: 'disconnected', active: false } });
+      get().addToast('error', 'Node start failed', err.message);
+      throw err;
+    }
+  },
+
+  async stopNetworkNode() {
+    try {
+      await api.post('/network/node/stop');
+      set({ networkNode: { ...get().networkNode, active: false, status: 'disconnected' } });
+      get().addToast('info', 'Node stopped');
+    } catch (err) {
+      get().addToast('error', 'Node stop failed', err.message);
       throw err;
     }
   },

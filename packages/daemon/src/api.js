@@ -4194,7 +4194,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
   // --- Network package install/uninstall ---
 
   const NETWORK_REPO_URL = 'https://github.com/grooveai-dev/groove-network.git';
-  const NETWORK_VERSION = 'v0.1.0';
+  const NETWORK_VERSION = 'v0.2.0';
 
   function networkRoot() {
     return resolve(homedir(), '.groove', 'network');
@@ -4274,9 +4274,19 @@ Keep responses concise. Help them think, don't lecture them about the system the
           ? NETWORK_REPO_URL.replace('https://', `https://${pat}@`)
           : NETWORK_REPO_URL;
 
-        broadcastInstallProgress('cloning', 'Cloning network package...', 0);
+        // Resolve the latest released tag so fresh installs track new releases
+        // without requiring a code change. Falls back to NETWORK_VERSION if the
+        // remote lookup fails (offline, rate-limited, no tags yet).
+        let installVersion;
+        try {
+          installVersion = (await getLatestNetworkTag()) || NETWORK_VERSION;
+        } catch {
+          installVersion = NETWORK_VERSION;
+        }
 
-        const cloneArgs = ['clone', '--branch', NETWORK_VERSION, '--depth', '1', cloneUrl, installPath];
+        broadcastInstallProgress('cloning', `Cloning network package ${installVersion}...`, 0);
+
+        const cloneArgs = ['clone', '--branch', installVersion, '--depth', '1', cloneUrl, installPath];
         const clone = spawn('git', cloneArgs, {
           stdio: ['ignore', 'pipe', 'pipe'],
           env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
@@ -4352,12 +4362,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
           ...(daemon.config.networkBeta || {}),
           installed: true,
           deployPath: installPath,
-          version: NETWORK_VERSION,
+          version: installVersion,
         };
         await persistConfig();
         daemon.broadcast({ type: 'config:updated' });
-        broadcastInstallProgress('done', 'Network package installed', 100);
-        daemon.audit.log('network.install', { path: installPath, version: NETWORK_VERSION });
+        broadcastInstallProgress('done', `Network package ${installVersion} installed`, 100);
+        daemon.audit.log('network.install', { path: installPath, version: installVersion });
         daemon.networkInstall = { running: false };
       } catch (err) {
         fail(err?.message || 'Install failed');

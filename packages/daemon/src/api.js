@@ -4205,11 +4205,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
             ...(total_layers !== undefined ? { totalLayers: total_layers } : {}),
           };
         }) : [];
+        const primaryModel = Array.isArray(data.models) && data.models[0] ? data.models[0] : {};
         return res.json({
           nodes: Array.isArray(data.nodes) ? data.nodes : [],
           models,
-          coverage: data.covered_layers ?? data.coverage ?? 0,
-          totalLayers: data.total_layers ?? data.totalLayers ?? 24,
+          coverage: data.covered_layers ?? primaryModel.covered_layers ?? data.coverage ?? 0,
+          totalLayers: data.total_layers ?? primaryModel.total_layers ?? data.totalLayers ?? 24,
           activeSessions: data.active_sessions ?? data.activeSessions ?? 0,
           totalNodes: data.total_nodes ?? data.totalNodes ?? (Array.isArray(data.nodes) ? data.nodes.length : 0),
         });

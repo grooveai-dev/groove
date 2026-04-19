@@ -32,6 +32,8 @@ const DEFAULT_CONFIG = {
     devicePreference: 'auto',
     maxContext: 4096,
     deployPath: null,
+    installed: false,
+    version: null,
   },
   recentProjects: [],
 };

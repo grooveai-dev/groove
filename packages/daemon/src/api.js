@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream, copyFileSync, realpathSync } from 'fs';
 import { spawn, execFile } from 'child_process';
 import { createHash } from 'crypto';
-import { hostname, networkInterfaces } from 'os';
+import { hostname, networkInterfaces, homedir } from 'os';
 import { lookup as mimeLookup } from './mimetypes.js';
 import { listProviders, getProvider } from './providers/index.js';
 import { OllamaProvider } from './providers/ollama.js';
@@ -3911,6 +3911,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       model: n.model || null,
       sessions: n.sessions || 0,
       hardware: n.hardware || null,
+      installed: !!(daemon.config?.networkBeta?.installed),
     };
   }
 
@@ -4128,6 +4129,214 @@ Keep responses concise. Help them think, don't lecture them about the system the
       totalLayers: 24,
       activeSessions: node.sessions || 0,
     });
+  });
+
+  // --- Network package install/uninstall ---
+
+  const NETWORK_REPO_URL = 'https://github.com/grooveai-dev/groove-network.git';
+  const NETWORK_VERSION = 'v0.1.0';
+
+  function networkRoot() {
+    return resolve(homedir(), '.groove', 'network');
+  }
+
+  // Defensive: only permit fs ops on paths that resolve inside ~/.groove/.
+  function isInsideGrooveHome(target) {
+    const home = resolve(homedir(), '.groove') + '/';
+    const full = resolve(target) + '/';
+    return full.startsWith(home);
+  }
+
+  function broadcastInstallProgress(step, message, percent) {
+    daemon.broadcast({
+      type: 'network:install:progress',
+      data: { step, message, percent },
+    });
+  }
+
+  app.get('/api/network/install/status', networkGate, (req, res) => {
+    const installPath = networkRoot();
+    const installed = existsSync(resolve(installPath, 'setup.sh'));
+    res.json({
+      installed,
+      path: installed ? installPath : null,
+      version: installed ? (daemon.config?.networkBeta?.version || null) : null,
+    });
+  });
+
+  app.post('/api/network/install', networkGate, async (req, res) => {
+    if (daemon.networkInstall?.running) {
+      return res.status(409).json({ error: 'Install already in progress' });
+    }
+    if (daemon.config?.networkBeta?.installed) {
+      return res.status(400).json({ error: 'Network package already installed' });
+    }
+
+    const installPath = networkRoot();
+    if (!isInsideGrooveHome(installPath)) {
+      return res.status(500).json({ error: 'Invalid install path' });
+    }
+
+    // Refuse to clone over an existing directory — avoids surprising merges.
+    if (existsSync(installPath)) {
+      return res.status(400).json({ error: 'Install path already exists; uninstall first' });
+    }
+
+    daemon.networkInstall = { running: true, startedAt: Date.now() };
+    res.status(200).json({ status: 'installing' });
+
+    // Run the install asynchronously; progress flows over WebSocket.
+    (async () => {
+      const cleanup = () => {
+        try {
+          if (existsSync(installPath) && isInsideGrooveHome(installPath)) {
+            rmSync(installPath, { recursive: true, force: true });
+          }
+        } catch { /* ignore */ }
+      };
+
+      const fail = (message) => {
+        cleanup();
+        broadcastInstallProgress('error', message, -1);
+        daemon.audit.log('network.install.failed', { message });
+        daemon.networkInstall = { running: false };
+      };
+
+      try {
+        // Build clone URL with optional PAT
+        const pat = daemon.credentials?.getKey?.('github-pat') || null;
+        const cloneUrl = pat
+          ? NETWORK_REPO_URL.replace('https://', `https://${pat}@`)
+          : NETWORK_REPO_URL;
+
+        broadcastInstallProgress('cloning', 'Cloning network package...', 0);
+
+        const cloneArgs = ['clone', '--branch', NETWORK_VERSION, '--depth', '1', cloneUrl, installPath];
+        const clone = spawn('git', cloneArgs, {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        });
+
+        let cloneErr = '';
+        clone.stderr.on('data', (chunk) => {
+          const s = chunk.toString();
+          cloneErr += s;
+          // git writes progress to stderr — relay last line as status.
+          const line = s.split('\n').map((l) => l.trim()).filter(Boolean).pop();
+          if (line) broadcastInstallProgress('cloning', line, 5);
+        });
+
+        const cloneCode = await new Promise((resolveClone) => {
+          clone.on('error', (err) => resolveClone({ code: -1, err: err.message }));
+          clone.on('close', (code) => resolveClone({ code }));
+        });
+
+        if (cloneCode.code !== 0) {
+          const hint = cloneErr.trim().split('\n').slice(-1)[0] || 'git clone failed';
+          return fail(`Clone failed: ${hint}`);
+        }
+
+        broadcastInstallProgress('cloned', 'Repository cloned', 10);
+
+        // Run setup.sh --json from the install directory
+        const setup = spawn('bash', ['setup.sh', '--json'], {
+          cwd: installPath,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, PYTHONUNBUFFERED: '1' },
+        });
+
+        daemon.networkInstall.proc = setup;
+
+        let stdoutBuf = '';
+        setup.stdout.on('data', (chunk) => {
+          stdoutBuf += chunk.toString();
+          let idx;
+          while ((idx = stdoutBuf.indexOf('\n')) !== -1) {
+            const line = stdoutBuf.slice(0, idx).trim();
+            stdoutBuf = stdoutBuf.slice(idx + 1);
+            if (!line) continue;
+            if (line[0] !== '{') continue;
+            try {
+              const event = JSON.parse(line);
+              const step = typeof event.step === 'string' ? event.step : 'progress';
+              const message = typeof event.message === 'string' ? event.message : '';
+              const percent = Number.isFinite(event.percent) ? event.percent : null;
+              broadcastInstallProgress(step, message, percent);
+            } catch { /* non-JSON line, ignore */ }
+          }
+        });
+
+        let stderrBuf = '';
+        setup.stderr.on('data', (chunk) => {
+          stderrBuf += chunk.toString();
+        });
+
+        const setupResult = await new Promise((resolveSetup) => {
+          setup.on('error', (err) => resolveSetup({ code: -1, err: err.message }));
+          setup.on('close', (code) => resolveSetup({ code }));
+        });
+
+        if (setupResult.code !== 0) {
+          const hint = stderrBuf.trim().split('\n').slice(-1)[0] || `setup.sh exited ${setupResult.code}`;
+          return fail(`Setup failed: ${hint}`);
+        }
+
+        daemon.config.networkBeta = {
+          ...(daemon.config.networkBeta || {}),
+          installed: true,
+          deployPath: installPath,
+          version: NETWORK_VERSION,
+        };
+        await persistConfig();
+        daemon.broadcast({ type: 'config:updated' });
+        broadcastInstallProgress('done', 'Network package installed', 100);
+        daemon.audit.log('network.install', { path: installPath, version: NETWORK_VERSION });
+        daemon.networkInstall = { running: false };
+      } catch (err) {
+        fail(err?.message || 'Install failed');
+      }
+    })();
+  });
+
+  app.post('/api/network/uninstall', networkGate, async (req, res) => {
+    if (daemon.networkInstall?.running) {
+      return res.status(409).json({ error: 'Install in progress; wait for it to finish' });
+    }
+
+    // Stop the running node first (reuse existing stop logic).
+    try {
+      const node = daemon.networkNode;
+      if (node?.active && node.proc && !node.proc.killed) {
+        try { node.proc.kill('SIGINT'); } catch { /* ignore */ }
+        daemon.networkNode.status = 'stopping';
+        pushNodeEvent('stopping', { pid: node.pid, reason: 'uninstall' });
+        broadcastNodeStatus();
+      }
+    } catch { /* ignore */ }
+
+    const installPath = networkRoot();
+    if (!isInsideGrooveHome(installPath)) {
+      return res.status(500).json({ error: 'Invalid install path' });
+    }
+
+    try {
+      if (existsSync(installPath)) {
+        rmSync(installPath, { recursive: true, force: true });
+      }
+    } catch (err) {
+      return res.status(500).json({ error: `Failed to remove install: ${err.message}` });
+    }
+
+    daemon.config.networkBeta = {
+      ...(daemon.config.networkBeta || {}),
+      installed: false,
+      deployPath: null,
+      version: null,
+    };
+    await persistConfig();
+    daemon.broadcast({ type: 'config:updated' });
+    daemon.audit.log('network.uninstall', { path: installPath });
+    res.json({ status: 'uninstalled' });
   });
 
   // Serve GUI static files (built GUI) — no-cache headers to prevent stale bundles

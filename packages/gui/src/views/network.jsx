@@ -1,14 +1,15 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useGrooveStore } from '../stores/groove';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { StatusDot } from '../components/ui/status-dot';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Dialog, DialogContent, DialogTrigger } from '../components/ui/dialog';
 import { NodeToggle } from '../components/network/node-toggle';
 import { NodeDetails } from '../components/network/node-details';
 import { NetworkStatus } from '../components/network/network-status';
-import { Globe, Download, Check } from 'lucide-react';
+import { Globe, Download, Check, AlertCircle, Loader2, Trash2 } from 'lucide-react';
 
 const REQUIREMENTS = [
   'Python 3.10 or higher',
@@ -16,8 +17,50 @@ const REQUIREMENTS = [
   '8 GB+ RAM recommended',
 ];
 
+function InstallProgress({ progress }) {
+  const percent = Math.max(0, Math.min(100, Number.isFinite(progress.percent) ? progress.percent : 0));
+  return (
+    <div className="w-full flex flex-col gap-3">
+      <div className="h-2 w-full rounded-full bg-surface-3 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-accent transition-all duration-500 ease-out"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      <div className="flex items-center justify-between text-2xs font-mono text-text-3 tabular-nums">
+        <div className="flex items-center gap-2 text-text-2 font-sans">
+          <Loader2 size={12} className="animate-spin text-accent" />
+          <span className="truncate">{progress.message || 'Installing…'}</span>
+        </div>
+        <span>{percent}%</span>
+      </div>
+    </div>
+  );
+}
+
+function InstallError({ message, onRetry }) {
+  return (
+    <div className="w-full flex flex-col gap-3">
+      <div className="rounded-md border border-danger/40 bg-danger/10 px-4 py-3 flex items-start gap-2.5 text-left">
+        <AlertCircle size={14} className="text-danger flex-shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-semibold text-danger font-sans mb-0.5">Install failed</div>
+          <div className="text-xs text-text-1 font-sans break-words">{message}</div>
+        </div>
+      </div>
+      <Button variant="primary" size="lg" onClick={onRetry} className="w-full">
+        <Download size={14} />
+        Retry Install
+      </Button>
+    </div>
+  );
+}
+
 function InstallGate() {
   const installNetworkPackage = useGrooveStore((s) => s.installNetworkPackage);
+  const progress = useGrooveStore((s) => s.networkInstallProgress);
+  const { installing, error } = progress;
+
   return (
     <div className="flex flex-col items-center justify-center min-h-full px-6 py-12">
       <div className="w-full max-w-md flex flex-col items-center text-center">
@@ -45,20 +88,74 @@ function InstallGate() {
           </ul>
         </div>
 
-        <Button
-          variant="primary"
-          size="lg"
-          onClick={() => installNetworkPackage()}
-          className="w-full"
-        >
-          <Download size={14} />
-          Install Network Package
-        </Button>
-        <p className="text-2xs font-sans text-text-3 mt-3">
-          This will download and set up the Groove Network runtime (~500 MB)
-        </p>
+        {installing ? (
+          <InstallProgress progress={progress} />
+        ) : error ? (
+          <InstallError message={error} onRetry={() => installNetworkPackage()} />
+        ) : (
+          <>
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={() => installNetworkPackage()}
+              className="w-full"
+            >
+              <Download size={14} />
+              Install Network Package
+            </Button>
+            <p className="text-2xs font-sans text-text-3 mt-3">
+              This will download and set up the Groove Network runtime (~500 MB)
+            </p>
+          </>
+        )}
       </div>
     </div>
+  );
+}
+
+function UninstallButton() {
+  const [open, setOpen] = useState(false);
+  const uninstallNetworkPackage = useGrooveStore((s) => s.uninstallNetworkPackage);
+  const [busy, setBusy] = useState(false);
+
+  const confirm = async () => {
+    setBusy(true);
+    try {
+      await uninstallNetworkPackage();
+      setOpen(false);
+    } catch { /* toast already shown */ }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 text-2xs font-sans text-text-3 hover:text-danger transition-colors"
+        >
+          <Trash2 size={11} />
+          Uninstall Network Package
+        </button>
+      </DialogTrigger>
+      <DialogContent title="Uninstall Network Package" description="Confirm uninstall">
+        <div className="px-5 py-4 flex flex-col gap-3">
+          <p className="text-sm text-text-1 font-sans leading-relaxed">
+            This will stop your node and remove the network package from <span className="font-mono text-text-2">~/.groove/network</span>.
+          </p>
+          <p className="text-xs text-text-3 font-sans leading-relaxed">
+            Your identity (<span className="font-mono">~/.groove/node_key.json</span>) will be preserved — you can reinstall later without losing your wallet.
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border-subtle bg-surface-0">
+          <Button variant="ghost" size="sm" onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
+          <Button variant="danger" size="sm" onClick={confirm} disabled={busy}>
+            {busy ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+            Uninstall
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -86,10 +183,13 @@ export default function NetworkView() {
         <Badge variant="purple">Early Access</Badge>
         <div className="flex-1" />
         {installed && (
-          <div className="flex items-center gap-1.5 text-2xs font-sans text-text-3">
-            <StatusDot status={node.active ? 'running' : 'crashed'} size="sm" />
-            {node.active ? 'Contributing' : 'Idle'}
-          </div>
+          <>
+            <UninstallButton />
+            <div className="flex items-center gap-1.5 text-2xs font-sans text-text-3">
+              <StatusDot status={node.active ? 'running' : 'crashed'} size="sm" />
+              {node.active ? 'Contributing' : 'Idle'}
+            </div>
+          </>
         )}
       </div>
 

@@ -89,6 +89,7 @@ export const useGrooveStore = create((set, get) => ({
   // ── Network (Early Access) ────────────────────────────────
   networkUnlocked: false,
   networkInstalled: false,
+  networkInstallProgress: { installing: false, step: null, message: null, percent: 0, error: null },
   networkNode: { active: false, status: 'disconnected', nodeId: null, layers: null, model: null, sessions: 0, hardware: null },
   networkStatus: { nodes: [], coverage: 0, totalLayers: 0, models: [], activeSessions: 0 },
   networkEvents: [],
@@ -163,6 +164,7 @@ export const useGrooveStore = create((set, get) => ({
       get().checkMarketplaceAuth();
       get().fetchTunnels();
       get().fetchBetaStatus();
+      get().fetchNetworkInstallStatus();
       if (!get().onboardingComplete) get().fetchOnboardingStatus();
       if (window.groove?.auth?.onSubscriptionStatus) {
         window.groove.auth.onSubscriptionStatus((data) => {
@@ -618,8 +620,41 @@ export const useGrooveStore = create((set, get) => ({
           set({ networkStatus: { ...get().networkStatus, ...(msg.data || {}) } });
           break;
 
+        case 'network:install:progress': {
+          const { step, message, percent } = msg.data || {};
+          if (step === 'done') {
+            set({
+              networkInstalled: true,
+              networkInstallProgress: { installing: false, step: null, message: null, percent: 0, error: null },
+            });
+            get().addToast('success', 'Network package installed');
+          } else if (step === 'error') {
+            set({
+              networkInstallProgress: {
+                installing: false,
+                step: 'error',
+                message: message || 'Install failed',
+                percent: 0,
+                error: message || 'Install failed',
+              },
+            });
+          } else {
+            set({
+              networkInstallProgress: {
+                installing: true,
+                step: step || 'progress',
+                message: message || '',
+                percent: Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : get().networkInstallProgress.percent,
+                error: null,
+              },
+            });
+          }
+          break;
+        }
+
         case 'config:updated':
           get().fetchBetaStatus();
+          get().fetchNetworkInstallStatus();
           break;
       }
     };
@@ -1660,8 +1695,55 @@ export const useGrooveStore = create((set, get) => ({
     } catch { return null; }
   },
 
+  async fetchNetworkInstallStatus() {
+    try {
+      const data = await api.get('/network/install/status');
+      if (data && typeof data.installed === 'boolean') {
+        set({ networkInstalled: data.installed });
+      }
+      return data;
+    } catch { return null; }
+  },
+
   async installNetworkPackage() {
-    get().addToast('info', 'Network package installation coming soon', 'The groove-deploy team is building the install flow');
+    set({
+      networkInstallProgress: {
+        installing: true,
+        step: 'starting',
+        message: 'Starting install…',
+        percent: 0,
+        error: null,
+      },
+    });
+    try {
+      await api.post('/network/install');
+    } catch (err) {
+      set({
+        networkInstallProgress: {
+          installing: false,
+          step: 'error',
+          message: err.message,
+          percent: 0,
+          error: err.message,
+        },
+      });
+      get().addToast('error', 'Install failed', err.message);
+    }
+  },
+
+  async uninstallNetworkPackage() {
+    try {
+      await api.post('/network/uninstall');
+      set({
+        networkInstalled: false,
+        networkNode: { active: false, status: 'disconnected', nodeId: null, layers: null, model: null, sessions: 0, hardware: null },
+        networkInstallProgress: { installing: false, step: null, message: null, percent: 0, error: null },
+      });
+      get().addToast('success', 'Network package uninstalled');
+    } catch (err) {
+      get().addToast('error', 'Uninstall failed', err.message);
+      throw err;
+    }
   },
 
   async fetchNetworkStatus() {

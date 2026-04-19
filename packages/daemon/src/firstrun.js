@@ -28,7 +28,7 @@ const DEFAULT_CONFIG = {
   networkBeta: {
     unlocked: false,
     code: null,
-    signalUrl: 'signal.groovedev.ai',
+    signalUrl: 'wss://signal.groovedev.ai',
     devicePreference: 'auto',
     maxContext: 4096,
     deployPath: null,

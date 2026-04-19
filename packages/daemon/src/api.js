@@ -3999,7 +3999,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
 
     const cfg = daemon.config.networkBeta || {};
-    const signal = cfg.signalUrl || 'signal.groovedev.ai';
+    const signal = normalizeSignalUrl(cfg.signalUrl);
     if (!isAllowedSignalHost(signal)) {
       return res.status(400).json({ error: 'Invalid signal host' });
     }
@@ -4138,8 +4138,14 @@ Keep responses concise. Help them think, don't lecture them about the system the
   });
 
   function isAllowedSignalHost(host) {
-    const h = (host || '').replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
+    const h = (host || '').replace(/^(wss?|https?):\/\//i, '').replace(/\/.*$/, '').toLowerCase();
     return h === 'signal.groovedev.ai' || h.endsWith('.groovedev.ai');
+  }
+
+  function normalizeSignalUrl(url) {
+    if (!url) return 'wss://signal.groovedev.ai';
+    if (url.startsWith('wss://') || url.startsWith('ws://')) return url;
+    return 'wss://' + url;
   }
 
   app.get('/api/network/status', networkGate, async (req, res) => {
@@ -4150,9 +4156,8 @@ Keep responses concise. Help them think, don't lecture them about the system the
       return res.status(400).json({ error: 'Invalid signal host' });
     }
 
-    const statusUrl = /^https?:\/\//i.test(signalHost)
-      ? `${signalHost.replace(/\/$/, '')}/status`
-      : `https://${signalHost}/status`;
+    const bareHost = signalHost.replace(/^(wss?|https?):\/\//i, '').replace(/\/.*$/, '');
+    const statusUrl = `https://${bareHost}/status`;
 
     try {
       const controller = new AbortController();

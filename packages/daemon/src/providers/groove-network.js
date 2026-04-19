@@ -58,6 +58,12 @@ function signalFlagName() {
   return supportsSignalFlag(cfg.version) ? '--signal' : '--relay';
 }
 
+function normalizeSignalUrl(url) {
+  if (!url) return 'wss://signal.groovedev.ai';
+  if (url.startsWith('wss://') || url.startsWith('ws://')) return url;
+  return 'wss://' + url;
+}
+
 export class GrooveNetworkProvider extends Provider {
   static name = 'groove-network';
   static displayName = 'Groove Network';
@@ -79,7 +85,7 @@ export class GrooveNetworkProvider extends Provider {
 
   buildSpawnCommand(agent) {
     const cfg = getConfig() || {};
-    const signal = cfg.signalUrl || 'signal.groovedev.ai';
+    const signal = normalizeSignalUrl(cfg.signalUrl);
     const model = agent.model || GrooveNetworkProvider.models[0].id;
     const maxTokens = agent.maxTokens || 500;
     const prompt = agent.prompt || '';
@@ -105,7 +111,7 @@ export class GrooveNetworkProvider extends Provider {
 
   buildHeadlessCommand(prompt, model) {
     const cfg = getConfig() || {};
-    const signal = cfg.signalUrl || 'signal.groovedev.ai';
+    const signal = normalizeSignalUrl(cfg.signalUrl);
     const m = model || GrooveNetworkProvider.models[0].id;
     const deployPath = expandHome(cfg.deployPath) || resolve(homedir(), 'Desktop/groove-deploy');
     return {

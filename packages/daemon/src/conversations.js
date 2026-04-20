@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { randomUUID } from 'crypto';
 import { spawn as cpSpawn } from 'child_process';
-import { getProvider, getInstalledProviders } from './providers/index.js';
+import { getProvider, getInstalledProviders, isProviderInstalled } from './providers/index.js';
 
 export class ConversationManager {
   constructor(daemon) {
@@ -280,10 +280,9 @@ export class ConversationManager {
     let provider = getProvider(conv.provider);
     let modelId = conv.model;
 
-    if (!provider || !provider.constructor.isInstalled()) {
+    if (!provider || !isProviderInstalled(conv.provider)) {
       const priority = ['claude-code', 'gemini', 'codex', 'ollama'];
-      const installed = getInstalledProviders();
-      const fallbackId = priority.find((p) => installed.some((i) => i.id === p));
+      const fallbackId = priority.find((p) => isProviderInstalled(p));
       if (!fallbackId) throw new Error('No provider available for chat');
       provider = getProvider(fallbackId);
       modelId = null;

@@ -34,6 +34,21 @@ const providers = {
   'groove-network': new GrooveNetworkProvider(),
 };
 
+const installCache = new Map();
+
+export function isProviderInstalled(providerId) {
+  if (installCache.has(providerId)) return installCache.get(providerId);
+  const p = providers[providerId];
+  if (!p) return false;
+  const result = p.constructor.isInstalled();
+  installCache.set(providerId, result);
+  return result;
+}
+
+export function clearInstallCache() {
+  installCache.clear();
+}
+
 export function getProvider(name) {
   return providers[name] || null;
 }
@@ -48,7 +63,7 @@ export function listProviders() {
     .map(([key, p]) => ({
       id: key,
       name: p.constructor.displayName,
-      installed: p.constructor.isInstalled(),
+      installed: isProviderInstalled(key),
       authType: p.constructor.authType,
       envKey: p.constructor.envKey || null,
       authHint: p.constructor.authHint || null,

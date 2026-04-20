@@ -861,7 +861,6 @@ export const useGrooveStore = create((set, get) => ({
               arr.push({ from: 'assistant', text, timestamp: Date.now() });
             }
             msgs[conversationId] = arr.slice(-200);
-            persistJSON('groove:conversationMessages', msgs);
             return { conversationMessages: msgs, streamingConversationId: conversationId };
           });
           break;
@@ -869,10 +868,10 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'conversation:complete': {
           const { conversationId } = msg.data || msg;
-          if (conversationId) {
+          if (conversationId && get().streamingConversationId === conversationId) {
             set({ sendingMessage: false, streamingConversationId: null });
-            persistJSON('groove:conversationMessages', get().conversationMessages);
           }
+          if (conversationId) persistJSON('groove:conversationMessages', get().conversationMessages);
           break;
         }
 
@@ -884,7 +883,8 @@ export const useGrooveStore = create((set, get) => ({
               if (!msgs[conversationId]) msgs[conversationId] = [];
               msgs[conversationId] = [...msgs[conversationId], { from: 'system', text: `Error: ${error || 'Unknown error'}`, timestamp: Date.now() }];
               persistJSON('groove:conversationMessages', msgs);
-              return { conversationMessages: msgs, sendingMessage: false, streamingConversationId: null };
+              const isActive = s.streamingConversationId === conversationId;
+              return { conversationMessages: msgs, sendingMessage: isActive ? false : s.sendingMessage, streamingConversationId: isActive ? null : s.streamingConversationId };
             });
           }
           break;

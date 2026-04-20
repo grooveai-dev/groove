@@ -9,6 +9,9 @@ import { Dialog, DialogContent, DialogTrigger } from '../components/ui/dialog';
 import { NodeToggle } from '../components/network/node-toggle';
 import { NodeDetails } from '../components/network/node-details';
 import { NetworkStatus } from '../components/network/network-status';
+import { ComputeHeader } from '../components/network/ComputeHeader';
+import { FleetTable } from '../components/network/FleetTable';
+import { ActivityStream } from '../components/network/ActivityStream';
 import { Globe, Download, Check, AlertCircle, Loader2, Trash2, ArrowUpCircle } from 'lucide-react';
 
 const REQUIREMENTS = [
@@ -278,27 +281,34 @@ export default function NetworkView() {
         {!installed ? (
           <InstallGate />
         ) : (
-          <div className="p-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
-            {/* Left column — node operator */}
-            <div className="flex flex-col gap-3 min-w-0">
-              <div>
-                <div className="flex items-center gap-2 mb-2 px-0.5">
-                  <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Node Operator</span>
+          <div className="p-4 flex flex-col gap-4">
+            <ComputeHeader />
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              {/* Left column — node operator */}
+              <div className="flex flex-col gap-3 min-w-0">
+                <div>
+                  <div className="flex items-center gap-2 mb-2 px-0.5">
+                    <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Node Operator</span>
+                    <div className="flex-1 h-px bg-border-subtle" />
+                  </div>
+                  <NodeToggle />
+                </div>
+                <NodeDetails />
+              </div>
+
+              {/* Right column — network status */}
+              <div className="flex flex-col gap-3 min-w-0">
+                <div className="flex items-center gap-2 px-0.5">
+                  <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Network Status</span>
                   <div className="flex-1 h-px bg-border-subtle" />
                 </div>
-                <NodeToggle />
+                <NetworkStatus />
               </div>
-              <NodeDetails />
             </div>
 
-            {/* Right column — network status */}
-            <div className="flex flex-col gap-3 min-w-0">
-              <div className="flex items-center gap-2 px-0.5">
-                <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Network Status</span>
-                <div className="flex-1 h-px bg-border-subtle" />
-              </div>
-              <NetworkStatus />
-            </div>
+            <FleetTable />
+            <ActivityStream />
           </div>
         )}
       </ScrollArea>

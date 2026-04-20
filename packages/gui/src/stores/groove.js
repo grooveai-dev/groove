@@ -103,6 +103,7 @@ export const useGrooveStore = create((set, get) => ({
   networkEvents: [],
   networkVersion: { installed: null, latest: null, updateAvailable: false },
   networkUpdateProgress: { updating: false, step: null, message: null, percent: 0, error: null },
+  networkCompute: { totalRamMb: 0, totalVramMb: 0, totalCpuCores: 0, totalBandwidthMbps: 0, activeNodes: 0, totalNodes: 0, avgLoad: 0 },
 
   // ── Marketplace Auth ───────────────────────────────────────
   marketplaceUser: null,        // { id, displayName, avatar, ... } or null
@@ -683,9 +684,36 @@ export const useGrooveStore = create((set, get) => ({
           break;
         }
 
-        case 'network:status':
-          set({ networkStatus: { ...get().networkStatus, ...(msg.data || {}) } });
+        case 'network:status': {
+          const nsData = msg.data || {};
+          const nsUpdate = { networkStatus: { ...get().networkStatus, ...nsData } };
+          if (nsData.compute) {
+            const c = nsData.compute;
+            nsUpdate.networkCompute = {
+              totalRamMb: c.totalRamMb ?? c.total_ram_mb ?? 0,
+              totalVramMb: c.totalVramMb ?? c.total_vram_mb ?? 0,
+              totalCpuCores: c.totalCpuCores ?? c.total_cpu_cores ?? 0,
+              totalBandwidthMbps: c.totalBandwidthMbps ?? c.total_bandwidth_mbps ?? 0,
+              activeNodes: c.activeNodes ?? c.active_nodes ?? 0,
+              totalNodes: c.totalNodes ?? c.total_nodes ?? 0,
+              avgLoad: c.avgLoad ?? c.avg_load ?? 0,
+            };
+          } else if (Array.isArray(nsData.nodes) && nsData.nodes.length > 0) {
+            const wsNodes = nsData.nodes;
+            const wsActive = wsNodes.filter((n) => n.status === 'active');
+            nsUpdate.networkCompute = {
+              totalRamMb: wsNodes.reduce((s, n) => s + (n.ram_mb || 0), 0),
+              totalVramMb: wsNodes.reduce((s, n) => s + (n.vram_mb || 0), 0),
+              totalCpuCores: wsNodes.reduce((s, n) => s + (n.cpu_cores || 0), 0),
+              totalBandwidthMbps: wsNodes.reduce((s, n) => s + (n.bandwidth_mbps || 0), 0),
+              activeNodes: wsActive.length,
+              totalNodes: wsNodes.length,
+              avgLoad: wsActive.length > 0 ? wsActive.reduce((s, n) => s + (n.load || 0), 0) / wsActive.length : 0,
+            };
+          }
+          set(nsUpdate);
           break;
+        }
 
         case 'network:install:progress': {
           const { step, message, percent } = msg.data || {};
@@ -2049,10 +2077,35 @@ export const useGrooveStore = create((set, get) => ({
   async fetchNetworkStatus() {
     try {
       const data = await api.get('/network/status');
-      set({
+      const update = {
         networkStatus: { ...get().networkStatus, ...(data || {}) },
         networkStatusReachable: true,
-      });
+      };
+      if (data?.compute) {
+        const c = data.compute;
+        update.networkCompute = {
+          totalRamMb: c.totalRamMb ?? c.total_ram_mb ?? 0,
+          totalVramMb: c.totalVramMb ?? c.total_vram_mb ?? 0,
+          totalCpuCores: c.totalCpuCores ?? c.total_cpu_cores ?? 0,
+          totalBandwidthMbps: c.totalBandwidthMbps ?? c.total_bandwidth_mbps ?? 0,
+          activeNodes: c.activeNodes ?? c.active_nodes ?? 0,
+          totalNodes: c.totalNodes ?? c.total_nodes ?? 0,
+          avgLoad: c.avgLoad ?? c.avg_load ?? 0,
+        };
+      } else if (Array.isArray(data?.nodes) && data.nodes.length > 0) {
+        const nodes = data.nodes;
+        const active = nodes.filter((n) => n.status === 'active');
+        update.networkCompute = {
+          totalRamMb: nodes.reduce((s, n) => s + (n.ram_mb || 0), 0),
+          totalVramMb: nodes.reduce((s, n) => s + (n.vram_mb || 0), 0),
+          totalCpuCores: nodes.reduce((s, n) => s + (n.cpu_cores || 0), 0),
+          totalBandwidthMbps: nodes.reduce((s, n) => s + (n.bandwidth_mbps || 0), 0),
+          activeNodes: active.length,
+          totalNodes: nodes.length,
+          avgLoad: active.length > 0 ? active.reduce((s, n) => s + (n.load || 0), 0) / active.length : 0,
+        };
+      }
+      set(update);
       return data;
     } catch {
       set({ networkStatusReachable: false });

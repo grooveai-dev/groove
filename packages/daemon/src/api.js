@@ -4128,6 +4128,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   function snapshotNode() {
     const n = daemon.networkNode || {};
+    const hw = n.hardware || {};
     return {
       active: !!n.active,
       status: n.status || 'stopped',
@@ -4137,6 +4138,13 @@ Keep responses concise. Help them think, don't lecture them about the system the
       sessions: n.sessions || 0,
       hardware: n.hardware || null,
       installed: !!(daemon.config?.networkBeta?.installed),
+      ram_mb: Number(hw.ram_mb) || 0,
+      vram_mb: Number(hw.vram_mb) || 0,
+      gpu_model: hw.gpu_model || hw.gpu || '',
+      cpu_cores: Number(hw.cpu_cores) || 0,
+      bandwidth_mbps: Number(hw.bandwidth_mbps) || 0.0,
+      max_context_length: Number(hw.max_context_length) || 0,
+      load: Number(hw.load) || 0.0,
     };
   }
 
@@ -4457,11 +4465,19 @@ Keep responses concise. Help them think, don't lecture them about the system the
           layers: Array.isArray(n.layers) ? n.layers.slice(0, 2) : n.layers,
           status: capStr(n.status, 50),
           active_sessions: n.active_sessions ?? 0,
+          ram_mb: Number(n.ram_mb) || 0,
+          vram_mb: Number(n.vram_mb) || 0,
+          gpu_model: capStr(n.gpu_model || '', 200),
+          cpu_cores: Number(n.cpu_cores) || 0,
+          bandwidth_mbps: Number(n.bandwidth_mbps) || 0.0,
+          max_context_length: Number(n.max_context_length) || 0,
+          load: Number(n.load) || 0.0,
         }));
 
         return res.json({
           nodes: safeNodes,
           models,
+          compute: data.compute || null,
           coverage: data.covered_layers ?? primaryModel.covered_layers ?? data.coverage ?? 0,
           totalLayers: data.total_layers ?? primaryModel.total_layers ?? data.totalLayers ?? 24,
           activeSessions: data.active_sessions ?? data.activeSessions ?? 0,
@@ -4472,21 +4488,104 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
     // Fallback: local node snapshot when signal is unreachable.
     const node = daemon.networkNode || {};
+    const hw = node.hardware || {};
+    const sysHw = OllamaProvider.getSystemHardware();
+    const localRamMb = (sysHw.totalRamGb || 0) * 1024;
+    const localVramMb = (sysHw.gpu?.vram || 0) * 1024;
+    const localCpuCores = sysHw.cores || 0;
     const selfNode = node.active && node.nodeId ? [{
       node_id: node.nodeId,
-      device: node.hardware?.device || 'auto',
+      device: hw.device || 'auto',
       layers: node.layers || [0, 0],
       status: node.status === 'connected' ? 'active' : node.status,
+      active_sessions: node.sessions || 0,
+      ram_mb: localRamMb,
+      vram_mb: localVramMb,
+      gpu_model: sysHw.gpu?.name || '',
+      cpu_cores: localCpuCores,
+      bandwidth_mbps: 0.0,
+      max_context_length: 0,
+      load: 0.0,
     }] : [];
     const coverage = node.layers ? (node.layers[1] - node.layers[0]) : 0;
+    const localCompute = selfNode.length > 0 ? {
+      total_ram_mb: localRamMb,
+      total_vram_mb: localVramMb,
+      total_cpu_cores: localCpuCores,
+      total_bandwidth_mbps: 0.0,
+      active_nodes: selfNode.length,
+      total_nodes: selfNode.length,
+      avg_load: 0.0,
+    } : null;
     res.json({
       nodes: selfNode,
       models: ['Qwen/Qwen2.5-0.5B'],
+      compute: localCompute,
       coverage,
       totalLayers: 24,
       activeSessions: node.sessions || 0,
       totalNodes: selfNode.length,
     });
+  });
+
+  app.get('/api/network/compute', networkGate, async (req, res) => {
+    const cfg = daemon.config.networkBeta || {};
+    const signalHost = cfg.signalUrl || 'signal.groovedev.ai';
+
+    if (!isAllowedSignalHost(signalHost)) {
+      return res.status(400).json({ error: 'Invalid signal host' });
+    }
+
+    const bareHost = signalHost.replace(/^(wss?|https?):\/\//i, '').replace(/\/.*$/, '');
+    const statusUrl = `https://${bareHost}/status`;
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      const r = await fetch(statusUrl, { signal: controller.signal });
+      clearTimeout(timer);
+      if (r.ok) {
+        const data = await r.json();
+        const nodes = (Array.isArray(data.nodes) ? data.nodes : []).map((n) => ({
+          node_id: n.node_id || n.nodeId || '',
+          ram_mb: Number(n.ram_mb) || 0,
+          vram_mb: Number(n.vram_mb) || 0,
+          gpu_model: typeof n.gpu_model === 'string' ? n.gpu_model.slice(0, 200) : '',
+          cpu_cores: Number(n.cpu_cores) || 0,
+          bandwidth_mbps: Number(n.bandwidth_mbps) || 0.0,
+          max_context_length: Number(n.max_context_length) || 0,
+          load: Number(n.load) || 0.0,
+        }));
+        return res.json({ compute: data.compute || null, nodes });
+      }
+    } catch { /* fall through to local snapshot */ }
+
+    const node = daemon.networkNode || {};
+    const sysHw = OllamaProvider.getSystemHardware();
+    const localRamMb = (sysHw.totalRamGb || 0) * 1024;
+    const localVramMb = (sysHw.gpu?.vram || 0) * 1024;
+    const localCpuCores = sysHw.cores || 0;
+    const isActive = !!(node.active && node.nodeId);
+    const nodes = isActive ? [{
+      node_id: node.nodeId,
+      ram_mb: localRamMb,
+      vram_mb: localVramMb,
+      gpu_model: sysHw.gpu?.name || '',
+      cpu_cores: localCpuCores,
+      bandwidth_mbps: 0.0,
+      max_context_length: 0,
+      load: 0.0,
+    }] : [];
+    const compute = isActive ? {
+      total_ram_mb: localRamMb,
+      total_vram_mb: localVramMb,
+      total_cpu_cores: localCpuCores,
+      total_bandwidth_mbps: 0.0,
+      active_nodes: 1,
+      total_nodes: 1,
+      avg_load: 0.0,
+    } : null;
+    res.json({ compute, nodes });
   });
 
   // --- Network package install/uninstall ---

@@ -10,6 +10,28 @@ import { Provider } from './base.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+async function parseSSEStream(response, onEvent) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let gotDone = false;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+        if (data === '[DONE]') { onEvent({ done: true }); gotDone = true; return; }
+        try { onEvent(JSON.parse(data)); } catch { /* skip malformed */ }
+      }
+    }
+  }
+  if (!gotDone) onEvent({ done: true });
+}
+
 export class ClaudeCodeProvider extends Provider {
   static name = 'claude-code';
   static displayName = 'Claude Code';
@@ -252,6 +274,47 @@ export class ClaudeCodeProvider extends Provider {
     if (totalCacheCreation > 0) merged.cacheCreationTokens = totalCacheCreation;
 
     return merged;
+  }
+
+  streamChat(messages, model, apiKey, onChunk, onDone, onError) {
+    if (!apiKey) return null;
+    const controller = new AbortController();
+    let finished = false;
+    const finish = () => { if (!finished) { finished = true; onDone(); } };
+    const body = JSON.stringify({
+      model: model || 'claude-sonnet-4-6',
+      messages,
+      max_tokens: 8192,
+      stream: true,
+    });
+    fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body,
+      signal: controller.signal,
+    }).then((res) => {
+      if (!res.ok) {
+        return res.text().then((t) => { throw new Error(`Anthropic API ${res.status}: ${t.slice(0, 200)}`); });
+      }
+      return parseSSEStream(res, (event) => {
+        if (event.done) { finish(); return; }
+        if (event.type === 'content_block_delta' && event.delta?.text) {
+          onChunk(event.delta.text);
+        } else if (event.type === 'message_stop') {
+          finish();
+        }
+      });
+    }).then(() => {
+      finish();
+    }).catch((err) => {
+      if (err.name === 'AbortError') return;
+      onError(err);
+    });
+    return controller;
   }
 
   static getAuthStatus() {

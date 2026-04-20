@@ -7,6 +7,26 @@ import { resolve } from 'path';
 import { homedir } from 'os';
 import { Provider } from './base.js';
 
+async function parseSSEStream(response, onEvent) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+        if (data === '[DONE]') { onEvent({ done: true }); return; }
+        try { onEvent(JSON.parse(data)); } catch { /* skip malformed */ }
+      }
+    }
+  }
+}
+
 export class CodexProvider extends Provider {
   static name = 'codex';
   static displayName = 'Codex';
@@ -126,6 +146,41 @@ export class CodexProvider extends Provider {
     const inputTokens = Math.round(tokens * 0.75);
     const outputTokens = tokens - inputTokens;
     return (inputTokens / 1000) * model.pricing.input + (outputTokens / 1000) * model.pricing.output;
+  }
+
+  streamChat(messages, model, apiKey, onChunk, onDone, onError) {
+    if (!apiKey) return null;
+    const controller = new AbortController();
+    let finished = false;
+    const finish = () => { if (!finished) { finished = true; onDone(); } };
+    fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: model || 'gpt-5.4-mini',
+        messages,
+        stream: true,
+      }),
+      signal: controller.signal,
+    }).then((res) => {
+      if (!res.ok) {
+        return res.text().then((t) => { throw new Error(`OpenAI API ${res.status}: ${t.slice(0, 200)}`); });
+      }
+      return parseSSEStream(res, (event) => {
+        if (event.done) { finish(); return; }
+        const content = event.choices?.[0]?.delta?.content;
+        if (content) onChunk(content);
+      });
+    }).then(() => {
+      finish();
+    }).catch((err) => {
+      if (err.name === 'AbortError') return;
+      onError(err);
+    });
+    return controller;
   }
 
   parseOutput(line) {

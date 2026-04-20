@@ -32,4 +32,8 @@ export class Provider {
   parseOutput(line) {
     return null;
   }
+
+  streamChat(messages, model, apiKey, onChunk, onDone, onError) {
+    return null;
+  }
 }

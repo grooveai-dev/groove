@@ -259,11 +259,27 @@ export class ConversationManager {
 
   _killStreamingProcess(conversationId) {
     const procs = this._getStreamingProcesses();
-    const proc = procs.get(conversationId);
-    if (proc && !proc.killed) {
-      proc.kill();
+    const handle = procs.get(conversationId);
+    if (!handle) return;
+    if (handle.abort) {
+      handle.abort();
+    } else if (handle.kill && !handle.killed) {
+      handle.kill();
     }
     procs.delete(conversationId);
+  }
+
+  _getApiKey(providerName) {
+    const envMap = {
+      'claude-code': 'ANTHROPIC_API_KEY',
+      'codex': 'OPENAI_API_KEY',
+      'gemini': 'GEMINI_API_KEY',
+    };
+    const envVar = envMap[providerName];
+    if (envVar && process.env[envVar]) return process.env[envVar];
+    try {
+      return this.daemon.credentials?.getKey(providerName) || null;
+    } catch { return null; }
   }
 
   async sendMessage(id, message, history) {
@@ -271,23 +287,62 @@ export class ConversationManager {
     if (!conv) throw new Error('Conversation not found');
     if (conv.mode !== 'api') throw new Error('sendMessage only works in API mode');
 
-    // Kill any previous streaming process for this conversation
     this._killStreamingProcess(id);
 
-    const prompt = this._buildHistoryPrompt(history, message);
-
-    // Resolve the provider for this conversation
     let provider = getProvider(conv.provider);
     let modelId = conv.model;
+    let providerName = conv.provider;
 
     if (!provider || !isProviderInstalled(conv.provider)) {
       const priority = ['claude-code', 'gemini', 'codex', 'ollama'];
       const fallbackId = priority.find((p) => isProviderInstalled(p));
       if (!fallbackId) throw new Error('No provider available for chat');
       provider = getProvider(fallbackId);
+      providerName = fallbackId;
       modelId = null;
     }
 
+    // Build messages array for direct API call
+    const messages = (history || []).map((m) => ({
+      role: m.from === 'user' ? 'user' : 'assistant',
+      content: m.text,
+    }));
+    messages.push({ role: 'user', content: message });
+
+    const apiKey = this._getApiKey(providerName);
+
+    // Try direct API streaming first (sub-second latency)
+    const controller = provider.streamChat(
+      messages, modelId, apiKey,
+      (text) => {
+        this.daemon.broadcast({
+          type: 'conversation:chunk',
+          data: { conversationId: id, text },
+        });
+      },
+      () => {
+        this._getStreamingProcesses().delete(id);
+        this.daemon.broadcast({
+          type: 'conversation:complete',
+          data: { conversationId: id },
+        });
+      },
+      (err) => {
+        this._getStreamingProcesses().delete(id);
+        this.daemon.broadcast({
+          type: 'conversation:error',
+          data: { conversationId: id, error: err.message },
+        });
+      },
+    );
+
+    if (controller) {
+      this._getStreamingProcesses().set(id, controller);
+      return;
+    }
+
+    // Fallback: headless CLI spawn (for providers without streamChat or missing API key)
+    const prompt = this._buildHistoryPrompt(history, message);
     const headlessCmd = provider.buildHeadlessCommand(prompt, modelId);
     const { command, args, env, stdin: stdinData, cwd } = headlessCmd;
 
@@ -305,23 +360,15 @@ export class ConversationManager {
       proc.stdin.end();
     }
 
-    let fullOutput = '';
-
     proc.stdout.on('data', (data) => {
       const text = data.toString();
-      fullOutput += text;
-
-      // Parse provider output for streaming chunks
       const lines = text.split('\n');
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
 
-        // Try to parse as JSON (stream-json format)
         try {
           const json = JSON.parse(trimmed);
-
-          // Claude Code stream-json: assistant message content
           if (json.type === 'assistant' && json.message?.content) {
             for (const block of json.message.content) {
               if (block.type === 'text' && block.text) {
@@ -333,8 +380,6 @@ export class ConversationManager {
             }
             continue;
           }
-
-          // Claude Code stream-json: content_block_delta
           if (json.type === 'content_block_delta' && json.delta?.text) {
             this.daemon.broadcast({
               type: 'conversation:chunk',
@@ -342,14 +387,7 @@ export class ConversationManager {
             });
             continue;
           }
-
-          // Claude Code stream-json: result block — skip broadcasting since
-          // the content was already streamed via assistant/content_block_delta
-          if (json.type === 'result' && json.result) {
-            continue;
-          }
-
-          // Groove Network: token events
+          if (json.type === 'result' && json.result) continue;
           if (json.type === 'token' && json.text != null) {
             this.daemon.broadcast({
               type: 'conversation:chunk',
@@ -357,8 +395,6 @@ export class ConversationManager {
             });
             continue;
           }
-
-          // Groove Network: done/complete/result
           if ((json.type === 'done' || json.type === 'complete' || json.type === 'result') && json.text) {
             this.daemon.broadcast({
               type: 'conversation:chunk',
@@ -366,8 +402,6 @@ export class ConversationManager {
             });
             continue;
           }
-
-          // Gemini / Codex: content text
           if (json.content?.[0]?.text) {
             this.daemon.broadcast({
               type: 'conversation:chunk',
@@ -375,9 +409,8 @@ export class ConversationManager {
             });
             continue;
           }
-        } catch { /* not JSON — treat as raw text */ }
+        } catch { /* not JSON */ }
 
-        // Non-JSON output: broadcast raw text (some providers output plain text)
         if (!trimmed.startsWith('{')) {
           this.daemon.broadcast({
             type: 'conversation:chunk',

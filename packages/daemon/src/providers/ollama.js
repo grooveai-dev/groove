@@ -275,6 +275,50 @@ export class OllamaProvider extends Provider {
     return false; // Needs rotation for model switch
   }
 
+  streamChat(messages, model, apiKey, onChunk, onDone, onError) {
+    const controller = new AbortController();
+    let finished = false;
+    const finish = () => { if (!finished) { finished = true; onDone(); } };
+    fetch('http://localhost:11434/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: model || 'llama3.1:8b',
+        messages,
+        stream: true,
+      }),
+      signal: controller.signal,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(`Ollama API ${res.status}: ${t.slice(0, 200)}`);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const json = JSON.parse(line);
+            if (json.done) { finish(); return; }
+            if (json.message?.content) onChunk(json.message.content);
+          } catch { /* skip malformed */ }
+        }
+      }
+      finish();
+    }).catch((err) => {
+      if (err.name === 'AbortError') return;
+      onError(err);
+    });
+    return controller;
+  }
+
   parseOutput(line) {
     const trimmed = line.trim();
     if (!trimmed) return null;

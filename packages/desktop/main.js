@@ -984,7 +984,19 @@ body {
               </svg>
               Open Folder
             </button>
-            <div class="m-update" id="update-btn"></div>
+            <div class="m-update" id="update-btn" style="display:none;width:100%;margin-top:12px;padding:14px 16px;background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.2);border-radius:10px;cursor:pointer;transition:background 0.15s">
+              <div style="display:flex;align-items:center;gap:10px">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgb(56,189,248)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4"/><path d="M12 16V8"/></svg>
+                <div style="flex:1;min-width:0">
+                  <div id="update-title" style="font-size:13px;font-weight:600;color:#e2e8f0">Update Available</div>
+                  <div id="update-detail" style="font-size:11px;color:#94a3b8;margin-top:2px">Downloading...</div>
+                </div>
+                <div id="update-action" style="display:none;font-size:11px;font-weight:600;color:rgb(56,189,248);background:rgba(56,189,248,0.15);padding:5px 14px;border-radius:6px;white-space:nowrap">Update &amp; Restart</div>
+              </div>
+              <div id="update-progress-bar" style="margin-top:10px;height:3px;border-radius:2px;background:rgba(56,189,248,0.12);overflow:hidden">
+                <div id="update-progress-fill" style="height:100%;width:0%;border-radius:2px;background:rgb(56,189,248);transition:width 0.4s ease-out"></div>
+              </div>
+            </div>
             <div class="m-ver" id="version"></div>
           </div>
           <div class="m-loading" id="loading">
@@ -1066,11 +1078,28 @@ body {
   }).catch(function() {});
 
   if (window.groove.update) {
+    var updateBtn = document.getElementById('update-btn');
+    var updateTitle = document.getElementById('update-title');
+    var updateDetail = document.getElementById('update-detail');
+    var updateAction = document.getElementById('update-action');
+    var progressFill = document.getElementById('update-progress-fill');
+    var progressBar = document.getElementById('update-progress-bar');
+
+    if (window.groove.update.onUpdateProgress) {
+      window.groove.update.onUpdateProgress(function(data) {
+        updateBtn.style.display = 'block';
+        updateDetail.textContent = 'Downloading\u2026 ' + (data.percent || 0) + '%';
+        progressFill.style.width = (data.percent || 0) + '%';
+        document.getElementById('version').style.display = 'none';
+      });
+    }
     window.groove.update.onUpdateDownloaded(function(data) {
-      var btn = document.getElementById('update-btn');
-      btn.textContent = 'v' + data.version + ' ready — click to restart';
-      btn.className = 'm-update active';
-      btn.onclick = function() { window.groove.update.installUpdate(); };
+      updateBtn.style.display = 'block';
+      updateTitle.textContent = 'v' + data.version + ' Ready';
+      updateDetail.textContent = 'Restart to apply the update';
+      progressBar.style.display = 'none';
+      updateAction.style.display = 'block';
+      updateBtn.onclick = function() { window.groove.update.installUpdate(); };
       document.getElementById('version').style.display = 'none';
     });
   }
@@ -1258,10 +1287,19 @@ ipcMain.on('app-quit', () => {
 ipcMain.handle('get-version', () => app.getVersion());
 ipcMain.handle('install-update', () => {
   isQuitting = true;
-  autoUpdater.quitAndInstall(false, true);
+  setImmediate(() => autoUpdater.quitAndInstall(true, true));
+});
+
+ipcMain.handle('check-for-update', async () => {
+  if (!app.isPackaged) return { updateAvailable: false };
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return { updateAvailable: !!result?.updateInfo };
+  } catch { return { updateAvailable: false }; }
 });
 
 autoUpdater.on('update-available', (info) => broadcastToAllWindows('update-available', { version: info.version }));
+autoUpdater.on('download-progress', (info) => broadcastToAllWindows('update-progress', { percent: Math.round(info.percent) }));
 autoUpdater.on('update-downloaded', (info) => broadcastToAllWindows('update-downloaded', { version: info.version }));
 autoUpdater.on('error', (err) => console.error('[auto-updater]', err.message));
 
@@ -1793,7 +1831,7 @@ app.whenReady().then(async () => {
   // Auto-updater setup — skip in dev mode
   if (app.isPackaged) {
     autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.logger = null;
     autoUpdater.checkForUpdates().catch(() => {});
     setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);

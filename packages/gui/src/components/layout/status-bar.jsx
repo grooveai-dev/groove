@@ -2,9 +2,11 @@
 import { Terminal, BookOpen, Radio, Plug, Globe, ArrowUpCircle, X, Unplug } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/status-dot';
+import { Badge } from '../ui/badge';
 import { fmtUptime } from '../../lib/format';
 import { useGrooveStore } from '../../stores/groove';
 import { isElectron, openExternal } from '../../lib/electron';
+import { UpdateModal } from '../ui/update-modal';
 
 export function StatusBar({
   connected,
@@ -18,7 +20,8 @@ export function StatusBar({
   const tunneled = useGrooveStore((s) => s.tunneled);
   const version = useGrooveStore((s) => s.version);
   const updateReady = useGrooveStore((s) => s.updateReady);
-  const installUpdate = useGrooveStore((s) => s.installUpdate);
+  const updateProgress = useGrooveStore((s) => s.updateProgress);
+  const setUpdateModalOpen = useGrooveStore((s) => s.setUpdateModalOpen);
   const subscription = useGrooveStore((s) => s.subscription);
   const navigate = useGrooveStore((s) => s.setActiveView);
   const activeTunnel = savedTunnels.find((t) => t.active);
@@ -110,14 +113,16 @@ export function StatusBar({
       <div className="flex-1" />
 
       {/* Right: version + docs + terminal toggle */}
-      {updateReady ? (
+      {updateReady || updateProgress ? (
         <button
-          onClick={installUpdate}
-          className="flex items-center gap-1.5 px-2 h-full text-success hover:bg-success/10 transition-colors cursor-pointer"
-          title={`Update to v${updateReady}`}
+          onClick={() => setUpdateModalOpen(true)}
+          className="flex items-center gap-1 px-2 h-full cursor-pointer"
+          title={updateReady ? `Update to v${updateReady}` : 'Downloading update\u2026'}
         >
-          <ArrowUpCircle size={12} />
-          <span>v{updateReady}</span>
+          <Badge variant="warning" className="cursor-pointer">
+            <ArrowUpCircle size={10} />
+            {updateReady ? 'Update Available' : 'Downloading\u2026'}
+          </Badge>
         </button>
       ) : version ? (
         <span className="text-text-4 px-2">v{version}</span>
@@ -146,6 +151,7 @@ export function StatusBar({
         <span>Terminal</span>
         <kbd className="font-mono text-text-4 ml-0.5">Cmd+J</kbd>
       </button>
+      <UpdateModal />
     </footer>
   );
 }

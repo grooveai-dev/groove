@@ -123,6 +123,8 @@ export const useGrooveStore = create((set, get) => ({
   // ── Version / Auto-Update ──────────────────────────────────
   version: null,
   updateReady: null,
+  updateProgress: null,
+  updateModalOpen: false,
 
   // ── Toasts ────────────────────────────────────────────────
   toasts: [],
@@ -184,10 +186,14 @@ export const useGrooveStore = create((set, get) => ({
           if (data) set({ subscription: { ...get().subscription, ...data } });
         });
       }
+      if (window.groove?.update?.onUpdateProgress) {
+        window.groove.update.onUpdateProgress((data) => {
+          set({ updateProgress: data });
+        });
+      }
       if (window.groove?.update?.onUpdateDownloaded) {
         window.groove.update.onUpdateDownloaded((data) => {
-          set({ updateReady: data.version });
-          get().addToast('info', 'Update available', `v${data.version} downloaded — restart to apply`);
+          set({ updateReady: data.version, updateModalOpen: true, updateProgress: null });
         });
       }
     };
@@ -1070,6 +1076,12 @@ export const useGrooveStore = create((set, get) => ({
 
   installUpdate() {
     window.groove?.update?.installUpdate();
+  },
+  setUpdateModalOpen(open) {
+    set({ updateModalOpen: open });
+  },
+  checkForUpdate() {
+    window.groove?.update?.checkForUpdate();
   },
 
   // ── Marketplace Auth ────────────────────────────────────────

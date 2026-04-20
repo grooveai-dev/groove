@@ -57,10 +57,16 @@ contextBridge.exposeInMainWorld('groove', {
   },
   update: {
     installUpdate: () => ipcRenderer.invoke('install-update'),
+    checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
     onUpdateAvailable: (cb) => {
       const h = (_e, d) => cb(d);
       ipcRenderer.on('update-available', h);
       return () => ipcRenderer.removeListener('update-available', h);
+    },
+    onUpdateProgress: (cb) => {
+      const h = (_e, d) => cb(d);
+      ipcRenderer.on('update-progress', h);
+      return () => ipcRenderer.removeListener('update-progress', h);
     },
     onUpdateDownloaded: (cb) => {
       const h = (_e, d) => cb(d);

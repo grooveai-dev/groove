@@ -810,6 +810,147 @@ export function createApi(app, daemon) {
     }
   });
 
+  // --- Conversations ---
+
+  app.get('/api/conversations', (req, res) => {
+    res.json({ conversations: daemon.conversations.list() });
+  });
+
+  app.post('/api/conversations', async (req, res) => {
+    try {
+      const { provider, model, title } = req.body;
+      if (!provider || typeof provider !== 'string') {
+        return res.status(400).json({ error: 'provider is required' });
+      }
+      const conversation = await daemon.conversations.create(provider, model, title);
+      daemon.audit.log('conversation.create', { id: conversation.id, provider, model });
+      res.status(201).json(conversation);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/conversations/:id', (req, res) => {
+    const conversation = daemon.conversations.get(req.params.id);
+    if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+    res.json(conversation);
+  });
+
+  app.patch('/api/conversations/:id', (req, res) => {
+    try {
+      const conv = daemon.conversations.get(req.params.id);
+      if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+      if (req.body.title !== undefined) daemon.conversations.rename(req.params.id, req.body.title);
+      if (req.body.pinned !== undefined) daemon.conversations.pin(req.params.id, req.body.pinned);
+      if (req.body.archived !== undefined) daemon.conversations.archive(req.params.id, req.body.archived);
+      daemon.audit.log('conversation.update', { id: req.params.id });
+      res.json(daemon.conversations.get(req.params.id));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/conversations/:id', async (req, res) => {
+    try {
+      const conv = daemon.conversations.get(req.params.id);
+      if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+      await daemon.conversations.delete(req.params.id);
+      daemon.audit.log('conversation.delete', { id: req.params.id });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/conversations/:id/message', async (req, res) => {
+    try {
+      const { message } = req.body;
+      if (!message || typeof message !== 'string' || !message.trim()) {
+        return res.status(400).json({ error: 'message is required' });
+      }
+      const conv = daemon.conversations.get(req.params.id);
+      if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+
+      const agent = daemon.registry.get(conv.agentId);
+      if (!agent) return res.status(400).json({ error: 'Agent no longer exists' });
+
+      daemon.conversations.autoTitle(req.params.id, message.trim());
+      daemon.conversations.touchUpdatedAt(req.params.id);
+
+      // Record user feedback for journalist context
+      if (daemon.journalist) daemon.journalist.recordUserFeedback(agent, message.trim());
+
+      // Agent loop path — send message directly to the running loop
+      if (daemon.processes.hasAgentLoop(conv.agentId)) {
+        const sent = await daemon.processes.sendMessage(conv.agentId, message.trim());
+        if (sent) {
+          daemon.audit.log('conversation.message', { id: req.params.id, agentId: conv.agentId });
+          return res.json({ id: conv.agentId, status: 'message_sent' });
+        }
+      }
+
+      // One-shot providers: kill and respawn with the message as prompt
+      const provider = getProvider(agent.provider);
+      if (provider?.constructor?.isOneShot) {
+        const oldConfig = { ...agent };
+        if (daemon.processes.isRunning(conv.agentId)) {
+          await daemon.processes.kill(conv.agentId);
+        }
+        daemon.registry.remove(conv.agentId);
+        daemon.locks.release(conv.agentId);
+
+        const newAgent = await daemon.processes.spawn({
+          role: 'chat',
+          scope: oldConfig.scope,
+          provider: oldConfig.provider,
+          model: oldConfig.model,
+          prompt: message.trim(),
+          permission: oldConfig.permission || 'full',
+          workingDir: oldConfig.workingDir,
+          name: oldConfig.name,
+          teamId: oldConfig.teamId,
+        });
+
+        // Update conversation to point to new agent
+        const convObj = daemon.conversations.conversations.get(req.params.id);
+        if (convObj) {
+          convObj.agentId = newAgent.id;
+          daemon.conversations._save();
+        }
+        daemon.audit.log('conversation.message', { id: req.params.id, agentId: newAgent.id, oneShot: true });
+        return res.json({ id: newAgent.id, status: 'respawned' });
+      }
+
+      // Running CLI agent — queue the message
+      if (daemon.processes.isRunning(conv.agentId)) {
+        daemon.processes.queueMessage(conv.agentId, message.trim());
+        daemon.audit.log('conversation.message', { id: req.params.id, agentId: conv.agentId, queued: true });
+        return res.json({ id: conv.agentId, status: 'message_queued' });
+      }
+
+      // CLI agent — session resume or rotation
+      const SESSION_RESUME_CEILING = 5_000_000;
+      const resumed = !!agent.sessionId && (agent.tokensUsed || 0) < SESSION_RESUME_CEILING;
+      const newAgent = resumed
+        ? await daemon.processes.resume(conv.agentId, message.trim())
+        : await daemon.rotator.rotate(conv.agentId, { additionalPrompt: message.trim() });
+
+      // Update conversation to point to new agent if rotated
+      if (newAgent.id !== conv.agentId) {
+        const convObj = daemon.conversations.conversations.get(req.params.id);
+        if (convObj) {
+          convObj.agentId = newAgent.id;
+          daemon.conversations._save();
+        }
+      }
+
+      daemon.audit.log('conversation.message', { id: req.params.id, agentId: newAgent.id, resumed });
+      res.json({ id: newAgent.id, status: resumed ? 'resumed' : 'rotated' });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // --- Approvals ---
 
   app.get('/api/approvals', (req, res) => {

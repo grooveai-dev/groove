@@ -41,6 +41,7 @@ import { TunnelManager } from './tunnel-manager.js';
 import { ModelManager } from './model-manager.js';
 import { LlamaServerManager } from './llama-server.js';
 import { RepoImporter } from './repo-import.js';
+import { ConversationManager } from './conversations.js';
 import { Toys } from './toys.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 import { bindDaemon as bindGrooveNetworkDaemon } from './providers/groove-network.js';
@@ -126,6 +127,7 @@ export class Daemon {
     this.rotator = new Rotator(this);
     this.adaptive = new AdaptiveThresholds(this.grooveDir);
     this.teams = new Teams(this);
+    this.conversations = new ConversationManager(this);
     this.credentials = new CredentialStore(this.grooveDir);
     this.classifier = new TaskClassifier();
     this.router = new ModelRouter(this);

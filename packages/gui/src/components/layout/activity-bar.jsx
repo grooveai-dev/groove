@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Network, Code2, ChartSpline, Puzzle, Gamepad2, Users, Box, Newspaper, Settings, Globe } from 'lucide-react';
+import { Network, Code2, ChartSpline, Puzzle, Gamepad2, Users, Box, Newspaper, Settings, Globe, MessageCircle } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Tooltip } from '../ui/tooltip';
 import { useGrooveStore } from '../../stores/groove';
@@ -13,6 +13,7 @@ const BASE_NAV_ITEMS = [
   { id: 'toys',        icon: Gamepad2,  label: 'Toys' },
   { id: 'models',      icon: Box,       label: 'Models' },
   { id: 'teams',       icon: Users,     label: 'Teams' },
+  { id: 'chat',        icon: MessageCircle, label: 'Chat' },
 ];
 
 const NETWORK_NAV_ITEM = { id: 'network', icon: Globe, label: 'Network' };

@@ -75,6 +75,13 @@ export const useGrooveStore = create((set, get) => ({
   chatInputs: {},   // Per-agent draft input text — persists across tab switches
   tokenTimeline: {},
 
+  // ── Conversations (Chat view) ────────────────────────────
+  conversations: [],
+  activeConversationId: localStorage.getItem('groove:activeConversationId') || null,
+  conversationMessages: loadJSON('groove:conversationMessages'),
+  sendingMessage: false,
+  streamingConversationId: null,
+
   // ── Approvals ─────────────────────────────────────────────
   pendingApprovals: [],
   resolvedApprovals: [],
@@ -163,6 +170,7 @@ export const useGrooveStore = create((set, get) => ({
         if (isTunneled) get().fetchProjectDir();
       }).catch(() => {});
       get().fetchTeams();
+      get().fetchConversations();
       get().fetchApprovals();
       get().checkMarketplaceAuth();
       get().fetchTunnels();
@@ -342,6 +350,28 @@ export const useGrooveStore = create((set, get) => ({
               set({ chatHistory: history });
               persistJSON('groove:chatHistory', history);
             }
+
+            // Mirror to conversation messages if this agent belongs to a conversation
+            const conv = get().conversations.find((c) => c.agentId === agentId);
+            if (conv) {
+              const convMsgs = { ...get().conversationMessages };
+              if (!convMsgs[conv.id]) convMsgs[conv.id] = [];
+              const convArr = [...convMsgs[conv.id]];
+              const lastConv = convArr[convArr.length - 1];
+              const isRecentConv = lastConv && lastConv.from === 'assistant' && (Date.now() - lastConv.timestamp) < 8000;
+              const isConvDupe = isRecentConv && (lastConv.text === trimmed || lastConv.text.endsWith(trimmed));
+              if (!isConvDupe) {
+                if (isRecentConv) {
+                  const sep = data.subtype === 'assistant' ? '\n\n' : ' ';
+                  convArr[convArr.length - 1] = { ...lastConv, text: lastConv.text + sep + trimmed, timestamp: Date.now() };
+                } else {
+                  convArr.push({ from: 'assistant', text: trimmed, timestamp: Date.now() });
+                }
+                convMsgs[conv.id] = convArr.slice(-200);
+                set({ conversationMessages: convMsgs, streamingConversationId: conv.id });
+                persistJSON('groove:conversationMessages', convMsgs);
+              }
+            }
           }
 
           // Tool calls → activity log (shown in streaming bar, not as chat bubbles)
@@ -377,6 +407,12 @@ export const useGrooveStore = create((set, get) => ({
               next.delete(msg.agentId);
               return { thinkingAgents: next };
             });
+          }
+
+          // Clear conversation streaming state
+          const exitConv = get().conversations.find((c) => c.agentId === msg.agentId);
+          if (exitConv && get().streamingConversationId === exitConv.id) {
+            set({ sendingMessage: false, streamingConversationId: null });
           }
 
           // Log crash error to agent chat so user can see what happened
@@ -736,6 +772,33 @@ export const useGrooveStore = create((set, get) => ({
           get().fetchBetaStatus();
           get().fetchNetworkInstallStatus();
           break;
+
+        case 'conversation:created': {
+          const conv = msg.data;
+          if (conv) set((s) => ({ conversations: [conv, ...s.conversations.filter((c) => c.id !== conv.id)] }));
+          break;
+        }
+
+        case 'conversation:updated': {
+          const conv = msg.data;
+          if (conv) set((s) => ({ conversations: s.conversations.map((c) => c.id === conv.id ? { ...c, ...conv } : c) }));
+          break;
+        }
+
+        case 'conversation:deleted': {
+          const id = msg.data?.id || msg.id;
+          if (id) {
+            set((s) => {
+              const conversations = s.conversations.filter((c) => c.id !== id);
+              const conversationMessages = { ...s.conversationMessages };
+              delete conversationMessages[id];
+              const activeConversationId = s.activeConversationId === id ? null : s.activeConversationId;
+              if (activeConversationId !== s.activeConversationId) localStorage.setItem('groove:activeConversationId', '');
+              return { conversations, conversationMessages, activeConversationId };
+            });
+          }
+          break;
+        }
       }
     };
 
@@ -1529,6 +1592,100 @@ export const useGrooveStore = create((set, get) => ({
     } catch (err) {
       get().addChatMessage(id, 'system', `query failed: ${err.message}`);
       throw err;
+    }
+  },
+
+  // ── Conversations (Chat view) ────────────────────────────
+
+  async fetchConversations() {
+    try {
+      const data = await api.get('/conversations');
+      set({ conversations: data.conversations || data || [] });
+    } catch { /* endpoint may not exist yet */ }
+  },
+
+  async createConversation(provider, model) {
+    try {
+      const conv = await api.post('/conversations', { provider, model });
+      set((s) => ({
+        conversations: [conv, ...s.conversations],
+        activeConversationId: conv.id,
+      }));
+      localStorage.setItem('groove:activeConversationId', conv.id);
+      return conv;
+    } catch (err) {
+      get().addToast('error', 'Failed to create conversation', err.message);
+      throw err;
+    }
+  },
+
+  async deleteConversation(id) {
+    try {
+      await api.delete(`/conversations/${encodeURIComponent(id)}`);
+      set((s) => {
+        const conversations = s.conversations.filter((c) => c.id !== id);
+        const conversationMessages = { ...s.conversationMessages };
+        delete conversationMessages[id];
+        persistJSON('groove:conversationMessages', conversationMessages);
+        const activeConversationId = s.activeConversationId === id
+          ? (conversations[0]?.id || null)
+          : s.activeConversationId;
+        localStorage.setItem('groove:activeConversationId', activeConversationId || '');
+        return { conversations, conversationMessages, activeConversationId };
+      });
+    } catch (err) {
+      get().addToast('error', 'Delete failed', err.message);
+    }
+  },
+
+  async renameConversation(id, title) {
+    try {
+      const conv = await api.patch(`/conversations/${encodeURIComponent(id)}`, { title });
+      set((s) => ({ conversations: s.conversations.map((c) => c.id === id ? { ...c, ...conv } : c) }));
+    } catch (err) {
+      get().addToast('error', 'Rename failed', err.message);
+    }
+  },
+
+  async pinConversation(id, pinned) {
+    try {
+      const conv = await api.patch(`/conversations/${encodeURIComponent(id)}`, { pinned });
+      set((s) => ({ conversations: s.conversations.map((c) => c.id === id ? { ...c, ...conv } : c) }));
+    } catch (err) {
+      get().addToast('error', 'Pin failed', err.message);
+    }
+  },
+
+  setActiveConversation(id) {
+    set({ activeConversationId: id });
+    localStorage.setItem('groove:activeConversationId', id || '');
+  },
+
+  async sendChatMessage(conversationId, message) {
+    const conv = get().conversations.find((c) => c.id === conversationId);
+    if (!conv) return;
+
+    // Add user message to local state immediately
+    set((s) => {
+      const msgs = { ...s.conversationMessages };
+      if (!msgs[conversationId]) msgs[conversationId] = [];
+      msgs[conversationId] = [...msgs[conversationId], { from: 'user', text: message, timestamp: Date.now() }];
+      persistJSON('groove:conversationMessages', msgs);
+      return { conversationMessages: msgs, sendingMessage: true, streamingConversationId: conversationId };
+    });
+
+    try {
+      await api.post(`/conversations/${encodeURIComponent(conversationId)}/message`, { message });
+      // Response arrives via agent:output WebSocket events
+    } catch (err) {
+      set((s) => {
+        const msgs = { ...s.conversationMessages };
+        if (!msgs[conversationId]) msgs[conversationId] = [];
+        msgs[conversationId] = [...msgs[conversationId], { from: 'system', text: `Failed: ${err.message}`, timestamp: Date.now() }];
+        persistJSON('groove:conversationMessages', msgs);
+        return { conversationMessages: msgs, sendingMessage: false, streamingConversationId: null };
+      });
+      get().addToast('error', 'Message failed', err.message);
     }
   },
 

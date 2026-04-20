@@ -104,6 +104,7 @@ export const useGrooveStore = create((set, get) => ({
   networkVersion: { installed: null, latest: null, updateAvailable: false },
   networkUpdateProgress: { updating: false, step: null, message: null, percent: 0, error: null },
   networkCompute: { totalRamMb: 0, totalVramMb: 0, totalCpuCores: 0, totalBandwidthMbps: 0, activeNodes: 0, totalNodes: 0, avgLoad: 0 },
+  networkSnapshots: [],
 
   // ── Marketplace Auth ───────────────────────────────────────
   marketplaceUser: null,        // { id, displayName, avatar, ... } or null
@@ -712,6 +713,24 @@ export const useGrooveStore = create((set, get) => ({
             };
           }
           set(nsUpdate);
+
+          // Push snapshot for activity chart
+          const wsNodes = nsData.nodes || [];
+          const wsOwnId = get().networkNode.nodeId;
+          const wsOwn = wsOwnId ? wsNodes.find((n) => (n.node_id || n.nodeId) === wsOwnId) : null;
+          const wsActive = wsNodes.filter((n) => n.status === 'active');
+          const wsSnap = {
+            t: Date.now(),
+            globalSessions: nsData.activeSessions || 0,
+            mySessions: wsOwn?.active_sessions ?? wsOwn?.sessions ?? 0,
+            nodeCount: wsActive.length,
+            avgLoad: wsActive.length > 0 ? wsActive.reduce((s, n) => s + (n.load || 0), 0) / wsActive.length : 0,
+            myLoad: wsOwn?.load ?? 0,
+          };
+          let wsSnapshots = [...get().networkSnapshots, wsSnap];
+          if (wsSnapshots.length > 100) wsSnapshots = wsSnapshots.slice(-100);
+          set({ networkSnapshots: wsSnapshots });
+
           break;
         }
 
@@ -2106,6 +2125,26 @@ export const useGrooveStore = create((set, get) => ({
         };
       }
       set(update);
+
+      // Push snapshot for activity chart
+      if (data) {
+        const ownId = get().networkNode.nodeId;
+        const nodes = data.nodes || [];
+        const ownNode = ownId ? nodes.find((n) => (n.node_id || n.nodeId) === ownId) : null;
+        const activeNodes = nodes.filter((n) => n.status === 'active');
+        const snap = {
+          t: Date.now(),
+          globalSessions: data.activeSessions || 0,
+          mySessions: ownNode?.active_sessions ?? ownNode?.sessions ?? 0,
+          nodeCount: activeNodes.length,
+          avgLoad: activeNodes.length > 0 ? activeNodes.reduce((s, n) => s + (n.load || 0), 0) / activeNodes.length : 0,
+          myLoad: ownNode?.load ?? 0,
+        };
+        let snapshots = [...get().networkSnapshots, snap];
+        if (snapshots.length > 100) snapshots = snapshots.slice(-100);
+        set({ networkSnapshots: snapshots });
+      }
+
       return data;
     } catch {
       set({ networkStatusReachable: false });

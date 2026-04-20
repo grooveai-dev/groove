@@ -24,7 +24,7 @@ function coverageState(covered, total) {
 
 function KpiTile({ icon: Icon, label, value, sub }) {
   return (
-    <div className="rounded-lg border border-border bg-surface-1 px-3 py-2.5 flex items-center gap-2.5 min-w-0">
+    <div className="rounded-sm border border-border bg-surface-1 px-3 py-2.5 flex items-center gap-2.5 min-w-0">
       <div className="w-8 h-8 rounded-md bg-accent/10 text-accent flex items-center justify-center flex-shrink-0">
         <Icon size={14} />
       </div>
@@ -53,7 +53,7 @@ export function NetworkStatus() {
   return (
     <div className="flex flex-col gap-3">
       {/* Signal connection indicator */}
-      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-surface-1">
+      <div className="flex items-center gap-2 px-3 py-2 rounded-sm border border-border bg-surface-1">
         <StatusDot status={signalReachable ? 'running' : 'crashed'} size="sm" />
         <span className="text-2xs font-sans text-text-3">Signal:</span>
         <span className="text-2xs font-mono text-text-1">signal.groovedev.ai</span>
@@ -71,7 +71,7 @@ export function NetworkStatus() {
       </div>
 
       {/* Coverage bar */}
-      <div className="rounded-lg border border-border bg-surface-1 px-4 py-3">
+      <div className="rounded-sm border border-border bg-surface-1 px-4 py-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold text-text-1 font-sans">Layer Coverage</span>
           <Badge variant={coverage.tone}>{coverage.label}</Badge>
@@ -86,7 +86,7 @@ export function NetworkStatus() {
       </div>
 
       {/* Models */}
-      <div className="rounded-lg border border-border bg-surface-1 overflow-hidden">
+      <div className="rounded-sm border border-border bg-surface-1 overflow-hidden">
         <div className="px-4 py-2.5 border-b border-border-subtle">
           <span className="text-xs font-semibold text-text-1 font-sans">Models</span>
         </div>
@@ -111,7 +111,7 @@ export function NetworkStatus() {
       </div>
 
       {/* Nodes table */}
-      <div className="rounded-lg border border-border bg-surface-1 overflow-hidden">
+      <div className="rounded-sm border border-border bg-surface-1 overflow-hidden">
         <button
           onClick={() => setNodesOpen((v) => !v)}
           className="w-full flex items-center gap-2 px-4 py-2.5 border-b border-border-subtle cursor-pointer hover:bg-surface-2/40 transition-colors"

@@ -9,11 +9,11 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { cn } from '../lib/cn';
 import { NodeToggle } from '../components/network/node-toggle';
 import { ComputeHeader } from '../components/network/compute-header';
-import { FleetTable } from '../components/network/fleet-table';
+import { ActivityChart } from '../components/network/activity-chart';
 import { ActivityStream } from '../components/network/activity-stream';
 import { NetworkHealth } from '../components/network/network-health';
-import { HEX } from '../lib/theme-hex';
-import { Globe, Download, Check, AlertCircle, Loader2, Trash2, ArrowUpCircle } from 'lucide-react';
+import { HEX, hexAlpha } from '../lib/theme-hex';
+import { Globe, Download, Check, AlertCircle, Loader2, Trash2, ArrowUpCircle, Zap } from 'lucide-react';
 
 const REQUIREMENTS = [
   'Python 3.10 or higher',
@@ -312,6 +312,99 @@ function NetworkHeader() {
   );
 }
 
+function IdleHero() {
+  const node = useGrooveStore((s) => s.networkNode);
+  const networkStatus = useGrooveStore((s) => s.networkStatus);
+  const startNetworkNode = useGrooveStore((s) => s.startNetworkNode);
+  const [pending, setPending] = useState(false);
+
+  const hardware = node.hardware || {};
+  const activeNodes = (networkStatus.nodes || []).filter((n) => n.status === 'active').length;
+  const activeSessions = networkStatus.activeSessions || 0;
+
+  async function handleStart() {
+    setPending(true);
+    try { await startNetworkNode(); }
+    catch { /* toasted in store */ }
+    setPending(false);
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      <NetworkHeader />
+      <div
+        className="flex-1 flex items-center justify-center bg-surface-0"
+        style={{ background: `radial-gradient(ellipse at 50% 40%, ${hexAlpha(HEX.accent, 0.06)} 0%, transparent 70%) ${HEX.surface0}` }}
+      >
+        <div className="max-w-lg w-full px-6 flex flex-col items-center text-center">
+          <div
+            className="w-24 h-24 rounded-full flex items-center justify-center mb-6 mx-auto"
+            style={{
+              background: hexAlpha(HEX.accent, 0.08),
+              border: `1px solid ${hexAlpha(HEX.accent, 0.15)}`,
+              boxShadow: `0 0 40px ${hexAlpha(HEX.accent, 0.1)}`,
+            }}
+          >
+            <Globe size={56} className="text-accent" strokeWidth={1.25} />
+          </div>
+
+          <h2 className="text-xl font-semibold text-text-0 font-sans text-center">
+            Join the Groove Network
+          </h2>
+
+          <p className="text-sm text-text-2 font-sans text-center leading-relaxed mt-2 max-w-sm mx-auto">
+            Contribute your compute to power decentralized AI inference. Your hardware runs model shards alongside other nodes in the network.
+          </p>
+
+          <div className="mt-8 w-full">
+            <div className="text-2xs font-mono text-text-3 uppercase tracking-widest mb-2 text-left">Your Hardware</div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-surface-1 rounded-sm border border-border-subtle px-4 py-3">
+                <div className="text-2xs font-mono text-text-4 uppercase tracking-wider">Device</div>
+                <div className="text-sm font-mono text-text-0 mt-1 truncate">{hardware.device || 'auto'}</div>
+              </div>
+              <div className="bg-surface-1 rounded-sm border border-border-subtle px-4 py-3">
+                <div className="text-2xs font-mono text-text-4 uppercase tracking-wider">Memory</div>
+                <div className="text-sm font-mono text-text-0 mt-1 truncate">{hardware.memory || '—'}</div>
+              </div>
+              <div className="bg-surface-1 rounded-sm border border-border-subtle px-4 py-3">
+                <div className="text-2xs font-mono text-text-4 uppercase tracking-wider">GPU</div>
+                <div className="text-sm font-mono text-text-0 mt-1 truncate">{hardware.gpu || 'None'}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 w-full max-w-sm mx-auto">
+            <Button variant="primary" size="lg" onClick={handleStart} disabled={pending} className="w-full">
+              {pending ? (
+                <><Loader2 size={14} className="animate-spin" /> Connecting…</>
+              ) : (
+                <><Zap size={14} /> Start Contributing</>
+              )}
+            </Button>
+          </div>
+
+          <div className="mt-4 text-center text-2xs font-mono text-text-3">
+            {activeNodes > 0 || activeSessions > 0 ? (
+              <span>
+                <span className="text-accent">{activeNodes}</span> node{activeNodes !== 1 ? 's' : ''} online · {activeSessions} active session{activeSessions !== 1 ? 's' : ''}
+              </span>
+            ) : (
+              <span>Checking network status…</span>
+            )}
+          </div>
+
+          {node.nodeId && (
+            <div className="mt-6 text-center text-2xs font-mono text-text-4">
+              Node identity: {node.nodeId.length > 14 ? `${node.nodeId.slice(0, 6)}…${node.nodeId.slice(-4)}` : node.nodeId}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function NetworkView() {
   const fetchNetworkNodeStatus = useGrooveStore((s) => s.fetchNetworkNodeStatus);
   const fetchNetworkStatus = useGrooveStore((s) => s.fetchNetworkStatus);
@@ -341,18 +434,7 @@ export default function NetworkView() {
   }
 
   if (!nodeActive) {
-    return (
-      <div className="flex flex-col h-full">
-        <NetworkHeader />
-        <ScrollArea className="flex-1">
-          <div className="flex items-center justify-center min-h-full px-6 py-12">
-            <div className="w-full max-w-md">
-              <NodeToggle />
-            </div>
-          </div>
-        </ScrollArea>
-      </div>
-    );
+    return <IdleHero />;
   }
 
   return (
@@ -361,10 +443,10 @@ export default function NetworkView() {
 
       <ComputeHeader />
 
-      <div className="flex-1 min-h-0 flex flex-col" style={{ background: '#282c34', gap: '1px' }}>
+      <div className="flex-1 min-h-0 flex flex-col" style={{ background: HEX.surface3, gap: '1px' }}>
         <div className="min-h-0 flex-1 grid" style={{ gridTemplateColumns: '3fr 1.5fr', gap: '0 1px' }}>
           <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1">
-            <FleetTable />
+            <ActivityChart />
           </div>
           <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1">
             <NetworkHealth />

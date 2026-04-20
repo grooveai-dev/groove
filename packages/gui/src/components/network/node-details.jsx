@@ -29,7 +29,7 @@ export function NodeDetails() {
   const events = useGrooveStore((s) => s.networkEvents);
 
   return (
-    <div className="flex flex-col rounded-lg border border-border bg-surface-1 overflow-hidden min-h-0">
+    <div className="flex flex-col rounded-sm border border-border bg-surface-1 overflow-hidden min-h-0">
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border-subtle">
         <Activity size={12} className="text-text-3" />
         <span className="text-xs font-semibold text-text-1 font-sans">Node Activity</span>

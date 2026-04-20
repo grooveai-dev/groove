@@ -9,11 +9,11 @@ const BASE_NAV_ITEMS = [
   { id: 'agents',      icon: Network,   label: 'Agents' },
   { id: 'editor',      icon: Code2,     label: 'Editor' },
   { id: 'dashboard',   icon: ChartSpline, label: 'Dashboard' },
+  { id: 'teams',       icon: Users,     label: 'Teams' },
+  { id: 'chat',        icon: MessageCircle, label: 'Chat' },
   { id: 'marketplace', icon: Puzzle,     label: 'Marketplace' },
   { id: 'toys',        icon: Gamepad2,  label: 'Toys' },
   { id: 'models',      icon: Box,       label: 'Models' },
-  { id: 'teams',       icon: Users,     label: 'Teams' },
-  { id: 'chat',        icon: MessageCircle, label: 'Chat' },
 ];
 
 const NETWORK_NAV_ITEM = { id: 'network', icon: Globe, label: 'Network' };

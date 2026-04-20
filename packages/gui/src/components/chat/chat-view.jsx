@@ -131,6 +131,7 @@ export function ChatView() {
               messages={messages}
               isStreaming={isStreaming}
               model={activeConversation.model}
+              mode={activeConversation.mode || 'api'}
             />
             <ChatInput
               onSend={handleSend}

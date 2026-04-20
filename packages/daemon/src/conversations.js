@@ -344,12 +344,9 @@ export class ConversationManager {
             continue;
           }
 
-          // Claude Code stream-json: result block
+          // Claude Code stream-json: result block — skip broadcasting since
+          // the content was already streamed via assistant/content_block_delta
           if (json.type === 'result' && json.result) {
-            this.daemon.broadcast({
-              type: 'conversation:chunk',
-              data: { conversationId: id, text: json.result },
-            });
             continue;
           }
 

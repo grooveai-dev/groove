@@ -299,7 +299,7 @@ function WelcomeMessage() {
   );
 }
 
-export function ChatMessages({ messages, isStreaming, model }) {
+export function ChatMessages({ messages, isStreaming, model, mode }) {
   const scrollRef = useRef(null);
   const isAtBottomRef = useRef(true);
 
@@ -335,12 +335,25 @@ export function ChatMessages({ messages, isStreaming, model }) {
         return <AssistantMessage key={i} msg={msg} model={model} />;
       })}
       {isStreaming && (
-        <div className="flex gap-3">
-          <div className="w-7 h-7 rounded-full bg-surface-4 border border-border-subtle flex items-center justify-center flex-shrink-0">
-            <Sparkles size={13} className="text-accent" />
+        mode === 'agent' ? (
+          <div className="flex gap-3">
+            <div className="w-7 h-7 rounded-full bg-surface-4 border border-border-subtle flex items-center justify-center flex-shrink-0">
+              <Sparkles size={13} className="text-accent" />
+            </div>
+            <ThinkingIndicator className="py-1" />
           </div>
-          <ThinkingIndicator className="py-1" />
-        </div>
+        ) : (
+          <div className="flex gap-3">
+            <div className="w-7 h-7 rounded-full bg-surface-4 border border-border-subtle flex items-center justify-center flex-shrink-0">
+              <Sparkles size={13} className="text-accent" />
+            </div>
+            <div className="flex items-center gap-1.5 py-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-text-3 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-text-3 animate-pulse" style={{ animationDelay: '0.2s' }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-text-3 animate-pulse" style={{ animationDelay: '0.4s' }} />
+            </div>
+          </div>
+        )
       )}
     </div>
   );

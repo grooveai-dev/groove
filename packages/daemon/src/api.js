@@ -4233,7 +4233,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
 
     const signalFlag = supportsSignalFlag(cfg.version) ? '--signal' : '--relay';
-    const model = cfg.model || 'Qwen/Qwen2.5-0.5B';
+    const model = cfg.model || 'google/gemma-3-4b';
     const args = [
       '-m', 'src.node.server',
       signalFlag, signal,
@@ -4472,6 +4472,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
           bandwidth_mbps: Number(n.bandwidth_mbps) || 0.0,
           max_context_length: Number(n.max_context_length) || 0,
           load: Number(n.load) || 0.0,
+          gpu_utilization_pct: Number(n.gpu_utilization_pct) || 0,
+          vram_used_mb: Number(n.vram_used_mb) || 0,
+          ram_used_mb: Number(n.ram_used_mb) || 0,
+          ram_pct: Number(n.ram_pct) || 0,
+          uptime_seconds: Number(n.uptime_seconds) || 0,
         }));
 
         return res.json({
@@ -4479,7 +4484,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
           models,
           compute: data.compute || null,
           coverage: data.covered_layers ?? primaryModel.covered_layers ?? data.coverage ?? 0,
-          totalLayers: data.total_layers ?? primaryModel.total_layers ?? data.totalLayers ?? 24,
+          totalLayers: data.total_layers ?? primaryModel.total_layers ?? data.totalLayers ?? 34,
           activeSessions: data.active_sessions ?? data.activeSessions ?? 0,
           totalNodes: data.total_nodes ?? data.totalNodes ?? (Array.isArray(data.nodes) ? data.nodes.length : 0),
         });
@@ -4506,6 +4511,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
       bandwidth_mbps: 0.0,
       max_context_length: 0,
       load: 0.0,
+      gpu_utilization_pct: 0,
+      vram_used_mb: 0,
+      ram_used_mb: 0,
+      ram_pct: 0,
+      uptime_seconds: 0,
     }] : [];
     const coverage = node.layers ? (node.layers[1] - node.layers[0]) : 0;
     const localCompute = selfNode.length > 0 ? {
@@ -4519,10 +4529,10 @@ Keep responses concise. Help them think, don't lecture them about the system the
     } : null;
     res.json({
       nodes: selfNode,
-      models: ['Qwen/Qwen2.5-0.5B'],
+      models: ['google/gemma-3-4b'],
       compute: localCompute,
       coverage,
-      totalLayers: 24,
+      totalLayers: 34,
       activeSessions: node.sessions || 0,
       totalNodes: selfNode.length,
     });
@@ -4555,6 +4565,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
           bandwidth_mbps: Number(n.bandwidth_mbps) || 0.0,
           max_context_length: Number(n.max_context_length) || 0,
           load: Number(n.load) || 0.0,
+          gpu_utilization_pct: Number(n.gpu_utilization_pct) || 0,
+          vram_used_mb: Number(n.vram_used_mb) || 0,
+          ram_used_mb: Number(n.ram_used_mb) || 0,
+          ram_pct: Number(n.ram_pct) || 0,
+          uptime_seconds: Number(n.uptime_seconds) || 0,
         }));
         return res.json({ compute: data.compute || null, nodes });
       }
@@ -4575,6 +4590,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
       bandwidth_mbps: 0.0,
       max_context_length: 0,
       load: 0.0,
+      gpu_utilization_pct: 0,
+      vram_used_mb: 0,
+      ram_used_mb: 0,
+      ram_pct: 0,
+      uptime_seconds: 0,
     }] : [];
     const compute = isActive ? {
       total_ram_mb: localRamMb,

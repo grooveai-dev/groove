@@ -6,6 +6,7 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Dialog, DialogContent, DialogTrigger } from '../components/ui/dialog';
 import { ScrollArea } from '../components/ui/scroll-area';
+import { cn } from '../lib/cn';
 import { NodeToggle } from '../components/network/node-toggle';
 import { ComputeHeader } from '../components/network/compute-header';
 import { FleetTable } from '../components/network/fleet-table';
@@ -235,11 +236,44 @@ function UninstallButton() {
   );
 }
 
+function InlineToggle({ value, onChange, disabled }) {
+  return (
+    <button
+      onClick={() => !disabled && onChange(!value)}
+      disabled={disabled}
+      className={cn(
+        'relative inline-flex h-5 w-9 rounded-full p-0.5 transition-colors flex-shrink-0',
+        disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
+        value ? 'bg-accent' : 'bg-surface-5',
+      )}
+    >
+      <span
+        className={cn(
+          'inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform',
+          value ? 'translate-x-4' : 'translate-x-0',
+        )}
+      />
+    </button>
+  );
+}
+
 function NetworkHeader() {
   const node = useGrooveStore((s) => s.networkNode);
   const installed = useGrooveStore((s) => s.networkInstalled);
   const version = useGrooveStore((s) => s.networkVersion);
   const signalReachable = useGrooveStore((s) => s.networkStatusReachable);
+  const startNetworkNode = useGrooveStore((s) => s.startNetworkNode);
+  const stopNetworkNode = useGrooveStore((s) => s.stopNetworkNode);
+  const [pending, setPending] = useState(false);
+
+  async function handleToggle(next) {
+    setPending(true);
+    try {
+      if (next) await startNetworkNode();
+      else await stopNetworkNode();
+    } catch { /* toasted in store */ }
+    setPending(false);
+  }
 
   return (
     <div className="flex items-center gap-4 px-4 py-2 bg-surface-1 border-b border-border flex-shrink-0">
@@ -259,15 +293,7 @@ function NetworkHeader() {
       {installed && (
         <div className="flex items-center gap-3.5 text-xs font-mono text-text-2">
           <span className="flex items-center gap-1.5">
-            <span className="relative flex-shrink-0 w-[6px] h-[6px]">
-              <span className="absolute inset-0 rounded-sm" style={{ background: node.active ? HEX.success : HEX.text4 }} />
-              {node.active && (
-                <span
-                  className="absolute inset-[-2px] rounded-sm"
-                  style={{ background: HEX.success, opacity: 0.15, animation: 'node-pulse-bar 2s ease-in-out infinite' }}
-                />
-              )}
-            </span>
+            <InlineToggle value={!!node.active} onChange={handleToggle} disabled={pending} />
             <span className="text-text-3">{node.active ? 'Contributing' : 'Idle'}</span>
           </span>
           <span className="flex items-center gap-1.5">
@@ -291,6 +317,7 @@ export default function NetworkView() {
   const fetchNetworkStatus = useGrooveStore((s) => s.fetchNetworkStatus);
   const checkNetworkUpdate = useGrooveStore((s) => s.checkNetworkUpdate);
   const installed = useGrooveStore((s) => s.networkInstalled);
+  const nodeActive = useGrooveStore((s) => s.networkNode.active);
 
   useEffect(() => {
     fetchNetworkNodeStatus();
@@ -313,6 +340,21 @@ export default function NetworkView() {
     );
   }
 
+  if (!nodeActive) {
+    return (
+      <div className="flex flex-col h-full">
+        <NetworkHeader />
+        <ScrollArea className="flex-1">
+          <div className="flex items-center justify-center min-h-full px-6 py-12">
+            <div className="w-full max-w-md">
+              <NodeToggle />
+            </div>
+          </div>
+        </ScrollArea>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full">
       <NetworkHeader />
@@ -320,7 +362,6 @@ export default function NetworkView() {
       <ComputeHeader />
 
       <div className="flex-1 min-h-0 flex flex-col" style={{ background: '#282c34', gap: '1px' }}>
-        {/* Top row: Fleet Table + Network Health */}
         <div className="min-h-0 flex-1 grid" style={{ gridTemplateColumns: '3fr 1.5fr', gap: '0 1px' }}>
           <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1">
             <FleetTable />
@@ -330,14 +371,8 @@ export default function NetworkView() {
           </div>
         </div>
 
-        {/* Bottom row: Activity Stream + Node Toggle */}
-        <div className="min-h-0 flex-1 grid" style={{ gridTemplateColumns: '3fr 1.5fr', gap: '0 1px' }}>
-          <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1">
-            <ActivityStream />
-          </div>
-          <div className="min-w-0 min-h-0 overflow-x-hidden overflow-y-auto bg-surface-1">
-            <NodeToggle />
-          </div>
+        <div className="min-h-0 flex-[0.6] bg-surface-1">
+          <ActivityStream />
         </div>
       </div>
     </div>

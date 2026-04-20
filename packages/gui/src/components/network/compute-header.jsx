@@ -105,22 +105,32 @@ function KpiCard({ label, value, color = HEX.accent, hint, className }) {
 const MAX_RAM_MB = 256 * 1024;
 const MAX_VRAM_MB = 128 * 1024;
 const MAX_CPU = 128;
-const MAX_BW = 10000;
 const MAX_LOAD = 4.0;
 
 export const ComputeHeader = memo(function ComputeHeader() {
   const compute = useGrooveStore((s) => s.networkCompute);
-  const allZero = !compute.totalRamMb && !compute.totalVramMb && !compute.totalCpuCores && !compute.totalBandwidthMbps;
+  const nodes = useGrooveStore((s) => s.networkStatus.nodes || []);
+  const models = useGrooveStore((s) => s.networkStatus.models || []);
+  const allZero = !compute.totalRamMb && !compute.totalVramMb && !compute.totalCpuCores;
 
+  const activeNodes = nodes.filter((n) => n.status === 'active');
+  const avgGpuUtil = activeNodes.length > 0
+    ? activeNodes.reduce((s, n) => s + (n.gpu_utilization_pct || 0), 0) / activeNodes.length
+    : 0;
+  const gpuColor = avgGpuUtil > 80 ? HEX.danger : avgGpuUtil > 50 ? HEX.warning : HEX.success;
   const loadColor = compute.avgLoad > 2.0 ? HEX.danger : compute.avgLoad > 1.0 ? HEX.warning : HEX.success;
+  const activeModel = models.length > 0
+    ? (typeof models[0] === 'string' ? models[0] : models[0].name)
+    : 'google/gemma-3-4b';
 
   const kpis = [
     { label: 'RAM', value: `${fmtMbToGb(compute.totalRamMb)} GB`, color: HEX.accent, hint: 'Total RAM across all network nodes.' },
     { label: 'VRAM', value: `${fmtMbToGb(compute.totalVramMb)} GB`, color: HEX.info, hint: 'Total GPU VRAM across all network nodes.' },
     { label: 'CPU Cores', value: `${compute.totalCpuCores}`, color: HEX.purple, hint: 'Total CPU cores across all network nodes.' },
-    { label: 'Bandwidth', value: `${Math.round(compute.totalBandwidthMbps)} Mbps`, color: HEX.orange, hint: 'Total available bandwidth across the network.' },
+    { label: 'GPU Util', value: avgGpuUtil > 0 ? `${Math.round(avgGpuUtil)}%` : '--', color: gpuColor, hint: 'Average GPU utilization across active nodes. Green <50%, yellow 50-80%, red >80%.' },
     { label: 'Nodes', value: `${compute.activeNodes}/${compute.totalNodes}`, color: HEX.accent, hint: 'Active nodes out of total registered.' },
     { label: 'Load', value: compute.avgLoad > 0 ? compute.avgLoad.toFixed(2) : '0.00', color: loadColor, hint: 'Average load across active nodes. Green <1.0, yellow 1.0-2.0, red >2.0.' },
+    { label: 'Model', value: activeModel, color: HEX.info, hint: 'Active inference model on the network.' },
   ];
 
   return (
@@ -133,7 +143,7 @@ export const ComputeHeader = memo(function ComputeHeader() {
             value={kpi.value}
             color={kpi.color}
             hint={kpi.hint}
-            className={cn('flex-1 basis-[16.6%] min-w-[120px]', 'border-b border-r border-border')}
+            className={cn('flex-1 basis-[14.2%] min-w-[110px]', 'border-b border-r border-border')}
           />
         ))}
       </div>
@@ -146,7 +156,7 @@ export const ComputeHeader = memo(function ComputeHeader() {
             <AsciiBar label="RAM" value={compute.totalRamMb} max={MAX_RAM_MB} unit="GB" nodeCount={compute.totalNodes} />
             <AsciiBar label="VRAM" value={compute.totalVramMb} max={MAX_VRAM_MB} unit="GB" nodeCount={compute.totalNodes} />
             <AsciiBar label="CPU" value={compute.totalCpuCores} max={MAX_CPU} unit="cores" />
-            <AsciiBar label="BW" value={compute.totalBandwidthMbps} max={MAX_BW} unit="Mbps" />
+            <AsciiBar label="GPU%" value={avgGpuUtil} max={100} unit="%" />
             <AsciiBar label="LOAD" value={compute.avgLoad} max={MAX_LOAD} unit="" />
           </div>
         )}

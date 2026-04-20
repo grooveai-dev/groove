@@ -26,17 +26,28 @@ function statusMap(s) {
   return 'crashed';
 }
 
+function fmtUptime(secs) {
+  if (!secs && secs !== 0) return '\u2014';
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
 const COLUMNS = [
   { key: 'status', label: 'STATUS', w: 'w-[52px]' },
   { key: 'node', label: 'NODE', w: 'flex-1 min-w-[90px]' },
   { key: 'device', label: 'DEVICE', w: 'w-[72px]' },
   { key: 'gpu', label: 'GPU', w: 'w-[90px]' },
-  { key: 'ram', label: 'RAM', w: 'w-[64px]', numeric: true },
-  { key: 'vram', label: 'VRAM', w: 'w-[64px]', numeric: true },
+  { key: 'ram', label: 'RAM', w: 'w-[88px]', numeric: true },
+  { key: 'vram', label: 'VRAM', w: 'w-[88px]', numeric: true },
   { key: 'cpu', label: 'CPU', w: 'w-[42px]', numeric: true },
+  { key: 'gpuUtil', label: 'GPU%', w: 'w-[48px]', numeric: true },
   { key: 'layers', label: 'LAYERS', w: 'w-[60px]' },
   { key: 'sessions', label: 'SESS', w: 'w-[42px]', numeric: true },
-  { key: 'load', label: 'LOAD', w: 'w-[52px]', numeric: true },
+  { key: 'uptime', label: 'UPTIME', w: 'w-[60px]' },
 ];
 
 function getSortValue(node, key) {
@@ -49,8 +60,9 @@ function getSortValue(node, key) {
     case 'vram': return node.vram_mb || 0;
     case 'cpu': return node.cpu_cores || 0;
     case 'layers': return Array.isArray(node.layers) ? node.layers[0] : 0;
+    case 'gpuUtil': return node.gpu_utilization_pct ?? -1;
     case 'sessions': return node.sessions || node.active_sessions || 0;
-    case 'load': return node.load ?? 999;
+    case 'uptime': return node.uptime_seconds || 0;
     default: return 0;
   }
 }
@@ -114,8 +126,10 @@ export const FleetTable = memo(function FleetTable() {
               const isSelf = ownNodeId && id && id === ownNodeId;
               const layersLabel = Array.isArray(n.layers) ? `${n.layers[0]}-${n.layers[1]}` : n.layers || '\u2014';
               const isActive = n.status === 'active' || n.status === 'connecting';
-              const load = n.load;
-              const loadClr = load == null ? undefined : load < 1.0 ? HEX.success : load <= 2.0 ? HEX.warning : HEX.danger;
+              const gpuPct = n.gpu_utilization_pct;
+              const gpuClr = gpuPct == null ? undefined : gpuPct > 80 ? HEX.danger : gpuPct > 50 ? HEX.warning : HEX.success;
+              const ramPct = n.ram_pct || (n.ram_mb > 0 && n.ram_used_mb != null ? (n.ram_used_mb / n.ram_mb) * 100 : null);
+              const vramPct = n.vram_mb > 0 && n.vram_used_mb != null ? (n.vram_used_mb / n.vram_mb) * 100 : null;
 
               return (
                 <div
@@ -142,14 +156,29 @@ export const FleetTable = memo(function FleetTable() {
                   </div>
                   <div className={cn('truncate text-text-2', COLUMNS[2].w)}>{n.device || '\u2014'}</div>
                   <div className={cn('truncate text-text-2', COLUMNS[3].w)}>{n.gpu_model || '\u2014'}</div>
-                  <div className={cn('text-right text-text-2 tabular-nums', COLUMNS[4].w)}>{fmtMb(n.ram_mb)}</div>
-                  <div className={cn('text-right text-text-2 tabular-nums', COLUMNS[5].w)}>{fmtMb(n.vram_mb)}</div>
-                  <div className={cn('text-right text-text-2 tabular-nums', COLUMNS[6].w)}>{n.cpu_cores || '\u2014'}</div>
-                  <div className={cn('text-text-2', COLUMNS[7].w)}>{layersLabel}</div>
-                  <div className={cn('text-right text-text-2 tabular-nums', COLUMNS[8].w)}>{n.sessions ?? n.active_sessions ?? 0}</div>
-                  <div className={cn('text-right tabular-nums', COLUMNS[9].w)} style={{ color: loadClr }}>
-                    {load != null ? load.toFixed(2) : '\u2014'}
+                  <div className={cn('text-right tabular-nums', COLUMNS[4].w)}>
+                    <div className="text-text-2">{n.ram_used_mb != null ? `${fmtMb(n.ram_used_mb)}/${fmtMb(n.ram_mb)}` : fmtMb(n.ram_mb)}</div>
+                    {ramPct != null && (
+                      <div className="h-0.5 rounded-sm mt-0.5 overflow-hidden" style={{ background: 'rgba(51,175,188,0.08)' }}>
+                        <div className="h-full rounded-sm" style={{ width: `${Math.min(100, ramPct)}%`, background: ramPct > 90 ? HEX.danger : ramPct > 70 ? HEX.warning : HEX.accent }} />
+                      </div>
+                    )}
                   </div>
+                  <div className={cn('text-right tabular-nums', COLUMNS[5].w)}>
+                    <div className="text-text-2">{n.vram_used_mb != null ? `${fmtMb(n.vram_used_mb)}/${fmtMb(n.vram_mb)}` : fmtMb(n.vram_mb)}</div>
+                    {vramPct != null && (
+                      <div className="h-0.5 rounded-sm mt-0.5 overflow-hidden" style={{ background: 'rgba(51,175,188,0.08)' }}>
+                        <div className="h-full rounded-sm" style={{ width: `${Math.min(100, vramPct)}%`, background: vramPct > 90 ? HEX.danger : vramPct > 70 ? HEX.warning : HEX.info }} />
+                      </div>
+                    )}
+                  </div>
+                  <div className={cn('text-right text-text-2 tabular-nums', COLUMNS[6].w)}>{n.cpu_cores || '\u2014'}</div>
+                  <div className={cn('text-right tabular-nums', COLUMNS[7].w)} style={{ color: gpuClr }}>
+                    {gpuPct != null ? `${Math.round(gpuPct)}%` : '\u2014'}
+                  </div>
+                  <div className={cn('text-text-2', COLUMNS[8].w)}>{layersLabel}</div>
+                  <div className={cn('text-right text-text-2 tabular-nums', COLUMNS[9].w)}>{n.sessions ?? n.active_sessions ?? 0}</div>
+                  <div className={cn('text-text-2', COLUMNS[10].w)}>{fmtUptime(n.uptime_seconds)}</div>
                 </div>
               );
             })}

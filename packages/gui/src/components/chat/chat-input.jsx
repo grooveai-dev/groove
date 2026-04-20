@@ -2,9 +2,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Loader2, Square, Paperclip } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { ModelPicker } from './model-picker';
 
-export function ChatInput({ onSend, onStop, onModelChange, model, sending, streaming, disabled }) {
+export function ChatInput({ onSend, onStop, sending, streaming, disabled }) {
   const [input, setInput] = useState('');
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -13,8 +12,7 @@ export function ChatInput({ onSend, onStop, onModelChange, model, sending, strea
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    const maxHeight = 6 * 24; // 6 lines
-    el.style.height = Math.min(el.scrollHeight, maxHeight) + 'px';
+    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
   }, []);
 
   useEffect(() => {
@@ -54,14 +52,8 @@ export function ChatInput({ onSend, onStop, onModelChange, model, sending, strea
   const canSend = input.trim() && !sending && !disabled;
 
   return (
-    <div className="border-t border-border bg-surface-1 px-4 py-3">
-      <div className="flex items-end gap-2">
-        <ModelPicker
-          value={model}
-          onChange={onModelChange}
-          disabled={isActive}
-        />
-
+    <div className="px-4 py-3">
+      <div className="flex items-end gap-2 rounded-2xl bg-surface-3/60 border border-border-subtle px-3 py-2 focus-within:border-accent/30 transition-colors">
         <input
           ref={fileInputRef}
           type="file"
@@ -73,7 +65,7 @@ export function ChatInput({ onSend, onStop, onModelChange, model, sending, strea
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled}
-          className="w-9 h-9 flex items-center justify-center rounded-lg text-text-4 hover:text-text-1 hover:bg-surface-3 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-text-4 hover:text-text-1 hover:bg-surface-4 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0"
           title="Attach file"
         >
           <Paperclip size={15} />
@@ -87,20 +79,14 @@ export function ChatInput({ onSend, onStop, onModelChange, model, sending, strea
           placeholder={disabled ? 'Select a model to start chatting...' : 'Send a message...'}
           disabled={disabled}
           rows={1}
-          className={cn(
-            'flex-1 resize-none rounded-xl px-4 py-2.5 text-sm',
-            'bg-surface-0 border text-text-0 font-sans',
-            'placeholder:text-text-4',
-            'focus:outline-none focus:ring-1',
-            'border-border focus:ring-accent/40',
-            'disabled:opacity-50 disabled:cursor-not-allowed',
-          )}
+          style={{ minHeight: '36px' }}
+          className="flex-1 resize-none bg-transparent text-sm text-text-0 font-sans placeholder:text-text-4 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed py-1.5"
         />
 
         {isActive ? (
           <button
             onClick={onStop}
-            className="w-9 h-9 flex items-center justify-center rounded-xl bg-danger/80 text-white hover:bg-danger transition-all cursor-pointer shadow-lg shadow-danger/20"
+            className="w-8 h-8 flex items-center justify-center rounded-xl bg-danger/80 text-white hover:bg-danger transition-all cursor-pointer shadow-lg shadow-danger/20 flex-shrink-0"
             title="Stop generation"
           >
             <Square size={14} fill="currentColor" />
@@ -110,7 +96,7 @@ export function ChatInput({ onSend, onStop, onModelChange, model, sending, strea
             onClick={handleSend}
             disabled={!canSend}
             className={cn(
-              'w-9 h-9 flex items-center justify-center rounded-xl transition-all cursor-pointer',
+              'w-8 h-8 flex items-center justify-center rounded-xl transition-all cursor-pointer flex-shrink-0',
               'disabled:opacity-20 disabled:cursor-not-allowed',
               canSend
                 ? 'bg-accent/15 text-accent hover:bg-accent/25 border border-accent/25'

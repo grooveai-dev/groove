@@ -818,12 +818,15 @@ export function createApi(app, daemon) {
 
   app.post('/api/conversations', async (req, res) => {
     try {
-      const { provider, model, title } = req.body;
+      const { provider, model, title, mode } = req.body;
       if (!provider || typeof provider !== 'string') {
         return res.status(400).json({ error: 'provider is required' });
       }
-      const conversation = await daemon.conversations.create(provider, model, title);
-      daemon.audit.log('conversation.create', { id: conversation.id, provider, model });
+      if (mode && mode !== 'api' && mode !== 'agent') {
+        return res.status(400).json({ error: 'mode must be "api" or "agent"' });
+      }
+      const conversation = await daemon.conversations.create(provider, model, title, mode || 'api');
+      daemon.audit.log('conversation.create', { id: conversation.id, provider, model, mode: conversation.mode });
       res.status(201).json(conversation);
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -836,14 +839,20 @@ export function createApi(app, daemon) {
     res.json(conversation);
   });
 
-  app.patch('/api/conversations/:id', (req, res) => {
+  app.patch('/api/conversations/:id', async (req, res) => {
     try {
       const conv = daemon.conversations.get(req.params.id);
       if (!conv) return res.status(404).json({ error: 'Conversation not found' });
       if (req.body.title !== undefined) daemon.conversations.rename(req.params.id, req.body.title);
       if (req.body.pinned !== undefined) daemon.conversations.pin(req.params.id, req.body.pinned);
       if (req.body.archived !== undefined) daemon.conversations.archive(req.params.id, req.body.archived);
-      daemon.audit.log('conversation.update', { id: req.params.id });
+      if (req.body.mode !== undefined) {
+        if (req.body.mode !== 'api' && req.body.mode !== 'agent') {
+          return res.status(400).json({ error: 'mode must be "api" or "agent"' });
+        }
+        await daemon.conversations.setMode(req.params.id, req.body.mode);
+      }
+      daemon.audit.log('conversation.update', { id: req.params.id, mode: req.body.mode });
       res.json(daemon.conversations.get(req.params.id));
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -864,18 +873,26 @@ export function createApi(app, daemon) {
 
   app.post('/api/conversations/:id/message', async (req, res) => {
     try {
-      const { message } = req.body;
+      const { message, history } = req.body;
       if (!message || typeof message !== 'string' || !message.trim()) {
         return res.status(400).json({ error: 'message is required' });
       }
       const conv = daemon.conversations.get(req.params.id);
       if (!conv) return res.status(404).json({ error: 'Conversation not found' });
 
-      const agent = daemon.registry.get(conv.agentId);
-      if (!agent) return res.status(400).json({ error: 'Agent no longer exists' });
-
       daemon.conversations.autoTitle(req.params.id, message.trim());
       daemon.conversations.touchUpdatedAt(req.params.id);
+
+      // API mode — lightweight headless streaming, no agent spawned
+      if (conv.mode === 'api' || !conv.agentId) {
+        await daemon.conversations.sendMessage(req.params.id, message.trim(), history || []);
+        daemon.audit.log('conversation.message', { id: req.params.id, mode: 'api' });
+        return res.json({ status: 'streaming', mode: 'api' });
+      }
+
+      // Agent mode — existing behavior
+      const agent = daemon.registry.get(conv.agentId);
+      if (!agent) return res.status(400).json({ error: 'Agent no longer exists' });
 
       // Record user feedback for journalist context
       if (daemon.journalist) daemon.journalist.recordUserFeedback(agent, message.trim());
@@ -946,6 +963,17 @@ export function createApi(app, daemon) {
 
       daemon.audit.log('conversation.message', { id: req.params.id, agentId: newAgent.id, resumed });
       res.json({ id: newAgent.id, status: resumed ? 'resumed' : 'rotated' });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/conversations/:id/stop', (req, res) => {
+    try {
+      const conv = daemon.conversations.get(req.params.id);
+      if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+      daemon.conversations.stopStreaming(req.params.id);
+      res.json({ ok: true });
     } catch (err) {
       res.status(400).json({ error: err.message });
     }

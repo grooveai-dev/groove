@@ -4,6 +4,8 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { randomUUID } from 'crypto';
+import { spawn as cpSpawn } from 'child_process';
+import { getProvider, getInstalledProviders } from './providers/index.js';
 
 export class ConversationManager {
   constructor(daemon) {
@@ -53,28 +55,34 @@ export class ConversationManager {
     return null;
   }
 
-  async create(provider, model, title) {
+  async create(provider, model, title, mode = 'api') {
     const id = randomUUID().slice(0, 12);
     const now = new Date().toISOString();
 
-    const defaultTeam = this.daemon.teams.getDefault();
-    const workingDir = defaultTeam?.workingDir || this.daemon.projectDir;
+    let agentId = null;
 
-    const agent = await this.daemon.processes.spawn({
-      role: 'chat',
-      provider,
-      model: model || null,
-      workingDir,
-      teamId: defaultTeam?.id || null,
-      permission: 'full',
-    });
+    if (mode === 'agent') {
+      const defaultTeam = this.daemon.teams.getDefault();
+      const workingDir = defaultTeam?.workingDir || this.daemon.projectDir;
+
+      const agent = await this.daemon.processes.spawn({
+        role: 'chat',
+        provider,
+        model: model || null,
+        workingDir,
+        teamId: defaultTeam?.id || null,
+        permission: 'full',
+      });
+      agentId = agent.id;
+    }
 
     const conversation = {
       id,
       title: title || 'New Chat',
-      agentId: agent.id,
-      provider: agent.provider,
-      model: agent.model,
+      agentId,
+      provider,
+      model: model || null,
+      mode: mode === 'agent' ? 'agent' : 'api',
       createdAt: now,
       updatedAt: now,
       pinned: false,
@@ -90,6 +98,9 @@ export class ConversationManager {
   get(id) {
     const conv = this.conversations.get(id);
     if (!conv) return null;
+    if (conv.mode === 'api' || !conv.agentId) {
+      return { ...conv, agentStatus: conv.agentStatus || null };
+    }
     const agent = this.daemon.registry.get(conv.agentId);
     return {
       ...conv,
@@ -99,6 +110,9 @@ export class ConversationManager {
 
   list() {
     const all = [...this.conversations.values()].map((conv) => {
+      if (conv.mode === 'api' || !conv.agentId) {
+        return { ...conv, agentStatus: conv.agentStatus || null };
+      }
       const agent = this.daemon.registry.get(conv.agentId);
       return {
         ...conv,
@@ -149,13 +163,18 @@ export class ConversationManager {
     const conv = this.conversations.get(id);
     if (!conv) throw new Error('Conversation not found');
 
-    const agent = this.daemon.registry.get(conv.agentId);
-    if (agent && (agent.status === 'running' || agent.status === 'starting')) {
-      try { await this.daemon.processes.kill(conv.agentId); } catch { /* ignore */ }
+    if (conv.agentId) {
+      const agent = this.daemon.registry.get(conv.agentId);
+      if (agent && (agent.status === 'running' || agent.status === 'starting')) {
+        try { await this.daemon.processes.kill(conv.agentId); } catch { /* ignore */ }
+      }
+      if (agent) {
+        this.daemon.registry.remove(conv.agentId);
+      }
     }
-    if (agent) {
-      this.daemon.registry.remove(conv.agentId);
-    }
+
+    // Kill any active API mode streaming process
+    this._killStreamingProcess(id);
 
     this.conversations.delete(id);
     this._save();
@@ -179,5 +198,226 @@ export class ConversationManager {
     conv.updatedAt = new Date().toISOString();
     this._save();
     this.daemon.broadcast({ type: 'conversation:updated', data: conv });
+  }
+
+  async setMode(id, mode) {
+    const conv = this.conversations.get(id);
+    if (!conv) throw new Error('Conversation not found');
+    if (mode !== 'api' && mode !== 'agent') throw new Error('Mode must be "api" or "agent"');
+    if (conv.mode === mode) return conv;
+
+    if (mode === 'agent') {
+      const defaultTeam = this.daemon.teams.getDefault();
+      const workingDir = defaultTeam?.workingDir || this.daemon.projectDir;
+      const agent = await this.daemon.processes.spawn({
+        role: 'chat',
+        provider: conv.provider,
+        model: conv.model || null,
+        workingDir,
+        teamId: defaultTeam?.id || null,
+        permission: 'full',
+      });
+      conv.agentId = agent.id;
+    } else {
+      // Switching to API mode — kill the agent if running
+      this._killStreamingProcess(id);
+      if (conv.agentId) {
+        const agent = this.daemon.registry.get(conv.agentId);
+        if (agent && (agent.status === 'running' || agent.status === 'starting')) {
+          try { await this.daemon.processes.kill(conv.agentId); } catch { /* ignore */ }
+        }
+        if (agent) this.daemon.registry.remove(conv.agentId);
+        conv.agentId = null;
+      }
+    }
+
+    conv.mode = mode;
+    conv.updatedAt = new Date().toISOString();
+    this._save();
+    this.daemon.broadcast({ type: 'conversation:updated', data: conv });
+    return conv;
+  }
+
+  _buildHistoryPrompt(history, newMessage) {
+    const parts = [];
+    if (history && history.length > 0) {
+      parts.push('Previous conversation:');
+      for (const msg of history) {
+        const role = msg.from === 'user' ? 'User' : 'Assistant';
+        parts.push(`${role}: ${msg.text}`);
+      }
+      parts.push('');
+    }
+    parts.push(`User: ${newMessage}`);
+    return parts.join('\n');
+  }
+
+  _getStreamingProcesses() {
+    if (!this._streamingProcesses) this._streamingProcesses = new Map();
+    return this._streamingProcesses;
+  }
+
+  _killStreamingProcess(conversationId) {
+    const procs = this._getStreamingProcesses();
+    const proc = procs.get(conversationId);
+    if (proc && !proc.killed) {
+      proc.kill();
+    }
+    procs.delete(conversationId);
+  }
+
+  async sendMessage(id, message, history) {
+    const conv = this.conversations.get(id);
+    if (!conv) throw new Error('Conversation not found');
+    if (conv.mode !== 'api') throw new Error('sendMessage only works in API mode');
+
+    // Kill any previous streaming process for this conversation
+    this._killStreamingProcess(id);
+
+    const prompt = this._buildHistoryPrompt(history, message);
+
+    // Resolve the provider for this conversation
+    let provider = getProvider(conv.provider);
+    let modelId = conv.model;
+
+    if (!provider || !provider.constructor.isInstalled()) {
+      const priority = ['claude-code', 'gemini', 'codex', 'ollama'];
+      const installed = getInstalledProviders();
+      const fallbackId = priority.find((p) => installed.some((i) => i.id === p));
+      if (!fallbackId) throw new Error('No provider available for chat');
+      provider = getProvider(fallbackId);
+      modelId = null;
+    }
+
+    const headlessCmd = provider.buildHeadlessCommand(prompt, modelId);
+    const { command, args, env, stdin: stdinData, cwd } = headlessCmd;
+
+    const spawnOpts = {
+      env: { ...process.env, ...env },
+      cwd: cwd || this.daemon.projectDir,
+      stdio: stdinData ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
+    };
+
+    const proc = cpSpawn(command, args, spawnOpts);
+    this._getStreamingProcesses().set(id, proc);
+
+    if (stdinData) {
+      proc.stdin.write(stdinData);
+      proc.stdin.end();
+    }
+
+    let fullOutput = '';
+
+    proc.stdout.on('data', (data) => {
+      const text = data.toString();
+      fullOutput += text;
+
+      // Parse provider output for streaming chunks
+      const lines = text.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        // Try to parse as JSON (stream-json format)
+        try {
+          const json = JSON.parse(trimmed);
+
+          // Claude Code stream-json: assistant message content
+          if (json.type === 'assistant' && json.message?.content) {
+            for (const block of json.message.content) {
+              if (block.type === 'text' && block.text) {
+                this.daemon.broadcast({
+                  type: 'conversation:chunk',
+                  data: { conversationId: id, text: block.text },
+                });
+              }
+            }
+            continue;
+          }
+
+          // Claude Code stream-json: content_block_delta
+          if (json.type === 'content_block_delta' && json.delta?.text) {
+            this.daemon.broadcast({
+              type: 'conversation:chunk',
+              data: { conversationId: id, text: json.delta.text },
+            });
+            continue;
+          }
+
+          // Claude Code stream-json: result block
+          if (json.type === 'result' && json.result) {
+            this.daemon.broadcast({
+              type: 'conversation:chunk',
+              data: { conversationId: id, text: json.result },
+            });
+            continue;
+          }
+
+          // Groove Network: token events
+          if (json.type === 'token' && json.text != null) {
+            this.daemon.broadcast({
+              type: 'conversation:chunk',
+              data: { conversationId: id, text: json.text },
+            });
+            continue;
+          }
+
+          // Groove Network: done/complete/result
+          if ((json.type === 'done' || json.type === 'complete' || json.type === 'result') && json.text) {
+            this.daemon.broadcast({
+              type: 'conversation:chunk',
+              data: { conversationId: id, text: json.text },
+            });
+            continue;
+          }
+
+          // Gemini / Codex: content text
+          if (json.content?.[0]?.text) {
+            this.daemon.broadcast({
+              type: 'conversation:chunk',
+              data: { conversationId: id, text: json.content[0].text },
+            });
+            continue;
+          }
+        } catch { /* not JSON — treat as raw text */ }
+
+        // Non-JSON output: broadcast raw text (some providers output plain text)
+        if (!trimmed.startsWith('{')) {
+          this.daemon.broadcast({
+            type: 'conversation:chunk',
+            data: { conversationId: id, text: trimmed },
+          });
+        }
+      }
+    });
+
+    proc.on('error', (err) => {
+      this._getStreamingProcesses().delete(id);
+      this.daemon.broadcast({
+        type: 'conversation:error',
+        data: { conversationId: id, error: err.message },
+      });
+    });
+
+    proc.on('exit', (code) => {
+      this._getStreamingProcesses().delete(id);
+      this.daemon.broadcast({
+        type: 'conversation:complete',
+        data: { conversationId: id, exitCode: code },
+      });
+    });
+
+    const timeout = setTimeout(() => {
+      if (!proc.killed) proc.kill();
+    }, 120_000);
+    proc.on('exit', () => clearTimeout(timeout));
+  }
+
+  stopStreaming(id) {
+    this._killStreamingProcess(id);
+    this.daemon.broadcast({
+      type: 'conversation:complete',
+      data: { conversationId: id, stopped: true },
+    });
   }
 }

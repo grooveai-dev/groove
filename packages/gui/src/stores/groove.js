@@ -799,6 +799,49 @@ export const useGrooveStore = create((set, get) => ({
           }
           break;
         }
+
+        case 'conversation:chunk': {
+          const { conversationId, text } = msg.data || msg;
+          if (!conversationId || !text) break;
+          set((s) => {
+            const msgs = { ...s.conversationMessages };
+            if (!msgs[conversationId]) msgs[conversationId] = [];
+            const arr = [...msgs[conversationId]];
+            const last = arr[arr.length - 1];
+            if (last && last.from === 'assistant' && (Date.now() - last.timestamp) < 30000) {
+              arr[arr.length - 1] = { ...last, text: last.text + text, timestamp: Date.now() };
+            } else {
+              arr.push({ from: 'assistant', text, timestamp: Date.now() });
+            }
+            msgs[conversationId] = arr.slice(-200);
+            persistJSON('groove:conversationMessages', msgs);
+            return { conversationMessages: msgs, streamingConversationId: conversationId };
+          });
+          break;
+        }
+
+        case 'conversation:complete': {
+          const { conversationId } = msg.data || msg;
+          if (conversationId) {
+            set({ sendingMessage: false, streamingConversationId: null });
+            persistJSON('groove:conversationMessages', get().conversationMessages);
+          }
+          break;
+        }
+
+        case 'conversation:error': {
+          const { conversationId, error } = msg.data || msg;
+          if (conversationId) {
+            set((s) => {
+              const msgs = { ...s.conversationMessages };
+              if (!msgs[conversationId]) msgs[conversationId] = [];
+              msgs[conversationId] = [...msgs[conversationId], { from: 'system', text: `Error: ${error || 'Unknown error'}`, timestamp: Date.now() }];
+              persistJSON('groove:conversationMessages', msgs);
+              return { conversationMessages: msgs, sendingMessage: false, streamingConversationId: null };
+            });
+          }
+          break;
+        }
       }
     };
 
@@ -1604,11 +1647,11 @@ export const useGrooveStore = create((set, get) => ({
     } catch { /* endpoint may not exist yet */ }
   },
 
-  async createConversation(provider, model) {
+  async createConversation(provider, model, mode = 'api') {
     try {
-      const conv = await api.post('/conversations', { provider, model });
+      const conv = await api.post('/conversations', { provider, model, mode });
       set((s) => ({
-        conversations: [conv, ...s.conversations],
+        conversations: [conv, ...s.conversations.filter((c) => c.id !== conv.id)],
         activeConversationId: conv.id,
       }));
       localStorage.setItem('groove:activeConversationId', conv.id);
@@ -1617,6 +1660,22 @@ export const useGrooveStore = create((set, get) => ({
       get().addToast('error', 'Failed to create conversation', err.message);
       throw err;
     }
+  },
+
+  async setConversationMode(id, mode) {
+    try {
+      const conv = await api.patch(`/conversations/${encodeURIComponent(id)}`, { mode });
+      set((s) => ({ conversations: s.conversations.map((c) => c.id === id ? { ...c, ...conv } : c) }));
+    } catch (err) {
+      get().addToast('error', 'Mode change failed', err.message);
+    }
+  },
+
+  async stopChatStreaming(conversationId) {
+    try {
+      await api.post(`/conversations/${encodeURIComponent(conversationId)}/stop`);
+      set({ sendingMessage: false, streamingConversationId: null });
+    } catch { /* ignore */ }
   },
 
   async deleteConversation(id) {
@@ -1675,8 +1734,12 @@ export const useGrooveStore = create((set, get) => ({
     });
 
     try {
-      await api.post(`/conversations/${encodeURIComponent(conversationId)}/message`, { message });
-      // Response arrives via agent:output WebSocket events
+      const body = { message };
+      if (conv.mode === 'api' || !conv.mode) {
+        const history = get().conversationMessages[conversationId] || [];
+        body.history = history.slice(0, -1);
+      }
+      await api.post(`/conversations/${encodeURIComponent(conversationId)}/message`, body);
     } catch (err) {
       set((s) => {
         const msgs = { ...s.conversationMessages };

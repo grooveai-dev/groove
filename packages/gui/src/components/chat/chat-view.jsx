@@ -64,6 +64,8 @@ export function ChatView() {
   const setActiveConversation = useGrooveStore((s) => s.setActiveConversation);
   const sendChatMessage = useGrooveStore((s) => s.sendChatMessage);
   const stopAgent = useGrooveStore((s) => s.stopAgent);
+  const stopChatStreaming = useGrooveStore((s) => s.stopChatStreaming);
+  const setConversationMode = useGrooveStore((s) => s.setConversationMode);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -73,11 +75,16 @@ export function ChatView() {
 
   const handleNewChat = useCallback(async (provider, model) => {
     const p = provider || 'claude-code';
-    const m = model || 'sonnet';
+    const m = model || 'claude-sonnet-4-6';
     try {
-      await createConversation(p, m);
+      await createConversation(p, m, 'api');
     } catch { /* toast handles */ }
   }, [createConversation]);
+
+  const handleModeChange = useCallback((mode) => {
+    if (!activeConversationId) return;
+    setConversationMode(activeConversationId, mode);
+  }, [activeConversationId, setConversationMode]);
 
   const handleSend = useCallback((text) => {
     if (!activeConversationId) return;
@@ -85,9 +92,13 @@ export function ChatView() {
   }, [activeConversationId, sendChatMessage]);
 
   const handleStop = useCallback(() => {
-    if (!activeConversation?.agentId) return;
-    stopAgent(activeConversation.agentId);
-  }, [activeConversation, stopAgent]);
+    if (!activeConversation) return;
+    if (activeConversation.mode === 'agent' && activeConversation.agentId) {
+      stopAgent(activeConversation.agentId);
+    } else {
+      stopChatStreaming(activeConversationId);
+    }
+  }, [activeConversation, activeConversationId, stopAgent, stopChatStreaming]);
 
   const handleModelChange = useCallback(async (selection) => {
     if (activeConversationId) {
@@ -115,7 +126,7 @@ export function ChatView() {
       <div className="flex-1 flex flex-col min-w-0">
         {activeConversation ? (
           <>
-            <ChatHeader conversation={activeConversation} />
+            <ChatHeader conversation={activeConversation} model={currentModel} onModelChange={handleModelChange} onModeChange={handleModeChange} />
             <ChatMessages
               messages={messages}
               isStreaming={isStreaming}
@@ -124,8 +135,6 @@ export function ChatView() {
             <ChatInput
               onSend={handleSend}
               onStop={handleStop}
-              onModelChange={handleModelChange}
-              model={currentModel}
               sending={sendingMessage}
               streaming={isStreaming}
               disabled={false}
@@ -144,8 +153,6 @@ export function ChatView() {
                 });
               }}
               onStop={() => {}}
-              onModelChange={handleModelChange}
-              model={currentModel}
               sending={false}
               streaming={false}
               disabled={false}

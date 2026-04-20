@@ -1,11 +1,12 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useMemo } from 'react';
-import { Plus, MessageCircle, Pin, Pencil, PinOff, Trash2 } from 'lucide-react';
+import { Plus, MessageCircle, Pin, Pencil, PinOff, Trash2, Zap, Bot } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/badge';
 import { timeAgo } from '../../lib/format';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../ui/context-menu';
+import { formatModelName } from './model-picker';
 
 function groupByDate(conversations) {
   const now = new Date();
@@ -52,7 +53,11 @@ function ConversationItem({ conv, isActive, onSelect, onRename, onPin, onDelete 
           <div className="flex-1 min-w-0">
             <div className="text-xs font-medium font-sans truncate">{conv.title || 'New Chat'}</div>
             <div className="flex items-center gap-1.5 mt-0.5">
-              {conv.model && <Badge variant="default" className="text-[8px] px-1 py-0">{conv.model}</Badge>}
+              {conv.mode === 'agent'
+                ? <Bot size={9} className="text-purple flex-shrink-0" />
+                : <Zap size={9} className="text-accent flex-shrink-0" />
+              }
+              {conv.model && <Badge variant="default" className="text-[8px] px-1 py-0">{formatModelName(conv.model)}</Badge>}
               <span className="text-2xs text-text-4 font-sans">{timeAgo(conv.updatedAt || conv.createdAt)}</span>
             </div>
           </div>
@@ -117,17 +122,7 @@ export function ConversationList({ onNewChat }) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-3">
-        <button
-          onClick={onNewChat}
-          className="w-full flex items-center justify-center gap-2 h-9 rounded-lg bg-accent/15 text-accent text-xs font-semibold font-sans hover:bg-accent/25 transition-colors cursor-pointer border border-accent/20"
-        >
-          <Plus size={14} />
-          New Chat
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-1.5 pb-3 space-y-0.5">
+      <div className="flex-1 overflow-y-auto px-1.5 pt-3 pb-3 space-y-0.5">
         {conversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center px-4">
             <MessageCircle size={24} className="text-text-4 mb-3" />
@@ -143,6 +138,16 @@ export function ConversationList({ onNewChat }) {
             {renderGroup('Older', groups.older)}
           </>
         )}
+      </div>
+
+      <div className="p-3 border-t border-border-subtle">
+        <button
+          onClick={onNewChat}
+          className="w-full flex items-center justify-center gap-2 h-9 rounded-lg bg-accent/15 text-accent text-xs font-semibold font-sans hover:bg-accent/25 transition-colors cursor-pointer border border-accent/20"
+        >
+          <Plus size={14} />
+          New Chat
+        </button>
       </div>
     </div>
   );

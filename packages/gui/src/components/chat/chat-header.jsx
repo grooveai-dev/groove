@@ -1,12 +1,12 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useRef, useEffect } from 'react';
-import { Pencil, Pin, PinOff, Trash2, Hash, MoreHorizontal } from 'lucide-react';
+import { Pencil, Pin, PinOff, Trash2, Hash, MoreHorizontal, Zap, Bot } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
-import { cn } from '../../lib/cn';
-import { Badge } from '../ui/badge';
 import { fmtNum } from '../../lib/format';
+import { ModelPicker } from './model-picker';
+import { Tooltip } from '../ui/tooltip';
 
-export function ChatHeader({ conversation }) {
+export function ChatHeader({ conversation, model, onModelChange, onModeChange }) {
   const renameConversation = useGrooveStore((s) => s.renameConversation);
   const pinConversation = useGrooveStore((s) => s.pinConversation);
   const deleteConversation = useGrooveStore((s) => s.deleteConversation);
@@ -47,6 +47,7 @@ export function ChatHeader({ conversation }) {
 
   const agent = useGrooveStore((s) => s.agents.find((a) => a.id === conversation.agentId));
   const tokens = agent?.tokensUsed || 0;
+  const mode = conversation.mode || 'api';
 
   return (
     <div className="h-11 flex items-center gap-3 px-4 border-b border-border bg-surface-1 flex-shrink-0">
@@ -72,12 +73,29 @@ export function ChatHeader({ conversation }) {
       )}
 
       <div className="flex items-center gap-2 flex-shrink-0">
-        {conversation.model && (
-          <Badge variant="accent" className="text-[9px]">{conversation.model}</Badge>
-        )}
-        {conversation.provider && (
-          <Badge variant="default" className="text-[9px]">{conversation.provider}</Badge>
-        )}
+        <div className="flex items-center h-7 rounded-lg bg-surface-3 border border-border-subtle p-0.5">
+          <Tooltip content="Lightweight — fast and cheap, no tools" side="bottom">
+            <button
+              onClick={() => onModeChange?.('api')}
+              className={`flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-semibold font-sans transition-colors cursor-pointer ${mode === 'api' ? 'bg-accent/15 text-accent border border-accent/25' : 'text-text-3 hover:text-text-1'}`}
+            >
+              <Zap size={11} /> Chat
+            </button>
+          </Tooltip>
+          <Tooltip content="Full agent — tools, files, session resume" side="bottom">
+            <button
+              onClick={() => onModeChange?.('agent')}
+              className={`flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-semibold font-sans transition-colors cursor-pointer ${mode === 'agent' ? 'bg-purple/15 text-purple border border-purple/25' : 'text-text-3 hover:text-text-1'}`}
+            >
+              <Bot size={11} /> Agent
+            </button>
+          </Tooltip>
+        </div>
+        <ModelPicker
+          value={model || { provider: conversation.provider, model: conversation.model }}
+          onChange={onModelChange}
+          disabled={false}
+        />
         {tokens > 0 && (
           <span className="text-2xs text-text-3 font-mono">{fmtNum(tokens)} tokens</span>
         )}

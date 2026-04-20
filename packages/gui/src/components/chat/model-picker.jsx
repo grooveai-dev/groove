@@ -5,6 +5,16 @@ import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/badge';
 
+export function formatModelName(id) {
+  if (!id) return '';
+  return id
+    .replace(/^claude-/, '')
+    .replace(/-(\d)/, ' $1')
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 const TIER_CONFIG = {
   frontier: { label: 'Frontier', variant: 'purple', icon: Sparkles },
   mid: { label: 'Mid', variant: 'accent', icon: Zap },
@@ -50,7 +60,8 @@ export function ModelPicker({ value, onChange, disabled }) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
-  const currentModel = value?.model || 'Select model';
+  const currentModel = value?.model || '';
+  const currentModelDisplay = currentModel ? formatModelName(currentModel) : 'Select model';
   const currentProvider = value?.provider || '';
   const isNetwork = currentProvider === 'groove-network';
 
@@ -67,12 +78,12 @@ export function ModelPicker({ value, onChange, disabled }) {
         )}
       >
         {isNetwork ? <Globe size={12} className="text-purple" /> : <Cpu size={12} className="text-text-3" />}
-        <span className="text-text-1 max-w-[120px] truncate">{currentModel}</span>
+        <span className="text-text-1 max-w-[120px] truncate">{currentModelDisplay}</span>
         <ChevronDown size={12} className="text-text-4" />
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 mb-1 w-72 max-h-80 overflow-y-auto rounded-lg border border-border bg-surface-1 shadow-xl z-50">
+        <div className="absolute top-full left-0 mt-1 w-72 max-h-80 overflow-y-auto rounded-lg border border-border bg-surface-1 shadow-xl z-50">
           {providers.length === 0 && (
             <div className="px-4 py-6 text-center text-xs text-text-3 font-sans">No providers available</div>
           )}
@@ -87,16 +98,17 @@ export function ModelPicker({ value, onChange, disabled }) {
                   {provider.name || provider.id}
                 </div>
                 {models.map((model) => {
-                  const modelName = typeof model === 'string' ? model : model.name || model.id;
-                  const tier = getTier(modelName);
+                  const modelId = typeof model === 'string' ? model : model.id || model.name;
+                  const modelDisplayName = typeof model === 'string' ? model : model.name || model.id;
+                  const tier = getTier(modelId);
                   const tierConfig = TIER_CONFIG[tier];
                   const TierIcon = tierConfig.icon;
-                  const isActive = currentModel === modelName && currentProvider === provider.id;
+                  const isActive = currentModel === modelId && currentProvider === provider.id;
                   return (
                     <button
-                      key={modelName}
+                      key={modelId}
                       onClick={() => {
-                        onChange({ provider: provider.id, model: modelName });
+                        onChange({ provider: provider.id, model: modelId });
                         setOpen(false);
                       }}
                       className={cn(
@@ -105,8 +117,8 @@ export function ModelPicker({ value, onChange, disabled }) {
                       )}
                     >
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium font-sans truncate">{modelName}</div>
-                        <div className="text-2xs text-text-4 font-sans">{getContextSize(modelName)} context</div>
+                        <div className="text-xs font-medium font-sans truncate">{modelDisplayName}</div>
+                        <div className="text-2xs text-text-4 font-sans">{getContextSize(modelId)} context</div>
                       </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         {isNetworkProvider && (

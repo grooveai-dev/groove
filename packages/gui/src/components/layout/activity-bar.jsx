@@ -7,10 +7,10 @@ import { isElectron, getPlatform } from '../../lib/electron';
 
 const BASE_NAV_ITEMS = [
   { id: 'agents',      icon: Network,   label: 'Agents' },
+  { id: 'chat',        icon: MessageCircle, label: 'Chat' },
   { id: 'editor',      icon: Code2,     label: 'Editor' },
   { id: 'dashboard',   icon: ChartSpline, label: 'Dashboard' },
   { id: 'teams',       icon: Users,     label: 'Teams' },
-  { id: 'chat',        icon: MessageCircle, label: 'Chat' },
   { id: 'marketplace', icon: Puzzle,     label: 'Marketplace' },
   { id: 'toys',        icon: Gamepad2,  label: 'Toys' },
   { id: 'models',      icon: Box,       label: 'Models' },

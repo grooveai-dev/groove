@@ -50,7 +50,7 @@ export function ChatHeader({ conversation, model, onModelChange, onModeChange })
   const mode = conversation.mode || 'api';
 
   return (
-    <div className="h-11 flex items-center gap-3 px-4 border-b border-border bg-surface-1 flex-shrink-0">
+    <div className="h-11 flex items-center gap-3 px-4 border-b border-border-subtle bg-surface-0/80 flex-shrink-0">
       <Hash size={14} className="text-text-4 flex-shrink-0" />
 
       {editing ? (

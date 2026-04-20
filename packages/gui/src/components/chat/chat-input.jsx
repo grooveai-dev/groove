@@ -53,7 +53,7 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled }) {
 
   return (
     <div className="px-4 py-3">
-      <div className="flex items-end gap-2 rounded-2xl bg-surface-3/60 border border-border-subtle px-3 py-2 focus-within:border-accent/30 transition-colors">
+      <div className="flex items-end gap-2 rounded-2xl bg-surface-1/80 border border-accent/8 px-3 py-2 focus-within:border-accent/30 transition-colors">
         <input
           ref={fileInputRef}
           type="file"

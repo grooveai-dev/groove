@@ -1,9 +1,16 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useRef, useEffect, useState } from 'react';
-import { Copy, Check, ArrowRight, MessageCircle, Sparkles } from 'lucide-react';
+import { Copy, Check, ArrowRight } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
 import { ThinkingIndicator } from '../ui/thinking-indicator';
+
+const API_STATUS_MESSAGES = [
+  'Generating response...',
+  'Processing...',
+  'Thinking...',
+  'Almost there...',
+];
 
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
@@ -242,7 +249,7 @@ function UserMessage({ msg }) {
   return (
     <div className="flex justify-end">
       <div className="max-w-[75%]">
-        <div className="px-4 py-3 rounded-2xl rounded-br-md bg-accent/10 border border-accent/15">
+        <div className="px-4 py-3 rounded-xl bg-surface-3/80 border border-border-subtle">
           <p className="text-sm text-text-0 font-sans whitespace-pre-wrap break-words leading-relaxed">{msg.text}</p>
         </div>
         <div className="text-2xs text-text-4 font-sans mt-1 text-right">{timeAgo(msg.timestamp)}</div>
@@ -253,17 +260,12 @@ function UserMessage({ msg }) {
 
 function AssistantMessage({ msg, model }) {
   return (
-    <div className="flex gap-3">
-      <div className="w-7 h-7 rounded-full bg-surface-4 border border-border-subtle flex items-center justify-center flex-shrink-0 mt-0.5">
-        <Sparkles size={13} className="text-accent" />
+    <div className="max-w-[85%]">
+      {model && <div className="text-2xs text-text-3 font-sans mb-1 font-medium">{model}</div>}
+      <div className="border-l-2 border-accent/30 pl-3.5">
+        <RenderedMarkdown text={msg.text} />
       </div>
-      <div className="flex-1 min-w-0 max-w-[85%]">
-        {model && <div className="text-2xs text-text-3 font-sans mb-1 font-medium">{model}</div>}
-        <div className="px-4 py-3 rounded-2xl rounded-bl-md bg-surface-4 border border-border-subtle">
-          <RenderedMarkdown text={msg.text} />
-        </div>
-        <div className="text-2xs text-text-4 font-sans mt-1">{timeAgo(msg.timestamp)}</div>
-      </div>
+      <div className="text-2xs text-text-4 font-sans mt-1">{timeAgo(msg.timestamp)}</div>
     </div>
   );
 }
@@ -288,13 +290,37 @@ function StreamingCursor() {
 function WelcomeMessage() {
   return (
     <div className="flex flex-col items-center justify-center h-full text-center py-16">
-      <div className="w-16 h-16 rounded-full bg-accent/8 flex items-center justify-center mb-5">
-        <MessageCircle size={28} className="text-accent" />
+      <p className="text-sm text-text-3 font-sans">Send a message to start</p>
+    </div>
+  );
+}
+
+function ApiTypingIndicator() {
+  const [idx, setIdx] = useState(0);
+  const [fade, setFade] = useState(true);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setFade(false);
+      setTimeout(() => {
+        setIdx((i) => (i + 1) % API_STATUS_MESSAGES.length);
+        setFade(true);
+      }, 250);
+    }, 2800);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div className="border-l-2 border-accent/30 pl-3.5 py-1 flex items-center gap-2.5">
+      <div className="relative w-3.5 h-3.5 flex-shrink-0">
+        <span className="absolute inset-0 rounded-full border border-transparent border-t-accent animate-spin" style={{ animationDuration: '0.9s' }} />
       </div>
-      <h2 className="text-xl font-bold text-text-0 font-sans mb-2">Start a conversation</h2>
-      <p className="text-sm text-text-2 font-sans max-w-sm leading-relaxed">
-        Send a message to begin. Your conversation history is saved locally and syncs across sessions.
-      </p>
+      <span
+        className="text-[12px] font-sans text-text-3 transition-opacity duration-[250ms]"
+        style={{ opacity: fade ? 1 : 0 }}
+      >
+        {API_STATUS_MESSAGES[idx]}
+      </span>
     </div>
   );
 }
@@ -336,23 +362,9 @@ export function ChatMessages({ messages, isStreaming, model, mode }) {
       })}
       {isStreaming && (
         mode === 'agent' ? (
-          <div className="flex gap-3">
-            <div className="w-7 h-7 rounded-full bg-surface-4 border border-border-subtle flex items-center justify-center flex-shrink-0">
-              <Sparkles size={13} className="text-accent" />
-            </div>
-            <ThinkingIndicator className="py-1" />
-          </div>
+          <ThinkingIndicator className="py-1" />
         ) : (
-          <div className="flex gap-3">
-            <div className="w-7 h-7 rounded-full bg-surface-4 border border-border-subtle flex items-center justify-center flex-shrink-0">
-              <Sparkles size={13} className="text-accent" />
-            </div>
-            <div className="flex items-center gap-1.5 py-3">
-              <span className="w-1.5 h-1.5 rounded-full bg-text-3 animate-pulse" />
-              <span className="w-1.5 h-1.5 rounded-full bg-text-3 animate-pulse" style={{ animationDelay: '0.2s' }} />
-              <span className="w-1.5 h-1.5 rounded-full bg-text-3 animate-pulse" style={{ animationDelay: '0.4s' }} />
-            </div>
-          </div>
+          <ApiTypingIndicator />
         )
       )}
     </div>

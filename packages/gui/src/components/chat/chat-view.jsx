@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useCallback } from 'react';
-import { MessageCircle, Plus, Sparkles, Zap } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { ConversationList } from './conversation-list';
@@ -11,44 +11,16 @@ import { ChatInput } from './chat-input';
 function EmptyState({ onNewChat }) {
   return (
     <div className="flex-1 flex items-center justify-center">
-      <div className="max-w-md w-full text-center space-y-8 px-8">
-        <div className="relative mx-auto w-20 h-20">
-          <div className="absolute inset-0 rounded-full bg-accent/8 animate-pulse" />
-          <div className="absolute inset-1 rounded-full bg-surface-3 border border-border-subtle flex items-center justify-center shadow-lg shadow-accent/5">
-            <MessageCircle size={32} className="text-accent" />
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <h1 className="text-2xl font-bold text-text-0 font-sans tracking-tight">Groove Chat</h1>
-          <p className="text-sm text-text-2 font-sans max-w-sm mx-auto leading-relaxed">
-            A command center disguised as a conversation. Every provider, every model, full project context.
-          </p>
-        </div>
-
+      <div className="text-center space-y-4">
+        <h1 className="text-lg font-semibold text-text-1 font-sans">Groove Chat</h1>
+        <p className="text-sm text-text-3 font-sans">Every provider, every model, full project context.</p>
         <button
           onClick={onNewChat}
-          className="inline-flex items-center gap-2 h-10 px-6 rounded-lg bg-accent/15 text-accent text-sm font-semibold font-sans hover:bg-accent/25 transition-colors cursor-pointer border border-accent/20"
+          className="inline-flex items-center gap-2 h-9 px-5 rounded-lg bg-accent/15 text-accent text-sm font-semibold font-sans hover:bg-accent/25 transition-colors cursor-pointer border border-accent/20"
         >
-          <Plus size={16} />
+          <Plus size={14} />
           New Chat
         </button>
-
-        <div className="grid grid-cols-2 gap-3 max-w-sm mx-auto">
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-surface-3 border border-border-subtle">
-            <Sparkles size={14} className="text-purple flex-shrink-0" />
-            <span className="text-2xs text-text-2 font-sans">Multi-model routing</span>
-          </div>
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-surface-3 border border-border-subtle">
-            <Zap size={14} className="text-warning flex-shrink-0" />
-            <span className="text-2xs text-text-2 font-sans">Streaming responses</span>
-          </div>
-        </div>
-
-        <p className="text-xs text-text-4 font-sans">
-          <kbd className="font-mono bg-surface-4 px-1.5 py-0.5 rounded text-text-3">Cmd+Shift+N</kbd>
-          <span className="mx-1.5">new chat</span>
-        </p>
       </div>
     </div>
   );
@@ -113,10 +85,10 @@ export function ChatView() {
     : null;
 
   return (
-    <div className="flex h-full bg-surface-2">
+    <div className="flex h-full bg-surface-0">
       {/* Conversation sidebar */}
       <div className={cn(
-        'flex-shrink-0 border-r border-border bg-surface-1 transition-all duration-200 overflow-hidden',
+        'flex-shrink-0 border-r border-accent/12 bg-surface-1 transition-all duration-200 overflow-hidden',
         sidebarCollapsed ? 'w-0' : 'w-64',
       )}>
         <ConversationList onNewChat={() => handleNewChat()} />

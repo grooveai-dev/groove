@@ -156,10 +156,10 @@ export class GrooveNetworkProvider extends Provider {
         return { type: 'activity', data: trimmed };
       }
 
-      if (msg.type === 'token' && msg.text) {
+      if (msg.type === 'token' && msg.text != null) {
         return { type: 'activity', subtype: 'text', data: msg.text, tokensGenerated: msg.tokens_generated };
       }
-      if (msg.type === 'complete' || msg.type === 'result') {
+      if (msg.type === 'done' || msg.type === 'complete' || msg.type === 'result') {
         return { type: 'result', text: msg.text || '', tokensGenerated: msg.tokens_generated, sessionId: msg.session_id };
       }
       if (msg.type === 'error') {

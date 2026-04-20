@@ -4029,11 +4029,13 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
 
     const signalFlag = supportsSignalFlag(cfg.version) ? '--signal' : '--relay';
+    const model = cfg.model || 'Qwen/Qwen2.5-0.5B';
     const args = [
       '-m', 'src.node.server',
       signalFlag, signal,
       '--tls',
       '--device', device,
+      '--model', model,
       '--max-context', String(maxContext),
     ];
 
@@ -4300,6 +4302,22 @@ Keep responses concise. Help them think, don't lecture them about the system the
     return resolve(homedir(), '.groove', 'network');
   }
 
+  function getInstalledNetworkVersion() {
+    const configured = daemon.config?.networkBeta?.version || null;
+    if (configured) return configured;
+    const installPath = networkRoot();
+    if (!existsSync(resolve(installPath, 'setup.sh'))) return null;
+    try {
+      const { execSync } = require('child_process');
+      const v = execSync('git describe --tags --abbrev=0', {
+        cwd: installPath, stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000,
+      }).toString().trim();
+      return parseSemver(v) ? v : null;
+    } catch {
+      return null;
+    }
+  }
+
   // Defensive: only permit fs ops on paths that resolve inside ~/.groove/.
   // Uses realpathSync when the path exists to defeat symlink escapes.
   function isInsideGrooveHome(target) {
@@ -4325,7 +4343,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     res.json({
       installed,
       path: installed ? installPath : null,
-      version: installed ? (daemon.config?.networkBeta?.version || null) : null,
+      version: installed ? getInstalledNetworkVersion() : null,
     });
   });
 
@@ -4565,7 +4583,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
   }
 
   app.get('/api/network/update/check', networkGate, async (req, res) => {
-    const installed = daemon.config?.networkBeta?.version || null;
+    const installed = getInstalledNetworkVersion();
     const force = req.query.force === '1' || req.query.force === 'true';
     const latest = await getLatestNetworkTag(force);
     if (!latest) {
@@ -4591,11 +4609,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
     if (daemon.networkInstall?.running) {
       return res.status(409).json({ error: 'Install/update already in progress' });
     }
-    if (!daemon.config?.networkBeta?.installed) {
+    const installPath = networkRoot();
+    const hasInstall = daemon.config?.networkBeta?.installed || existsSync(resolve(installPath, 'setup.sh'));
+    if (!hasInstall) {
       return res.status(400).json({ error: 'Network package not installed' });
     }
-
-    const installPath = networkRoot();
     if (!existsSync(installPath) || !isInsideGrooveHome(installPath)) {
       return res.status(400).json({ error: 'Install path missing or invalid' });
     }
@@ -4604,7 +4622,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     if (!latest) {
       return res.status(502).json({ error: 'Could not reach github.com to check for updates' });
     }
-    const current = daemon.config.networkBeta.version || null;
+    const current = getInstalledNetworkVersion();
     if (current && compareSemver(latest, current) <= 0) {
       return res.status(400).json({ error: 'Already at latest version', installed: current, latest });
     }
@@ -4730,11 +4748,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
   // Startup hook — called from index.js once the server is up. Non-blocking;
   // updates daemon.networkUpdateAvailable and broadcasts so the GUI can badge.
   daemon.checkNetworkUpdate = async function checkNetworkUpdate() {
-    if (!daemon.config?.networkBeta?.installed) return;
+    const hasInstall = daemon.config?.networkBeta?.installed || existsSync(resolve(networkRoot(), 'setup.sh'));
+    if (!hasInstall) return;
     try {
       const latest = await getLatestNetworkTag(true);
       if (!latest) return;
-      const installed = daemon.config.networkBeta.version || null;
+      const installed = getInstalledNetworkVersion();
       const updateAvailable = !!installed && compareSemver(latest, installed) > 0;
       daemon.networkUpdateAvailable = { installed, latest, updateAvailable };
       daemon.broadcast({ type: 'network:update:available', data: daemon.networkUpdateAvailable });

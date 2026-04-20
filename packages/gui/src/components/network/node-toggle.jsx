@@ -76,7 +76,7 @@ export function NodeToggle() {
   const memPct = Number.isFinite(node.memoryPct) ? node.memoryPct : null;
 
   return (
-    <div className="rounded-lg border border-border bg-surface-1 overflow-hidden">
+    <div className="rounded-sm border border-border bg-surface-1 overflow-hidden">
       {/* Hero toggle */}
       <div className="flex items-center gap-4 px-5 py-4 border-b border-border-subtle">
         <div className="flex-1 min-w-0">

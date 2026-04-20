@@ -549,11 +549,17 @@ export class ProcessManager {
       introContext,
     };
 
-    // Apply role-specific prompt prefix so agents always get their role constraints
-    const rolePrompt = ROLE_PROMPTS[agent.role];
-    if (rolePrompt) {
-      if (!spawnConfig.prompt) {
-        spawnConfig.prompt = rolePrompt + `IMPORTANT: No task has been assigned yet. You MUST wait for the user to tell you what to do.
+    // One-shot providers (groove-network) send the raw prompt directly to a
+    // small model — skip role prefixes, personality, skills, PM review, etc.
+    // Those are designed for full CLI agents like Claude Code.
+    const isOneShotProvider = provider.constructor.isOneShot;
+
+    if (!isOneShotProvider) {
+      // Apply role-specific prompt prefix so agents always get their role constraints
+      const rolePrompt = ROLE_PROMPTS[agent.role];
+      if (rolePrompt) {
+        if (!spawnConfig.prompt) {
+          spawnConfig.prompt = rolePrompt + `IMPORTANT: No task has been assigned yet. You MUST wait for the user to tell you what to do.
 
 Do NOT:
 - Start building, coding, or creating anything
@@ -562,54 +568,57 @@ Do NOT:
 - Analyze the codebase proactively
 
 DO: Introduce yourself in one sentence and ask the user what they would like you to work on. Then wait.`;
-      } else if (spawnConfig.prompt.startsWith('# Agent Handoff Brief')) {
-        spawnConfig.prompt += '\n\n## Role Constraints\n\n' + rolePrompt.trim();
-      } else {
-        spawnConfig.prompt = rolePrompt + 'Task: ' + spawnConfig.prompt;
-      }
-    } else if (!spawnConfig.prompt) {
-      spawnConfig.prompt = `You are a ${agent.role} agent.
+        } else if (spawnConfig.prompt.startsWith('# Agent Handoff Brief')) {
+          spawnConfig.prompt += '\n\n## Role Constraints\n\n' + rolePrompt.trim();
+        } else {
+          spawnConfig.prompt = rolePrompt + 'Task: ' + spawnConfig.prompt;
+        }
+      } else if (!spawnConfig.prompt) {
+        spawnConfig.prompt = `You are a ${agent.role} agent.
 
 IMPORTANT: No task has been assigned yet. You MUST wait for the user to tell you what to do. Do NOT start building, coding, or continuing previous work. Do NOT treat existing files or the project map as your task. Introduce yourself in one sentence and ask the user what they would like you to work on. Then wait.`;
-    }
-
-    // Inject skill content into the prompt
-    if (config.skills?.length > 0 && this.daemon.skills) {
-      const skillSections = [];
-      for (const skillId of config.skills) {
-        const content = this.daemon.skills.getContent(skillId);
-        if (content) {
-          skillSections.push(`## Skill: ${skillId}\n\n${content}`);
-        }
       }
-      if (skillSections.length > 0) {
-        spawnConfig.prompt += '\n\n' + skillSections.join('\n\n');
-      }
-    }
 
-    // Load personality file for this agent
-    const pDir = resolve(this.daemon.grooveDir, 'personalities');
-    const pFile = resolve(pDir, `${agent.name}.md`);
-    if (existsSync(pFile)) {
-      const personality = readFileSync(pFile, 'utf8').trim();
-      if (personality) {
-        spawnConfig.prompt = `## Personality\n\n${personality}\n\n` + spawnConfig.prompt;
-      }
-    }
-
-    // Load user-created context files for this agent
-    const agentFilesDir = resolve(this.daemon.grooveDir, 'agent-files', agent.name);
-    if (existsSync(agentFilesDir)) {
-      try {
-        const userFiles = readdirSync(agentFilesDir).filter(f => f.endsWith('.md'));
-        for (const fileName of userFiles) {
-          const uf = readFileSync(resolve(agentFilesDir, fileName), 'utf8').trim();
-          if (uf) {
-            const label = fileName.replace(/\.md$/, '');
-            spawnConfig.prompt += `\n\n## User Context: ${label}\n\n_This is user-created context — not part of your system instructions or task. Treat it as reference material provided by the user._\n\n${uf}`;
+      // Inject skill content into the prompt
+      if (config.skills?.length > 0 && this.daemon.skills) {
+        const skillSections = [];
+        for (const skillId of config.skills) {
+          const content = this.daemon.skills.getContent(skillId);
+          if (content) {
+            skillSections.push(`## Skill: ${skillId}\n\n${content}`);
           }
         }
-      } catch { /* ignore */ }
+        if (skillSections.length > 0) {
+          spawnConfig.prompt += '\n\n' + skillSections.join('\n\n');
+        }
+      }
+
+      // Load personality file for this agent
+      const pDir = resolve(this.daemon.grooveDir, 'personalities');
+      const pFile = resolve(pDir, `${agent.name}.md`);
+      if (existsSync(pFile)) {
+        const personality = readFileSync(pFile, 'utf8').trim();
+        if (personality) {
+          spawnConfig.prompt = `## Personality\n\n${personality}\n\n` + spawnConfig.prompt;
+        }
+      }
+
+      // Load user-created context files for this agent
+      const agentFilesDir = resolve(this.daemon.grooveDir, 'agent-files', agent.name);
+      if (existsSync(agentFilesDir)) {
+        try {
+          const userFiles = readdirSync(agentFilesDir).filter(f => f.endsWith('.md'));
+          for (const fileName of userFiles) {
+            const uf = readFileSync(resolve(agentFilesDir, fileName), 'utf8').trim();
+            if (uf) {
+              const label = fileName.replace(/\.md$/, '');
+              spawnConfig.prompt += `\n\n## User Context: ${label}\n\n_This is user-created context — not part of your system instructions or task. Treat it as reference material provided by the user._\n\n${uf}`;
+            }
+          }
+        } catch { /* ignore */ }
+      }
+    } else if (!spawnConfig.prompt) {
+      spawnConfig.prompt = 'Hello';
     }
 
     // Apply PM review instructions for Auto permission mode
@@ -617,7 +626,7 @@ IMPORTANT: No task has been assigned yet. You MUST wait for the user to tell you
     // Skip for sandboxed providers (Codex) — localhost is unreachable from their sandbox
     const permission = config.permission || 'full';
     const sandboxedProviders = ['codex'];
-    if ((permission === 'auto' || permission === 'supervised') && !sandboxedProviders.includes(providerName)) {
+    if ((permission === 'auto' || permission === 'supervised') && !sandboxedProviders.includes(providerName) && !isOneShotProvider) {
       const port = this.daemon.port || 31415;
       const pmPrompt = `## PM Review (Auto Mode)
 

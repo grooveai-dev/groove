@@ -945,6 +945,33 @@ export function createApi(app, daemon) {
         // Loop exists but not running — fall through to resume/rotate
       }
 
+      // One-shot providers (groove-network): kill any running instance and
+      // respawn with the user's message as --prompt. No handoff brief, no
+      // session resume, no message queue — each chat message is a fresh spawn.
+      const provider = getProvider(agent.provider);
+      if (provider?.constructor?.isOneShot) {
+        const oldConfig = { ...agent };
+        if (daemon.processes.isRunning(req.params.id)) {
+          await daemon.processes.kill(req.params.id);
+        }
+        daemon.registry.remove(req.params.id);
+        daemon.locks.release(req.params.id);
+
+        const newAgent = await daemon.processes.spawn({
+          role: oldConfig.role,
+          scope: oldConfig.scope,
+          provider: oldConfig.provider,
+          model: oldConfig.model,
+          prompt: message.trim(),
+          permission: oldConfig.permission || 'full',
+          workingDir: oldConfig.workingDir,
+          name: oldConfig.name,
+          teamId: oldConfig.teamId,
+        });
+        daemon.audit.log('agent.instruct', { id: req.params.id, newId: newAgent.id, resumed: false });
+        return res.json(newAgent);
+      }
+
       // Running CLI agent (no loop) — queue the message for delivery after
       // the current task completes instead of killing and respawning.
       if (daemon.processes.isRunning(req.params.id)) {

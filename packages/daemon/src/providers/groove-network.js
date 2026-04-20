@@ -76,6 +76,7 @@ export class GrooveNetworkProvider extends Provider {
   static displayName = 'Groove Network';
   static command = 'python3';
   static authType = 'none';
+  static isOneShot = true;
 
   static models = [
     { id: 'Qwen/Qwen2.5-0.5B', name: 'Qwen 2.5 0.5B (Network)', context: 4096 },

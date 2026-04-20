@@ -4233,7 +4233,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
 
     const signalFlag = supportsSignalFlag(cfg.version) ? '--signal' : '--relay';
-    const model = cfg.model || 'google/gemma-3-4b';
+    const model = cfg.model || 'Qwen/Qwen3-4B';
     const args = [
       '-m', 'src.node.server',
       signalFlag, signal,
@@ -4484,7 +4484,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
           models,
           compute: data.compute || null,
           coverage: data.covered_layers ?? primaryModel.covered_layers ?? data.coverage ?? 0,
-          totalLayers: data.total_layers ?? primaryModel.total_layers ?? data.totalLayers ?? 34,
+          totalLayers: data.total_layers ?? primaryModel.total_layers ?? data.totalLayers ?? 36,
           activeSessions: data.active_sessions ?? data.activeSessions ?? 0,
           totalNodes: data.total_nodes ?? data.totalNodes ?? (Array.isArray(data.nodes) ? data.nodes.length : 0),
         });
@@ -4529,10 +4529,10 @@ Keep responses concise. Help them think, don't lecture them about the system the
     } : null;
     res.json({
       nodes: selfNode,
-      models: ['google/gemma-3-4b'],
+      models: ['Qwen/Qwen3-4B'],
       compute: localCompute,
       coverage,
-      totalLayers: 34,
+      totalLayers: 36,
       activeSessions: node.sessions || 0,
       totalNodes: selfNode.length,
     });

@@ -121,7 +121,7 @@ export const ComputeHeader = memo(function ComputeHeader() {
   const loadColor = compute.avgLoad > 2.0 ? HEX.danger : compute.avgLoad > 1.0 ? HEX.warning : HEX.success;
   const activeModel = models.length > 0
     ? (typeof models[0] === 'string' ? models[0] : models[0].name)
-    : 'google/gemma-3-4b';
+    : 'Qwen/Qwen3-4B';
 
   const kpis = [
     { label: 'RAM', value: `${fmtMbToGb(compute.totalRamMb)} GB`, color: HEX.accent, hint: 'Total RAM across all network nodes.' },

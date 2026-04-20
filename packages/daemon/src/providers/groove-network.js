@@ -79,7 +79,7 @@ export class GrooveNetworkProvider extends Provider {
   static isOneShot = true;
 
   static models = [
-    { id: 'google/gemma-3-4b', name: 'Gemma 3 4B (Network)', context: 8192 },
+    { id: 'Qwen/Qwen3-4B', name: 'Qwen 3 4B (Network)', context: 32768 },
   ];
 
   static isInstalled() {

@@ -22,7 +22,7 @@ export const NetworkHealth = memo(function NetworkHealth() {
   const node = useGrooveStore((s) => s.networkNode);
 
   const nodes = Array.isArray(status.nodes) ? status.nodes : [];
-  const totalLayers = status.totalLayers || 34;
+  const totalLayers = status.totalLayers || 36;
   const covered = status.coverage || 0;
   const coverage = coverageState(covered, totalLayers);
   const coveragePct = totalLayers ? Math.min(100, (covered / totalLayers) * 100) : 0;

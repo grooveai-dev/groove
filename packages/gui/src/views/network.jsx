@@ -1,17 +1,17 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useEffect, useState } from 'react';
 import { useGrooveStore } from '../stores/groove';
-import { ScrollArea } from '../components/ui/scroll-area';
 import { StatusDot } from '../components/ui/status-dot';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Dialog, DialogContent, DialogTrigger } from '../components/ui/dialog';
+import { ScrollArea } from '../components/ui/scroll-area';
 import { NodeToggle } from '../components/network/node-toggle';
-import { NodeDetails } from '../components/network/node-details';
-import { NetworkStatus } from '../components/network/network-status';
-import { ComputeHeader } from '../components/network/ComputeHeader';
-import { FleetTable } from '../components/network/FleetTable';
-import { ActivityStream } from '../components/network/ActivityStream';
+import { ComputeHeader } from '../components/network/compute-header';
+import { FleetTable } from '../components/network/fleet-table';
+import { ActivityStream } from '../components/network/activity-stream';
+import { NetworkHealth } from '../components/network/network-health';
+import { HEX } from '../lib/theme-hex';
 import { Globe, Download, Check, AlertCircle, Loader2, Trash2, ArrowUpCircle } from 'lucide-react';
 
 const REQUIREMENTS = [
@@ -33,7 +33,7 @@ function InstallProgress({ progress }) {
       <div className="flex items-center justify-between text-2xs font-mono text-text-3 tabular-nums">
         <div className="flex items-center gap-2 text-text-2 font-sans">
           <Loader2 size={12} className="animate-spin text-accent" />
-          <span className="truncate">{progress.message || 'Installing…'}</span>
+          <span className="truncate">{progress.message || 'Installing\u2026'}</span>
         </div>
         <span>{percent}%</span>
       </div>
@@ -122,7 +122,7 @@ function UpdateProgress({ progress }) {
     <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-border-subtle bg-surface-0">
       <Loader2 size={11} className="animate-spin text-accent flex-shrink-0" />
       <div className="flex flex-col min-w-0">
-        <span className="text-2xs font-sans text-text-1 truncate">{progress.message || 'Updating…'}</span>
+        <span className="text-2xs font-sans text-text-1 truncate">{progress.message || 'Updating\u2026'}</span>
         <div className="h-1 w-32 rounded-full bg-surface-3 overflow-hidden mt-0.5">
           <div
             className="h-full rounded-full bg-accent transition-all duration-500 ease-out"
@@ -211,7 +211,7 @@ function UninstallButton() {
           className="inline-flex items-center gap-1.5 text-2xs font-sans text-text-3 hover:text-danger transition-colors"
         >
           <Trash2 size={11} />
-          Uninstall Network Package
+          Uninstall
         </button>
       </DialogTrigger>
       <DialogContent title="Uninstall Network Package" description="Confirm uninstall">
@@ -235,13 +235,62 @@ function UninstallButton() {
   );
 }
 
+function NetworkHeader() {
+  const node = useGrooveStore((s) => s.networkNode);
+  const installed = useGrooveStore((s) => s.networkInstalled);
+  const version = useGrooveStore((s) => s.networkVersion);
+  const signalReachable = useGrooveStore((s) => s.networkStatusReachable);
+
+  return (
+    <div className="flex items-center gap-4 px-4 py-2 bg-surface-1 border-b border-border flex-shrink-0">
+      <h2 className="text-xs font-semibold text-text-0 font-sans tracking-wide uppercase">Network Command Center</h2>
+
+      {installed && version.installed && (
+        <>
+          <span className="text-text-4">/</span>
+          <span className="text-xs font-mono text-text-2 tabular-nums">v{String(version.installed).replace(/^v/, '')}</span>
+        </>
+      )}
+
+      {installed && <UpdateButton />}
+
+      <div className="flex-1" />
+
+      {installed && (
+        <div className="flex items-center gap-3.5 text-xs font-mono text-text-2">
+          <span className="flex items-center gap-1.5">
+            <span className="relative flex-shrink-0 w-[6px] h-[6px]">
+              <span className="absolute inset-0 rounded-sm" style={{ background: node.active ? HEX.success : HEX.text4 }} />
+              {node.active && (
+                <span
+                  className="absolute inset-[-2px] rounded-sm"
+                  style={{ background: HEX.success, opacity: 0.15, animation: 'node-pulse-bar 2s ease-in-out infinite' }}
+                />
+              )}
+            </span>
+            <span className="text-text-3">{node.active ? 'Contributing' : 'Idle'}</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="relative flex-shrink-0 w-[5px] h-[5px]">
+              <span className="absolute inset-0 rounded-sm" style={{ background: signalReachable ? HEX.accent : HEX.danger }} />
+            </span>
+            <span className="text-text-3">Signal</span>
+          </span>
+        </div>
+      )}
+
+      {installed && <UninstallButton />}
+
+      <StatusDot status={installed && node.active ? 'running' : installed ? 'stopped' : 'crashed'} size="sm" />
+    </div>
+  );
+}
+
 export default function NetworkView() {
   const fetchNetworkNodeStatus = useGrooveStore((s) => s.fetchNetworkNodeStatus);
   const fetchNetworkStatus = useGrooveStore((s) => s.fetchNetworkStatus);
   const checkNetworkUpdate = useGrooveStore((s) => s.checkNetworkUpdate);
-  const node = useGrooveStore((s) => s.networkNode);
   const installed = useGrooveStore((s) => s.networkInstalled);
-  const version = useGrooveStore((s) => s.networkVersion);
 
   useEffect(() => {
     fetchNetworkNodeStatus();
@@ -253,65 +302,44 @@ export default function NetworkView() {
     }
   }, [fetchNetworkNodeStatus, fetchNetworkStatus, checkNetworkUpdate, installed]);
 
+  if (!installed) {
+    return (
+      <div className="flex flex-col h-full">
+        <NetworkHeader />
+        <ScrollArea className="flex-1">
+          <InstallGate />
+        </ScrollArea>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-2.5 bg-surface-1 border-b border-border flex-shrink-0">
-        <Globe size={14} className="text-accent" />
-        <h2 className="text-sm font-semibold text-text-0 font-sans">Groove Network</h2>
-        <Badge variant="purple">Early Access</Badge>
-        {installed && version.installed && (
-          <span className="text-2xs font-mono text-text-3 tabular-nums">v{String(version.installed).replace(/^v/, '')}</span>
-        )}
-        {installed && <UpdateButton />}
-        <div className="flex-1" />
-        {installed && (
-          <>
-            <UninstallButton />
-            <div className="flex items-center gap-1.5 text-2xs font-sans text-text-3">
-              <StatusDot status={node.active ? 'running' : 'crashed'} size="sm" />
-              {node.active ? 'Contributing' : 'Idle'}
-            </div>
-          </>
-        )}
-      </div>
+      <NetworkHeader />
 
-      {/* Body */}
-      <ScrollArea className="flex-1">
-        {!installed ? (
-          <InstallGate />
-        ) : (
-          <div className="p-4 flex flex-col gap-4">
-            <ComputeHeader />
+      <ComputeHeader />
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              {/* Left column — node operator */}
-              <div className="flex flex-col gap-3 min-w-0">
-                <div>
-                  <div className="flex items-center gap-2 mb-2 px-0.5">
-                    <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Node Operator</span>
-                    <div className="flex-1 h-px bg-border-subtle" />
-                  </div>
-                  <NodeToggle />
-                </div>
-                <NodeDetails />
-              </div>
-
-              {/* Right column — network status */}
-              <div className="flex flex-col gap-3 min-w-0">
-                <div className="flex items-center gap-2 px-0.5">
-                  <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Network Status</span>
-                  <div className="flex-1 h-px bg-border-subtle" />
-                </div>
-                <NetworkStatus />
-              </div>
-            </div>
-
+      <div className="flex-1 min-h-0 flex flex-col" style={{ background: '#282c34', gap: '1px' }}>
+        {/* Top row: Fleet Table + Network Health */}
+        <div className="min-h-0 flex-1 grid" style={{ gridTemplateColumns: '3fr 1.5fr', gap: '0 1px' }}>
+          <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1">
             <FleetTable />
+          </div>
+          <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1">
+            <NetworkHealth />
+          </div>
+        </div>
+
+        {/* Bottom row: Activity Stream + Node Toggle */}
+        <div className="min-h-0 flex-1 grid" style={{ gridTemplateColumns: '3fr 1.5fr', gap: '0 1px' }}>
+          <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1">
             <ActivityStream />
           </div>
-        )}
-      </ScrollArea>
+          <div className="min-w-0 min-h-0 overflow-x-hidden overflow-y-auto bg-surface-1">
+            <NodeToggle />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

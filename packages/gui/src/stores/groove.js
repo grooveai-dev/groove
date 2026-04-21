@@ -1730,6 +1730,15 @@ export const useGrooveStore = create((set, get) => ({
     }
   },
 
+  async setConversationModel(id, provider, model) {
+    try {
+      const conv = await api.patch(`/conversations/${encodeURIComponent(id)}`, { provider, model });
+      set((s) => ({ conversations: s.conversations.map((c) => c.id === id ? { ...c, ...conv } : c) }));
+    } catch (err) {
+      get().addToast('error', 'Model change failed', err.message);
+    }
+  },
+
   async stopChatStreaming(conversationId) {
     try {
       await api.post(`/conversations/${encodeURIComponent(conversationId)}/stop`);

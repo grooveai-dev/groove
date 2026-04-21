@@ -38,6 +38,7 @@ export function ChatView() {
   const stopAgent = useGrooveStore((s) => s.stopAgent);
   const stopChatStreaming = useGrooveStore((s) => s.stopChatStreaming);
   const setConversationMode = useGrooveStore((s) => s.setConversationMode);
+  const setConversationModel = useGrooveStore((s) => s.setConversationModel);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -74,11 +75,11 @@ export function ChatView() {
 
   const handleModelChange = useCallback(async (selection) => {
     if (activeConversationId) {
-      // TODO: Update conversation model via API
+      await setConversationModel(activeConversationId, selection.provider, selection.model);
     } else {
       await handleNewChat(selection.provider, selection.model);
     }
-  }, [activeConversationId, handleNewChat]);
+  }, [activeConversationId, setConversationModel, handleNewChat]);
 
   const currentModel = activeConversation
     ? { provider: activeConversation.provider, model: activeConversation.model }

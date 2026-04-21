@@ -83,7 +83,7 @@ export function ModelPicker({ value, onChange, disabled }) {
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-72 max-h-80 overflow-y-auto rounded-lg border border-border bg-surface-1 shadow-xl z-50">
+        <div className="absolute top-full right-0 mt-1 w-72 max-h-80 overflow-y-auto rounded-lg border border-border bg-surface-1 shadow-xl z-50">
           {providers.length === 0 && (
             <div className="px-4 py-6 text-center text-xs text-text-3 font-sans">No providers available</div>
           )}

@@ -2,10 +2,10 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import express from 'express';
-import { resolve, dirname, join, sep } from 'path';
+import { resolve, dirname, join, sep, relative } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream, copyFileSync, realpathSync } from 'fs';
-import { spawn, execFile } from 'child_process';
+import { spawn, execFile, execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { hostname, networkInterfaces, homedir } from 'os';
 import { lookup as mimeLookup } from './mimetypes.js';
@@ -2914,6 +2914,18 @@ Keep responses concise. Help them think, don't lecture them about the system the
         console.log(`[Groove] Project directory: ${projectWorkingDir}`);
       }
 
+      function normalizeScope(patterns, baseDir) {
+        if (!patterns || !Array.isArray(patterns)) return patterns;
+        return patterns.map((p) => {
+          if (typeof p === 'string' && p.startsWith('/')) {
+            const rel = relative(baseDir, p);
+            if (!rel.startsWith('..')) return rel;
+            return p.slice(1);
+          }
+          return p;
+        });
+      }
+
       // Separate phase 1 (builders) and phase 2 (QC/finisher)
       const phase1 = agentConfigs.filter((a) => !a.phase || a.phase === 1);
       let phase2 = agentConfigs.filter((a) => a.phase === 2);
@@ -2973,7 +2985,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
             // Spawn fresh with the same name/team but new prompt + full context
             const validated = validateAgentConfig({
               role: existing.role,
-              scope: config.scope || existing.scope || [],
+              scope: normalizeScope(config.scope || existing.scope || [], existing.workingDir || projectWorkingDir),
               prompt,
               provider: config.provider || existing.provider || undefined,
               model: config.model || existing.model || daemon.config?.defaultModel || 'auto',
@@ -2995,7 +3007,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
           try {
             const validated = validateAgentConfig({
               role: config.role,
-              scope: config.scope || [],
+              scope: normalizeScope(config.scope || [], config.workingDir || projectWorkingDir),
               prompt,
               provider: config.provider || undefined,
               model: config.model || daemon.config?.defaultModel || 'auto',
@@ -3013,6 +3025,10 @@ Keep responses concise. Help them think, don't lecture them about the system the
             console.log(`[Groove] Failed to spawn ${config.role}: ${err.message}`);
           }
         }
+      }
+
+      if (failed.length > 0) {
+        console.warn(`[Groove] Team launch had ${failed.length} failure(s):`, failed.map((f) => `${f.role}: ${f.error}`).join(', '));
       }
 
       // Phase 2 agents also scoped to projectWorkingDir
@@ -4619,9 +4635,37 @@ Keep responses concise. Help them think, don't lecture them about the system the
       : join(base, 'venv', 'bin', 'python3');
   }
 
+  let _cachedGitBash = undefined;
+  function findGitBash() {
+    if (_cachedGitBash !== undefined) return _cachedGitBash;
+    try {
+      const gitPath = execFileSync('where', ['git'], { timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString().trim().split('\n')[0].trim();
+      // git.exe is typically at <Git>\cmd\git.exe — navigate up to Git root
+      const gitDir = dirname(dirname(gitPath));
+      const candidate = join(gitDir, 'bin', 'bash.exe');
+      if (existsSync(candidate)) { _cachedGitBash = candidate; return _cachedGitBash; }
+    } catch { /* where failed — try common paths */ }
+    const fallbacks = [
+      'C:\\Program Files\\Git\\bin\\bash.exe',
+      'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+    ];
+    for (const p of fallbacks) {
+      if (existsSync(p)) { _cachedGitBash = p; return _cachedGitBash; }
+    }
+    _cachedGitBash = null;
+    return null;
+  }
+
   function spawnSetupSh(cwd) {
     if (IS_WIN) {
-      return spawn('cmd.exe', ['/c', 'bash setup.sh --json'], {
+      const bashPath = findGitBash();
+      if (!bashPath) {
+        const err = new Error('Could not find bash. Ensure Git for Windows is installed from https://git-scm.com');
+        err.code = 'BASH_NOT_FOUND';
+        throw err;
+      }
+      return spawn(bashPath, ['setup.sh', '--json'], {
         cwd,
         stdio: ['ignore', 'pipe', 'pipe'],
         env: { ...process.env, PYTHONUNBUFFERED: '1' },
@@ -4794,7 +4838,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
         broadcastInstallProgress('cloned', 'Repository cloned', 10);
 
         // Run setup.sh --json from the install directory
-        const setup = spawnSetupSh(installPath);
+        let setup;
+        try {
+          setup = spawnSetupSh(installPath);
+        } catch (spawnErr) {
+          return fail(`Setup failed: ${spawnErr.message}`);
+        }
 
         daemon.networkInstall.proc = setup;
 
@@ -4828,7 +4877,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
         });
 
         if (setupResult.code !== 0) {
-          const hint = stderrBuf.trim().split('\n').slice(-1)[0] || `setup.sh exited ${setupResult.code}`;
+          let hint;
+          if (setupResult.code === -1 || setupResult.err?.includes('ENOENT')) {
+            hint = 'bash not found — ensure Git for Windows is installed from https://git-scm.com';
+          } else {
+            hint = stderrBuf.trim().split('\n').slice(-1)[0] || `setup.sh exited ${setupResult.code}`;
+          }
           return fail(`Setup failed: ${hint}`);
         }
 
@@ -5049,7 +5103,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
         broadcastUpdateProgress('deps', 'Updating dependencies...', 30);
 
-        const setup = spawnSetupSh(installPath);
+        let setup;
+        try {
+          setup = spawnSetupSh(installPath);
+        } catch (spawnErr) {
+          return fail(`Setup failed: ${spawnErr.message}`);
+        }
 
         daemon.networkInstall.proc = setup;
 
@@ -5080,7 +5139,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
         });
 
         if (setupResult.code !== 0) {
-          const hint = stderrBuf.trim().split('\n').slice(-1)[0] || `setup.sh exited ${setupResult.code}`;
+          let hint;
+          if (setupResult.code === -1 || setupResult.err?.includes('ENOENT')) {
+            hint = 'bash not found — ensure Git for Windows is installed from https://git-scm.com';
+          } else {
+            hint = stderrBuf.trim().split('\n').slice(-1)[0] || `setup.sh exited ${setupResult.code}`;
+          }
           return fail(`Setup failed: ${hint}`);
         }
 

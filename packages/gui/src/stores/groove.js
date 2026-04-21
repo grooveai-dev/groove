@@ -1305,8 +1305,17 @@ export const useGrooveStore = create((set, get) => ({
           try {
             const result = await api.post('/recommended-team/launch', { teamId });
             const agents = result.agents || [];
+            const failures = result.failed || [];
             const names = agents.map((a) => a.name).join(', ') || '';
-            get().addToast('success', 'Planner delegated work', names ? `→ ${names}` : undefined);
+
+            if (agents.length === 0 && failures.length > 0) {
+              get().addToast('error', 'Delegation failed', failures.map(f => f.role + ': ' + f.error).join(', '));
+            } else {
+              get().addToast('success', 'Planner delegated work', names ? `→ ${names}` : undefined);
+              if (failures.length > 0) {
+                get().addToast('warning', `${failures.length} agent(s) failed to spawn`, failures.map(f => f.role + ': ' + f.error).join(', '));
+              }
+            }
             if (agents.length > 0) {
               set((s) => ({
                 thinkingAgents: new Set([...s.thinkingAgents, ...agents.map((a) => a.id)]),
@@ -1337,11 +1346,21 @@ export const useGrooveStore = create((set, get) => ({
       get().addToast('info', 'Launching team...');
       const body = { ...(modifiedAgents && { agents: modifiedAgents }), ...(teamId && { teamId }) };
       const result = await api.post('/recommended-team/launch', body);
-      const sub = [
-        result.phase2Pending ? `${result.phase2Pending} QC queued` : '',
-        result.projectDir ? `→ ${result.projectDir}/` : '',
-      ].filter(Boolean).join(' · ');
-      get().addToast('success', `Launched ${(result.launched || 0) + (result.reused || 0)} agents`, sub || undefined);
+      const totalOk = (result.launched || 0) + (result.reused || 0);
+      const failures = result.failed || [];
+
+      if (totalOk === 0 && failures.length > 0) {
+        get().addToast('error', 'Team launch failed', failures.map(f => f.role + ': ' + f.error).join(', '));
+      } else {
+        const sub = [
+          result.phase2Pending ? `${result.phase2Pending} QC queued` : '',
+          result.projectDir ? `→ ${result.projectDir}/` : '',
+        ].filter(Boolean).join(' · ');
+        get().addToast('success', `Launched ${totalOk} agents`, sub || undefined);
+        if (failures.length > 0) {
+          get().addToast('warning', `${failures.length} agent(s) failed to spawn`, failures.map(f => f.role + ': ' + f.error).join(', '));
+        }
+      }
       // Set thinking indicator for all launched/reused agents
       const launchedAgents = result.agents || [];
       if (launchedAgents.length > 0) {

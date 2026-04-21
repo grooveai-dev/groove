@@ -107,6 +107,103 @@ const MAX_VRAM_MB = 128 * 1024;
 const MAX_CPU = 128;
 const MAX_LOAD = 4.0;
 
+const SPARKLINE_ROWS = [
+  { key: 'globalSessions', label: 'Sessions', color: HEX.accent },
+  { key: 'mySessions', label: 'My Sessions', color: HEX.info },
+  { key: 'nodeCount', label: 'Nodes', color: HEX.purple },
+  { key: 'avgLoad', label: 'Load', color: HEX.warning },
+  { key: 'myLoad', label: 'My Load', color: HEX.success },
+];
+
+function TrendsColumn({ snapshots }) {
+  const hasData = snapshots && snapshots.length >= 2;
+  return (
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Trends</div>
+      {!hasData ? (
+        <div className="text-2xs font-mono text-text-4">Collecting data…</div>
+      ) : (
+        SPARKLINE_ROWS.map((row) => {
+          const data = snapshots.map((s) => ({ v: s[row.key] ?? 0 }));
+          const current = data[data.length - 1].v;
+          const display = Number.isInteger(current) ? current : current.toFixed(2);
+          return (
+            <div key={row.key} className="flex items-center gap-2">
+              <span className="w-[72px] text-2xs font-mono text-text-3 uppercase truncate flex-shrink-0">{row.label}</span>
+              <MiniSparkline data={data} color={row.color} width={140} height={24} />
+              <span className="text-2xs font-mono text-text-1 tabular-nums flex-shrink-0">{display}</span>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+function YourNodeColumn({ node, compute }) {
+  if (!node || !node.active) {
+    return (
+      <div className="flex flex-col gap-0.5 min-w-0">
+        <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Your Node</div>
+        <div className="text-2xs font-mono text-text-4">Node idle</div>
+      </div>
+    );
+  }
+
+  const layersLabel = node.layers ? `Layers ${node.layers} / 36` : 'Unassigned';
+  const modelLabel = node.model || 'Qwen/Qwen3-4B';
+  const bw = compute.totalBandwidthMbps ? `${Math.round(compute.totalBandwidthMbps)} Mbps` : '— Mbps';
+  const nodeRam = node.hardware?.memory;
+  const ramPct = nodeRam && compute.totalRamMb > 0
+    ? `${((nodeRam / compute.totalRamMb) * 100).toFixed(1)}%`
+    : '—';
+
+  const metrics = [
+    { label: 'Layers', value: layersLabel },
+    { label: 'Model', value: modelLabel },
+    { label: 'Sessions', value: node.sessions ?? 0 },
+    { label: 'Bandwidth', value: bw },
+    { label: 'RAM Share', value: ramPct },
+  ];
+
+  return (
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Your Node</div>
+      {metrics.map((m) => (
+        <div key={m.label} className="min-w-0">
+          <div className="text-2xs font-mono text-text-4 uppercase tracking-wider leading-none">{m.label}</div>
+          <div className="text-xs font-mono text-text-1 truncate leading-tight">{m.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BarsTrendsNode({ compute, allZero, avgGpuUtil }) {
+  const snapshots = useGrooveStore((s) => s.networkSnapshots);
+  const node = useGrooveStore((s) => s.networkNode);
+
+  return (
+    <div className="bg-surface-1 border-b border-border px-4 py-2.5" style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 1fr', gap: '1.5rem' }}>
+      <div className="flex flex-col gap-0.5 min-w-0">
+        {allZero ? (
+          <div className="text-2xs font-mono text-text-4">Waiting for network data...</div>
+        ) : (
+          <>
+            <AsciiBar label="RAM" value={compute.totalRamMb} max={MAX_RAM_MB} unit="GB" nodeCount={compute.totalNodes} />
+            <AsciiBar label="VRAM" value={compute.totalVramMb} max={MAX_VRAM_MB} unit="GB" nodeCount={compute.totalNodes} />
+            <AsciiBar label="CPU" value={compute.totalCpuCores} max={MAX_CPU} unit="cores" />
+            <AsciiBar label="GPU%" value={avgGpuUtil} max={100} unit="%" />
+            <AsciiBar label="LOAD" value={compute.avgLoad} max={MAX_LOAD} unit="" />
+          </>
+        )}
+      </div>
+      <TrendsColumn snapshots={snapshots} />
+      <YourNodeColumn node={node} compute={compute} />
+    </div>
+  );
+}
+
 export const ComputeHeader = memo(function ComputeHeader() {
   const compute = useGrooveStore((s) => s.networkCompute);
   const nodes = useGrooveStore((s) => s.networkStatus.nodes || []);
@@ -148,19 +245,7 @@ export const ComputeHeader = memo(function ComputeHeader() {
         ))}
       </div>
 
-      <div className="bg-surface-1 border-b border-border px-4 py-2.5">
-        {allZero ? (
-          <div className="text-2xs font-mono text-text-4">Waiting for network data...</div>
-        ) : (
-          <div className="flex flex-col gap-0.5">
-            <AsciiBar label="RAM" value={compute.totalRamMb} max={MAX_RAM_MB} unit="GB" nodeCount={compute.totalNodes} />
-            <AsciiBar label="VRAM" value={compute.totalVramMb} max={MAX_VRAM_MB} unit="GB" nodeCount={compute.totalNodes} />
-            <AsciiBar label="CPU" value={compute.totalCpuCores} max={MAX_CPU} unit="cores" />
-            <AsciiBar label="GPU%" value={avgGpuUtil} max={100} unit="%" />
-            <AsciiBar label="LOAD" value={compute.avgLoad} max={MAX_LOAD} unit="" />
-          </div>
-        )}
-      </div>
+      <BarsTrendsNode compute={compute} allZero={allZero} avgGpuUtil={avgGpuUtil} />
     </div>
   );
 });

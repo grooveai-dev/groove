@@ -4758,22 +4758,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
         rmSync(installPath, { recursive: true, force: true });
         daemon.audit?.log?.('network.install.stale-cleanup', { path: installPath });
       } catch (cleanupErr) {
-        if (IS_WIN) {
-          try {
-            // Windows: kill stale Python processes that lock venv files.
-            const venvPython = resolve(installPath, 'venv', 'Scripts', 'python.exe');
-            if (existsSync(venvPython)) {
-              try { execFileSync('taskkill', ['/F', '/IM', 'python.exe'], { stdio: 'ignore', timeout: 5000 }); } catch { /* may not be running */ }
-            }
-            await new Promise(r => setTimeout(r, 1000));
-            rmSync(installPath, { recursive: true, force: true });
-            daemon.audit?.log?.('network.install.stale-cleanup', { path: installPath, retry: true });
-          } catch (retryErr) {
-            return res.status(500).json({ error: `Failed to clean stale install directory: ${retryErr.message}. Close any terminals or programs using this folder and try again.` });
-          }
-        } else {
-          return res.status(500).json({ error: `Failed to clean stale install directory: ${cleanupErr.message}` });
-        }
+        return res.status(500).json({ error: `Failed to clean stale install directory: ${cleanupErr.message}` });
       }
     }
 
@@ -4955,17 +4940,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
         rmSync(installPath, { recursive: true, force: true });
       }
     } catch (err) {
-      if (IS_WIN) {
-        try {
-          try { execFileSync('taskkill', ['/F', '/IM', 'python.exe'], { stdio: 'ignore', timeout: 5000 }); } catch { /* may not be running */ }
-          await new Promise(r => setTimeout(r, 1000));
-          rmSync(installPath, { recursive: true, force: true });
-        } catch (retryErr) {
-          return res.status(500).json({ error: `Failed to remove install: ${retryErr.message}. Close any terminals or programs using this folder and try again.` });
-        }
-      } else {
-        return res.status(500).json({ error: `Failed to remove install: ${err.message}` });
-      }
+      return res.status(500).json({ error: `Failed to remove install: ${err.message}` });
     }
 
     daemon.config.networkBeta = {

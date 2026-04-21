@@ -6,7 +6,7 @@ import { createHash, randomBytes } from 'crypto';
 import { fork, spawn, execFileSync } from 'child_process';
 import { basename, dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'fs';
+import { writeFileSync, readFileSync, unlinkSync, existsSync, renameSync, readdirSync, rmSync } from 'fs';
 import { execSync } from 'child_process';
 import { createServer } from 'net';
 
@@ -1285,9 +1285,69 @@ ipcMain.on('app-quit', () => {
 });
 
 ipcMain.handle('get-version', () => app.getVersion());
-ipcMain.handle('install-update', () => {
+ipcMain.handle('install-update', async () => {
   isQuitting = true;
-  autoUpdater.quitAndInstall(true, true);
+
+  if (workspaces) {
+    for (const proc of workspaces._daemonProcesses.values()) {
+      try { proc.disconnect(); } catch {}
+      try { proc.kill('SIGKILL'); } catch {}
+    }
+    workspaces._daemonProcesses.clear();
+  }
+
+  if (IS_MAC) {
+    const downloadedFile = autoUpdater.downloadedUpdateHelper?.file;
+    if (!downloadedFile || !existsSync(downloadedFile)) {
+      console.error('[updater] Downloaded file not found, falling back');
+      autoUpdater.quitAndInstall();
+      return;
+    }
+
+    try {
+      const appBundlePath = resolve(dirname(process.execPath), '..', '..');
+      if (!appBundlePath.endsWith('.app')) throw new Error('Cannot resolve .app bundle path');
+
+      const targetVersion = autoUpdater.downloadedUpdateHelper?.versionInfo?.version || 'unknown';
+      writeFileSync(join(app.getPath('userData'), 'update-pending.json'), JSON.stringify({ version: targetVersion, at: Date.now() }), { mode: 0o600 });
+
+      const extractDir = join(app.getPath('temp'), `groove-update-${Date.now()}`);
+      execFileSync('/usr/bin/ditto', ['-xk', downloadedFile, extractDir], { timeout: 60000 });
+
+      const entries = readdirSync(extractDir);
+      const newAppName = entries.find(e => e.endsWith('.app'));
+      if (!newAppName) throw new Error('No .app found in update zip');
+
+      const newAppPath = join(extractDir, newAppName);
+      const backupPath = appBundlePath + '.bak';
+
+      try { rmSync(backupPath, { recursive: true, force: true }); } catch {}
+
+      renameSync(appBundlePath, backupPath);
+      try {
+        renameSync(newAppPath, appBundlePath);
+      } catch (moveErr) {
+        try { renameSync(backupPath, appBundlePath); } catch (rollbackErr) {
+          console.error('[updater] Rollback also failed:', rollbackErr.message);
+        }
+        throw moveErr;
+      }
+
+      try { rmSync(backupPath, { recursive: true, force: true }); } catch {}
+      try { rmSync(extractDir, { recursive: true, force: true }); } catch {}
+
+      spawn('/bin/sh', ['-c', 'sleep 1 && open "$1"', '--', appBundlePath], {
+        detached: true, stdio: 'ignore'
+      }).unref();
+
+      app.exit(0);
+    } catch (err) {
+      console.error('[updater] Manual update failed:', err.message);
+      autoUpdater.quitAndInstall();
+    }
+  } else {
+    autoUpdater.quitAndInstall();
+  }
 });
 
 ipcMain.handle('check-for-update', async () => {
@@ -1832,8 +1892,21 @@ app.whenReady().then(async () => {
   if (app.isPackaged) {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.logger = null;
-    autoUpdater.checkForUpdates().catch(() => {});
+    autoUpdater.logger = { info: (...a) => console.log('[updater]', ...a), warn: (...a) => console.warn('[updater]', ...a), error: (...a) => console.error('[updater]', ...a) };
+
+    let skipAutoCheck = false;
+    try {
+      const marker = JSON.parse(readFileSync(join(app.getPath('userData'), 'update-pending.json'), 'utf8'));
+      unlinkSync(join(app.getPath('userData'), 'update-pending.json'));
+      if (marker.version !== app.getVersion()) {
+        console.error('[updater] Update to ' + marker.version + ' failed, still on ' + app.getVersion());
+        skipAutoCheck = true;
+      }
+    } catch {}
+
+    if (!skipAutoCheck) {
+      autoUpdater.checkForUpdates().catch(() => {});
+    }
     setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);
   }
 });

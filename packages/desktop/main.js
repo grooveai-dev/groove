@@ -1287,7 +1287,7 @@ ipcMain.on('app-quit', () => {
 ipcMain.handle('get-version', () => app.getVersion());
 ipcMain.handle('install-update', () => {
   isQuitting = true;
-  setImmediate(() => autoUpdater.quitAndInstall(true, true));
+  autoUpdater.quitAndInstall(true, true);
 });
 
 ipcMain.handle('check-for-update', async () => {
@@ -1831,7 +1831,7 @@ app.whenReady().then(async () => {
   // Auto-updater setup — skip in dev mode
   if (app.isPackaged) {
     autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = false;
+    autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.logger = null;
     autoUpdater.checkForUpdates().catch(() => {});
     setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);

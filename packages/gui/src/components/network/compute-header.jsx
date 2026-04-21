@@ -118,8 +118,8 @@ const SPARKLINE_ROWS = [
 function TrendsColumn({ snapshots }) {
   const hasData = snapshots && snapshots.length >= 2;
   return (
-    <div className="flex flex-col gap-0.5 min-w-0">
-      <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Trends</div>
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <div className="text-2xs font-mono text-text-3 uppercase tracking-widest mb-1.5">Trends</div>
       {!hasData ? (
         <div className="text-2xs font-mono text-text-4">Collecting data…</div>
       ) : (
@@ -128,7 +128,7 @@ function TrendsColumn({ snapshots }) {
           const current = data[data.length - 1].v;
           const display = Number.isInteger(current) ? current : current.toFixed(2);
           return (
-            <div key={row.key} className="flex items-center gap-2">
+            <div key={row.key} className="flex items-center gap-2 bg-surface-1 rounded px-2 py-1">
               <span className="w-[72px] text-2xs font-mono text-text-3 uppercase truncate flex-shrink-0">{row.label}</span>
               <MiniSparkline data={data} color={row.color} width={140} height={24} />
               <span className="text-2xs font-mono text-text-1 tabular-nums flex-shrink-0">{display}</span>
@@ -143,8 +143,8 @@ function TrendsColumn({ snapshots }) {
 function YourNodeColumn({ node, compute }) {
   if (!node || !node.active) {
     return (
-      <div className="flex flex-col gap-0.5 min-w-0">
-        <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Your Node</div>
+      <div className="flex flex-col gap-1.5 min-w-0">
+        <div className="text-2xs font-mono text-text-3 uppercase tracking-widest mb-1.5">Your Node</div>
         <div className="text-2xs font-mono text-text-4">Node idle</div>
       </div>
     );
@@ -168,9 +168,9 @@ function YourNodeColumn({ node, compute }) {
 
   return (
     <div className="flex flex-col gap-1.5 min-w-0">
-      <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5">Your Node</div>
+      <div className="text-2xs font-mono text-text-3 uppercase tracking-widest mb-1.5">Your Node</div>
       {metrics.map((m) => (
-        <div key={m.label} className="min-w-0">
+        <div key={m.label} className="bg-surface-1 rounded px-2.5 py-1.5 min-w-0">
           <div className="text-2xs font-mono text-text-4 uppercase tracking-wider leading-none">{m.label}</div>
           <div className="text-xs font-mono text-text-1 truncate leading-tight">{m.value}</div>
         </div>
@@ -184,22 +184,29 @@ function BarsTrendsNode({ compute, allZero, avgGpuUtil }) {
   const node = useGrooveStore((s) => s.networkNode);
 
   return (
-    <div className="bg-surface-1 border-b border-border px-4 py-2.5" style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 1fr', gap: '1.5rem' }}>
-      <div className="flex flex-col gap-0.5 min-w-0">
-        {allZero ? (
-          <div className="text-2xs font-mono text-text-4">Waiting for network data...</div>
-        ) : (
-          <>
-            <AsciiBar label="RAM" value={compute.totalRamMb} max={MAX_RAM_MB} unit="GB" nodeCount={compute.totalNodes} />
-            <AsciiBar label="VRAM" value={compute.totalVramMb} max={MAX_VRAM_MB} unit="GB" nodeCount={compute.totalNodes} />
-            <AsciiBar label="CPU" value={compute.totalCpuCores} max={MAX_CPU} unit="cores" />
-            <AsciiBar label="GPU%" value={avgGpuUtil} max={100} unit="%" />
-            <AsciiBar label="LOAD" value={compute.avgLoad} max={MAX_LOAD} unit="" />
-          </>
-        )}
+    <div className="bg-surface-1 border-b border-border px-4 py-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 1fr', gap: '1.5rem' }}>
+      <div className="bg-surface-0 rounded border border-border-subtle px-3 py-2.5">
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <div className="text-2xs font-mono text-text-3 uppercase tracking-widest mb-1.5">Resources</div>
+          {allZero ? (
+            <div className="text-2xs font-mono text-text-4">Waiting for network data...</div>
+          ) : (
+            <>
+              <AsciiBar label="RAM" value={compute.totalRamMb} max={MAX_RAM_MB} unit="GB" nodeCount={compute.totalNodes} />
+              <AsciiBar label="VRAM" value={compute.totalVramMb} max={MAX_VRAM_MB} unit="GB" nodeCount={compute.totalNodes} />
+              <AsciiBar label="CPU" value={compute.totalCpuCores} max={MAX_CPU} unit="cores" />
+              <AsciiBar label="GPU%" value={avgGpuUtil} max={100} unit="%" />
+              <AsciiBar label="LOAD" value={compute.avgLoad} max={MAX_LOAD} unit="" />
+            </>
+          )}
+        </div>
       </div>
-      <TrendsColumn snapshots={snapshots} />
-      <YourNodeColumn node={node} compute={compute} />
+      <div className="bg-surface-0 rounded border border-border-subtle px-3 py-2.5">
+        <TrendsColumn snapshots={snapshots} />
+      </div>
+      <div className="bg-surface-0 rounded border border-border-subtle px-3 py-2.5">
+        <YourNodeColumn node={node} compute={compute} />
+      </div>
     </div>
   );
 }

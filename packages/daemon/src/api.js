@@ -5183,6 +5183,30 @@ Keep responses concise. Help them think, don't lecture them about the system the
     })();
   });
 
+  // --- Wallet & earnings stubs (Base L2 — wired to real data post-mainnet) ---
+
+  app.get('/api/network/wallet', networkGate, (req, res) => {
+    res.json({ connected: false, address: null, balance: '0.00', token: 'GROOVE', chain: 'base-l2' });
+  });
+
+  app.get('/api/network/earnings', networkGate, (req, res) => {
+    res.json({ today: 0, thisWeek: 0, allTime: 0, history: [], currency: 'GROOVE' });
+  });
+
+  app.post('/api/network/wallet/connect', networkGate, (req, res) => {
+    res.status(501).json({ error: 'Wallet connection not yet available. Coming with mainnet launch.' });
+  });
+
+  app.get('/api/network/node/identity', networkGate, (req, res) => {
+    const node = daemon.networkNode;
+    res.json({
+      nodeId: node?.nodeId || null,
+      address: node?.nodeId || null,
+      startedAt: node?.startedAt || null,
+      uptime: node?.startedAt ? Math.floor((Date.now() - node.startedAt) / 1000) : 0,
+    });
+  });
+
   // Startup hook — called from index.js once the server is up. Non-blocking;
   // updates daemon.networkUpdateAvailable and broadcasts so the GUI can badge.
   daemon.checkNetworkUpdate = async function checkNetworkUpdate() {

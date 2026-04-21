@@ -6,59 +6,12 @@ import { HEX } from '../../lib/theme-hex';
 import { Tooltip } from '../ui/tooltip';
 import { HelpCircle } from 'lucide-react';
 
-const BAR_WIDTH = 28;
-
-function gaugeColor(ratio) {
-  if (ratio > 0.9) return HEX.danger;
-  if (ratio > 0.7) return HEX.warning;
-  return HEX.success;
-}
-
 function fmtMbToGb(mb) {
   if (!mb) return '0';
   return (mb / 1024).toFixed(1);
 }
 
-function AsciiBar({ label, value, max, unit, nodeCount }) {
-  const ratio = max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
-  const filled = Math.round(ratio * BAR_WIDTH);
-  const empty = BAR_WIDTH - filled;
-  const bar = '\u2502'.repeat(filled) + '\u2500'.repeat(empty);
-  const color = gaugeColor(ratio);
-
-  let displayVal, displayMax;
-  if (unit === 'GB') {
-    displayVal = fmtMbToGb(value);
-    displayMax = fmtMbToGb(max);
-  } else if (unit === 'cores' || unit === 'Mbps') {
-    displayVal = Math.round(value);
-    displayMax = Math.round(max);
-  } else {
-    displayVal = value.toFixed(1);
-    displayMax = max.toFixed(1);
-  }
-
-  return (
-    <div className="flex items-center gap-2 font-mono text-xs leading-tight">
-      <span className="w-[40px] text-right text-text-3 uppercase text-2xs tracking-wider flex-shrink-0">
-        {label}
-      </span>
-      <span className="text-text-4">[</span>
-      <span style={{ color: ratio > 0 ? color : undefined }} className={cn('whitespace-pre', !ratio && 'text-text-4')}>
-        {bar}
-      </span>
-      <span className="text-text-4">]</span>
-      <span className="text-text-1 tabular-nums whitespace-nowrap text-2xs">
-        {displayVal} / {displayMax} {unit}
-      </span>
-      {nodeCount != null && (
-        <span className="text-text-4 text-2xs whitespace-nowrap">({nodeCount} nodes)</span>
-      )}
-    </div>
-  );
-}
-
-function MiniSparkline({ data, color = HEX.accent, width = 72, height = 22 }) {
+function MiniSparkline({ data, color = HEX.accent, width = 60, height = 16 }) {
   if (!data || data.length < 2) return <div style={{ width, height }} />;
   const vals = data.map((d) => (typeof d === 'number' ? d : d.v));
   const min = Math.min(...vals);
@@ -69,12 +22,12 @@ function MiniSparkline({ data, color = HEX.accent, width = 72, height = 22 }) {
     const y = height - ((v - min) / range) * (height - 2) - 1;
     return `${x},${y}`;
   }).join(' ');
-  const gradId = `net-${color.replace('#', '')}`;
+  const gradId = `ch-${color.replace('#', '')}`;
   return (
-    <svg width={width} height={height} className="flex-shrink-0">
+    <svg width={width} height={height} className="flex-shrink-0 mt-1">
       <defs>
         <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
@@ -84,175 +37,89 @@ function MiniSparkline({ data, color = HEX.accent, width = 72, height = 22 }) {
   );
 }
 
-function KpiCard({ label, value, color = HEX.accent, hint, className }) {
+function KpiCard({ label, value, color, hint, sparkData, className }) {
   return (
-    <div className={cn('flex items-center gap-2.5 px-3 py-2.5 min-w-0 bg-surface-1', className)}>
-      <div className="flex-1 min-w-0">
-        <div className="text-2xs font-mono text-text-3 uppercase tracking-wider mb-0.5 truncate flex items-center gap-1">
-          {label}
-          {hint && (
-            <Tooltip content={<span className="max-w-[220px] block leading-relaxed">{hint}</span>} side="bottom">
-              <HelpCircle size={10} className="text-text-4 hover:text-text-2 cursor-help flex-shrink-0 transition-colors" />
-            </Tooltip>
-          )}
-        </div>
-        <div className="text-base font-semibold font-mono text-text-0 tabular-nums leading-none">{value}</div>
+    <div className={cn('px-3 py-2 min-w-0', className)}>
+      <div className="text-2xs font-mono text-text-4 uppercase tracking-wider truncate flex items-center gap-1">
+        {label}
+        {hint && (
+          <Tooltip content={<span className="max-w-[220px] block leading-relaxed">{hint}</span>} side="bottom">
+            <HelpCircle size={9} className="text-text-4 hover:text-text-2 cursor-help flex-shrink-0 transition-colors" />
+          </Tooltip>
+        )}
       </div>
-    </div>
-  );
-}
-
-const MAX_RAM_MB = 256 * 1024;
-const MAX_VRAM_MB = 128 * 1024;
-const MAX_CPU = 128;
-const MAX_LOAD = 4.0;
-
-const SPARKLINE_ROWS = [
-  { key: 'globalSessions', label: 'Sessions', color: HEX.accent },
-  { key: 'mySessions', label: 'My Sessions', color: HEX.info },
-  { key: 'nodeCount', label: 'Nodes', color: HEX.purple },
-  { key: 'avgLoad', label: 'Load', color: HEX.warning },
-  { key: 'myLoad', label: 'My Load', color: HEX.success },
-];
-
-function TrendsColumn({ snapshots }) {
-  const hasData = snapshots && snapshots.length >= 2;
-  return (
-    <div className="flex flex-col gap-1.5 min-w-0">
-      <div className="text-2xs font-mono text-text-3 uppercase tracking-widest mb-1.5">Trends</div>
-      {!hasData ? (
-        <div className="text-2xs font-mono text-text-4">Collecting data…</div>
-      ) : (
-        SPARKLINE_ROWS.map((row) => {
-          const data = snapshots.map((s) => ({ v: s[row.key] ?? 0 }));
-          const current = data[data.length - 1].v;
-          const display = Number.isInteger(current) ? current : current.toFixed(2);
-          return (
-            <div key={row.key} className="flex items-center gap-2 bg-surface-1 rounded px-2 py-1">
-              <span className="w-[72px] text-2xs font-mono text-text-3 uppercase truncate flex-shrink-0">{row.label}</span>
-              <MiniSparkline data={data} color={row.color} width={140} height={24} />
-              <span className="text-2xs font-mono text-text-1 tabular-nums flex-shrink-0">{display}</span>
-            </div>
-          );
-        })
-      )}
-    </div>
-  );
-}
-
-function YourNodeColumn({ node, compute }) {
-  if (!node || !node.active) {
-    return (
-      <div className="flex flex-col gap-1.5 min-w-0">
-        <div className="text-2xs font-mono text-text-3 uppercase tracking-widest mb-1.5">Your Node</div>
-        <div className="text-2xs font-mono text-text-4">Node idle</div>
+      <div className="text-base font-mono font-semibold tabular-nums leading-none mt-0.5" style={{ color: color || HEX.text0 }}>
+        {value}
       </div>
-    );
-  }
-
-  const layersLabel = node.layers ? `Layers ${node.layers} / 36` : 'Unassigned';
-  const modelLabel = node.model || 'Qwen/Qwen3-4B';
-  const bw = compute.totalBandwidthMbps ? `${Math.round(compute.totalBandwidthMbps)} Mbps` : '— Mbps';
-  const nodeRam = node.hardware?.memory;
-  const ramPct = nodeRam && compute.totalRamMb > 0
-    ? `${((nodeRam / compute.totalRamMb) * 100).toFixed(1)}%`
-    : '—';
-
-  const metrics = [
-    { label: 'Layers', value: layersLabel },
-    { label: 'Model', value: modelLabel },
-    { label: 'Sessions', value: node.sessions ?? 0 },
-    { label: 'Bandwidth', value: bw },
-    { label: 'RAM Share', value: ramPct },
-  ];
-
-  return (
-    <div className="flex flex-col gap-1.5 min-w-0">
-      <div className="text-2xs font-mono text-text-3 uppercase tracking-widest mb-1.5">Your Node</div>
-      {metrics.map((m) => (
-        <div key={m.label} className="bg-surface-1 rounded px-2.5 py-1.5 min-w-0">
-          <div className="text-2xs font-mono text-text-4 uppercase tracking-wider leading-none">{m.label}</div>
-          <div className="text-xs font-mono text-text-1 truncate leading-tight">{m.value}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function BarsTrendsNode({ compute, allZero, avgGpuUtil }) {
-  const snapshots = useGrooveStore((s) => s.networkSnapshots);
-  const node = useGrooveStore((s) => s.networkNode);
-
-  return (
-    <div className="bg-surface-1 border-b border-border px-4 py-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 1fr', gap: '1.5rem' }}>
-      <div className="bg-surface-0 rounded border border-border-subtle px-3 py-2.5">
-        <div className="flex flex-col gap-0.5 min-w-0">
-          <div className="text-2xs font-mono text-text-3 uppercase tracking-widest mb-1.5">Resources</div>
-          {allZero ? (
-            <div className="text-2xs font-mono text-text-4">Waiting for network data...</div>
-          ) : (
-            <>
-              <AsciiBar label="RAM" value={compute.totalRamMb} max={MAX_RAM_MB} unit="GB" nodeCount={compute.totalNodes} />
-              <AsciiBar label="VRAM" value={compute.totalVramMb} max={MAX_VRAM_MB} unit="GB" nodeCount={compute.totalNodes} />
-              <AsciiBar label="CPU" value={compute.totalCpuCores} max={MAX_CPU} unit="cores" />
-              <AsciiBar label="GPU%" value={avgGpuUtil} max={100} unit="%" />
-              <AsciiBar label="LOAD" value={compute.avgLoad} max={MAX_LOAD} unit="" />
-            </>
-          )}
-        </div>
-      </div>
-      <div className="bg-surface-0 rounded border border-border-subtle px-3 py-2.5">
-        <TrendsColumn snapshots={snapshots} />
-      </div>
-      <div className="bg-surface-0 rounded border border-border-subtle px-3 py-2.5">
-        <YourNodeColumn node={node} compute={compute} />
-      </div>
+      {sparkData && <MiniSparkline data={sparkData} color={color || HEX.accent} />}
     </div>
   );
 }
 
 export const ComputeHeader = memo(function ComputeHeader() {
   const compute = useGrooveStore((s) => s.networkCompute);
-  const nodes = useGrooveStore((s) => s.networkStatus.nodes || []);
-  const models = useGrooveStore((s) => s.networkStatus.models || []);
-  const allZero = !compute.totalRamMb && !compute.totalVramMb && !compute.totalCpuCores;
+  const status = useGrooveStore((s) => s.networkStatus);
+  const snapshots = useGrooveStore((s) => s.networkSnapshots);
+  const nodes = status.nodes || [];
 
   const activeNodes = nodes.filter((n) => n.status === 'active');
   const avgGpuUtil = activeNodes.length > 0
     ? activeNodes.reduce((s, n) => s + (n.gpu_utilization_pct || 0), 0) / activeNodes.length
     : 0;
+
+  const totalLayers = status.totalLayers || 36;
+  const covered = status.coverage || 0;
+  const coverageColor = covered >= totalLayers ? HEX.success : covered >= totalLayers * 0.5 ? HEX.warning : HEX.danger;
   const gpuColor = avgGpuUtil > 80 ? HEX.danger : avgGpuUtil > 50 ? HEX.warning : HEX.success;
-  const loadColor = compute.avgLoad > 2.0 ? HEX.danger : compute.avgLoad > 1.0 ? HEX.warning : HEX.success;
-  const activeModel = models.length > 0
-    ? (typeof models[0] === 'string' ? models[0] : models[0].name)
-    : 'Qwen/Qwen3-4B';
+
+  const nodeSnap = snapshots.map((s) => ({ v: s.nodeCount ?? 0 }));
+  const sessionSnap = snapshots.map((s) => ({ v: s.globalSessions ?? 0 }));
+  const vramSnap = snapshots.map((s) => ({ v: s.totalVramMb ?? 0 }));
+  const ramSnap = snapshots.map((s) => ({ v: s.totalRamMb ?? 0 }));
 
   const kpis = [
-    { label: 'RAM', value: `${fmtMbToGb(compute.totalRamMb)} GB`, color: HEX.accent, hint: 'Total RAM across all network nodes.' },
-    { label: 'VRAM', value: `${fmtMbToGb(compute.totalVramMb)} GB`, color: HEX.info, hint: 'Total GPU VRAM across all network nodes.' },
-    { label: 'CPU Cores', value: `${compute.totalCpuCores}`, color: HEX.purple, hint: 'Total CPU cores across all network nodes.' },
-    { label: 'GPU Util', value: avgGpuUtil > 0 ? `${Math.round(avgGpuUtil)}%` : '--', color: gpuColor, hint: 'Average GPU utilization across active nodes. Green <50%, yellow 50-80%, red >80%.' },
-    { label: 'Nodes', value: `${compute.activeNodes}/${compute.totalNodes}`, color: HEX.accent, hint: 'Active nodes out of total registered.' },
-    { label: 'Load', value: compute.avgLoad > 0 ? compute.avgLoad.toFixed(2) : '0.00', color: loadColor, hint: 'Average load across active nodes. Green <1.0, yellow 1.0-2.0, red >2.0.' },
-    { label: 'Model', value: activeModel, color: HEX.info, hint: 'Active inference model on the network.' },
+    {
+      label: 'NODES', value: `${compute.activeNodes}/${compute.totalNodes}`,
+      color: HEX.accent, hint: 'Active nodes / total registered', sparkData: nodeSnap,
+    },
+    {
+      label: 'SESSIONS', value: `${status.activeSessions || 0}`,
+      color: HEX.info, hint: 'Active inference sessions', sparkData: sessionSnap,
+    },
+    {
+      label: 'COVERAGE', value: `${covered}/${totalLayers}`,
+      color: coverageColor, hint: 'Layer coverage — green=full, orange=partial, red=<50%',
+    },
+    {
+      label: 'VRAM', value: `${fmtMbToGb(compute.totalVramMb)} GB`,
+      color: HEX.purple, hint: 'Total GPU VRAM across nodes', sparkData: vramSnap,
+    },
+    {
+      label: 'RAM', value: `${fmtMbToGb(compute.totalRamMb)} GB`,
+      color: HEX.info, hint: 'Total RAM across nodes', sparkData: ramSnap,
+    },
+    {
+      label: 'GPU UTIL', value: avgGpuUtil > 0 ? `${Math.round(avgGpuUtil)}%` : '--',
+      color: gpuColor, hint: 'Average GPU utilization — green <50%, yellow 50-80%, red >80%',
+    },
   ];
 
   return (
-    <div className="flex-shrink-0">
-      <div className="flex flex-wrap border-b border-border" style={{ background: 'var(--color-surface-0)' }}>
-        {kpis.map((kpi) => (
-          <KpiCard
-            key={kpi.label}
-            label={kpi.label}
-            value={kpi.value}
-            color={kpi.color}
-            hint={kpi.hint}
-            className={cn('flex-1 basis-[14.2%] min-w-[110px]', 'border-b border-r border-border')}
-          />
-        ))}
-      </div>
-
-      <BarsTrendsNode compute={compute} allZero={allZero} avgGpuUtil={avgGpuUtil} />
+    <div className="flex flex-shrink-0 border-b border-border-subtle bg-surface-0">
+      {kpis.map((kpi, i) => (
+        <KpiCard
+          key={kpi.label}
+          label={kpi.label}
+          value={kpi.value}
+          color={kpi.color}
+          hint={kpi.hint}
+          sparkData={kpi.sparkData}
+          className={cn(
+            'basis-[16%] min-w-[120px] flex-shrink-0',
+            i < kpis.length - 1 && 'border-r border-border-subtle',
+          )}
+        />
+      ))}
     </div>
   );
 });

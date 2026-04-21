@@ -105,6 +105,8 @@ export const useGrooveStore = create((set, get) => ({
   networkUpdateProgress: { updating: false, step: null, message: null, percent: 0, error: null },
   networkCompute: { totalRamMb: 0, totalVramMb: 0, totalCpuCores: 0, totalBandwidthMbps: 0, activeNodes: 0, totalNodes: 0, avgLoad: 0 },
   networkSnapshots: [],
+  networkWallet: { connected: false, address: null, balance: '0.00', token: 'GROOVE', chain: 'base-l2' },
+  networkEarnings: { today: 0, thisWeek: 0, allTime: 0, history: [] },
 
   // ── Marketplace Auth ───────────────────────────────────────
   marketplaceUser: null,        // { id, displayName, avatar, ... } or null
@@ -2256,6 +2258,13 @@ export const useGrooveStore = create((set, get) => ({
       get().addToast('error', 'Node stop failed', err.message);
       throw err;
     }
+  },
+
+  async fetchNetworkWallet() {
+    return get().networkWallet;
+  },
+  async fetchNetworkEarnings() {
+    return get().networkEarnings;
   },
 
   async renameFile(oldPath, newPath) {

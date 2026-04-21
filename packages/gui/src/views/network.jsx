@@ -6,12 +6,17 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Dialog, DialogContent, DialogTrigger } from '../components/ui/dialog';
 import { ScrollArea } from '../components/ui/scroll-area';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import { cn } from '../lib/cn';
-import { NodeToggle } from '../components/network/node-toggle';
+import { IdentityBar } from '../components/network/identity-bar';
 import { ComputeHeader } from '../components/network/compute-header';
 import { ActivityChart } from '../components/network/activity-chart';
 import { ActivityStream } from '../components/network/activity-stream';
 import { NetworkHealth } from '../components/network/network-health';
+import { NodeCard } from '../components/network/node-card';
+import { EarningsCard } from '../components/network/earnings-card';
+import { FleetTable } from '../components/network/fleet-table';
+import { WalletView } from '../components/network/wallet-view';
 import { HEX, hexAlpha } from '../lib/theme-hex';
 import { Globe, Download, Check, AlertCircle, Loader2, Trash2, ArrowUpCircle, Zap } from 'lucide-react';
 
@@ -405,12 +410,44 @@ function IdleHero() {
   );
 }
 
+function NetworkOverview() {
+  return (
+    <div className="flex flex-col h-full">
+      <ComputeHeader />
+      <div className="flex-1 min-h-0 grid" style={{ gridTemplateColumns: '2.5fr 1fr', gap: '1px', background: HEX.surface3 }}>
+        {/* Left column */}
+        <div className="flex flex-col min-w-0 min-h-0" style={{ gap: '1px' }}>
+          <div className="flex-1 min-h-0 overflow-hidden bg-surface-1">
+            <ActivityChart />
+          </div>
+          <div className="flex-[0.5] min-h-0 overflow-hidden bg-surface-1">
+            <ActivityStream />
+          </div>
+        </div>
+        {/* Right column */}
+        <div className="flex flex-col min-w-0 min-h-0" style={{ gap: '1px' }}>
+          <div className="min-h-0 overflow-hidden bg-surface-1">
+            <NodeCard />
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden bg-surface-1">
+            <NetworkHealth />
+          </div>
+          <div className="min-h-0 overflow-hidden bg-surface-1">
+            <EarningsCard />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function NetworkView() {
   const fetchNetworkNodeStatus = useGrooveStore((s) => s.fetchNetworkNodeStatus);
   const fetchNetworkStatus = useGrooveStore((s) => s.fetchNetworkStatus);
   const checkNetworkUpdate = useGrooveStore((s) => s.checkNetworkUpdate);
   const installed = useGrooveStore((s) => s.networkInstalled);
   const nodeActive = useGrooveStore((s) => s.networkNode.active);
+  const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
     fetchNetworkNodeStatus();
@@ -440,23 +477,27 @@ export default function NetworkView() {
   return (
     <div className="flex flex-col h-full">
       <NetworkHeader />
+      <IdentityBar />
 
-      <ComputeHeader />
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 min-h-0 flex flex-col">
+        <TabsList className="bg-surface-0 border-b border-border-subtle px-4 flex-shrink-0">
+          <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
+          <TabsTrigger value="fleet" className="text-xs">Fleet</TabsTrigger>
+          <TabsTrigger value="wallet" className="text-xs">Wallet</TabsTrigger>
+        </TabsList>
 
-      <div className="flex-1 min-h-0 flex flex-col" style={{ background: HEX.surface3, gap: '1px' }}>
-        <div className="min-h-0 flex-1 grid" style={{ gridTemplateColumns: '3fr 1.5fr', gap: '0 1px' }}>
-          <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1">
-            <ActivityChart />
-          </div>
-          <div className="min-w-0 min-h-0 overflow-hidden bg-surface-1">
-            <NetworkHealth />
-          </div>
-        </div>
+        <TabsContent value="overview" className="flex-1 min-h-0 overflow-hidden">
+          <NetworkOverview />
+        </TabsContent>
 
-        <div className="min-h-0 flex-[0.6] bg-surface-1">
-          <ActivityStream />
-        </div>
-      </div>
+        <TabsContent value="fleet" className="flex-1 min-h-0 overflow-hidden bg-surface-1">
+          <FleetTable />
+        </TabsContent>
+
+        <TabsContent value="wallet" className="flex-1 min-h-0 overflow-hidden">
+          <WalletView />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

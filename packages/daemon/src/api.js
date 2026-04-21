@@ -2,11 +2,11 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import express from 'express';
-import { resolve, dirname, join } from 'path';
+import { resolve, dirname, join, sep } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream, copyFileSync, realpathSync } from 'fs';
 import { spawn, execFile } from 'child_process';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { hostname, networkInterfaces, homedir } from 'os';
 import { lookup as mimeLookup } from './mimetypes.js';
 import { listProviders, getProvider } from './providers/index.js';
@@ -3948,15 +3948,14 @@ Keep responses concise. Help them think, don't lecture them about the system the
   const BETA_RATE_WINDOW_MS = 60_000;
 
   function getMachineId() {
-    const nets = networkInterfaces();
-    const macs = [];
-    for (const name of Object.keys(nets)) {
-      for (const iface of nets[name] || []) {
-        if (iface.mac && iface.mac !== '00:00:00:00:00:00') macs.push(iface.mac);
-      }
-    }
-    macs.sort();
-    return createHash('sha256').update(`${hostname()}|${macs.join(',')}`).digest('hex');
+    const idFile = join(daemon.grooveDir, '.machine-id');
+    try {
+      const existing = readFileSync(idFile, 'utf8').trim();
+      if (existing.length >= 32) return existing;
+    } catch {}
+    const id = createHash('sha256').update(`${hostname()}|${randomUUID()}`).digest('hex');
+    try { writeFileSync(idFile, id, { mode: 0o600 }); } catch {}
+    return id;
   }
 
   async function validateCodeWithServer(code) {
@@ -4636,12 +4635,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
   // Defensive: only permit fs ops on paths that resolve inside ~/.groove/.
   // Uses realpathSync when the path exists to defeat symlink escapes.
   function isInsideGrooveHome(target) {
-    const home = resolve(homedir(), '.groove') + '/';
+    const home = resolve(homedir(), '.groove') + sep;
     const resolved = resolve(target);
     let full;
-    try { full = existsSync(resolved) ? realpathSync(resolved) + '/' : resolved + '/'; }
-    catch { full = resolved + '/'; }
-    const realHome = existsSync(home.slice(0, -1)) ? realpathSync(home.slice(0, -1)) + '/' : home;
+    try { full = existsSync(resolved) ? realpathSync(resolved) + sep : resolved + sep; }
+    catch { full = resolved + sep; }
+    const realHome = existsSync(home.slice(0, -1)) ? realpathSync(home.slice(0, -1)) + sep : home;
     return full.startsWith(realHome);
   }
 

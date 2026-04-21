@@ -2345,7 +2345,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
   // Browse absolute paths (for directory picker in agent config)
   // Dirs only, localhost-only, no file content exposed
   app.get('/api/browse-system', (req, res) => {
-    const absPath = req.query.path || process.env.HOME || '/';
+    const absPath = req.query.path || homedir();
     if (absPath.includes('\0')) return res.status(400).json({ error: 'Invalid path' });
     if (!existsSync(absPath)) return res.status(404).json({ error: 'Not found' });
 
@@ -3479,7 +3479,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       // Resolve shell shortcuts — GUI sends ~/... and ./...
       let resolvedPath = targetPath;
       if (resolvedPath.startsWith('~/') || resolvedPath === '~') {
-        resolvedPath = resolve(process.env.HOME || '/tmp', resolvedPath.slice(2));
+        resolvedPath = resolve(homedir(), resolvedPath.slice(2));
       } else if (!resolvedPath.startsWith('/')) {
         resolvedPath = resolve(daemon.projectDir, resolvedPath);
       }
@@ -4107,11 +4107,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   app.post('/api/beta/deactivate', async (req, res) => {
     // Stop the node if it's running before locking the feature away.
-    try {
-      if (daemon.networkNode?.proc && !daemon.networkNode.proc.killed) {
-        daemon.networkNode.proc.kill('SIGINT');
-      }
-    } catch { /* ignore */ }
+    if (daemon.networkNode?.proc && !daemon.networkNode.proc.killed) {
+      safeKill(daemon.networkNode.proc);
+    }
     daemon.networkNode = {
       active: false, status: 'stopped', pid: null, proc: null,
       nodeId: null, layers: null, model: null, sessions: 0,
@@ -4224,15 +4222,15 @@ Keep responses concise. Help them think, don't lecture them about the system the
     // Resolve deploy path (handles ~ and defaults to ~/Desktop/groove-deploy)
     let deployPath = cfg.deployPath || null;
     if (!deployPath) {
-      deployPath = resolve(process.env.HOME || '', 'Desktop/groove-deploy');
+      deployPath = resolve(homedir(), 'Desktop', 'groove-deploy');
     } else if (deployPath.startsWith('~/')) {
-      deployPath = resolve(process.env.HOME || '', deployPath.slice(2));
+      deployPath = resolve(homedir(), deployPath.slice(2));
     }
 
     if (!existsSync(deployPath)) {
       return res.status(400).json({ error: `Deploy path not found: ${deployPath}` });
     }
-    if (!isInsideGrooveHome(deployPath) && !deployPath.startsWith(resolve(process.env.HOME || '', 'Desktop'))) {
+    if (!isInsideGrooveHome(deployPath) && !deployPath.startsWith(resolve(homedir(), 'Desktop'))) {
       return res.status(400).json({ error: 'Deploy path outside allowed directories' });
     }
 
@@ -4249,7 +4247,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
     let proc;
     try {
-      proc = spawn(join(deployPath, 'venv', 'bin', 'python3'), args, {
+      proc = spawn(venvPython(deployPath), args, {
         cwd: deployPath,
         env: { ...process.env, PYTHONUNBUFFERED: '1' },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -4372,11 +4370,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     if (!node?.active || !node.proc) {
       return res.status(409).json({ error: 'Node not running' });
     }
-    try {
-      node.proc.kill('SIGINT');
-    } catch (err) {
-      return res.status(500).json({ error: `Failed to stop node: ${err.message}` });
-    }
+    safeKill(node.proc);
     daemon.networkNode.status = 'stopping';
     pushNodeEvent('stopping', { pid: node.pid });
     broadcastNodeStatus();
@@ -4614,8 +4608,36 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   // --- Network package install/uninstall ---
 
+  const IS_WIN = process.platform === 'win32';
   const NETWORK_REPO_URL = 'https://github.com/grooveai-dev/groove-network.git';
   const NETWORK_VERSION = 'v0.2.0';
+
+  function venvPython(base) {
+    return IS_WIN
+      ? join(base, 'venv', 'Scripts', 'python.exe')
+      : join(base, 'venv', 'bin', 'python3');
+  }
+
+  function spawnSetupSh(cwd) {
+    if (IS_WIN) {
+      return spawn('cmd.exe', ['/c', 'bash setup.sh --json'], {
+        cwd,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, PYTHONUNBUFFERED: '1' },
+      });
+    }
+    return spawn('bash', ['setup.sh', '--json'], {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, PYTHONUNBUFFERED: '1' },
+    });
+  }
+
+  function safeKill(proc, signal = 'SIGINT') {
+    try {
+      if (IS_WIN) { proc.kill(); } else { proc.kill(signal); }
+    } catch { /* ignore */ }
+  }
 
   function networkRoot() {
     return resolve(homedir(), '.groove', 'network');
@@ -4752,11 +4774,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
         broadcastInstallProgress('cloned', 'Repository cloned', 10);
 
         // Run setup.sh --json from the install directory
-        const setup = spawn('bash', ['setup.sh', '--json'], {
-          cwd: installPath,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          env: { ...process.env, PYTHONUNBUFFERED: '1' },
-        });
+        const setup = spawnSetupSh(installPath);
 
         daemon.networkInstall.proc = setup;
 
@@ -4820,7 +4838,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     try {
       const node = daemon.networkNode;
       if (node?.active && node.proc && !node.proc.killed) {
-        try { node.proc.kill('SIGINT'); } catch { /* ignore */ }
+        safeKill(node.proc);
         daemon.networkNode.status = 'stopping';
         pushNodeEvent('stopping', { pid: node.pid, reason: 'uninstall' });
         broadcastNodeStatus();
@@ -4872,9 +4890,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       let stderr = '';
       proc.stdout.on('data', (c) => { stdout += c.toString(); });
       proc.stderr.on('data', (c) => { stderr += c.toString(); });
-      const timeout = setTimeout(() => {
-        try { proc.kill('SIGTERM'); } catch { /* ignore */ }
-      }, 10_000);
+      const timeout = setTimeout(() => { safeKill(proc, 'SIGTERM'); }, 10_000);
       proc.on('error', () => { clearTimeout(timeout); resolvePromise(null); });
       proc.on('close', (code) => {
         clearTimeout(timeout);
@@ -4961,7 +4977,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
         try {
           const node = daemon.networkNode;
           if (node?.active && node.proc && !node.proc.killed) {
-            try { node.proc.kill('SIGINT'); } catch { /* ignore */ }
+            safeKill(node.proc);
             daemon.networkNode.status = 'stopping';
             pushNodeEvent('stopping', { pid: node.pid, reason: 'update' });
             broadcastNodeStatus();
@@ -5006,11 +5022,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
         broadcastUpdateProgress('deps', 'Updating dependencies...', 30);
 
-        const setup = spawn('bash', ['setup.sh', '--json'], {
-          cwd: installPath,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          env: { ...process.env, PYTHONUNBUFFERED: '1' },
-        });
+        const setup = spawnSetupSh(installPath);
 
         daemon.networkInstall.proc = setup;
 

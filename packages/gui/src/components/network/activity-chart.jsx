@@ -207,24 +207,20 @@ export const ActivityChart = memo(function ActivityChart() {
         <span className="text-2xs font-mono text-text-3 tabular-nums">{activeNodes.length} nodes</span>
       </div>
 
-      <div className="relative flex-1 min-h-0">
+      <div ref={containerRef} className="relative flex-1 min-h-0">
         {chartData.length < 2 ? (
           <div className="absolute inset-0 flex items-center justify-center">
             <span className="text-xs font-mono text-text-3">Collecting network data…</span>
           </div>
-        ) : (
-          <div ref={containerRef} className="absolute inset-0">
-            {width > 0 && height > 0 && (
-              <canvas
-                ref={canvasRef}
-                style={{ width, height }}
-                className="block cursor-crosshair"
-                onMouseMove={onMouseMove}
-                onMouseLeave={onMouseLeave}
-              />
-            )}
-          </div>
-        )}
+        ) : width > 0 && height > 0 ? (
+          <canvas
+            ref={canvasRef}
+            style={{ width, height }}
+            className="absolute inset-0 block cursor-crosshair"
+            onMouseMove={onMouseMove}
+            onMouseLeave={onMouseLeave}
+          />
+        ) : null}
       </div>
 
       <div className="px-3 py-1.5 border-t border-border-subtle flex items-center gap-2 flex-shrink-0 font-mono text-2xs" style={{ background: hexAlpha(HEX.accent, 0.04) }}>

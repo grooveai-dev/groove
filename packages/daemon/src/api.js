@@ -4212,6 +4212,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
       cpuCores: caps.cpu_cores || null,
       bandwidthMbps: caps.bandwidth_mbps || null,
       maxContext: caps.max_context_length || null,
+      ram_mb: Number(caps.ram_mb) || 0,
+      vram_mb: Number(caps.vram_mb) || 0,
+      gpu_model: caps.gpu_model || null,
+      cpu_cores: Number(caps.cpu_cores) || 0,
+      bandwidth_mbps: Number(caps.bandwidth_mbps) || 0,
+      max_context_length: Number(caps.max_context_length) || 0,
     };
   }
 
@@ -4456,9 +4462,8 @@ Keep responses concise. Help them think, don't lecture them about the system the
             }
             if (self.device) {
               daemon.networkNode.hardware = {
+                ...(daemon.networkNode.hardware || {}),
                 device: self.device,
-                memory: daemon.networkNode.hardware?.memory || null,
-                gpu: daemon.networkNode.hardware?.gpu || null,
               };
               changed = true;
             }
@@ -4515,7 +4520,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     const localCpuCores = sysHw.cores || 0;
     const selfNode = node.active && node.nodeId ? [{
       node_id: node.nodeId,
-      device: hw.device || 'auto',
+      device: hw.device || (sysHw.gpu?.type === 'nvidia' ? 'cuda' : sysHw.gpu?.type === 'apple-silicon' ? 'metal' : 'cpu'),
       layers: node.layers || [0, 0],
       status: node.status === 'connected' ? 'active' : node.status,
       active_sessions: node.sessions || 0,

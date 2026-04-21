@@ -200,6 +200,17 @@ export class ConversationManager {
     this.daemon.broadcast({ type: 'conversation:updated', data: conv });
   }
 
+  updateModel(id, provider, model) {
+    const conv = this.conversations.get(id);
+    if (!conv) throw new Error('Conversation not found');
+    conv.provider = provider;
+    conv.model = model;
+    conv.updatedAt = new Date().toISOString();
+    this._save();
+    this.daemon.broadcast({ type: 'conversation:updated', data: conv });
+    return conv;
+  }
+
   async setMode(id, mode) {
     const conv = this.conversations.get(id);
     if (!conv) throw new Error('Conversation not found');

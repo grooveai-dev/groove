@@ -846,13 +846,18 @@ export function createApi(app, daemon) {
       if (req.body.title !== undefined) daemon.conversations.rename(req.params.id, req.body.title);
       if (req.body.pinned !== undefined) daemon.conversations.pin(req.params.id, req.body.pinned);
       if (req.body.archived !== undefined) daemon.conversations.archive(req.params.id, req.body.archived);
+      if (req.body.model !== undefined || req.body.provider !== undefined) {
+        const newProvider = req.body.provider || conv.provider;
+        const newModel = req.body.model || conv.model;
+        daemon.conversations.updateModel(req.params.id, newProvider, newModel);
+      }
       if (req.body.mode !== undefined) {
         if (req.body.mode !== 'api' && req.body.mode !== 'agent') {
           return res.status(400).json({ error: 'mode must be "api" or "agent"' });
         }
         await daemon.conversations.setMode(req.params.id, req.body.mode);
       }
-      daemon.audit.log('conversation.update', { id: req.params.id, mode: req.body.mode });
+      daemon.audit.log('conversation.update', { id: req.params.id, provider: req.body.provider, model: req.body.model, mode: req.body.mode });
       res.json(daemon.conversations.get(req.params.id));
     } catch (err) {
       res.status(400).json({ error: err.message });

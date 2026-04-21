@@ -4725,10 +4725,13 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   app.get('/api/network/install/status', networkGate, (req, res) => {
     const installPath = networkRoot();
-    const installed = existsSync(resolve(installPath, 'setup.sh'));
+    const dirExists = existsSync(installPath);
+    const installed = dirExists && existsSync(resolve(installPath, 'setup.sh'));
+    const stale = dirExists && !installed;
     res.json({
       installed,
-      path: installed ? installPath : null,
+      stale,
+      path: dirExists ? installPath : null,
       version: installed ? getInstalledNetworkVersion() : null,
     });
   });
@@ -4746,9 +4749,17 @@ Keep responses concise. Help them think, don't lecture them about the system the
       return res.status(500).json({ error: 'Invalid install path' });
     }
 
-    // Refuse to clone over an existing directory — avoids surprising merges.
+    // If directory exists from a previous failed install, clean it up automatically.
     if (existsSync(installPath)) {
-      return res.status(400).json({ error: 'Install path already exists; uninstall first' });
+      if (daemon.config?.networkBeta?.installed) {
+        return res.status(400).json({ error: 'Install path already exists; uninstall first' });
+      }
+      try {
+        rmSync(installPath, { recursive: true, force: true });
+        daemon.audit?.log?.('network.install.stale-cleanup', { path: installPath });
+      } catch (cleanupErr) {
+        return res.status(500).json({ error: `Failed to clean stale install directory: ${cleanupErr.message}` });
+      }
     }
 
     daemon.networkInstall = { running: true, startedAt: Date.now() };

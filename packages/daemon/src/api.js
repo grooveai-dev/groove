@@ -4728,7 +4728,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       };
 
       try {
-        const pat = daemon.credentials?.getKey?.('github-pat') || null;
+        const pat = daemon.credentials?.getKey?.('github') || daemon.credentials?.getKey?.('github-pat') || null;
 
         let installVersion;
         try {
@@ -4738,6 +4738,14 @@ Keep responses concise. Help them think, don't lecture them about the system the
         }
 
         broadcastInstallProgress('cloning', `Cloning network package ${installVersion}...`, 0);
+
+        // Pre-flight: verify git is installed before attempting clone.
+        const gitInstalled = await new Promise((resolveGit) => {
+          execFile('git', ['--version'], { timeout: 5000 }, (err) => resolveGit(!err));
+        });
+        if (!gitInstalled) {
+          return fail('Git is not installed. Install Git from https://git-scm.com and restart Groove.');
+        }
 
         const cloneArgs = ['clone', '--branch', installVersion, '--depth', '1', NETWORK_REPO_URL, installPath];
         const cloneEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
@@ -4768,7 +4776,18 @@ Keep responses concise. Help them think, don't lecture them about the system the
         });
 
         if (cloneCode.code !== 0) {
-          const hint = stripCredentials(cloneErr.trim().split('\n').slice(-1)[0] || 'git clone failed');
+          let hint;
+          const errMsg = cloneCode.err || '';
+          const lastLine = cloneErr.trim().split('\n').slice(-1)[0] || '';
+          if (errMsg.includes('ENOENT')) {
+            hint = 'Git is not installed. Install Git from https://git-scm.com and restart Groove.';
+          } else if (/Authentication failed|could not read Username/i.test(cloneErr)) {
+            hint = 'Authentication failed — run "groove set-key github-pat <token>" to set a GitHub PAT.';
+          } else if (/not found/i.test(cloneErr)) {
+            hint = `Repository or tag not found (${installVersion}). Check NETWORK_REPO_URL and tag.`;
+          } else {
+            hint = stripCredentials(lastLine || errMsg || 'git clone failed');
+          }
           return fail(`Clone failed: ${hint}`);
         }
 
@@ -4883,9 +4902,16 @@ Keep responses concise. Help them think, don't lecture them about the system the
   // surface that. Uses spawn with array args — no shell interpolation.
   function fetchLatestNetworkTag() {
     return new Promise((resolvePromise) => {
+      const tagEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
+      const tagPat = daemon.credentials?.getKey?.('github') || daemon.credentials?.getKey?.('github-pat') || null;
+      if (tagPat) {
+        tagEnv.GIT_CONFIG_COUNT = '1';
+        tagEnv.GIT_CONFIG_KEY_0 = 'http.extraHeader';
+        tagEnv.GIT_CONFIG_VALUE_0 = `Authorization: token ${tagPat}`;
+      }
       const proc = spawn('git', ['ls-remote', '--tags', NETWORK_REPO_URL], {
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        env: tagEnv,
       });
       let stdout = '';
       let stderr = '';

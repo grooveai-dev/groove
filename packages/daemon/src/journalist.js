@@ -884,6 +884,7 @@ export class Journalist {
       recentChain ? `## Rotation History\n\n${recentChain}\n` : '',
       agent.prompt ? `## Original Task\n\n${agent.prompt}\n` : '',
       ``,
+      agent.role === 'planner' ? 'CRITICAL: You are a PLANNING ONLY agent. Do NOT implement code. Route all work to your team via .groove/recommended-team.json.\n' : '',
       `Continue seamlessly — finish what was in progress and deliver the output. Do not announce rotation or greet the user.`,
     ].filter(Boolean).join('\n');
   }

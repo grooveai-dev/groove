@@ -308,6 +308,13 @@ function sanitizeFilename(name) {
   return String(name).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
 }
 
+export function wrapWithRoleReminder(role, message) {
+  if (role === 'planner' && !message.startsWith('ROLE REMINDER:')) {
+    return 'ROLE REMINDER: You are a PLANNING ONLY agent. Do NOT write code, edit files, or use Edit/Write/Bash tools. Route this task to your team by writing .groove/recommended-team.json.\n\nUser message: ' + message;
+  }
+  return message;
+}
+
 export class ProcessManager {
   constructor(daemon) {
     this.daemon = daemon;
@@ -568,7 +575,7 @@ Do NOT:
 - Analyze the codebase proactively
 
 DO: Introduce yourself in one sentence and ask the user what they would like you to work on. Then wait.`;
-        } else if (spawnConfig.prompt.startsWith('# Agent Handoff Brief')) {
+        } else if (spawnConfig.prompt.startsWith('# Handoff Brief')) {
           spawnConfig.prompt += '\n\n## Role Constraints\n\n' + rolePrompt.trim();
         } else {
           spawnConfig.prompt = rolePrompt + 'Task: ' + spawnConfig.prompt;
@@ -640,7 +647,7 @@ If response says \`"approved":false\`, adjust your approach based on the reason.
 For normal file edits within your scope, proceed without review.
 
 `;
-      if (spawnConfig.prompt.startsWith('# Agent Handoff Brief')) {
+      if (spawnConfig.prompt.startsWith('# Handoff Brief')) {
         spawnConfig.prompt += '\n\n' + pmPrompt.trim();
       } else {
         spawnConfig.prompt = pmPrompt + spawnConfig.prompt;
@@ -1728,9 +1735,10 @@ For normal file edits within your scope, proceed without review.
     const { loop } = handle;
     if (!loop.running) return false;
 
-    // Fire and forget — the loop processes the message asynchronously
-    // and emits output events that flow through the normal handler
-    loop.sendMessage(message).catch(() => {});
+    const agent = this.daemon.registry.get(agentId);
+    const wrapped = agent ? wrapWithRoleReminder(agent.role, message) : message;
+
+    loop.sendMessage(wrapped).catch(() => {});
     return true;
   }
 
@@ -1743,8 +1751,10 @@ For normal file edits within your scope, proceed without review.
   }
 
   queueMessage(agentId, message) {
-    this.pendingMessages.set(agentId, { message, timestamp: Date.now() });
-    this.daemon.broadcast({ type: 'agent:message_queued', agentId, message });
+    const agent = this.daemon.registry.get(agentId);
+    const wrapped = agent ? wrapWithRoleReminder(agent.role, message) : message;
+    this.pendingMessages.set(agentId, { message: wrapped, timestamp: Date.now() });
+    this.daemon.broadcast({ type: 'agent:message_queued', agentId, message: wrapped });
   }
 
   consumePendingMessage(agentId) {

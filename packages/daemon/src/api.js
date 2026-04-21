@@ -14,7 +14,7 @@ import { OllamaProvider } from './providers/ollama.js';
 import { ClaudeCodeProvider } from './providers/claude-code.js';
 import { supportsSignalFlag, compareSemver, parseSemver } from './providers/groove-network.js';
 import { validateAgentConfig } from './validate.js';
-import { ROLE_INTEGRATIONS } from './process.js';
+import { ROLE_INTEGRATIONS, wrapWithRoleReminder } from './process.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkgVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -1110,8 +1110,9 @@ export function createApi(app, daemon) {
       if (daemon.journalist) daemon.journalist.recordUserFeedback(agent, message.trim());
 
       // Agent loop path — send message directly to the running loop
+      const wrappedMessage = wrapWithRoleReminder(agent.role, message.trim());
       if (daemon.processes.hasAgentLoop(req.params.id)) {
-        const sent = await daemon.processes.sendMessage(req.params.id, message.trim());
+        const sent = await daemon.processes.sendMessage(req.params.id, wrappedMessage);
         if (sent) {
           daemon.audit.log('agent.chat', { id: req.params.id });
           return res.json({ id: agent.id, status: 'message_sent' });
@@ -1149,7 +1150,7 @@ export function createApi(app, daemon) {
       // Running CLI agent (no loop) — queue the message for delivery after
       // the current task completes instead of killing and respawning.
       if (daemon.processes.isRunning(req.params.id)) {
-        daemon.processes.queueMessage(req.params.id, message.trim());
+        daemon.processes.queueMessage(req.params.id, wrappedMessage);
         daemon.audit.log('agent.chat.queued', { id: req.params.id });
         return res.json({ id: agent.id, status: 'message_queued' });
       }
@@ -1161,8 +1162,8 @@ export function createApi(app, daemon) {
       const SESSION_RESUME_CEILING = 5_000_000;
       const resumed = !!agent.sessionId && (agent.tokensUsed || 0) < SESSION_RESUME_CEILING;
       const newAgent = resumed
-        ? await daemon.processes.resume(req.params.id, message.trim())
-        : await daemon.rotator.rotate(req.params.id, { additionalPrompt: message.trim() });
+        ? await daemon.processes.resume(req.params.id, wrappedMessage)
+        : await daemon.rotator.rotate(req.params.id, { additionalPrompt: wrappedMessage });
 
       daemon.audit.log('agent.instruct', { id: req.params.id, newId: newAgent.id, resumed });
       res.json(newAgent);

@@ -299,6 +299,10 @@ export class Rotator extends EventEmitter {
         brief = brief + '\n\n## User Instruction\n\n' + options.additionalPrompt;
       }
 
+      if (agent.role === 'planner' && !brief.includes('PLANNING ONLY')) {
+        brief = 'CRITICAL: You are a PLANNING ONLY agent. Do NOT implement code. Route all work to your team via .groove/recommended-team.json.\n\n' + brief;
+      }
+
       // Persist to Layer 7 handoff chain so future rotations have causal continuity
       if (this.daemon.memory) {
         this.daemon.memory.appendHandoffBrief(agent.role, {

@@ -216,7 +216,7 @@ Append-only, `0600` permissions, auto-rotates at 5MB. When team auth is added, e
 
 | Provider | Auth | Models |
 |----------|------|--------|
-| **Claude Code** | Subscription | Opus 4.7, Opus 4.6, Sonnet 4.6, Haiku 4.5 |
+| **Claude Code** | Subscription | Opus 4.6, Sonnet 4.6, Haiku 4.5 |
 | **Codex** | API Key | o3, o4-mini, GPT-4.1, GPT-4.1 Mini, GPT-4.1 Nano |
 | **Gemini CLI** | API Key | 3.1 Pro, 3 Flash, 3.1 Flash Lite, 2.5 Pro, 2.5 Flash |
 | **Ollama** | Local | Any |

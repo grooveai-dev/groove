@@ -19,7 +19,7 @@ const PROVIDERS = [
     id: 'claude-code',
     name: 'Claude Code',
     subtitle: 'by Anthropic',
-    models: ['Opus 4.7', 'Opus 4.6', 'Sonnet 4.6', 'Haiku 4.5'],
+    models: ['Opus 4.6', 'Sonnet 4.6', 'Haiku 4.5'],
     authType: 'Subscription or API key',
     authModes: ['subscription', 'apikey'],
     recommended: true,

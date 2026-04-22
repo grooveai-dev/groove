@@ -4375,6 +4375,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
             prefill_ms: entry.prefill_ms, logits_deser_ms: entry.logits_deser_ms,
             sample_ms: entry.sample_ms, decode_ms: entry.decode_ms,
             tps: entry.tps, ttft_ms: entry.ttft_ms, is_prefill: entry.is_prefill,
+            tokens_generated: entry.tokens_generated,
             stages: Array.isArray(entry.stages) ? entry.stages : [],
           };
           daemon.networkNode.lastTokenTiming = timing;
@@ -4462,6 +4463,44 @@ Keep responses concise. Help them think, don't lecture them about the system the
         .sort((a, b) => b.mtime - a.mtime);
       res.json(files);
     } catch { res.json([]); }
+  });
+
+  app.get('/api/network/traces/live', networkGate, (req, res) => {
+    const tracesDir = resolve(homedir(), '.groove', 'traces');
+    if (!existsSync(tracesDir)) {
+      return res.json({ lines: [], nextOffset: 0, filename: null, active: false });
+    }
+    try {
+      const files = readdirSync(tracesDir)
+        .filter((f) => f.endsWith('.jsonl'))
+        .map((f) => {
+          const st = statSync(resolve(tracesDir, f));
+          return { filename: f, mtime: st.mtimeMs };
+        })
+        .sort((a, b) => b.mtime - a.mtime);
+      if (files.length === 0) {
+        return res.json({ lines: [], nextOffset: 0, filename: null, active: false });
+      }
+      const newest = files[0];
+      const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+      const filePath = resolve(tracesDir, newest.filename);
+      const raw = readFileSync(filePath, 'utf8');
+      const allLines = raw.split('\n').filter(Boolean);
+      const sliced = allLines.slice(offset);
+      const parsed = [];
+      for (const line of sliced) {
+        try { parsed.push(JSON.parse(line)); } catch { /* skip malformed */ }
+      }
+      const active = !!(daemon.networkNode?.active && (daemon.networkNode.sessions || 0) > 0);
+      res.json({
+        lines: parsed,
+        nextOffset: offset + sliced.length,
+        filename: newest.filename,
+        active,
+      });
+    } catch {
+      res.json({ lines: [], nextOffset: 0, filename: null, active: false });
+    }
   });
 
   app.get('/api/network/traces/:filename', networkGate, (req, res) => {

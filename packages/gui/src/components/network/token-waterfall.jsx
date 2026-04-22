@@ -1,7 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useRef, useEffect, useState, useCallback, useMemo, memo } from 'react';
+import { useMemo, memo } from 'react';
 import { useGrooveStore } from '../../stores/groove';
-import { HEX, hexAlpha } from '../../lib/theme-hex';
+import { HEX } from '../../lib/theme-hex';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/badge';
 
@@ -59,20 +59,38 @@ export const TokenWaterfall = memo(function TokenWaterfall() {
 
       {stages.map((stage, i) => {
         const rtt = stage.rtt_ms || 1;
-        let offset = 0;
+        const tel = stage.node_telemetry;
+        const gpuModel = tel?.gpu_model;
+        const device = tel?.device;
+
         return (
           <div key={i} className="flex items-center gap-2 px-3 py-1">
-            <div className="w-[72px] flex-shrink-0 flex items-center gap-1.5">
-              <span className="text-2xs font-mono text-text-2 truncate">{shortAddr(stage.node)}</span>
-              <Badge variant={stage.via === 'p2p' ? 'success' : 'warning'} className="text-2xs px-1 py-0 leading-tight">
-                {stage.via || '?'}
-              </Badge>
+            <div className="w-[110px] flex-shrink-0 flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-2xs font-mono text-text-2 truncate">{shortAddr(stage.node)}</span>
+                <Badge variant={stage.via === 'p2p' ? 'success' : 'warning'} className="text-2xs px-1 py-0 leading-tight">
+                  {stage.via || '?'}
+                </Badge>
+              </div>
+              {gpuModel && (
+                <div className="flex items-center gap-1">
+                  {device && (
+                    <span className={cn(
+                      'text-2xs font-mono px-1 py-0 rounded leading-tight',
+                      device === 'cuda' ? 'bg-info/20 text-info' : 'bg-purple/20 text-purple',
+                    )}>
+                      {device}
+                    </span>
+                  )}
+                  <span className="text-2xs font-mono text-text-4 truncate">{gpuModel}</span>
+                </div>
+              )}
             </div>
             <div className="flex-1 min-w-0 h-4 bg-surface-2 rounded-sm overflow-hidden relative flex">
               {phases.map((p) => {
                 const ms = stage[p] || 0;
                 const pct = (ms / maxRtt) * 100;
-                const seg = (
+                return (
                   <div
                     key={p}
                     className="h-full flex-shrink-0 transition-all"
@@ -80,8 +98,6 @@ export const TokenWaterfall = memo(function TokenWaterfall() {
                     title={`${PHASE_LABELS[p]}: ${ms.toFixed(1)}ms`}
                   />
                 );
-                offset += ms;
-                return seg;
               })}
             </div>
             <span className="text-2xs font-mono text-text-3 tabular-nums w-[52px] text-right flex-shrink-0">

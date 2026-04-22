@@ -110,6 +110,7 @@ export const useGrooveStore = create((set, get) => ({
   networkBenchmarks: [],
   networkTraces: [],
   networkPerfSnapshots: [],
+  networkNodeTelemetry: {},
   networkWallet: { connected: false, address: null, balance: '0.00', token: 'GROOVE', chain: 'base-l2' },
   networkEarnings: { today: 0, thisWeek: 0, allTime: 0, history: [] },
 
@@ -908,10 +909,22 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'network:token:timing': {
           const { __proto__: _a, constructor: _b, prototype: _c, ...td } = msg.data || {};
-          set((s) => ({
+          const updates = {
             networkTokenTiming: td,
-            networkPerfSnapshots: [...s.networkPerfSnapshots, { t: Date.now(), tps: td.tps || 0 }].slice(-100),
-          }));
+            networkPerfSnapshots: [...get().networkPerfSnapshots, { t: Date.now(), tps: td.tps || 0 }].slice(-100),
+          };
+          if (Array.isArray(td.stages)) {
+            const telMap = { ...get().networkNodeTelemetry };
+            const unsafe = new Set(['__proto__', 'constructor', 'prototype']);
+            for (const stage of td.stages) {
+              const nid = stage.node_telemetry?.node_id;
+              if (nid && typeof nid === 'string' && !unsafe.has(nid)) {
+                telMap[nid] = { ...stage.node_telemetry, forward_ms: stage.forward_ms, updatedAt: Date.now() };
+              }
+            }
+            updates.networkNodeTelemetry = telMap;
+          }
+          set(updates);
           break;
         }
 
@@ -2317,6 +2330,12 @@ export const useGrooveStore = create((set, get) => ({
   async fetchNetworkTrace(filename) {
     try {
       return await api.get(`/network/traces/${encodeURIComponent(filename)}`);
+    } catch { return null; }
+  },
+
+  async fetchLiveTrace(offset = 0) {
+    try {
+      return await api.get(`/network/traces/live?offset=${offset}`);
     } catch { return null; }
   },
 

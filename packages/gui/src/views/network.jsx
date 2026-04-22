@@ -17,6 +17,7 @@ import { NodeCard } from '../components/network/node-card';
 import { EarningsCard } from '../components/network/earnings-card';
 import { FleetTable } from '../components/network/fleet-table';
 import { WalletView } from '../components/network/wallet-view';
+import { PerformanceDashboard } from '../components/network/performance-dashboard';
 import { HEX, hexAlpha } from '../lib/theme-hex';
 import { Globe, Download, Check, AlertCircle, Loader2, Trash2, ArrowUpCircle, Zap } from 'lucide-react';
 
@@ -483,6 +484,7 @@ export default function NetworkView() {
         <TabsList className="bg-surface-0 border-b border-border-subtle px-4 flex-shrink-0">
           <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
           <TabsTrigger value="fleet" className="text-xs">Fleet</TabsTrigger>
+          <TabsTrigger value="performance" className="text-xs flex items-center gap-1"><Zap size={10} />Performance</TabsTrigger>
           <TabsTrigger value="wallet" className="text-xs">Wallet</TabsTrigger>
         </TabsList>
 
@@ -492,6 +494,10 @@ export default function NetworkView() {
 
         <TabsContent value="fleet" className="flex-1 min-h-0 overflow-hidden bg-surface-1">
           <FleetTable />
+        </TabsContent>
+
+        <TabsContent value="performance" className="flex-1 min-h-0 overflow-hidden bg-surface-1">
+          <PerformanceDashboard active={activeTab === 'performance'} />
         </TabsContent>
 
         <TabsContent value="wallet" className="flex-1 min-h-0 overflow-hidden">

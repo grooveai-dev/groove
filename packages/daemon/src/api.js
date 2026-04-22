@@ -4299,7 +4299,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
       hardware: getLocalHardware(),
       startedAt: Date.now(),
       events: [],
+      lastTokenTiming: null,
     };
+    if (!daemon.networkBenchmarks) daemon.networkBenchmarks = [];
 
     pushNodeEvent('starting', { pid: proc.pid, signal, device });
     broadcastNodeStatus();
@@ -4367,6 +4369,33 @@ Keep responses concise. Help them think, don't lecture them about the system the
         if (entry.capabilities || entry.hardware) {
           daemon.networkNode.hardware = normalizeHardware(entry.capabilities || entry.hardware); changed = true;
         }
+        if (entry.type === 'token') {
+          const timing = {
+            token_ms: entry.token_ms, pipeline_ms: entry.pipeline_ms,
+            prefill_ms: entry.prefill_ms, logits_deser_ms: entry.logits_deser_ms,
+            sample_ms: entry.sample_ms, decode_ms: entry.decode_ms,
+            tps: entry.tps, ttft_ms: entry.ttft_ms, is_prefill: entry.is_prefill,
+            stages: Array.isArray(entry.stages) ? entry.stages : [],
+          };
+          daemon.networkNode.lastTokenTiming = timing;
+          daemon.broadcast({ type: 'network:token:timing', data: timing });
+        }
+        if (entry.type === 'timing') {
+          const summary = {
+            ttft_ms: entry.ttft_ms, tps: entry.tps,
+            tokens_generated: entry.tokens_generated,
+            total_network_ms: entry.total_network_ms,
+            total_compute_ms: entry.total_compute_ms,
+            p2p_sends: entry.p2p_sends, relay_sends: entry.relay_sends,
+            stage_0_avg_ms: entry.stage_0_avg_ms, stage_0_count: entry.stage_0_count,
+            stage_1_avg_ms: entry.stage_1_avg_ms, stage_1_count: entry.stage_1_count,
+            t: Date.now(),
+          };
+          if (!daemon.networkBenchmarks) daemon.networkBenchmarks = [];
+          daemon.networkBenchmarks.push(summary);
+          if (daemon.networkBenchmarks.length > 100) daemon.networkBenchmarks.shift();
+          daemon.broadcast({ type: 'network:timing:summary', data: summary });
+        }
         pushNodeEvent(msg || 'log', entry);
         if (changed) broadcastNodeStatus();
       }
@@ -4407,6 +4436,58 @@ Keep responses concise. Help them think, don't lecture them about the system the
     broadcastNodeStatus();
     daemon.audit.log('network.node.stop', { pid: node.pid });
     res.json({ stopping: true });
+  });
+
+  app.get('/api/network/benchmarks', networkGate, (req, res) => {
+    res.json(daemon.networkBenchmarks || []);
+  });
+
+  app.get('/api/network/timing', networkGate, (req, res) => {
+    res.json({
+      current: daemon.networkNode?.lastTokenTiming || null,
+      benchmarkCount: (daemon.networkBenchmarks || []).length,
+    });
+  });
+
+  app.get('/api/network/traces', networkGate, (req, res) => {
+    const tracesDir = resolve(homedir(), '.groove', 'traces');
+    if (!existsSync(tracesDir)) return res.json([]);
+    try {
+      const files = readdirSync(tracesDir)
+        .filter((f) => f.endsWith('.jsonl'))
+        .map((f) => {
+          const st = statSync(resolve(tracesDir, f));
+          return { filename: f, size: st.size, mtime: st.mtimeMs };
+        })
+        .sort((a, b) => b.mtime - a.mtime);
+      res.json(files);
+    } catch { res.json([]); }
+  });
+
+  app.get('/api/network/traces/:filename', networkGate, (req, res) => {
+    const { filename } = req.params;
+    if (!filename || /[/\\]/.test(filename) || !filename.endsWith('.jsonl')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    const tracesDir = resolve(homedir(), '.groove', 'traces');
+    const filePath = resolve(tracesDir, filename);
+    if (!filePath.startsWith(tracesDir + sep)) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    if (!existsSync(filePath)) {
+      return res.status(404).json({ error: 'Trace file not found' });
+    }
+    try {
+      const raw = readFileSync(filePath, 'utf8');
+      const lines = raw.split('\n').filter(Boolean).slice(0, 5000);
+      const entries = [];
+      for (const line of lines) {
+        try { entries.push(JSON.parse(line)); } catch { /* skip malformed lines */ }
+      }
+      res.json(entries);
+    } catch (err) {
+      res.status(500).json({ error: `Failed to read trace: ${err.message}` });
+    }
   });
 
   function isAllowedSignalHost(host) {

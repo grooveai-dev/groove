@@ -4,7 +4,7 @@ import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { HEX } from '../../lib/theme-hex';
 import { Tooltip } from '../ui/tooltip';
-import { HelpCircle } from 'lucide-react';
+import { HelpCircle, Zap } from 'lucide-react';
 
 function fmtMbToGb(mb) {
   if (!mb) return '0';
@@ -60,6 +60,8 @@ export const ComputeHeader = memo(function ComputeHeader() {
   const compute = useGrooveStore((s) => s.networkCompute);
   const status = useGrooveStore((s) => s.networkStatus);
   const snapshots = useGrooveStore((s) => s.networkSnapshots);
+  const tokenTiming = useGrooveStore((s) => s.networkTokenTiming);
+  const perfSnaps = useGrooveStore((s) => s.networkPerfSnapshots);
   const nodes = status.nodes || [];
 
   const activeNodes = nodes.filter((n) => n.status === 'active');
@@ -102,6 +104,15 @@ export const ComputeHeader = memo(function ComputeHeader() {
       label: 'GPU UTIL', value: avgGpuUtil > 0 ? `${Math.round(avgGpuUtil)}%` : '--',
       color: gpuColor, hint: 'Average GPU utilization — green <50%, yellow 50-80%, red >80%',
     },
+    {
+      label: 'TPS', value: tokenTiming?.tps != null ? `${tokenTiming.tps.toFixed(1)} t/s` : '--',
+      color: HEX.accent, hint: 'Live tokens per second during inference',
+      sparkData: perfSnaps.length >= 2 ? perfSnaps.map((s) => ({ v: s.tps ?? 0 })) : undefined,
+    },
+    ...(tokenTiming?.ttft_ms != null ? [{
+      label: 'TTFT', value: `${(tokenTiming.ttft_ms / 1000).toFixed(2)}s`,
+      color: HEX.info, hint: 'Time to first token',
+    }] : []),
   ];
 
   return (

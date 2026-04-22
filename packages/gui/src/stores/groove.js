@@ -106,6 +106,10 @@ export const useGrooveStore = create((set, get) => ({
   networkUpdateProgress: { updating: false, step: null, message: null, percent: 0, error: null },
   networkCompute: { totalRamMb: 0, totalVramMb: 0, totalCpuCores: 0, totalBandwidthMbps: 0, activeNodes: 0, totalNodes: 0, avgLoad: 0 },
   networkSnapshots: [],
+  networkTokenTiming: null,
+  networkBenchmarks: [],
+  networkTraces: [],
+  networkPerfSnapshots: [],
   networkWallet: { connected: false, address: null, balance: '0.00', token: 'GROOVE', chain: 'base-l2' },
   networkEarnings: { today: 0, thisWeek: 0, allTime: 0, history: [] },
 
@@ -899,6 +903,21 @@ export const useGrooveStore = create((set, get) => ({
               return { conversationMessages: msgs, sendingMessage: isActive ? false : s.sendingMessage, streamingConversationId: isActive ? null : s.streamingConversationId };
             });
           }
+          break;
+        }
+
+        case 'network:token:timing': {
+          const { __proto__: _a, constructor: _b, prototype: _c, ...td } = msg.data || {};
+          set((s) => ({
+            networkTokenTiming: td,
+            networkPerfSnapshots: [...s.networkPerfSnapshots, { t: Date.now(), tps: td.tps || 0 }].slice(-100),
+          }));
+          break;
+        }
+
+        case 'network:timing:summary': {
+          const { __proto__: _a, constructor: _b, prototype: _c, ...sd } = msg.data || {};
+          set((s) => ({ networkBenchmarks: [...s.networkBenchmarks, sd].slice(-100) }));
           break;
         }
       }
@@ -2277,6 +2296,28 @@ export const useGrooveStore = create((set, get) => ({
   },
   async fetchNetworkEarnings() {
     return get().networkEarnings;
+  },
+
+  async fetchNetworkBenchmarks() {
+    try {
+      const data = await api.get('/network/benchmarks');
+      if (Array.isArray(data)) set({ networkBenchmarks: data.slice(-100) });
+      return data;
+    } catch { return null; }
+  },
+
+  async fetchNetworkTraces() {
+    try {
+      const data = await api.get('/network/traces');
+      if (Array.isArray(data)) set({ networkTraces: data });
+      return data;
+    } catch { return null; }
+  },
+
+  async fetchNetworkTrace(filename) {
+    try {
+      return await api.get(`/network/traces/${encodeURIComponent(filename)}`);
+    } catch { return null; }
   },
 
   async renameFile(oldPath, newPath) {

@@ -12,6 +12,7 @@ function shortAddr(addr) {
 
 export const ActivityChart = memo(function ActivityChart() {
   const snapshots = useGrooveStore((s) => s.networkSnapshots);
+  const perfSnapshots = useGrooveStore((s) => s.networkPerfSnapshots);
   const nodes = useGrooveStore((s) => s.networkStatus.nodes || []);
   const ownNodeId = useGrooveStore((s) => s.networkNode.nodeId);
 
@@ -19,6 +20,7 @@ export const ActivityChart = memo(function ActivityChart() {
   const canvasRef = useRef(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [hover, setHover] = useState(null);
+  const [mode, setMode] = useState('sessions');
 
   const { width, height } = size;
   const pad = { top: 28, right: 12, bottom: 8, left: 12 };
@@ -26,9 +28,13 @@ export const ActivityChart = memo(function ActivityChart() {
   const h = Math.max(height - pad.top - pad.bottom, 0);
 
   const chartData = useMemo(() => {
+    if (mode === 'performance') {
+      if (!perfSnapshots || perfSnapshots.length < 2) return [];
+      return perfSnapshots;
+    }
     if (!snapshots || snapshots.length < 2) return [];
     return snapshots;
-  }, [snapshots]);
+  }, [snapshots, perfSnapshots, mode]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -64,146 +70,224 @@ export const ActivityChart = memo(function ActivityChart() {
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, width, height);
 
-    const globalSessions = chartData.map((d) => d.globalSessions);
-    const mySessions = chartData.map((d) => d.mySessions);
-    const maxVal = Math.max(...globalSessions, ...mySessions, 1);
+    const isPerfMode = mode === 'performance';
 
-    const xAt = (i) => pad.left + (i / Math.max(chartData.length - 1, 1)) * w;
-    const yAt = (v) => pad.top + h - (v / maxVal) * h;
+    if (isPerfMode) {
+      // Performance mode: plot TPS
+      const tpsVals = chartData.map((d) => d.tps || 0);
+      const maxVal = Math.max(...tpsVals, 1);
 
-    // Horizontal grid lines
-    ctx.setLineDash([2, 4]);
-    ctx.strokeStyle = hexAlpha(HEX.text4, 0.2);
-    ctx.lineWidth = 1;
-    for (let i = 1; i <= 3; i++) {
-      const y = pad.top + (h / 4) * i;
-      ctx.beginPath();
-      ctx.moveTo(pad.left, y);
-      ctx.lineTo(pad.left + w, y);
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
+      const xAt = (i) => pad.left + (i / Math.max(chartData.length - 1, 1)) * w;
+      const yAt = (v) => pad.top + h - (v / maxVal) * h;
 
-    // Y-axis labels
-    ctx.font = "9px 'JetBrains Mono Variable', monospace";
-    ctx.textAlign = 'left';
-    ctx.fillStyle = hexAlpha(HEX.text3, 0.5);
-    ctx.fillText(String(maxVal), pad.left + 4, pad.top + 10);
-    ctx.fillText(String(Math.round(maxVal / 2)), pad.left + 4, pad.top + h / 2 + 4);
-
-    // Network line — gradient fill
-    ctx.beginPath();
-    ctx.moveTo(pad.left, pad.top + h);
-    for (let i = 0; i < chartData.length; i++) {
-      ctx.lineTo(xAt(i), yAt(globalSessions[i]));
-    }
-    ctx.lineTo(xAt(chartData.length - 1), pad.top + h);
-    ctx.closePath();
-    const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + h);
-    grad.addColorStop(0, hexAlpha(HEX.purple, 0.2));
-    grad.addColorStop(0.7, hexAlpha(HEX.purple, 0.04));
-    grad.addColorStop(1, hexAlpha(HEX.purple, 0));
-    ctx.fillStyle = grad;
-    ctx.fill();
-
-    // Network line — stroke
-    ctx.beginPath();
-    ctx.strokeStyle = HEX.purple;
-    ctx.lineWidth = 1.5;
-    ctx.lineJoin = 'round';
-    for (let i = 0; i < chartData.length; i++) {
-      const x = xAt(i);
-      const y = yAt(globalSessions[i]);
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-
-    // Your Node line — stroke only
-    ctx.beginPath();
-    ctx.strokeStyle = HEX.accent;
-    ctx.lineWidth = 1.5;
-    ctx.lineJoin = 'round';
-    for (let i = 0; i < chartData.length; i++) {
-      const x = xAt(i);
-      const y = yAt(mySessions[i]);
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-
-    // Inline legend (top-right)
-    ctx.font = "9px 'Inter Variable', sans-serif";
-    ctx.textAlign = 'right';
-    let rx = width - pad.right - 4;
-    const ly = 14;
-
-    ctx.fillStyle = HEX.accent;
-    ctx.fillText('Your Node', rx, ly);
-    rx -= ctx.measureText('Your Node').width + 4;
-    ctx.beginPath(); ctx.arc(rx, ly - 3, 2.5, 0, Math.PI * 2); ctx.fill();
-    rx -= 14;
-
-    ctx.fillStyle = HEX.purple;
-    ctx.fillText('Network', rx, ly);
-    rx -= ctx.measureText('Network').width + 4;
-    ctx.beginPath(); ctx.arc(rx, ly - 3, 2.5, 0, Math.PI * 2); ctx.fill();
-
-    // Hover
-    if (hover && hover.index >= 0 && hover.index < chartData.length) {
-      const hx = hover.x;
-      const d = chartData[hover.index];
-
-      // Crosshair
-      ctx.beginPath();
-      ctx.moveTo(hx, pad.top);
-      ctx.lineTo(hx, pad.top + h);
-      ctx.strokeStyle = hexAlpha(HEX.text1, 0.15);
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      // Dots
-      ctx.beginPath(); ctx.arc(hx, yAt(d.globalSessions), 3, 0, Math.PI * 2);
-      ctx.fillStyle = HEX.purple; ctx.fill();
-      ctx.beginPath(); ctx.arc(hx, yAt(d.mySessions), 3, 0, Math.PI * 2);
-      ctx.fillStyle = HEX.accent; ctx.fill();
-
-      // Tooltip
-      const lines = [
-        { label: 'Network', value: String(d.globalSessions), color: HEX.purple },
-        { label: 'Your Node', value: String(d.mySessions), color: HEX.accent },
-        { label: 'Nodes', value: String(d.nodeCount), color: HEX.text2 },
-      ];
-      const tooltipW = 104;
-      const tooltipH = lines.length * 16 + 12;
-      let tx = hx + 12;
-      if (tx + tooltipW > width - 8) tx = hx - tooltipW - 12;
-      const ty = Math.max(pad.top, yAt(d.globalSessions) - tooltipH / 2);
-
-      ctx.fillStyle = hexAlpha(HEX.surface0, 0.92);
-      ctx.beginPath(); ctx.roundRect(tx, ty, tooltipW, tooltipH, 4); ctx.fill();
+      // Grid
+      ctx.setLineDash([2, 4]);
       ctx.strokeStyle = hexAlpha(HEX.text4, 0.2);
-      ctx.lineWidth = 1; ctx.stroke();
+      ctx.lineWidth = 1;
+      for (let gi = 1; gi <= 3; gi++) {
+        const gy = pad.top + (h / 4) * gi;
+        ctx.beginPath(); ctx.moveTo(pad.left, gy); ctx.lineTo(pad.left + w, gy); ctx.stroke();
+      }
+      ctx.setLineDash([]);
 
+      ctx.font = "9px 'JetBrains Mono Variable', monospace";
       ctx.textAlign = 'left';
-      lines.forEach((line, i) => {
-        const rowY = ty + 14 + i * 16;
-        ctx.beginPath(); ctx.arc(tx + 8, rowY - 3, 2, 0, Math.PI * 2);
-        ctx.fillStyle = line.color; ctx.fill();
-        ctx.font = "8px 'Inter Variable', sans-serif";
-        ctx.fillStyle = HEX.text3; ctx.fillText(line.label, tx + 14, rowY);
+      ctx.fillStyle = hexAlpha(HEX.text3, 0.5);
+      ctx.fillText(`${maxVal.toFixed(1)} t/s`, pad.left + 4, pad.top + 10);
+
+      // Fill
+      ctx.beginPath();
+      ctx.moveTo(pad.left, pad.top + h);
+      for (let i = 0; i < chartData.length; i++) ctx.lineTo(xAt(i), yAt(tpsVals[i]));
+      ctx.lineTo(xAt(chartData.length - 1), pad.top + h);
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + h);
+      grad.addColorStop(0, hexAlpha(HEX.accent, 0.2));
+      grad.addColorStop(0.7, hexAlpha(HEX.accent, 0.04));
+      grad.addColorStop(1, hexAlpha(HEX.accent, 0));
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Line
+      ctx.beginPath();
+      ctx.strokeStyle = HEX.accent;
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = 'round';
+      for (let i = 0; i < chartData.length; i++) {
+        i === 0 ? ctx.moveTo(xAt(i), yAt(tpsVals[i])) : ctx.lineTo(xAt(i), yAt(tpsVals[i]));
+      }
+      ctx.stroke();
+
+      // Legend
+      ctx.font = "9px 'Inter Variable', sans-serif";
+      ctx.textAlign = 'right';
+      ctx.fillStyle = HEX.accent;
+      ctx.fillText('TPS', width - pad.right - 4, 14);
+
+      // Hover
+      if (hover && hover.index >= 0 && hover.index < chartData.length) {
+        const hx = hover.x;
+        const d = chartData[hover.index];
+        ctx.beginPath(); ctx.moveTo(hx, pad.top); ctx.lineTo(hx, pad.top + h);
+        ctx.strokeStyle = hexAlpha(HEX.text1, 0.15); ctx.lineWidth = 1; ctx.stroke();
+        ctx.beginPath(); ctx.arc(hx, yAt(d.tps || 0), 3, 0, Math.PI * 2);
+        ctx.fillStyle = HEX.accent; ctx.fill();
+
+        const tooltipW = 90;
+        const tooltipH = 28;
+        let tx = hx + 12;
+        if (tx + tooltipW > width - 8) tx = hx - tooltipW - 12;
+        const ty = Math.max(pad.top, yAt(d.tps || 0) - tooltipH / 2);
+        ctx.fillStyle = hexAlpha(HEX.surface0, 0.92);
+        ctx.beginPath(); ctx.roundRect(tx, ty, tooltipW, tooltipH, 4); ctx.fill();
+        ctx.strokeStyle = hexAlpha(HEX.text4, 0.2); ctx.lineWidth = 1; ctx.stroke();
         ctx.font = "9px 'JetBrains Mono Variable', monospace";
-        ctx.fillStyle = HEX.text0; ctx.textAlign = 'right';
-        ctx.fillText(line.value, tx + tooltipW - 8, rowY);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = HEX.text0;
+        ctx.fillText(`${(d.tps || 0).toFixed(1)} t/s`, tx + tooltipW / 2, ty + 17);
+      }
+    } else {
+      // Sessions mode (original)
+      const globalSessions = chartData.map((d) => d.globalSessions);
+      const mySessions = chartData.map((d) => d.mySessions);
+      const maxVal = Math.max(...globalSessions, ...mySessions, 1);
+
+      const xAt = (i) => pad.left + (i / Math.max(chartData.length - 1, 1)) * w;
+      const yAt = (v) => pad.top + h - (v / maxVal) * h;
+
+      ctx.setLineDash([2, 4]);
+      ctx.strokeStyle = hexAlpha(HEX.text4, 0.2);
+      ctx.lineWidth = 1;
+      for (let gi = 1; gi <= 3; gi++) {
+        const gy = pad.top + (h / 4) * gi;
+        ctx.beginPath(); ctx.moveTo(pad.left, gy); ctx.lineTo(pad.left + w, gy); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      ctx.font = "9px 'JetBrains Mono Variable', monospace";
+      ctx.textAlign = 'left';
+      ctx.fillStyle = hexAlpha(HEX.text3, 0.5);
+      ctx.fillText(String(maxVal), pad.left + 4, pad.top + 10);
+      ctx.fillText(String(Math.round(maxVal / 2)), pad.left + 4, pad.top + h / 2 + 4);
+
+      // Network line — gradient fill
+      ctx.beginPath();
+      ctx.moveTo(pad.left, pad.top + h);
+      for (let i = 0; i < chartData.length; i++) ctx.lineTo(xAt(i), yAt(globalSessions[i]));
+      ctx.lineTo(xAt(chartData.length - 1), pad.top + h);
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + h);
+      grad.addColorStop(0, hexAlpha(HEX.purple, 0.2));
+      grad.addColorStop(0.7, hexAlpha(HEX.purple, 0.04));
+      grad.addColorStop(1, hexAlpha(HEX.purple, 0));
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.strokeStyle = HEX.purple;
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = 'round';
+      for (let i = 0; i < chartData.length; i++) {
+        const x = xAt(i); const y = yAt(globalSessions[i]);
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.strokeStyle = HEX.accent;
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = 'round';
+      for (let i = 0; i < chartData.length; i++) {
+        const x = xAt(i); const y = yAt(mySessions[i]);
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Legend
+      ctx.font = "9px 'Inter Variable', sans-serif";
+      ctx.textAlign = 'right';
+      let rx = width - pad.right - 4;
+      const ly = 14;
+      ctx.fillStyle = HEX.accent;
+      ctx.fillText('Your Node', rx, ly);
+      rx -= ctx.measureText('Your Node').width + 4;
+      ctx.beginPath(); ctx.arc(rx, ly - 3, 2.5, 0, Math.PI * 2); ctx.fill();
+      rx -= 14;
+      ctx.fillStyle = HEX.purple;
+      ctx.fillText('Network', rx, ly);
+      rx -= ctx.measureText('Network').width + 4;
+      ctx.beginPath(); ctx.arc(rx, ly - 3, 2.5, 0, Math.PI * 2); ctx.fill();
+
+      // Hover
+      if (hover && hover.index >= 0 && hover.index < chartData.length) {
+        const hx = hover.x;
+        const d = chartData[hover.index];
+        ctx.beginPath(); ctx.moveTo(hx, pad.top); ctx.lineTo(hx, pad.top + h);
+        ctx.strokeStyle = hexAlpha(HEX.text1, 0.15); ctx.lineWidth = 1; ctx.stroke();
+        ctx.beginPath(); ctx.arc(hx, yAt(d.globalSessions), 3, 0, Math.PI * 2);
+        ctx.fillStyle = HEX.purple; ctx.fill();
+        ctx.beginPath(); ctx.arc(hx, yAt(d.mySessions), 3, 0, Math.PI * 2);
+        ctx.fillStyle = HEX.accent; ctx.fill();
+
+        const lines = [
+          { label: 'Network', value: String(d.globalSessions), color: HEX.purple },
+          { label: 'Your Node', value: String(d.mySessions), color: HEX.accent },
+          { label: 'Nodes', value: String(d.nodeCount), color: HEX.text2 },
+        ];
+        const tooltipW = 104;
+        const tooltipH = lines.length * 16 + 12;
+        let tx = hx + 12;
+        if (tx + tooltipW > width - 8) tx = hx - tooltipW - 12;
+        const ty = Math.max(pad.top, yAt(d.globalSessions) - tooltipH / 2);
+
+        ctx.fillStyle = hexAlpha(HEX.surface0, 0.92);
+        ctx.beginPath(); ctx.roundRect(tx, ty, tooltipW, tooltipH, 4); ctx.fill();
+        ctx.strokeStyle = hexAlpha(HEX.text4, 0.2); ctx.lineWidth = 1; ctx.stroke();
+
         ctx.textAlign = 'left';
-      });
+        lines.forEach((line, li) => {
+          const rowY = ty + 14 + li * 16;
+          ctx.beginPath(); ctx.arc(tx + 8, rowY - 3, 2, 0, Math.PI * 2);
+          ctx.fillStyle = line.color; ctx.fill();
+          ctx.font = "8px 'Inter Variable', sans-serif";
+          ctx.fillStyle = HEX.text3; ctx.fillText(line.label, tx + 14, rowY);
+          ctx.font = "9px 'JetBrains Mono Variable', monospace";
+          ctx.fillStyle = HEX.text0; ctx.textAlign = 'right';
+          ctx.fillText(line.value, tx + tooltipW - 8, rowY);
+          ctx.textAlign = 'left';
+        });
+      }
     }
-  }, [chartData, width, height, hover, w, h, pad]);
+  }, [chartData, width, height, hover, w, h, pad, mode]);
 
   const activeNodes = nodes.filter((n) => n.status === 'active');
 
   return (
     <div className="flex flex-col h-full">
       <div className="px-3 pt-2.5 pb-1 flex-shrink-0 flex items-center justify-between">
-        <span className="text-2xs font-mono text-text-3 uppercase tracking-widest">Network Activity</span>
+        <div className="flex items-center gap-2">
+          <span className="text-2xs font-mono text-text-3 uppercase tracking-widest">Network Activity</span>
+          <div className="flex items-center bg-surface-2 rounded-full p-0.5">
+            <button
+              onClick={() => setMode('sessions')}
+              className={cn(
+                'px-2 py-0.5 text-2xs font-mono rounded-full transition-colors',
+                mode === 'sessions' ? 'bg-surface-4 text-text-0' : 'text-text-3 hover:text-text-1',
+              )}
+            >
+              Sessions
+            </button>
+            <button
+              onClick={() => setMode('performance')}
+              className={cn(
+                'px-2 py-0.5 text-2xs font-mono rounded-full transition-colors',
+                mode === 'performance' ? 'bg-surface-4 text-text-0' : 'text-text-3 hover:text-text-1',
+              )}
+            >
+              Perf
+            </button>
+          </div>
+        </div>
         <span className="text-2xs font-mono text-text-3 tabular-nums">{activeNodes.length} nodes</span>
       </div>
 

@@ -734,6 +734,8 @@ export const useGrooveStore = create((set, get) => ({
             nodeCount: wsActive.length,
             avgLoad: wsActive.length > 0 ? wsActive.reduce((s, n) => s + (n.load || 0), 0) / wsActive.length : 0,
             myLoad: wsOwn?.load ?? 0,
+            totalVramMb: wsNodes.reduce((s, n) => s + (n.vram_mb || 0), 0),
+            totalRamMb: wsNodes.reduce((s, n) => s + (n.ram_mb || 0), 0),
           };
           let wsSnapshots = [...get().networkSnapshots, wsSnap];
           if (wsSnapshots.length > 100) wsSnapshots = wsSnapshots.slice(-100);
@@ -2181,6 +2183,8 @@ export const useGrooveStore = create((set, get) => ({
           nodeCount: activeNodes.length,
           avgLoad: activeNodes.length > 0 ? activeNodes.reduce((s, n) => s + (n.load || 0), 0) / activeNodes.length : 0,
           myLoad: ownNode?.load ?? 0,
+          totalVramMb: nodes.reduce((s, n) => s + (n.vram_mb || 0), 0),
+          totalRamMb: nodes.reduce((s, n) => s + (n.ram_mb || 0), 0),
         };
         let snapshots = [...get().networkSnapshots, snap];
         if (snapshots.length > 100) snapshots = snapshots.slice(-100);

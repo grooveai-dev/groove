@@ -4145,9 +4145,36 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   // Network node lifecycle (gated)
 
+  let _localHwCache = null;
+  function getLocalHardware() {
+    if (!_localHwCache) {
+      const sys = OllamaProvider.getSystemHardware();
+      const vramGb = sys.gpu?.vram || 0;
+      const ramGb = sys.totalRamGb || 0;
+      const vramMb = vramGb * 1024;
+      const ramMb = ramGb * 1024;
+      const fmtGb = (gb) => gb > 0 ? `${gb} GB` : null;
+      _localHwCache = {
+        device: sys.gpu?.type === 'nvidia' ? 'cuda' : sys.gpu?.type === 'apple-silicon' ? 'metal' : 'cpu',
+        gpu: sys.gpu?.name || null,
+        memory: fmtGb(vramGb) || fmtGb(ramGb),
+        vram: fmtGb(vramGb),
+        ram: fmtGb(ramGb),
+        cpuCores: sys.cores || null,
+        ram_mb: ramMb,
+        vram_mb: vramMb,
+        gpu_model: sys.gpu?.name || null,
+        cpu_cores: sys.cores || 0,
+        bandwidth_mbps: 0,
+        max_context_length: 0,
+      };
+    }
+    return _localHwCache;
+  }
+
   function snapshotNode() {
     const n = daemon.networkNode || {};
-    const hw = n.hardware || {};
+    const hw = n.hardware || getLocalHardware();
     return {
       active: !!n.active,
       status: n.status || 'stopped',
@@ -4155,7 +4182,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       layers: n.layers || null,
       model: n.model || null,
       sessions: n.sessions || 0,
-      hardware: n.hardware || null,
+      hardware: hw,
       installed: !!(daemon.config?.networkBeta?.installed),
       ram_mb: Number(hw.ram_mb) || 0,
       vram_mb: Number(hw.vram_mb) || 0,
@@ -4288,7 +4315,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       layers: null,
       model: null,
       sessions: 0,
-      hardware: null,
+      hardware: getLocalHardware(),
       startedAt: Date.now(),
       events: [],
     };
@@ -4460,13 +4487,15 @@ Keep responses concise. Help them think, don't lecture them about the system the
               daemon.networkNode.layers = self.layers;
               changed = true;
             }
-            if (self.device) {
-              daemon.networkNode.hardware = {
-                ...(daemon.networkNode.hardware || {}),
-                device: self.device,
-              };
-              changed = true;
-            }
+            const prev = daemon.networkNode.hardware || getLocalHardware();
+            const enriched = { ...prev };
+            if (self.device) enriched.device = self.device;
+            if (self.gpu_model) { enriched.gpu = self.gpu_model; enriched.gpu_model = self.gpu_model; }
+            if (Number(self.ram_mb) > 0) { enriched.ram_mb = Number(self.ram_mb); }
+            if (Number(self.vram_mb) > 0) { enriched.vram_mb = Number(self.vram_mb); enriched.memory = enriched.vram_mb >= 1024 ? `${(enriched.vram_mb / 1024).toFixed(1)} GB` : `${enriched.vram_mb} MB`; }
+            if (Number(self.cpu_cores) > 0) { enriched.cpu_cores = Number(self.cpu_cores); enriched.cpuCores = Number(self.cpu_cores); }
+            daemon.networkNode.hardware = enriched;
+            changed = true;
           }
           const availModel = Array.isArray(data.models)
             ? data.models.find((m) => m && m.available !== false)
@@ -4479,25 +4508,39 @@ Keep responses concise. Help them think, don't lecture them about the system the
         }
 
         const capStr = (s, max = 200) => (typeof s === 'string' ? s.slice(0, max) : s);
-        const safeNodes = (Array.isArray(data.nodes) ? data.nodes : []).map((n) => ({
-          node_id: capStr(n.node_id || n.nodeId),
-          device: capStr(n.device),
-          layers: Array.isArray(n.layers) ? n.layers.slice(0, 2) : n.layers,
-          status: capStr(n.status, 50),
-          active_sessions: n.active_sessions ?? 0,
-          ram_mb: Number(n.ram_mb) || 0,
-          vram_mb: Number(n.vram_mb) || 0,
-          gpu_model: capStr(n.gpu_model || '', 200),
-          cpu_cores: Number(n.cpu_cores) || 0,
-          bandwidth_mbps: Number(n.bandwidth_mbps) || 0.0,
-          max_context_length: Number(n.max_context_length) || 0,
-          load: Number(n.load) || 0.0,
-          gpu_utilization_pct: Number(n.gpu_utilization_pct) || 0,
-          vram_used_mb: Number(n.vram_used_mb) || 0,
-          ram_used_mb: Number(n.ram_used_mb) || 0,
-          ram_pct: Number(n.ram_pct) || 0,
-          uptime_seconds: Number(n.uptime_seconds) || 0,
-        }));
+        const selfId = daemon.networkNode?.nodeId;
+        const localHw = getLocalHardware();
+        const safeNodes = (Array.isArray(data.nodes) ? data.nodes : []).map((n) => {
+          const nid = n.node_id || n.nodeId || '';
+          const isSelf = selfId && nid && (nid === selfId || (nid.length >= 6 && selfId.startsWith(nid.replace(/\.{2,}$/, ''))));
+          const base = {
+            node_id: capStr(nid),
+            device: capStr(n.device),
+            layers: Array.isArray(n.layers) ? n.layers.slice(0, 2) : n.layers,
+            status: capStr(n.status, 50),
+            active_sessions: n.active_sessions ?? 0,
+            ram_mb: Number(n.ram_mb) || 0,
+            vram_mb: Number(n.vram_mb) || 0,
+            gpu_model: capStr(n.gpu_model || '', 200),
+            cpu_cores: Number(n.cpu_cores) || 0,
+            bandwidth_mbps: Number(n.bandwidth_mbps) || 0.0,
+            max_context_length: Number(n.max_context_length) || 0,
+            load: Number(n.load) || 0.0,
+            gpu_utilization_pct: Number(n.gpu_utilization_pct) || 0,
+            vram_used_mb: Number(n.vram_used_mb) || 0,
+            ram_used_mb: Number(n.ram_used_mb) || 0,
+            ram_pct: Number(n.ram_pct) || 0,
+            uptime_seconds: Number(n.uptime_seconds) || 0,
+          };
+          if (isSelf) {
+            if (!base.device) base.device = localHw.device;
+            if (!base.gpu_model) base.gpu_model = localHw.gpu_model || '';
+            if (!base.ram_mb) base.ram_mb = localHw.ram_mb;
+            if (!base.vram_mb) base.vram_mb = localHw.vram_mb;
+            if (!base.cpu_cores) base.cpu_cores = localHw.cpu_cores;
+          }
+          return base;
+        });
 
         return res.json({
           nodes: safeNodes,

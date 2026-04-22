@@ -8,6 +8,7 @@ import { SetupWizard } from './components/onboarding/setup-wizard';
 import { useKeyboard } from './lib/hooks/use-keyboard';
 import { UpgradeModal } from './components/pro/upgrade-modal';
 import { WelcomeSplash } from './components/layout/welcome-splash';
+import { FolderBrowser } from './components/agents/folder-browser';
 
 // Views
 import AgentsView from './views/agents';
@@ -102,6 +103,27 @@ function ViewRouter() {
   );
 }
 
+function TunneledFolderPicker() {
+  const remoteHomedir = useGrooveStore((s) => s.remoteHomedir);
+  const setProjectDir = useGrooveStore((s) => s.setProjectDir);
+  return (
+    <div
+      className="fixed inset-0 z-40 bg-surface-0 flex flex-col items-center justify-center gap-3"
+    >
+      <img src="/favicon.png" alt="" className="w-10 h-10 opacity-60" />
+      <p className="text-sm text-text-3 font-sans">Connected — choose a project directory to continue</p>
+      <FolderBrowser
+        open={true}
+        onOpenChange={() => {}}
+        currentPath={remoteHomedir || '/home'}
+        homePath={remoteHomedir}
+        onSelect={(dir) => setProjectDir(dir)}
+        mandatory
+      />
+    </div>
+  );
+}
+
 function LoadingScreen() {
   return (
     <div className="h-screen bg-surface-0 flex flex-col items-center justify-center gap-4">
@@ -151,6 +173,7 @@ export default function App() {
 
   if (!hydrated) return <LoadingScreen />;
   if (!onboardingComplete) return <ErrorBoundary><SetupWizard /></ErrorBoundary>;
+  if (showProjectPicker && tunneled) return <ErrorBoundary><TunneledFolderPicker /></ErrorBoundary>;
   if (showProjectPicker) return <ErrorBoundary><WelcomeSplash /><UpgradeModal /></ErrorBoundary>;
 
   return (

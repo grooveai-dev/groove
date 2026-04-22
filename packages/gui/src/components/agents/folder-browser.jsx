@@ -43,7 +43,7 @@ function BreadcrumbPath({ path, onNavigate }) {
   );
 }
 
-export function FolderBrowser({ open, onOpenChange, currentPath, onSelect, homePath }) {
+export function FolderBrowser({ open, onOpenChange, currentPath, onSelect, homePath, mandatory = false, title }) {
   const home = homePath || '/home';
   const [path, setPath] = useState(currentPath || home);
   const [entries, setEntries] = useState([]);
@@ -81,12 +81,28 @@ export function FolderBrowser({ open, onOpenChange, currentPath, onSelect, homeP
 
   function handleSelect() {
     onSelect(path);
-    onOpenChange(false);
+    if (!mandatory) onOpenChange(false);
   }
 
+  const dialogTitle = title || (mandatory ? 'Select Project Directory' : 'Select Working Directory');
+  const preventClose = mandatory
+    ? { onEscapeKeyDown: (e) => e.preventDefault(), onInteractOutside: (e) => e.preventDefault(), onPointerDownOutside: (e) => e.preventDefault() }
+    : {};
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent title="Select Working Directory" description="Choose a directory for this agent to work in" className="max-w-[520px]">
+    <Dialog open={open} onOpenChange={mandatory ? () => {} : onOpenChange}>
+      <DialogContent
+        title={mandatory ? undefined : dialogTitle}
+        description="Choose a directory for this agent to work in"
+        className="max-w-[520px]"
+        {...preventClose}
+      >
+        {mandatory && (
+          <div className="px-5 py-4 border-b border-border-subtle">
+            <div className="text-base font-semibold text-text-0 font-sans">{dialogTitle}</div>
+            <div className="text-xs text-text-3 font-sans mt-1">Pick a directory on this remote machine to get started.</div>
+          </div>
+        )}
         <div className="px-5 py-4 space-y-3">
           {/* Navigation bar */}
           <div className="flex items-center gap-2">
@@ -156,7 +172,9 @@ export function FolderBrowser({ open, onOpenChange, currentPath, onSelect, homeP
 
           {/* Actions */}
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" size="md" onClick={() => onOpenChange(false)}>Cancel</Button>
+            {!mandatory && (
+              <Button variant="ghost" size="md" onClick={() => onOpenChange(false)}>Cancel</Button>
+            )}
             <Button variant="primary" size="md" onClick={handleSelect} className="gap-1.5">
               <Check size={14} /> Select Folder
             </Button>

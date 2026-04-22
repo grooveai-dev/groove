@@ -688,347 +688,418 @@ function getWelcomeHtml() {
 <title>Groove</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; }
 body {
-  background: #0a0a0a; color: #fafafa;
+  background: radial-gradient(ellipse at 50% 35%, rgba(51,175,188,0.07) 0%, transparent 65%) #1a1e25;
+  color: #e6e6e6;
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
-  height: 100vh; display: flex; overflow: hidden; user-select: none;
+  overflow: hidden; user-select: none;
+  display: flex; flex-direction: column;
 }
 
-.shell { display: flex; width: 100%; height: 100%; }
-
-.ab {
-  width: 48px; background: #111; border-right: 1px solid #1e1e1e;
-  display: flex; flex-direction: column; align-items: center; flex-shrink: 0;
-}
-.ab-drag { -webkit-app-region: drag; height: 52px; width: 100%; flex-shrink: 0; }
-.ab-logo {
-  width: 30px; height: 30px; border-radius: 8px;
-  background: linear-gradient(135deg, #33afbc, #2a95a1);
+.titlebar {
+  -webkit-app-region: drag;
+  height: 38px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  margin-bottom: 16px; flex-shrink: 0;
 }
-.ab-logo span { color: #fff; font-weight: 700; font-size: 14px; }
-.ab-nav { display: flex; flex-direction: column; gap: 2px; align-items: center; }
-.ab-ic {
-  width: 36px; height: 36px; border-radius: 6px;
-  display: flex; align-items: center; justify-content: center; color: #3f3f46;
+.titlebar-label {
+  font-size: 11px; color: #505862; font-weight: 600;
+  letter-spacing: 1.5px;
 }
 
-.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.topbar {
-  -webkit-app-region: drag; height: 38px; border-bottom: 1px solid #1e1e1e;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+.scroll {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  -webkit-app-region: no-drag;
 }
-.topbar span { font-size: 12px; color: #3f3f46; font-weight: 500; letter-spacing: 0.3px; }
+.scroll::-webkit-scrollbar { width: 8px; }
+.scroll::-webkit-scrollbar-track { background: transparent; }
+.scroll::-webkit-scrollbar-thumb { background: #2c313a; border-radius: 4px; }
+.scroll::-webkit-scrollbar-thumb:hover { background: #3e4451; }
 
-.workspace { flex: 1; position: relative; background: #0e0e0e; }
-
-.overlay {
-  position: absolute; inset: 0; background: rgba(0,0,0,0.35);
-  display: flex; align-items: center; justify-content: center; padding: 24px;
+.page {
+  max-width: 860px; margin: 0 auto;
+  padding: 16px 40px 40px;
+  display: flex; flex-direction: column; align-items: center;
 }
 
-.modal {
-  width: 100%; max-width: 440px; background: #141414;
-  border: 1px solid #232323; border-radius: 12px;
-  display: flex; flex-direction: column; max-height: min(520px, 80vh);
-  position: relative; overflow: hidden;
-  box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+.hero {
+  display: flex; flex-direction: column; align-items: center;
+  margin-top: 12px; margin-bottom: 36px;
 }
-.m-head {
-  padding: 24px 24px 16px; display: flex; align-items: center; gap: 14px; flex-shrink: 0;
-}
-.m-icon {
-  width: 36px; height: 36px; border-radius: 8px;
-  background: rgba(51,175,188,0.1);
+.hero-icon {
+  width: 96px; height: 96px; border-radius: 50%;
+  background: radial-gradient(circle at center, rgba(51,175,188,0.25) 0%, rgba(51,175,188,0.08) 55%, transparent 100%);
   display: flex; align-items: center; justify-content: center;
-  color: #33afbc; flex-shrink: 0;
+  position: relative; margin-bottom: 22px;
 }
-.m-title { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; }
-.m-sub { font-size: 12px; color: #52525b; margin-top: 1px; }
-.m-div { height: 1px; background: #1e1e1e; margin: 0 24px; flex-shrink: 0; }
+.hero-icon::before {
+  content: ''; position: absolute; inset: 16px;
+  border-radius: 50%; border: 1px solid rgba(51,175,188,0.45);
+  box-shadow: 0 0 28px rgba(51,175,188,0.22), inset 0 0 18px rgba(51,175,188,0.14);
+}
+.hero-icon svg { position: relative; color: #33afbc; }
+.hero h1 {
+  font-size: 28px; font-weight: 700; letter-spacing: -0.5px;
+  color: #e6e6e6; margin-bottom: 8px;
+}
+.hero .sub { font-size: 14px; color: #6e7681; }
 
 .error-msg {
-  display: none; margin: 12px 16px 0; padding: 10px 14px;
-  border-radius: 6px; background: #1c1007; border: 1px solid #854d0e;
-  color: #fbbf24; font-size: 12px; flex-shrink: 0;
+  display: none; width: 100%; margin-bottom: 20px;
+  padding: 11px 14px; border-radius: 8px;
+  background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3);
+  color: #fbbf24; font-size: 12px;
 }
 .error-msg.active { display: block; }
 
-.m-body { flex: 1; overflow-y: auto; padding: 12px 8px; min-height: 0; }
-.sec-label {
-  font-size: 10px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.5px; color: #52525b; padding: 4px 16px 8px;
+.actions {
+  width: 100%; display: flex; flex-direction: column; gap: 12px;
+  margin-bottom: 28px;
 }
 
-.recents { display: flex; flex-direction: column; gap: 1px; }
-.ri {
-  display: flex; align-items: center; gap: 12px; padding: 8px 12px;
-  border-radius: 6px; cursor: pointer; transition: background 0.12s;
+.action-primary {
+  position: relative; display: flex; align-items: center; gap: 18px;
+  padding: 20px 22px; border-radius: 14px;
+  background: linear-gradient(135deg, rgba(51,175,188,0.09) 0%, rgba(51,175,188,0.03) 100%), #1e2127;
+  border: 1px solid rgba(51,175,188,0.35);
+  cursor: pointer; -webkit-app-region: no-drag;
+  transition: transform 0.15s, background 0.15s, border-color 0.15s;
+  font-family: inherit; color: inherit; text-align: left; width: 100%;
+  box-shadow: 0 0 0 1px rgba(51,175,188,0.05), 0 8px 24px rgba(0,0,0,0.25);
+}
+.action-primary:hover {
+  background: linear-gradient(135deg, rgba(51,175,188,0.14) 0%, rgba(51,175,188,0.05) 100%), #24282f;
+  border-color: rgba(51,175,188,0.6);
+  transform: translateY(-1px);
+}
+.ap-ic {
+  width: 48px; height: 48px; border-radius: 12px;
+  background: rgba(51,175,188,0.12); color: #33afbc;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.ap-text { flex: 1; min-width: 0; }
+.ap-title { font-size: 15px; font-weight: 600; color: #e6e6e6; }
+.ap-sub { font-size: 12px; color: #6e7681; margin-top: 3px; }
+.ap-tag {
+  font-size: 10px; font-weight: 600; color: #6e7681;
+  background: #2c313a; padding: 5px 9px; border-radius: 6px;
+  letter-spacing: 0.5px; font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+}
+
+.actions-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+.action-card {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 18px; border-radius: 12px;
+  background: #1e2127; border: 1px solid #3e4451;
+  cursor: pointer; -webkit-app-region: no-drag;
+  transition: background 0.15s, border-color 0.15s;
+  font-family: inherit; color: inherit; text-align: left; width: 100%;
+}
+.action-card:hover {
+  background: #24282f; border-color: #33afbc;
+}
+.ac-ic {
+  width: 38px; height: 38px; border-radius: 10px;
+  background: #2c313a; color: #6e7681;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+.action-card:hover .ac-ic { color: #33afbc; background: rgba(51,175,188,0.1); }
+.ac-text { flex: 1; min-width: 0; }
+.ac-title { font-size: 13px; font-weight: 600; color: #e6e6e6; }
+.ac-sub { font-size: 11px; color: #6e7681; margin-top: 3px; }
+
+.ssh-form-wrap {
+  display: none; width: 100%;
+  margin-top: -12px; margin-bottom: 28px;
+  background: #1e2127; border: 1px solid #3e4451;
+  border-radius: 12px; padding: 20px;
   -webkit-app-region: no-drag;
 }
-.ri:hover { background: #1a1a1a; }
-.ri:active { background: #222; }
-.ri-ic {
-  width: 28px; height: 28px; border-radius: 6px; background: #1e1e1e;
+.ssh-form-wrap.active { display: block; }
+.ssh-form-head {
+  font-size: 13px; font-weight: 600; color: #e6e6e6;
+  margin-bottom: 16px; display: flex; align-items: center; gap: 10px;
+}
+.ssh-form-ic {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: rgba(51,175,188,0.12); color: #33afbc;
   display: flex; align-items: center; justify-content: center;
-  color: #52525b; flex-shrink: 0;
 }
-.ri-info { flex: 1; min-width: 0; }
-.ri-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ri-path { font-size: 11px; color: #3f3f46; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
-.ri-time { font-size: 10px; color: #3f3f46; flex-shrink: 0; }
-
-.empty { padding: 32px 16px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.empty-ic { color: #27272a; }
-.empty-text { font-size: 13px; color: #52525b; }
-.empty-hint { font-size: 11px; color: #3f3f46; }
-
-.m-foot {
-  padding: 12px 16px 16px; border-top: 1px solid #1e1e1e; flex-shrink: 0;
-  display: flex; flex-direction: column; gap: 10px; align-items: center;
+.ssh-form-wrap label {
+  display: block; font-size: 11px; color: #6e7681;
+  margin-bottom: 5px; margin-top: 12px; font-weight: 500;
+  letter-spacing: 0.2px;
 }
-.btn-open {
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  width: 100%; padding: 10px; border-radius: 8px;
-  border: 1px solid #27272a; background: #18181b;
-  color: #fafafa; font-size: 13px; font-weight: 500;
-  cursor: pointer; transition: all 0.12s;
-  -webkit-app-region: no-drag; font-family: inherit;
-}
-.btn-open:hover { background: #27272a; border-color: #3f3f46; }
-.btn-open:active { background: #333; }
-.m-ver { font-size: 10px; color: #27272a; }
-.m-update {
-  display: none; font-size: 11px; color: #33afbc; cursor: pointer;
-  font-weight: 500; -webkit-app-region: no-drag;
-}
-.m-update:hover { text-decoration: underline; }
-.m-update.active { display: block; }
-
-.m-loading {
-  display: none; position: absolute; inset: 0; background: #141414;
-  border-radius: 12px; flex-direction: column; align-items: center;
-  justify-content: center; gap: 16px; z-index: 10;
-}
-.m-loading.active { display: flex; }
-.spinner {
-  width: 28px; height: 28px; border: 2.5px solid #27272a;
-  border-top-color: #33afbc; border-radius: 50%; animation: spin 0.8s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-.loading-text { font-size: 13px; color: #71717a; }
-
-.ssh-div { height: 1px; background: #1e1e1e; margin: 12px 16px 8px; }
-.ssh-section { display: none; }
-.ssh-section.active { display: block; }
-.ssh-label {
-  padding: 0 16px; font-size: 11px; font-weight: 600; color: #52525b;
-  letter-spacing: 0.04em; text-transform: uppercase;
-  display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
-}
-.ssh-badge {
-  font-size: 9px; font-weight: 600; color: #33afbc; background: rgba(51,175,188,0.12);
-  padding: 1px 5px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em;
-}
-.si {
-  display: flex; align-items: center; gap: 10px; padding: 8px 16px;
-  cursor: pointer; transition: background 0.1s; border-radius: 4px; margin: 0 4px;
-}
-.si:hover { background: #1a1a1a; }
-.si.connecting { opacity: 0.5; pointer-events: none; }
-.si-ic { width: 32px; height: 32px; border-radius: 6px; background: #18181b; border: 1px solid #27272a;
-  display: flex; align-items: center; justify-content: center; color: #52525b; flex-shrink: 0; }
-.si-info { flex: 1; min-width: 0; }
-.si-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.si-host { font-size: 11px; color: #3f3f46; font-family: ui-monospace, 'SF Mono', Monaco, monospace;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
-.si-spinner { width: 14px; height: 14px; border: 2px solid #27272a; border-top-color: #33afbc;
-  border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
-
-.ssh-gate { padding: 16px; text-align: center; }
-.ssh-gate-text { font-size: 12px; color: #52525b; margin-bottom: 10px; }
-.btn-login {
-  display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 6px;
-  border: 1px solid #33afbc; background: rgba(51,175,188,0.08); color: #33afbc;
-  font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.12s;
-  -webkit-app-region: no-drag; font-family: inherit;
-}
-.btn-login:hover { background: rgba(51,175,188,0.15); }
-.btn-upgrade { border-color: #27272a; background: transparent; color: #71717a; }
-.btn-upgrade:hover { border-color: #3f3f46; color: #a1a1aa; }
-
-.btn-ssh {
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  width: 100%; padding: 10px; border-radius: 8px;
-  border: 1px solid #27272a; background: #18181b;
-  color: #fafafa; font-size: 13px; font-weight: 500;
-  cursor: pointer; transition: all 0.12s;
-  -webkit-app-region: no-drag; font-family: inherit;
-}
-.btn-ssh:hover { background: #27272a; border-color: #3f3f46; }
-
-.ssh-form { display: none; padding: 12px 16px; }
-.ssh-form.active { display: block; }
-.ssh-form label { display: block; font-size: 11px; color: #71717a; margin-bottom: 4px; margin-top: 10px; }
-.ssh-form label:first-child { margin-top: 0; }
+.ssh-form-wrap label:first-of-type { margin-top: 0; }
 .ssh-input {
-  width: 100%; padding: 7px 10px; border-radius: 6px; border: 1px solid #27272a;
-  background: #141414; color: #fafafa; font-size: 12px; font-family: inherit;
+  width: 100%; padding: 9px 12px; border-radius: 8px;
+  border: 1px solid #3e4451; background: #1a1e25;
+  color: #e6e6e6; font-size: 12px; font-family: inherit;
   outline: none; transition: border-color 0.12s;
 }
 .ssh-input:focus { border-color: #33afbc; }
 .ssh-input-row { display: flex; gap: 8px; }
 .ssh-input-row .ssh-input { flex: 1; }
-.ssh-input-sm { width: 80px; flex: none !important; }
+.ssh-input-sm { width: 90px; flex: none !important; }
 .btn-pick-key {
-  padding: 7px 10px; border-radius: 6px; border: 1px solid #27272a;
-  background: #18181b; color: #71717a; font-size: 11px; cursor: pointer;
+  padding: 9px 14px; border-radius: 8px;
+  border: 1px solid #3e4451; background: #24282f;
+  color: #6e7681; font-size: 11px; cursor: pointer;
   transition: all 0.12s; font-family: inherit; white-space: nowrap;
+  -webkit-app-region: no-drag;
 }
-.btn-pick-key:hover { border-color: #3f3f46; color: #a1a1aa; }
-.ssh-form-actions { display: flex; gap: 8px; margin-top: 14px; }
+.btn-pick-key:hover { border-color: #33afbc; color: #e6e6e6; }
+.ssh-form-actions { display: flex; gap: 8px; margin-top: 18px; }
 .btn-save-ssh {
-  flex: 1; padding: 8px; border-radius: 6px; border: none;
-  background: #33afbc; color: #0a0a0a; font-size: 12px; font-weight: 600;
+  flex: 1; padding: 10px; border-radius: 8px; border: none;
+  background: #33afbc; color: #0a0a0a; font-size: 13px; font-weight: 600;
   cursor: pointer; transition: opacity 0.12s; font-family: inherit;
+  -webkit-app-region: no-drag;
 }
 .btn-save-ssh:hover { opacity: 0.9; }
 .btn-save-ssh:disabled { opacity: 0.4; cursor: default; }
 .btn-cancel-ssh {
-  padding: 8px 14px; border-radius: 6px; border: 1px solid #27272a;
-  background: transparent; color: #71717a; font-size: 12px; cursor: pointer;
+  padding: 10px 16px; border-radius: 8px;
+  border: 1px solid #3e4451; background: transparent;
+  color: #6e7681; font-size: 13px; cursor: pointer;
   transition: all 0.12s; font-family: inherit;
+  -webkit-app-region: no-drag;
 }
-.btn-cancel-ssh:hover { border-color: #3f3f46; color: #a1a1aa; }
+.btn-cancel-ssh:hover { border-color: #33afbc; color: #e6e6e6; }
+
+.section { width: 100%; margin-bottom: 28px; }
+.section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.section-title {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.8px; color: #6e7681;
+}
+.section-hint { font-size: 11px; color: #505862; }
+
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+@media (max-width: 720px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .grid { grid-template-columns: 1fr; } }
+
+.card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; border-radius: 10px;
+  background: #1e2127; border: 1px solid #3e4451;
+  cursor: pointer; transition: background 0.12s, border-color 0.12s;
+  -webkit-app-region: no-drag; font-family: inherit;
+  color: inherit; text-align: left; width: 100%;
+}
+.card:hover { background: #24282f; border-color: #33afbc; }
+.card.connecting { opacity: 0.6; pointer-events: none; }
+.card-ic {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: #2c313a; color: #6e7681;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: color 0.12s;
+}
+.card:hover .card-ic { color: #33afbc; }
+.card-info { flex: 1; min-width: 0; }
+.card-name {
+  font-size: 12px; font-weight: 600; color: #e6e6e6;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.card-meta {
+  font-size: 10px; color: #6e7681; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+}
+.card-spinner {
+  width: 12px; height: 12px; border: 2px solid #3e4451;
+  border-top-color: #33afbc; border-radius: 50%;
+  animation: spin 0.8s linear infinite; flex-shrink: 0;
+}
+
+.add-card {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 12px 14px; border-radius: 10px;
+  background: transparent; border: 1px dashed #3e4451;
+  color: #6e7681; font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: all 0.12s;
+  -webkit-app-region: no-drag; font-family: inherit;
+  min-height: 58px;
+}
+.add-card:hover { border-color: #33afbc; color: #33afbc; background: rgba(51,175,188,0.04); }
+
+.update-banner {
+  display: none; width: 100%; margin-bottom: 20px;
+  padding: 14px 16px; border-radius: 10px;
+  background: rgba(51,175,188,0.06);
+  border: 1px solid rgba(51,175,188,0.25);
+  -webkit-app-region: no-drag;
+}
+.update-banner.active { display: block; }
+
+.footer {
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  padding: 12px 24px 14px;
+  border-top: 1px solid rgba(62,68,81,0.35);
+  flex-shrink: 0; -webkit-app-region: no-drag;
+}
+.kbd-hint {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; color: #6e7681;
+}
+.kbd-hint kbd {
+  display: inline-block; padding: 2px 6px; border-radius: 4px;
+  background: #24282f; border: 1px solid #3e4451; color: #e6e6e6;
+  font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+  font-size: 10px; font-weight: 500;
+}
+.footer-sep { width: 1px; height: 12px; background: #3e4451; }
+.version { font-size: 11px; color: #505862; font-weight: 500; }
+
+.loading-full {
+  display: none; position: fixed; inset: 0;
+  background: rgba(26,30,37,0.96); backdrop-filter: blur(8px);
+  flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  z-index: 100;
+}
+.loading-full.active { display: flex; }
+.spinner {
+  width: 32px; height: 32px; border: 3px solid #2c313a;
+  border-top-color: #33afbc; border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-size: 13px; color: #e6e6e6; font-weight: 500; }
 </style>
 </head>
 <body>
-<div class="shell">
-  <div class="ab">
-    <div class="ab-drag"></div>
-    <div class="ab-logo"><span>G</span></div>
-    <div class="ab-nav">
-      <div class="ab-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><path d="M12 8v4M7.5 17.2 10 12M16.5 17.2 14 12"/></svg></div>
-      <div class="ab-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></div>
-      <div class="ab-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg></div>
-      <div class="ab-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></div>
-      <div class="ab-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+<div class="titlebar"><span class="titlebar-label">GROOVE</span></div>
+<div class="scroll">
+  <div class="page">
+    <div class="hero">
+      <div class="hero-icon">
+        <svg width="38" height="38" viewBox="0 0 24 24" fill="rgba(51,175,188,0.15)" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      </div>
+      <h1>Welcome to Groove</h1>
+      <div class="sub">Your AI coding team, ready in minutes</div>
     </div>
-  </div>
-  <div class="main">
-    <div class="topbar"><span>GROOVE</span></div>
-    <div class="workspace">
-      <div class="overlay">
-        <div class="modal">
-          <div class="m-head">
-            <div class="m-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-              </svg>
-            </div>
-            <div>
-              <div class="m-title">Connect to Project</div>
-              <div class="m-sub">Select a workspace to open</div>
-            </div>
-          </div>
-          <div class="m-div"></div>
-          <div class="error-msg" id="error"></div>
-          <div class="m-body">
-            <div class="sec-label" id="recents-label" style="display:none">Recent Projects</div>
-            <div class="recents" id="recents"></div>
 
-            <div class="ssh-div"></div>
-            <div class="ssh-section" id="ssh-section">
-              <div class="ssh-label">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
-                SSH Servers
-                <span class="ssh-badge">PRO</span>
-              </div>
-              <div id="ssh-list"></div>
-              <button class="btn-ssh" id="btn-add-ssh" style="margin:8px 16px;width:calc(100% - 32px)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-                Add Server
-              </button>
-              <div class="ssh-form" id="ssh-form">
-                <label>Name</label>
-                <input class="ssh-input" id="ssh-name" placeholder="My Server" autocomplete="off">
-                <label>Host</label>
-                <div class="ssh-input-row">
-                  <input class="ssh-input" id="ssh-host" placeholder="192.168.1.100">
-                  <input class="ssh-input ssh-input-sm" id="ssh-port" placeholder="22" value="22">
-                </div>
-                <label>Username</label>
-                <input class="ssh-input" id="ssh-user" placeholder="ubuntu">
-                <label>SSH Key (optional)</label>
-                <div class="ssh-input-row">
-                  <input class="ssh-input" id="ssh-key" placeholder="~/.ssh/id_rsa" readonly>
-                  <button class="btn-pick-key" id="btn-pick-key">Browse</button>
-                </div>
-                <div class="ssh-form-actions">
-                  <button class="btn-cancel-ssh" id="btn-cancel-ssh">Cancel</button>
-                  <button class="btn-save-ssh" id="btn-save-ssh">Save &amp; Connect</button>
-                </div>
-              </div>
-            </div>
-            <div class="ssh-gate" id="ssh-gate" style="display:none">
-              <div class="ssh-gate-text">SSH remote access requires a Pro or Team subscription</div>
-              <button class="btn-login" id="btn-gate-login">Log In</button>
-              <button class="btn-login btn-upgrade" id="btn-gate-upgrade" style="display:none;margin-top:8px">Upgrade to Pro</button>
-            </div>
-          </div>
-          <div class="m-foot">
-            <button class="btn-open" id="open-folder">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-              </svg>
-              Open Folder
-            </button>
-            <div class="m-update" id="update-btn" style="display:none;width:100%;margin-top:12px;padding:14px 16px;background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.2);border-radius:10px;cursor:pointer;transition:background 0.15s">
-              <div style="display:flex;align-items:center;gap:10px">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgb(56,189,248)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4"/><path d="M12 16V8"/></svg>
-                <div style="flex:1;min-width:0">
-                  <div id="update-title" style="font-size:13px;font-weight:600;color:#e2e8f0">Update Available</div>
-                  <div id="update-detail" style="font-size:11px;color:#94a3b8;margin-top:2px">Downloading...</div>
-                </div>
-                <div id="update-action" style="display:none;font-size:11px;font-weight:600;color:rgb(56,189,248);background:rgba(56,189,248,0.15);padding:5px 14px;border-radius:6px;white-space:nowrap">Update &amp; Restart</div>
-              </div>
-              <div id="update-progress-bar" style="margin-top:10px;height:3px;border-radius:2px;background:rgba(56,189,248,0.12);overflow:hidden">
-                <div id="update-progress-fill" style="height:100%;width:0%;border-radius:2px;background:rgb(56,189,248);transition:width 0.4s ease-out"></div>
-              </div>
-            </div>
-            <div class="m-ver" id="version"></div>
-          </div>
-          <div class="m-loading" id="loading">
-            <div class="spinner"></div>
-            <div class="loading-text" id="loading-text">Starting Groove...</div>
-          </div>
+    <div class="error-msg" id="error"></div>
+
+    <div class="actions">
+      <button class="action-primary" id="open-folder">
+        <div class="ap-ic">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         </div>
+        <div class="ap-text">
+          <div class="ap-title">Open Project</div>
+          <div class="ap-sub">Select a local folder to start a team</div>
+        </div>
+        <div class="ap-tag" id="kbd-open">\u2318O</div>
+      </button>
+
+      <div class="actions-row">
+        <button class="action-card" id="btn-connect-remote">
+          <div class="ac-ic">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/></svg>
+          </div>
+          <div class="ac-text">
+            <div class="ac-title">Connect Remote</div>
+            <div class="ac-sub">SSH tunnel to a server</div>
+          </div>
+        </button>
+        <button class="action-card" id="btn-docs">
+          <div class="ac-ic">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>
+          </div>
+          <div class="ac-text">
+            <div class="ac-title">Read the Docs</div>
+            <div class="ac-sub">Learn how teams work</div>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <div class="ssh-form-wrap" id="ssh-form">
+      <div class="ssh-form-head">
+        <div class="ssh-form-ic">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
+        </div>
+        New SSH Connection
+      </div>
+      <label>Name</label>
+      <input class="ssh-input" id="ssh-name" placeholder="My Server" autocomplete="off">
+      <label>Host</label>
+      <div class="ssh-input-row">
+        <input class="ssh-input" id="ssh-host" placeholder="192.168.1.100">
+        <input class="ssh-input ssh-input-sm" id="ssh-port" placeholder="Port" value="22">
+      </div>
+      <label>Username</label>
+      <input class="ssh-input" id="ssh-user" placeholder="ubuntu">
+      <label>SSH Key (optional)</label>
+      <div class="ssh-input-row">
+        <input class="ssh-input" id="ssh-key" placeholder="~/.ssh/id_rsa" readonly>
+        <button class="btn-pick-key" id="btn-pick-key">Browse</button>
+      </div>
+      <div class="ssh-form-actions">
+        <button class="btn-cancel-ssh" id="btn-cancel-ssh">Cancel</button>
+        <button class="btn-save-ssh" id="btn-save-ssh">Save &amp; Connect</button>
+      </div>
+    </div>
+
+    <div class="section" id="recents-section" style="display:none">
+      <div class="section-head">
+        <div class="section-title">Recent Projects</div>
+        <div class="section-hint" id="recents-count"></div>
+      </div>
+      <div class="grid" id="recents"></div>
+    </div>
+
+    <div class="section" id="ssh-section">
+      <div class="section-head">
+        <div class="section-title">SSH Servers</div>
+      </div>
+      <div class="grid" id="ssh-list"></div>
+    </div>
+
+    <div class="update-banner" id="update-btn">
+      <div style="display:flex;align-items:center;gap:12px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#33afbc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4"/><path d="M12 16V8"/></svg>
+        <div style="flex:1;min-width:0">
+          <div id="update-title" style="font-size:13px;font-weight:600;color:#e6e6e6">Update Available</div>
+          <div id="update-detail" style="font-size:11px;color:#6e7681;margin-top:2px">Downloading...</div>
+        </div>
+        <div id="update-action" style="display:none;font-size:11px;font-weight:600;color:#33afbc;background:rgba(51,175,188,0.15);padding:6px 14px;border-radius:6px;white-space:nowrap;cursor:pointer">Update &amp; Restart</div>
+      </div>
+      <div id="update-progress-bar" style="margin-top:10px;height:3px;border-radius:2px;background:rgba(51,175,188,0.12);overflow:hidden">
+        <div id="update-progress-fill" style="height:100%;width:0%;border-radius:2px;background:#33afbc;transition:width 0.4s ease-out"></div>
       </div>
     </div>
   </div>
 </div>
+<div class="footer">
+  <span class="kbd-hint"><kbd id="kbd-footer">\u2318O</kbd> Open Project</span>
+  <span class="footer-sep"></span>
+  <span class="version" id="version"></span>
+</div>
+<div class="loading-full" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loading-text">Starting Groove...</div>
+</div>
 <script>
 (function() {
   var FOLDER = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
-    ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    ' stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+  var SERVER_IC = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+    ' stroke-width="1.8" stroke-linecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/>' +
+    '<rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/>' +
+    '<circle cx="6" cy="18" r="1"/></svg>';
 
   function esc(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  function timeAgo(d) {
-    var ms = Date.now() - new Date(d).getTime();
-    var m = Math.floor(ms / 60000);
-    if (m < 1) return 'just now';
-    if (m < 60) return m + 'm ago';
-    var h = Math.floor(m / 60);
-    if (h < 24) return h + 'h ago';
-    var dy = Math.floor(h / 24);
-    if (dy < 30) return dy + 'd ago';
-    return Math.floor(dy / 30) + 'mo ago';
   }
 
   function shortenPath(p) {
@@ -1037,7 +1108,7 @@ body {
   }
 
   function setLoading(on, text) {
-    document.getElementById('loading').className = on ? 'm-loading active' : 'm-loading';
+    document.getElementById('loading').className = on ? 'loading-full active' : 'loading-full';
     if (text) document.getElementById('loading-text').textContent = text;
   }
 
@@ -1061,7 +1132,10 @@ body {
   }
 
   if (window.groove.platform !== 'darwin') {
-    document.querySelector('.ab-drag').style.height = '12px';
+    var k1 = document.getElementById('kbd-open');
+    var k2 = document.getElementById('kbd-footer');
+    if (k1) k1.textContent = 'Ctrl+O';
+    if (k2) k2.textContent = 'Ctrl+O';
   }
 
   document.getElementById('open-folder').addEventListener('click', function() {
@@ -1071,6 +1145,12 @@ body {
     }).catch(function(err) {
       showError(err.message || 'Failed to open folder');
     });
+  });
+
+  document.getElementById('btn-docs').addEventListener('click', function() {
+    if (window.groove.openExternal) {
+      window.groove.openExternal('https://docs.groovedev.ai');
+    }
   });
 
   window.groove.getVersion().then(function(v) {
@@ -1087,46 +1167,42 @@ body {
 
     if (window.groove.update.onUpdateProgress) {
       window.groove.update.onUpdateProgress(function(data) {
-        updateBtn.style.display = 'block';
+        updateBtn.classList.add('active');
         updateDetail.textContent = 'Downloading\u2026 ' + (data.percent || 0) + '%';
         progressFill.style.width = (data.percent || 0) + '%';
-        document.getElementById('version').style.display = 'none';
       });
     }
     window.groove.update.onUpdateDownloaded(function(data) {
-      updateBtn.style.display = 'block';
+      updateBtn.classList.add('active');
       updateTitle.textContent = 'v' + data.version + ' Ready';
       updateDetail.textContent = 'Restart to apply the update';
       progressBar.style.display = 'none';
       updateAction.style.display = 'block';
+      updateAction.onclick = function(e) {
+        e.stopPropagation();
+        window.groove.update.installUpdate();
+      };
       updateBtn.onclick = function() { window.groove.update.installUpdate(); };
-      document.getElementById('version').style.display = 'none';
     });
   }
 
   window.groove.home.getRecents().then(function(recents) {
     var c = document.getElementById('recents');
-    var l = document.getElementById('recents-label');
-    if (!recents || !recents.length) {
-      c.innerHTML = '<div class="empty">' +
-        '<div class="empty-ic"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>' +
-        '<div class="empty-text">No recent projects</div>' +
-        '<div class="empty-hint">Open a folder to get started</div>' +
-      '</div>';
-      return;
-    }
-    l.style.display = '';
+    var sec = document.getElementById('recents-section');
+    var cnt = document.getElementById('recents-count');
+    if (!recents || !recents.length) { return; }
+    sec.style.display = '';
+    cnt.textContent = recents.length + (recents.length === 1 ? ' project' : ' projects');
     c.innerHTML = recents.map(function(r) {
-      return '<div class="ri" data-dir="' + esc(r.dir) + '">' +
-        '<div class="ri-ic">' + FOLDER + '</div>' +
-        '<div class="ri-info">' +
-          '<div class="ri-name">' + esc(r.name || r.dir.split(/[\\/]/).pop()) + '</div>' +
-          '<div class="ri-path">' + esc(shortenPath(r.dir)) + '</div>' +
+      return '<button class="card" data-dir="' + esc(r.dir) + '" title="' + esc(r.dir) + '">' +
+        '<div class="card-ic">' + FOLDER + '</div>' +
+        '<div class="card-info">' +
+          '<div class="card-name">' + esc(r.name || r.dir.split(/[\\/]/).pop()) + '</div>' +
+          '<div class="card-meta">' + esc(shortenPath(r.dir)) + '</div>' +
         '</div>' +
-        '<div class="ri-time">' + (r.lastOpened ? timeAgo(r.lastOpened) : '') + '</div>' +
-      '</div>';
+      '</button>';
     }).join('');
-    c.querySelectorAll('.ri').forEach(function(el) {
+    c.querySelectorAll('.card').forEach(function(el) {
       el.addEventListener('click', function() {
         openProject(el.getAttribute('data-dir'));
       });
@@ -1135,31 +1211,49 @@ body {
     showError('Failed to load recent projects: ' + err.message);
   });
 
-  var SERVER_IC = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
-    ' stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/>' +
-    '<rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>';
-  var sshSection = document.getElementById('ssh-section');
-  var sshGate = document.getElementById('ssh-gate');
   var sshList = document.getElementById('ssh-list');
   var sshFormEl = document.getElementById('ssh-form');
-  var btnAddSSH = document.getElementById('btn-add-ssh');
+
+  function addCardHTML() {
+    return '<button class="add-card" id="btn-add-ssh">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+      ' stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>' +
+      'Add Server</button>';
+  }
+
+  function attachAddBtn() {
+    var b = document.getElementById('btn-add-ssh');
+    if (b) b.addEventListener('click', openSSHForm);
+  }
+
+  function openSSHForm() {
+    sshFormEl.classList.add('active');
+    setTimeout(function() {
+      sshFormEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById('ssh-name').focus();
+    }, 40);
+  }
 
   function renderSSH(connections) {
-    if (!connections || !connections.length) { sshList.innerHTML = ''; return; }
-    sshList.innerHTML = connections.map(function(c) {
-      return '<div class="si" data-id="' + esc(c.id) + '">' +
-        '<div class="si-ic">' + SERVER_IC + '</div>' +
-        '<div class="si-info">' +
-          '<div class="si-name">' + esc(c.name || c.host) + '</div>' +
-          '<div class="si-host">' + esc((c.user || 'root') + '@' + c.host + ':' + (c.port || 22)) + '</div>' +
-        '</div>' +
-        '<div class="si-spinner" style="display:none"></div>' +
-      '</div>';
-    }).join('');
-    sshList.querySelectorAll('.si').forEach(function(el) {
+    var html = '';
+    if (connections && connections.length) {
+      html = connections.map(function(c) {
+        return '<button class="card" data-id="' + esc(c.id) + '">' +
+          '<div class="card-ic">' + SERVER_IC + '</div>' +
+          '<div class="card-info">' +
+            '<div class="card-name">' + esc(c.name || c.host) + '</div>' +
+            '<div class="card-meta">' + esc((c.user || 'root') + '@' + c.host + ':' + (c.port || 22)) + '</div>' +
+          '</div>' +
+          '<div class="card-spinner" style="display:none"></div>' +
+        '</button>';
+      }).join('');
+    }
+    html += addCardHTML();
+    sshList.innerHTML = html;
+    sshList.querySelectorAll('.card[data-id]').forEach(function(el) {
       el.addEventListener('click', function() {
         el.classList.add('connecting');
-        var sp = el.querySelector('.si-spinner');
+        var sp = el.querySelector('.card-spinner');
         if (sp) sp.style.display = '';
         window.groove.home.connectSSH(el.getAttribute('data-id')).then(function(res) {
           if (res && res.localPort) {
@@ -1173,36 +1267,16 @@ body {
         });
       });
     });
+    attachAddBtn();
   }
 
-  window.groove.home.getCachedSub().then(function(sub) {
-    if (sub.authenticated && sub.active && (sub.plan === 'pro' || sub.plan === 'team')) {
-      sshSection.classList.add('active');
-      window.groove.home.getSSH().then(renderSSH).catch(function() {});
-    } else if (sub.authenticated) {
-      sshGate.style.display = '';
-      document.getElementById('btn-gate-upgrade').style.display = '';
-      document.getElementById('btn-gate-login').style.display = 'none';
-    } else {
-      sshGate.style.display = '';
-    }
-  }).catch(function() {});
+  // SSH is part of the community plan - load unconditionally
+  window.groove.home.getSSH().then(renderSSH).catch(function() { renderSSH([]); });
 
-  document.getElementById('btn-gate-login').addEventListener('click', function() {
-    window.groove.auth.login();
-  });
-  document.getElementById('btn-gate-upgrade').addEventListener('click', function() {
-    window.groove.openExternal('https://groovedev.ai/#/pricing');
-  });
+  document.getElementById('btn-connect-remote').addEventListener('click', openSSHForm);
 
-  btnAddSSH.addEventListener('click', function() {
-    sshFormEl.classList.add('active');
-    btnAddSSH.style.display = 'none';
-    document.getElementById('ssh-name').focus();
-  });
   document.getElementById('btn-cancel-ssh').addEventListener('click', function() {
     sshFormEl.classList.remove('active');
-    btnAddSSH.style.display = '';
   });
   document.getElementById('btn-pick-key').addEventListener('click', function() {
     window.groove.home.pickKeyFile().then(function(p) {
@@ -1223,7 +1297,6 @@ body {
     document.getElementById('btn-save-ssh').disabled = true;
     window.groove.home.addSSH(config).then(function() {
       sshFormEl.classList.remove('active');
-      btnAddSSH.style.display = '';
       document.getElementById('ssh-name').value = '';
       document.getElementById('ssh-host').value = '';
       document.getElementById('ssh-port').value = '22';
@@ -1237,17 +1310,13 @@ body {
     });
   });
 
-  if (window.groove.auth && window.groove.auth.onChanged) {
-    window.groove.auth.onChanged(function() {
-      window.groove.home.getCachedSub().then(function(sub) {
-        if (sub.authenticated && sub.active && (sub.plan === 'pro' || sub.plan === 'team')) {
-          sshGate.style.display = 'none';
-          sshSection.classList.add('active');
-          window.groove.home.getSSH().then(renderSSH).catch(function() {});
-        }
-      }).catch(function() {});
-    });
-  }
+  document.addEventListener('keydown', function(e) {
+    var mod = e.metaKey || e.ctrlKey;
+    if (mod && (e.key === 'o' || e.key === 'O')) {
+      e.preventDefault();
+      document.getElementById('open-folder').click();
+    }
+  });
 })();
 </script>
 </body>

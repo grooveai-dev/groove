@@ -396,6 +396,24 @@ export class TunnelManager {
     const target = `${config.user}@${config.host}`;
     const keyArgs = config.sshKeyPath ? ['-i', config.sshKeyPath] : [];
 
+    // Build the remote bash command:
+    //   1. cd into the saved projectDir (if set) so the daemon inherits that cwd
+    //   2. launch `groove start` detached via nohup
+    //   3. poll /api/health until it responds
+    //   4. explicitly POST /api/project-dir so the daemon's projectDir matches
+    //      config.projectDir even if the backgrounded cwd didn't stick (this
+    //      also updates the editor root used for /api/browse, /api/files/*)
+    const cdPrefix = config.projectDir ? `cd "${config.projectDir}" && ` : '';
+    const setProjectDir = config.projectDir
+      ? `curl -sf -X POST -H 'Content-Type: application/json' --data '{"path":"${config.projectDir}"}' http://localhost:${REMOTE_PORT}/api/project-dir > /dev/null 2>&1 || true; `
+      : '';
+    const remoteCmd =
+      `${cdPrefix}nohup groove start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; ` +
+      `sleep 5; ` +
+      `curl -sf http://localhost:${REMOTE_PORT}/api/health > /dev/null ` +
+      `&& (${setProjectDir}echo __DAEMON_OK__) ` +
+      `|| (echo __DAEMON_FAIL__; tail -20 /tmp/groove-daemon.log 2>/dev/null)`;
+
     try {
       const result = execFileSync('ssh', [
         ...keyArgs,
@@ -403,7 +421,7 @@ export class TunnelManager {
         '-o', 'ConnectTimeout=10',
         '-o', 'BatchMode=yes',
         target,
-        `bash -lc '${config.projectDir ? `cd "${config.projectDir}" && ` : ''}nohup groove start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 5; curl -sf http://localhost:${REMOTE_PORT}/api/health > /dev/null && echo __DAEMON_OK__ || (echo __DAEMON_FAIL__; tail -20 /tmp/groove-daemon.log 2>/dev/null)'`,
+        `bash -lc '${remoteCmd}'`,
       ], {
         encoding: 'utf8',
         timeout: 45000,

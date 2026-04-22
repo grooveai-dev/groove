@@ -3,7 +3,7 @@
 
 import { spawn as cpSpawn } from 'child_process';
 import { createWriteStream, mkdirSync, chmodSync, existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync, copyFileSync } from 'fs';
-import { resolve, dirname } from 'path';
+import { resolve, dirname, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
 import { getProvider, getInstalledProviders } from './providers/index.js';
 import { AgentLoop } from './agent-loop.js';
@@ -366,13 +366,19 @@ export class ProcessManager {
   async spawn(config) {
     const { registry, locks, introducer } = this.daemon;
 
-    // Validate workingDir is within the project directory
+    // Validate workingDir. Must be an absolute path to an existing directory.
+    // We intentionally do NOT require it to live under daemon.projectDir — remote
+    // SSH users legitimately run projects anywhere on the server (e.g. /var/www,
+    // /opt/myapp) while daemon.projectDir defaults to their homedir.
     if (config.workingDir) {
-      const resolved = resolve(config.workingDir);
-      const projResolved = resolve(this.daemon?.projectDir || process.cwd());
-      if (!resolved.startsWith(projResolved)) {
-        throw new Error('workingDir must be within project directory');
+      if (typeof config.workingDir !== 'string' || config.workingDir.includes('\0') || !isAbsolute(config.workingDir)) {
+        throw new Error('workingDir must be an absolute path');
       }
+      const resolved = resolve(config.workingDir);
+      if (!existsSync(resolved)) {
+        throw new Error(`workingDir does not exist: ${resolved}`);
+      }
+      config.workingDir = resolved;
     }
 
     // Ambassador spawn guard: one ambassador per federation peer

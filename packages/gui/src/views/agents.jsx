@@ -10,7 +10,7 @@ import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen } from 'lucide-react';
+import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Radio } from 'lucide-react';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../components/ui/context-menu';
 
 const NODE_TYPES = { agentNode: AgentNode, rootNode: RootNode };
@@ -627,6 +627,19 @@ function EmptyState({ onPlanner, onSpawn }) {
             <div className="min-w-0">
               <div className="text-sm font-semibold text-text-0 font-sans">Spawn Agent</div>
               <div className="text-xs text-text-3 font-sans mt-0.5">Choose a role and configure</div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => useGrooveStore.getState().toggleQuickConnect()}
+            className="w-full flex items-center gap-3 p-4 rounded-lg border border-border bg-surface-1 hover:bg-surface-2 hover:border-border transition-all cursor-pointer group text-left"
+          >
+            <div className="w-10 h-10 rounded-lg bg-surface-4 flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
+              <Radio size={20} className="text-text-1" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-text-0 font-sans">Connect to Remote Server</div>
+              <div className="text-xs text-text-3 font-sans mt-0.5">SSH tunnel to a remote machine</div>
             </div>
           </button>
         </div>

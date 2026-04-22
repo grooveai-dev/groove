@@ -4,10 +4,9 @@ import { Dialog, DialogContent } from '../ui/dialog';
 import { useGrooveStore } from '../../stores/groove';
 import { openExternal } from '../../lib/electron';
 import { cn } from '../../lib/cn';
-import { Sparkles, Check, Radio, Server, Cloud, LogIn } from 'lucide-react';
+import { Sparkles, Check, Server, Cloud, LogIn } from 'lucide-react';
 
 const PRO_FEATURES = [
-  { icon: Radio, label: 'SSH Tunnel', desc: 'Connect to remote servers' },
   { icon: Server, label: 'Federation', desc: 'Multi-machine daemon pairing' },
   { icon: Cloud, label: 'Cloud Teams', desc: 'Coming soon' },
 ];

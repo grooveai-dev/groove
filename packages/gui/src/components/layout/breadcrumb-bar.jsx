@@ -51,15 +51,7 @@ function UserMenu() {
   }, [open]);
 
   if (!authenticated) {
-    return (
-      <button
-        onClick={login}
-        className="flex items-center gap-1.5 h-7 px-3 rounded-md bg-surface-1 border border-border-subtle text-xs font-semibold font-sans text-text-2 hover:text-text-0 hover:border-border transition-colors cursor-pointer select-none flex-shrink-0"
-      >
-        <LogIn size={12} />
-        Sign in
-      </button>
-    );
+    return null;
   }
 
   return (

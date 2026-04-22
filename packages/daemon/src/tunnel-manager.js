@@ -85,7 +85,7 @@ export class TunnelManager {
     }));
   }
 
-  save({ name, host, user, port, sshKeyPath, autoStart, autoConnect }) {
+  save({ name, host, user, port, sshKeyPath, autoStart, autoConnect, projectDir }) {
     validateField(name, 'name');
     validateField(host, 'host');
     validateField(user, 'user');
@@ -104,6 +104,15 @@ export class TunnelManager {
       }
     }
 
+    if (projectDir) {
+      if (typeof projectDir !== 'string' || !projectDir.startsWith('/')) {
+        throw new Error('projectDir must be an absolute path');
+      }
+      if (/[;|&`$(){}[\]<>!#\n\r\\]/.test(projectDir)) {
+        throw new Error('Invalid characters in projectDir');
+      }
+    }
+
     const id = crypto.randomUUID().slice(0, 8);
     const entry = {
       id,
@@ -114,6 +123,7 @@ export class TunnelManager {
       sshKeyPath: sshKeyPath || null,
       autoStart: !!autoStart,
       autoConnect: !!autoConnect,
+      projectDir: projectDir ? projectDir.trim() : null,
       createdAt: new Date().toISOString(),
     };
 
@@ -163,6 +173,19 @@ export class TunnelManager {
     }
     if (config.autoStart !== undefined) merged.autoStart = !!config.autoStart;
     if (config.autoConnect !== undefined) merged.autoConnect = !!config.autoConnect;
+    if (config.projectDir !== undefined) {
+      if (config.projectDir) {
+        if (typeof config.projectDir !== 'string' || !config.projectDir.startsWith('/')) {
+          throw new Error('projectDir must be an absolute path');
+        }
+        if (/[;|&`$(){}[\]<>!#\n\r\\]/.test(config.projectDir)) {
+          throw new Error('Invalid characters in projectDir');
+        }
+        merged.projectDir = config.projectDir.trim();
+      } else {
+        merged.projectDir = null;
+      }
+    }
 
     this.saved.set(id, merged);
     this._save();
@@ -380,7 +403,7 @@ export class TunnelManager {
         '-o', 'ConnectTimeout=10',
         '-o', 'BatchMode=yes',
         target,
-        `bash -lc 'nohup groove start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 5; curl -sf http://localhost:${REMOTE_PORT}/api/health > /dev/null && echo __DAEMON_OK__ || (echo __DAEMON_FAIL__; tail -20 /tmp/groove-daemon.log 2>/dev/null)'`,
+        `bash -lc '${config.projectDir ? `cd "${config.projectDir}" && ` : ''}nohup groove start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 5; curl -sf http://localhost:${REMOTE_PORT}/api/health > /dev/null && echo __DAEMON_OK__ || (echo __DAEMON_FAIL__; tail -20 /tmp/groove-daemon.log 2>/dev/null)'`,
       ], {
         encoding: 'utf8',
         timeout: 45000,

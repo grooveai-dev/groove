@@ -8,6 +8,7 @@ import { cn } from '../../lib/cn';
 import { FolderSearch } from 'lucide-react';
 
 export function ServerDialog({ open, onOpenChange, server, onSave }) {
+  const remoteHomedir = useGrooveStore((s) => s.remoteHomedir);
   const [name, setName] = useState('');
   const [host, setHost] = useState('');
   const [user, setUser] = useState('');
@@ -170,6 +171,7 @@ export function ServerDialog({ open, onOpenChange, server, onSave }) {
           open={keyBrowserOpen}
           onOpenChange={setKeyBrowserOpen}
           currentPath={sshKeyPath || '~/.ssh'}
+          homePath={remoteHomedir}
           onSelect={(path) => setSshKeyPath(path)}
         />
       </DialogContent>

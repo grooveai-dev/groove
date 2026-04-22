@@ -128,6 +128,7 @@ function WelcomeStep({ onNext, onSkip }) {
 // ── Step 2: Project Folder ──────────────────────────────────
 
 function ProjectFolderStep({ selectedDir, onSelectDir }) {
+  const remoteHomedir = useGrooveStore((s) => s.remoteHomedir);
   const [browsing, setBrowsing] = useState(false);
 
   async function handleBrowse() {
@@ -182,7 +183,8 @@ function ProjectFolderStep({ selectedDir, onSelectDir }) {
         <FolderBrowser
           open={browsing}
           onOpenChange={setBrowsing}
-          currentPath={selectedDir || '/'}
+          currentPath={selectedDir || remoteHomedir || '/'}
+          homePath={remoteHomedir}
           onSelect={(dir) => { onSelectDir(dir); setBrowsing(false); }}
         />
       )}

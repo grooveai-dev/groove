@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { StatusDot } from '../ui/status-dot';
 import { FolderBrowser } from '../agents/folder-browser';
+import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import {
   FolderSearch, Check, X, AlertTriangle, Loader2,
@@ -97,6 +98,7 @@ function FieldCard({ icon: Icon, title, children }) {
 }
 
 export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
+  const remoteHomedir = useGrooveStore((s) => s.remoteHomedir);
   const [step, setStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState([]);
 
@@ -363,6 +365,7 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
             open={keyBrowserOpen}
             onOpenChange={setKeyBrowserOpen}
             currentPath={sshKeyPath || '~/.ssh'}
+            homePath={remoteHomedir}
             onSelect={(path) => setSshKeyPath(path)}
           />
         </div>

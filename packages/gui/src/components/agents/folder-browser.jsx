@@ -43,15 +43,16 @@ function BreadcrumbPath({ path, onNavigate }) {
   );
 }
 
-export function FolderBrowser({ open, onOpenChange, currentPath, onSelect }) {
-  const [path, setPath] = useState(currentPath || process.env.HOME || '/');
+export function FolderBrowser({ open, onOpenChange, currentPath, onSelect, homePath }) {
+  const home = homePath || '/home';
+  const [path, setPath] = useState(currentPath || home);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (open) {
-      navigateTo(currentPath || '/');
+      navigateTo(currentPath || home);
     }
   }, [open]);
 
@@ -75,7 +76,7 @@ export function FolderBrowser({ open, onOpenChange, currentPath, onSelect }) {
   }
 
   function goHome() {
-    navigateTo(process.env.HOME || '/Users');
+    navigateTo(home);
   }
 
   function handleSelect() {

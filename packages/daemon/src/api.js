@@ -744,6 +744,7 @@ export function createApi(app, daemon) {
       port: daemon.port,
       projectDir: daemon.projectDir,
       edition: sub.active ? 'pro' : 'community',
+      homedir: homedir(),
     });
   });
 
@@ -763,6 +764,7 @@ export function createApi(app, daemon) {
     }
     try {
       daemon.setProjectDir(dirPath);
+      editorRootDir = daemon.projectDir;
       res.json({ projectDir: daemon.projectDir, recentProjects: daemon.config.recentProjects || [] });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -3635,11 +3637,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   // --- Tunnels (Remote Access) ---
 
-  app.get('/api/tunnels', proOnly, (req, res) => {
+  app.get('/api/tunnels', (req, res) => {
     res.json(daemon.tunnelManager.getSaved());
   });
 
-  app.post('/api/tunnels', proOnly, (req, res) => {
+  app.post('/api/tunnels', (req, res) => {
     try {
       const { name, host, user, port, sshKeyPath, autoStart, autoConnect } = req.body;
       if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name is required (string)' });
@@ -3651,7 +3653,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
-  app.patch('/api/tunnels/:id', proOnly, (req, res) => {
+  app.patch('/api/tunnels/:id', (req, res) => {
     try {
       const result = daemon.tunnelManager.update(req.params.id, req.body);
       res.json(result);
@@ -3660,7 +3662,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
-  app.delete('/api/tunnels/:id', proOnly, async (req, res) => {
+  app.delete('/api/tunnels/:id', async (req, res) => {
     try {
       await daemon.tunnelManager.delete(req.params.id);
       res.json({ ok: true });
@@ -3669,7 +3671,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
-  app.post('/api/tunnels/:id/test', proOnly, async (req, res) => {
+  app.post('/api/tunnels/:id/test', async (req, res) => {
     try {
       const result = await daemon.tunnelManager.test(req.params.id);
       res.json(result);
@@ -3678,7 +3680,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
-  app.post('/api/tunnels/:id/connect', proOnly, async (req, res) => {
+  app.post('/api/tunnels/:id/connect', async (req, res) => {
     try {
       const opts = {};
       if (req.body?.skipTest && req.body?.testResult) {
@@ -3694,7 +3696,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
-  app.post('/api/tunnels/:id/disconnect', proOnly, async (req, res) => {
+  app.post('/api/tunnels/:id/disconnect', async (req, res) => {
     try {
       await daemon.tunnelManager.disconnect(req.params.id);
       res.json({ ok: true });
@@ -3703,7 +3705,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
-  app.post('/api/tunnels/:id/install', proOnly, async (req, res) => {
+  app.post('/api/tunnels/:id/install', async (req, res) => {
     try {
       const result = await daemon.tunnelManager.remoteInstall(req.params.id);
       res.json(result);
@@ -3712,7 +3714,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
-  app.post('/api/tunnels/:id/start', proOnly, async (req, res) => {
+  app.post('/api/tunnels/:id/start', async (req, res) => {
     try {
       await daemon.tunnelManager.autoStart(req.params.id);
       res.json({ ok: true });
@@ -3721,7 +3723,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
-  app.get('/api/tunnels/:id/status', proOnly, (req, res) => {
+  app.get('/api/tunnels/:id/status', (req, res) => {
     const s = daemon.tunnelManager.getStatus(req.params.id);
     if (!s) return res.status(404).json({ error: 'Remote not found' });
     res.json(s);
@@ -3867,27 +3869,6 @@ Keep responses concise. Help them think, don't lecture them about the system the
     daemon.audit.log('onboarding.setDefault', { provider, model: model || null });
     daemon.broadcast({ type: 'onboarding:default-changed', provider, model });
     res.json({ ok: true });
-  });
-
-  // --- Project Directory ---
-
-  app.post('/api/project-dir', async (req, res) => {
-    const { dir } = req.body;
-    if (!dir || typeof dir !== 'string') return res.status(400).json({ error: 'dir required' });
-    if (/[\0\n\r]/.test(dir)) return res.status(400).json({ error: 'Invalid characters in path' });
-    const { existsSync, statSync } = await import('fs');
-    const { resolve, isAbsolute } = await import('path');
-    const resolved = resolve(dir);
-    if (!isAbsolute(resolved)) return res.status(400).json({ error: 'Path must be absolute' });
-    if (!existsSync(resolved) || !statSync(resolved).isDirectory()) {
-      return res.status(400).json({ error: 'Directory does not exist' });
-    }
-    daemon.config.defaultWorkingDir = resolved;
-    const { saveConfig } = await import('./firstrun.js');
-    saveConfig(daemon.grooveDir, daemon.config);
-    daemon.broadcast({ type: 'config:updated', data: { defaultWorkingDir: resolved } });
-    daemon.audit.log('project.dir.change', { dir: resolved });
-    res.json({ ok: true, dir: resolved });
   });
 
   // --- Config ---

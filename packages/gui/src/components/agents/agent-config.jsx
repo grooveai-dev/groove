@@ -147,6 +147,7 @@ function AgentActions({ agent }) {
 
 export function AgentConfig({ agent }) {
   const addToast = useGrooveStore((s) => s.addToast);
+  const remoteHomedir = useGrooveStore((s) => s.remoteHomedir);
   const [providers, setProviders] = useState([]);
   const [selectedModel, setSelectedModel] = useState(agent.model || '');
   const [scopeInput, setScopeInput] = useState('');
@@ -959,7 +960,8 @@ export function AgentConfig({ agent }) {
       <FolderBrowser
         open={folderBrowserOpen}
         onOpenChange={setFolderBrowserOpen}
-        currentPath={agent.workingDir || '/'}
+        currentPath={agent.workingDir || remoteHomedir || '/'}
+        homePath={remoteHomedir}
         onSelect={handleWorkingDir}
       />
     </div>

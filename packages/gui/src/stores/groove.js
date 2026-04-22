@@ -34,6 +34,7 @@ export const useGrooveStore = create((set, get) => ({
   ws: null,
   daemonHost: null,
   tunneled: false,
+  remoteHomedir: null,
 
   // ── Teams ─────────────────────────────────────────────────
   teams: [],
@@ -172,6 +173,7 @@ export const useGrooveStore = create((set, get) => ({
         const isTunneled = String(s.port) !== browserPort;
         if (isTunneled) updates.tunneled = true;
         if (s.version) updates.version = s.version;
+        if (s.homedir) updates.remoteHomedir = s.homedir;
         if (Object.keys(updates).length > 0) set(updates);
         if (isTunneled) get().fetchProjectDir();
       }).catch(() => {});
@@ -907,7 +909,7 @@ export const useGrooveStore = create((set, get) => ({
         clearInterval(plannerPollInterval);
         plannerPollInterval = null;
       }
-      set({ connected: false, hydrated: false, ws: null, daemonHost: null, tunneled: false });
+      set({ connected: false, hydrated: false, ws: null, daemonHost: null, tunneled: false, remoteHomedir: null });
       setTimeout(() => get().connect(), 2000);
     };
     ws.onerror = () => ws.close();
@@ -1540,7 +1542,13 @@ export const useGrooveStore = create((set, get) => ({
       get().addToast('success', `Spawned ${agent.name}`);
       return agent;
     } catch (err) {
-      get().addToast('error', 'Spawn failed', err.message);
+      let detail = err.message;
+      if (detail?.includes('workingDir must be within project directory')) {
+        const projDir = get().projectDir || 'unknown';
+        const workDir = config.workingDir || 'default';
+        detail = `workingDir "${workDir}" is outside project directory "${projDir}". Change the project directory or pick a subfolder within it.`;
+      }
+      get().addToast('error', 'Spawn failed', detail);
       throw err;
     }
   },

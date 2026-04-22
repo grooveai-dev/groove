@@ -23,6 +23,7 @@ export function ProjectPicker() {
   const show = useGrooveStore((s) => s.showProjectPicker);
   const recentProjects = useGrooveStore((s) => s.recentProjects);
   const setProjectDir = useGrooveStore((s) => s.setProjectDir);
+  const remoteHomedir = useGrooveStore((s) => s.remoteHomedir);
   const [browserOpen, setBrowserOpen] = useState(false);
   const [loading, setLoading] = useState(null);
 
@@ -118,7 +119,8 @@ export function ProjectPicker() {
         <FolderBrowser
           open={browserOpen}
           onOpenChange={setBrowserOpen}
-          currentPath="/home"
+          currentPath={remoteHomedir || '/home'}
+          homePath={remoteHomedir}
           onSelect={handleBrowseSelect}
         />
       </div>

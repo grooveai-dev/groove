@@ -1035,6 +1035,7 @@ export default function SettingsView() {
   const [loading, setLoading] = useState(true);
   const [folderBrowserOpen, setFolderBrowserOpen] = useState(false);
   const addToast = useGrooveStore((s) => s.addToast);
+  const remoteHomedir = useGrooveStore((s) => s.remoteHomedir);
 
   function loadProviders() {
     api.get('/providers').then((d) => setProviders(Array.isArray(d) ? d : [])).catch(() => {});
@@ -1296,7 +1297,8 @@ export default function SettingsView() {
       <FolderBrowser
         open={folderBrowserOpen}
         onOpenChange={setFolderBrowserOpen}
-        currentPath={config?.defaultWorkingDir || '/'}
+        currentPath={config?.defaultWorkingDir || remoteHomedir || '/'}
+        homePath={remoteHomedir}
         onSelect={(dir) => updateConfig('defaultWorkingDir', dir)}
       />
     </div>

@@ -13,7 +13,7 @@ import { DetailPanel } from './detail-panel';
 import { CommandPalette } from './command-palette';
 import { ApprovalModal } from '../ui/approval-modal';
 import { QuickConnect } from '../settings/quick-connect';
-import { ProjectPicker } from './project-picker';
+
 import { TeamTabBar } from '../../views/agents';
 
 export function AppShell({ children, detailContent, terminalContent }) {
@@ -118,7 +118,6 @@ export function AppShell({ children, detailContent, terminalContent }) {
 
         <CommandPalette />
         <QuickConnect />
-        <ProjectPicker />
         <ApprovalModal />
         <ToastContainer />
       </div>

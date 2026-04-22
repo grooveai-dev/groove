@@ -7,6 +7,7 @@ import { AppShell } from './components/layout/app-shell';
 import { SetupWizard } from './components/onboarding/setup-wizard';
 import { useKeyboard } from './lib/hooks/use-keyboard';
 import { UpgradeModal } from './components/pro/upgrade-modal';
+import { WelcomeSplash } from './components/layout/welcome-splash';
 
 // Views
 import AgentsView from './views/agents';
@@ -115,6 +116,7 @@ export default function App() {
   const hydrated = useGrooveStore((s) => s.hydrated);
   const tunneled = useGrooveStore((s) => s.tunneled);
   const onboardingComplete = useGrooveStore((s) => s.onboardingComplete);
+  const showProjectPicker = useGrooveStore((s) => s.showProjectPicker);
   useEffect(() => { connect(); }, [connect]);
 
   useEffect(() => {
@@ -148,10 +150,12 @@ export default function App() {
   useKeyboard(openFolderShortcuts);
 
   if (!hydrated) return <LoadingScreen />;
+  if (!onboardingComplete) return <ErrorBoundary><SetupWizard /></ErrorBoundary>;
+  if (showProjectPicker) return <ErrorBoundary><WelcomeSplash /><UpgradeModal /></ErrorBoundary>;
 
   return (
     <ErrorBoundary>
-      {onboardingComplete ? <ViewRouter /> : <SetupWizard />}
+      <ViewRouter />
       <UpgradeModal />
     </ErrorBoundary>
   );

@@ -405,8 +405,7 @@ export class TunnelManager {
     //      also updates the editor root used for /api/browse, /api/files/*)
     const cdPrefix = config.projectDir ? `cd "${config.projectDir}" && ` : '';
     const setProjectDir = config.projectDir
-      ? `curl -sf -X POST -H 'Content-Type: application/json' --data '{"path":"${config.projectDir}"}' http://localhost:${REMOTE_PORT}/api/project-dir > /dev/null 2>&1 || true; ` +
-        `curl -sf -X POST -H 'Content-Type: application/json' --data '{"root":"${config.projectDir}"}' http://localhost:${REMOTE_PORT}/api/files/root > /dev/null 2>&1 || true; `
+      ? `curl -sf -X POST -H 'Content-Type: application/json' --data '{"path":"${config.projectDir}"}' http://localhost:${REMOTE_PORT}/api/project-dir > /dev/null 2>&1 || true; `
       : '';
     const remoteCmd =
       `${cdPrefix}nohup groove start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; ` +

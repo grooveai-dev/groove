@@ -45,16 +45,9 @@ export default function EditorView() {
   const startX = useRef(0);
   const startW = useRef(0);
 
-  // Fetch root dir — refetch when project directory changes (e.g. SSH remote folder selection)
+  // Fetch root dir on mount and when project directory changes
   useEffect(() => {
     api.get('/files/root').then((d) => setRootDir(d.root || '')).catch(() => {});
-  }, [projectDir]);
-
-  // Clear tree cache when project dir changes so stale entries don't persist
-  useEffect(() => {
-    if (projectDir) {
-      useGrooveStore.setState({ editorTreeCache: {} });
-    }
   }, [projectDir]);
 
   // Reset preview mode when switching files
@@ -126,7 +119,7 @@ export default function EditorView() {
       </div>
 
       {/* Editor area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 bg-surface-0">
         {/* Tab bar */}
         <EditorTabs />
 

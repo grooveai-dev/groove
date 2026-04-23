@@ -8,13 +8,14 @@ import { Skeleton } from '../components/ui/skeleton';
 import { StatusDot } from '../components/ui/status-dot';
 import { OllamaSetup } from '../components/agents/ollama-setup';
 import { FolderBrowser } from '../components/agents/folder-browser';
+import { ProviderSetupWizard } from '../components/settings/ProviderSetupWizard';
 import { Sheet, SheetContent } from '../components/ui/sheet';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { fmtUptime } from '../lib/format';
 import {
-  Key, Eye, EyeOff, Check, Cpu,
-  FolderOpen, FolderSearch, Users, Gauge,
+  Key, Eye, EyeOff, Check, Cpu, Download, Loader2,
+  FolderOpen, FolderSearch, Users, Gauge, ChevronRight,
   ShieldCheck, Settings, Lock,
   Newspaper, Radio, Send, MessageSquare, MessageCircle,
   Plus, Trash2, Plug, PlugZap, TestTube, X, HelpCircle, ExternalLink,
@@ -41,12 +42,26 @@ function Toggle({ value, onChange }) {
 
 /* ── Provider Card ─────────────────────────────────────────── */
 
+const KEY_PLACEHOLDERS = {
+  'claude-code': 'sk-ant-...',
+  codex: 'Paste from platform.openai.com',
+  gemini: 'Paste from aistudio.google.com',
+};
+
 function ProviderCard({ provider, onKeyChange }) {
   const [settingKey, setSettingKey] = useState(false);
   const [keyInput, setKeyInput] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [ollamaOpen, setOllamaOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState(0);
+  const [customPathOpen, setCustomPathOpen] = useState(false);
+  const [customPath, setCustomPath] = useState('');
+  const [savingPath, setSavingPath] = useState(false);
   const addToast = useGrooveStore((s) => s.addToast);
+  const installProgress = useGrooveStore((s) => s.providerInstallProgress[provider.id]);
+  const loginProvider = useGrooveStore((s) => s.loginProvider);
+  const setProviderPath = useGrooveStore((s) => s.setProviderPath);
 
   const isLocal = provider.authType === 'local';
   const isSubscription = provider.authType === 'subscription';
@@ -75,6 +90,28 @@ function ProviderCard({ provider, onKeyChange }) {
     } catch (err) {
       addToast('error', 'Remove failed', err.message);
     }
+  }
+
+  async function handleLogin(body) {
+    try {
+      await loginProvider(provider.id, body);
+    } catch { /* handled in store */ }
+  }
+
+  async function handleSavePath() {
+    if (!customPath.trim()) return;
+    setSavingPath(true);
+    try {
+      await setProviderPath(provider.id, customPath.trim());
+      setCustomPathOpen(false);
+      if (onKeyChange) onKeyChange();
+    } catch { /* handled in store */ }
+    setSavingPath(false);
+  }
+
+  function openWizard(step = 0) {
+    setWizardStep(step);
+    setWizardOpen(true);
   }
 
   // Local models card
@@ -138,102 +175,234 @@ function ProviderCard({ provider, onKeyChange }) {
     );
   }
 
+  const isInstalling = installProgress?.installing;
+
   // Standard provider card (Claude, Codex, Gemini)
   return (
-    <div className="flex flex-col rounded-lg border border-border-subtle bg-surface-1 overflow-hidden min-w-[220px]">
-      {/* Header */}
-      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border-subtle">
-        <StatusDot status={isReady ? 'running' : 'crashed'} size="sm" />
-        <span className="text-[13px] font-semibold text-text-0 font-sans">{provider.name}</span>
-        <div className="flex-1" />
-        {isReady ? (
-          <Badge variant="success" className="text-2xs gap-1"><Check size={8} /> Ready</Badge>
-        ) : (
-          <Badge variant="default" className="text-2xs">{!provider.installed ? 'Not installed' : isSubscription ? 'Not authenticated' : 'No key'}</Badge>
-        )}
-      </div>
+    <>
+      <div className="flex flex-col rounded-lg border border-border-subtle bg-surface-1 overflow-hidden min-w-[220px]">
+        {/* Header */}
+        <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border-subtle">
+          <StatusDot status={isReady ? 'running' : isInstalling ? 'idle' : 'crashed'} size="sm" />
+          <span className="text-[13px] font-semibold text-text-0 font-sans">{provider.name}</span>
+          <div className="flex-1" />
+          {isReady ? (
+            <Badge variant="success" className="text-2xs gap-1"><Check size={8} /> Ready</Badge>
+          ) : isInstalling ? (
+            <Badge variant="default" className="text-2xs gap-1"><Loader2 size={8} className="animate-spin" /> Installing</Badge>
+          ) : (
+            <Badge variant="default" className="text-2xs">{!provider.installed ? 'Not installed' : isSubscription ? 'Not signed in' : 'No key'}</Badge>
+          )}
+        </div>
 
-      {/* Body */}
-      <div className="flex-1 flex flex-col px-4 py-3 min-h-[120px]">
-        {/* Models */}
-        {provider.models?.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-3">
-            {provider.models.map((m) => (
-              <span key={m.id} className="px-1.5 py-0.5 rounded bg-surface-4 text-2xs font-mono text-text-3">
-                {m.name || m.id}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Subscription info for Claude */}
-        {isSubscription && isReady && !provider.hasKey && !settingKey && (
-          <div className="flex items-center gap-1.5 h-8 px-2.5 bg-accent/8 border border-accent/20 rounded-md text-2xs font-sans text-accent mb-3">
-            <Check size={10} /> Subscription active
-          </div>
-        )}
-
-        {/* Connected state */}
-        {provider.hasKey && !settingKey && (
-          <div className="flex items-center gap-2 mb-3">
-            <div className="flex-1 flex items-center gap-1.5 h-8 px-2.5 bg-success/8 border border-success/20 rounded-md text-2xs font-sans text-success">
-              <Check size={10} /> API Connected
+        {/* Body */}
+        <div className="flex-1 flex flex-col px-4 py-3 min-h-[120px]">
+          {/* Models */}
+          {provider.models?.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-3">
+              {provider.models.map((m) => (
+                <span key={m.id} className="px-1.5 py-0.5 rounded bg-surface-4 text-2xs font-mono text-text-3">
+                  {m.name || m.id}
+                </span>
+              ))}
             </div>
-            <button onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }} className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans">Edit</button>
-            <button onClick={handleDeleteKey} className="text-2xs text-text-4 hover:text-danger cursor-pointer font-sans">Remove</button>
-          </div>
-        )}
+          )}
 
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Key input form — takes over the bottom area */}
-        {settingKey && (
-          <div className="space-y-2.5 pt-1">
-            <div>
-              <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">
-                {provider.hasKey ? 'Update API Key' : `${provider.name} API Key`}
-              </label>
-              <div className="relative">
-                <input
-                  value={keyInput}
-                  onChange={(e) => setKeyInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSetKey()}
-                  type={showKey ? 'text' : 'password'}
-                  placeholder="sk-..."
-                  className="w-full h-9 px-3 pr-9 text-xs bg-surface-0 border border-border rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
-                  autoFocus
+          {/* Installing progress bar */}
+          {isInstalling && (
+            <div className="space-y-2 mb-3">
+              <div className="h-1.5 bg-surface-4 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-accent to-accent/60 rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${Math.max(installProgress?.percent || 0, 5)}%` }}
                 />
-                <button onClick={() => setShowKey(!showKey)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-4 hover:text-text-2 cursor-pointer">
-                  {showKey ? <EyeOff size={12} /> : <Eye size={12} />}
-                </button>
+              </div>
+              <p className="text-2xs text-text-3 font-sans">{installProgress?.message || 'Installing...'}</p>
+            </div>
+          )}
+
+          {/* Not installed — prominent Install button */}
+          {!provider.installed && !isInstalling && !settingKey && (
+            <div className="flex flex-col items-center justify-center flex-1 gap-3 py-2">
+              <p className="text-xs text-text-3 font-sans text-center">
+                {provider.name} is not installed on this machine.
+              </p>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => openWizard(0)}
+                className="h-8 px-4 text-xs gap-1.5"
+              >
+                <Download size={12} /> Install {provider.name}
+              </Button>
+            </div>
+          )}
+
+          {/* Installed but needs auth */}
+          {provider.installed && !isReady && !settingKey && !isInstalling && (
+            <div className="flex flex-col gap-2.5 flex-1">
+              {isSubscription ? (
+                <>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleLogin}
+                    className="w-full h-8 text-2xs gap-1.5"
+                  >
+                    <ExternalLink size={11} /> Sign In with Anthropic
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
+                    className="w-full h-8 text-2xs gap-1.5"
+                  >
+                    <Key size={11} /> Add API Key Instead
+                  </Button>
+                </>
+              ) : provider.id === 'codex' ? (
+                <>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
+                    className="w-full h-8 text-2xs gap-1.5"
+                  >
+                    <Key size={11} /> Add API Key
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleLogin({ method: 'chatgpt-plus' })}
+                    className="w-full h-8 text-2xs gap-1.5"
+                  >
+                    <ExternalLink size={11} /> Sign in with ChatGPT Plus
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
+                  className="w-full h-8 text-2xs gap-1.5"
+                >
+                  <Key size={11} /> Add API Key
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Subscription info for Claude */}
+          {isSubscription && isReady && !provider.hasKey && !settingKey && (
+            <div className="flex items-center gap-1.5 h-8 px-2.5 bg-accent/8 border border-accent/20 rounded-md text-2xs font-sans text-accent mb-3">
+              <Check size={10} /> Subscription active
+            </div>
+          )}
+
+          {/* Connected state */}
+          {provider.hasKey && !settingKey && (
+            <div className="flex items-center gap-2 mb-3">
+              <div className="flex-1 flex items-center gap-1.5 h-8 px-2.5 bg-success/8 border border-success/20 rounded-md text-2xs font-sans text-success">
+                <Check size={10} /> API Connected
+              </div>
+              <button onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }} className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans">Edit</button>
+              <button onClick={handleDeleteKey} className="text-2xs text-text-4 hover:text-danger cursor-pointer font-sans">Remove</button>
+            </div>
+          )}
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Key input form */}
+          {settingKey && (
+            <div className="space-y-2.5 pt-1">
+              <div>
+                <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">
+                  {provider.hasKey ? 'Update API Key' : `${provider.name} API Key`}
+                </label>
+                <div className="relative">
+                  <input
+                    value={keyInput}
+                    onChange={(e) => setKeyInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSetKey()}
+                    type={showKey ? 'text' : 'password'}
+                    placeholder={KEY_PLACEHOLDERS[provider.id] || 'sk-...'}
+                    className="w-full h-9 px-3 pr-9 text-xs bg-surface-0 border border-border rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+                    autoFocus
+                  />
+                  <button onClick={() => setShowKey(!showKey)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-4 hover:text-text-2 cursor-pointer">
+                    {showKey ? <EyeOff size={12} /> : <Eye size={12} />}
+                  </button>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="primary" size="sm" onClick={handleSetKey} disabled={!keyInput.trim()} className="flex-1 h-8 text-xs">
+                  Save Key
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => { setSettingKey(false); setKeyInput(''); }} className="h-8 text-xs px-3">
+                  Cancel
+                </Button>
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button variant="primary" size="sm" onClick={handleSetKey} disabled={!keyInput.trim()} className="flex-1 h-8 text-xs">
-                Save Key
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => { setSettingKey(false); setKeyInput(''); }} className="h-8 text-xs px-3">
-                Cancel
-              </Button>
-            </div>
+          )}
+
+          {/* Bottom action for ready cards — add key for headless */}
+          {isReady && !settingKey && !provider.hasKey && isSubscription && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
+              className="w-full h-8 text-2xs gap-1.5 mt-2"
+            >
+              <Key size={11} />
+              Add API key for headless mode
+            </Button>
+          )}
+        </div>
+
+        {/* Custom path section */}
+        {provider.installed && (
+          <div className="border-t border-border-subtle">
+            <button
+              onClick={() => setCustomPathOpen(!customPathOpen)}
+              className="w-full flex items-center gap-2 px-4 py-2 text-left cursor-pointer hover:bg-surface-5/30 transition-colors"
+            >
+              <ChevronRight
+                size={10}
+                className={cn('text-text-4 transition-transform duration-200', customPathOpen && 'rotate-90')}
+              />
+              <span className="text-2xs text-text-4 font-sans">Set custom path</span>
+            </button>
+            {customPathOpen && (
+              <div className="px-4 pb-3 space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    value={customPath}
+                    onChange={(e) => setCustomPath(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSavePath()}
+                    placeholder={`/path/to/${provider.id}`}
+                    className="flex-1 h-7 px-2 text-2xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+                  />
+                  <Button variant="primary" size="sm" onClick={handleSavePath} disabled={!customPath.trim() || savingPath} className="h-7 text-2xs px-2.5">
+                    {savingPath ? '...' : 'Save'}
+                  </Button>
+                </div>
+                <p className="text-2xs text-text-4 font-sans">For non-standard install locations</p>
+              </div>
+            )}
           </div>
         )}
-
-        {/* Bottom action — always at card bottom */}
-        {!settingKey && !provider.hasKey && (
-          <Button
-            variant={isSubscription ? 'secondary' : 'primary'}
-            size="sm"
-            onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
-            className="w-full h-8 text-2xs gap-1.5 mt-2"
-          >
-            <Key size={11} />
-            {isSubscription ? 'Add API key for headless mode' : 'Add API Key'}
-          </Button>
-        )}
       </div>
-    </div>
+
+      {/* Setup wizard modal */}
+      <ProviderSetupWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        providerId={provider.id}
+        initialStep={wizardStep}
+        onComplete={onKeyChange}
+      />
+    </>
   );
 }
 
@@ -1036,6 +1205,7 @@ export default function SettingsView() {
   const [folderBrowserOpen, setFolderBrowserOpen] = useState(false);
   const addToast = useGrooveStore((s) => s.addToast);
   const remoteHomedir = useGrooveStore((s) => s.remoteHomedir);
+  const providerRefreshTick = useGrooveStore((s) => s._providerRefreshTick);
 
   function loadProviders() {
     api.get('/providers').then((d) => setProviders(Array.isArray(d) ? d : [])).catch(() => {});
@@ -1050,6 +1220,10 @@ export default function SettingsView() {
       .then(([p, c, s, g]) => { setProviders(Array.isArray(p) ? p : []); setConfig(c); setDaemonInfo(s); setGwList(Array.isArray(g) ? g : []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (providerRefreshTick) loadProviders();
+  }, [providerRefreshTick]);
 
   async function addGateway(type) {
     try {

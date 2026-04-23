@@ -43,6 +43,9 @@ export const useGrooveStore = create((set, get) => ({
   // ── Gateways ──────────────────────────────────────────────
   gateways: [],
 
+  // ── Providers ────────────────────────────────────────────
+  _providerRefreshTick: 0,
+
   // ── Federation ────────────────────────────────────────────
   federation: {
     peers: [],
@@ -583,6 +586,10 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'gateway:status':
           set({ gateways: msg.data || [] });
+          break;
+
+        case 'provider:status-changed':
+          set({ _providerRefreshTick: Date.now() });
           break;
 
         case 'federation:whitelist':
@@ -1640,13 +1647,111 @@ export const useGrooveStore = create((set, get) => ({
     api.post('/onboarding/dismiss').catch(() => {});
   },
 
+  // ── Provider Setup (Settings) ──────────────────────────────
+
+  providerInstallProgress: {},
+
   async installProvider(providerId) {
+    set((s) => ({
+      providerInstallProgress: {
+        ...s.providerInstallProgress,
+        [providerId]: { installing: true, percent: 0, message: 'Starting install...', error: null, done: false },
+      },
+    }));
     try {
-      const data = await api.post('/onboarding/install-provider', { provider: providerId });
+      const res = await fetch(`/api/providers/${encodeURIComponent(providerId)}/install`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err || `Install failed (${res.status})`);
+      }
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('ndjson') || ct.includes('octet-stream') || ct.includes('chunked')) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        let lastError = null;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const ev = JSON.parse(line);
+              const isError = ev.status === 'error';
+              const isDone = ev.status === 'complete';
+              if (isError) lastError = ev.output || 'Install failed';
+              set((s) => ({
+                providerInstallProgress: {
+                  ...s.providerInstallProgress,
+                  [providerId]: {
+                    ...s.providerInstallProgress[providerId],
+                    percent: ev.progress ?? s.providerInstallProgress[providerId]?.percent ?? 0,
+                    message: ev.output || s.providerInstallProgress[providerId]?.message,
+                    error: isError ? (ev.output || 'Install failed') : null,
+                    done: isDone,
+                    installing: !isDone && !isError,
+                  },
+                },
+              }));
+            } catch { /* skip malformed NDJSON line */ }
+          }
+        }
+        if (lastError) throw new Error(lastError);
+      }
+      const progress = get().providerInstallProgress[providerId];
+      if (progress?.error) throw new Error(progress.error);
+      set((s) => ({
+        providerInstallProgress: {
+          ...s.providerInstallProgress,
+          [providerId]: { installing: false, percent: 100, message: 'Installed', error: null, done: true },
+        },
+      }));
       get().addToast('success', `${providerId} installed`);
+    } catch (err) {
+      set((s) => ({
+        providerInstallProgress: {
+          ...s.providerInstallProgress,
+          [providerId]: { installing: false, percent: 0, message: null, error: err.message, done: false },
+        },
+      }));
+      get().addToast('error', `Install failed: ${providerId}`, err.message);
+      throw err;
+    }
+  },
+
+  async loginProvider(providerId, body) {
+    try {
+      const data = await api.post(`/providers/${encodeURIComponent(providerId)}/login`, body);
+      if (data?.url) window.open(data.url, '_blank');
       return data;
     } catch (err) {
-      get().addToast('error', `Install failed: ${providerId}`, err.message);
+      get().addToast('error', `Login failed`, err.message);
+      throw err;
+    }
+  },
+
+  async setProviderPath(providerId, path) {
+    try {
+      await api.post(`/providers/${encodeURIComponent(providerId)}/set-path`, { path });
+      get().addToast('success', `Custom path set for ${providerId}`);
+    } catch (err) {
+      get().addToast('error', 'Failed to set path', err.message);
+      throw err;
+    }
+  },
+
+  async verifyProvider(providerId) {
+    try {
+      const data = await api.post(`/providers/${encodeURIComponent(providerId)}/verify`);
+      return data;
+    } catch (err) {
+      get().addToast('error', `Verification failed`, err.message);
       throw err;
     }
   },

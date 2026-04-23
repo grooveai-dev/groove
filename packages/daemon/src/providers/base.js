@@ -36,4 +36,12 @@ export class Provider {
   streamChat(messages, model, apiKey, onChunk, onDone, onError) {
     return null;
   }
+
+  static setupGuide() {
+    return { installSteps: [], authMethods: [], authInstructions: {} };
+  }
+
+  static authMethods() {
+    return [];
+  }
 }

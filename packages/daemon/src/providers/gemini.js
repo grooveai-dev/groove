@@ -219,4 +219,18 @@ export class GeminiProvider extends Provider {
         return null;
     }
   }
+
+  static setupGuide() {
+    return {
+      installSteps: ['Installing Gemini CLI...', 'This may take a minute'],
+      authMethods: ['api-key'],
+      authInstructions: {
+        keyInstructions: 'Get your API key from aistudio.google.com',
+      },
+    };
+  }
+
+  static authMethods() {
+    return ['api-key'];
+  }
 }

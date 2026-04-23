@@ -323,4 +323,19 @@ export class CodexProvider extends Provider {
         return null;
     }
   }
+
+  static setupGuide() {
+    return {
+      installSteps: ['Installing Codex CLI...', 'This may take a minute'],
+      authMethods: ['api-key', 'chatgpt-plus'],
+      authInstructions: {
+        apiKeyHelp: 'Get your API key from platform.openai.com/api-keys',
+        chatgptPlusHelp: 'Sign in with your ChatGPT Plus account',
+      },
+    };
+  }
+
+  static authMethods() {
+    return ['api-key', 'chatgpt-plus'];
+  }
 }

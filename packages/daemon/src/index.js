@@ -45,6 +45,7 @@ import { ConversationManager } from './conversations.js';
 import { Toys } from './toys.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 import { bindDaemon as bindGrooveNetworkDaemon } from './providers/groove-network.js';
+import { setProviderPaths } from './providers/index.js';
 
 const DEFAULT_PORT = 31415;
 const DEFAULT_HOST = '127.0.0.1';
@@ -112,6 +113,8 @@ export class Daemon {
     } else {
       this.config = loadConfig(this.grooveDir);
     }
+
+    if (this.config.providerPaths) setProviderPaths(this.config.providerPaths);
 
     // Initialize core components
     this.state = new StateManager(this.grooveDir);

@@ -340,4 +340,56 @@ export class ClaudeCodeProvider extends Provider {
     child.unref();
     return { pid: child.pid };
   }
+
+  static setupGuide() {
+    return {
+      installSteps: ['Installing Claude Code...', 'This may take a minute'],
+      authMethods: ['subscription', 'api-key'],
+      authInstructions: {
+        subscriptionLoginHelp: 'Sign in with your Anthropic account',
+      },
+    };
+  }
+
+  static authMethods() {
+    return ['subscription', 'api-key'];
+  }
+
+  static async startLogin() {
+    return new Promise((resolve) => {
+      const child = cpSpawn('claude', ['auth', 'login', '--claudeai'], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (d) => { stdout += d.toString(); });
+      child.stderr.on('data', (d) => { stderr += d.toString(); });
+
+      const timeout = setTimeout(() => {
+        const urlMatch = (stdout + stderr).match(/https:\/\/\S+/);
+        if (urlMatch) {
+          resolve({ status: 'pending', url: urlMatch[0], pid: child.pid });
+        } else {
+          resolve({ status: 'pending', message: 'Login started — check your browser', pid: child.pid });
+        }
+      }, 3000);
+
+      child.on('close', (code) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          resolve({ status: 'authenticated' });
+        } else {
+          const urlMatch = (stdout + stderr).match(/https:\/\/\S+/);
+          resolve(urlMatch
+            ? { status: 'pending', url: urlMatch[0], pid: child.pid }
+            : { status: 'error', error: stderr.slice(-200) || `Login failed (exit ${code})` });
+        }
+      });
+
+      child.on('error', (err) => {
+        clearTimeout(timeout);
+        resolve({ status: 'error', error: err.message });
+      });
+    });
+  }
 }

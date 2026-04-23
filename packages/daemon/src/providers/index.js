@@ -2,6 +2,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { execSync } from 'child_process';
+import { dirname as pathDirname } from 'path';
 import { ClaudeCodeProvider } from './claude-code.js';
 import { CodexProvider } from './codex.js';
 import { GeminiProvider } from './gemini.js';
@@ -11,6 +12,30 @@ import { GrooveNetworkProvider } from './groove-network.js';
 
 // Electron forks may not inherit the full shell PATH, causing `which` to miss
 // globally-installed CLI tools. Augment PATH with common npm global bin dirs.
+// Custom provider paths from config are prepended when setProviderPaths() is called.
+let _providerPaths = {};
+
+export function setProviderPaths(paths) {
+  _providerPaths = paths || {};
+  _augmentPathWithCustomPaths();
+}
+
+function _augmentPathWithCustomPaths() {
+  const cur = process.env.PATH || '';
+  const dirs = [];
+  for (const p of Object.values(_providerPaths)) {
+    if (p && typeof p === 'string') {
+      const dir = pathDirname(p);
+      if (dir && !cur.split(':').includes(dir)) dirs.push(dir);
+    }
+  }
+  if (dirs.length) process.env.PATH = [...dirs, cur].join(':');
+}
+
+export function getProviderPath(id) {
+  return (_providerPaths && _providerPaths[id]) || null;
+}
+
 (function augmentPath() {
   const extra = ['/usr/local/bin', '/opt/homebrew/bin'];
   try {
@@ -77,4 +102,15 @@ export function listProviders() {
 
 export function getInstalledProviders() {
   return listProviders().filter((p) => p.installed);
+}
+
+export function getProviderMetadata(id) {
+  const p = providers[id];
+  if (!p) return null;
+  return {
+    id,
+    setupGuide: p.constructor.setupGuide?.() || { installSteps: [], authMethods: [], authInstructions: {} },
+    authMethods: p.constructor.authMethods?.() || [],
+    installCommand: p.constructor.installCommand(),
+  };
 }

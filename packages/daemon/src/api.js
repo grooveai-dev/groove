@@ -10,7 +10,7 @@ import { createHash, randomUUID } from 'crypto';
 import { hostname, networkInterfaces, homedir } from 'os';
 import { StringDecoder } from 'string_decoder';
 import { lookup as mimeLookup } from './mimetypes.js';
-import { listProviders, getProvider } from './providers/index.js';
+import { listProviders, getProvider, clearInstallCache, getProviderMetadata, getProviderPath, setProviderPaths } from './providers/index.js';
 import { OllamaProvider } from './providers/ollama.js';
 import { ClaudeCodeProvider } from './providers/claude-code.js';
 import { supportsSignalFlag, compareSemver, parseSemver } from './providers/groove-network.js';
@@ -441,12 +441,18 @@ export function createApi(app, daemon) {
   // List available providers
   app.get('/api/providers', (req, res) => {
     const providers = listProviders();
-    // Enrich with credential status
     for (const p of providers) {
       p.hasKey = daemon.credentials.hasKey(p.id);
       if (p.id === 'claude-code') {
         p.authStatus = ClaudeCodeProvider.getAuthStatus();
       }
+      const meta = getProviderMetadata(p.id);
+      if (meta) {
+        p.setupGuide = meta.setupGuide;
+        p.authMethods = meta.authMethods;
+      }
+      const customPath = getProviderPath(p.id);
+      if (customPath) p.providerPath = customPath;
     }
     res.json(providers);
   });
@@ -574,6 +580,268 @@ export function createApi(app, daemon) {
     } else {
       res.status(500).json({ error: 'Could not restart server' });
     }
+  });
+
+  // --- Provider Management (install, login, set-path, verify) ---
+
+  const MANAGEABLE_PROVIDERS = new Set(['claude-code', 'codex', 'gemini']);
+
+  app.post('/api/providers/:id/install', (req, res) => {
+    const { id } = req.params;
+    if (!MANAGEABLE_PROVIDERS.has(id)) {
+      return res.status(400).json({ error: `Invalid provider. Valid: ${[...MANAGEABLE_PROVIDERS].join(', ')}` });
+    }
+
+    const INSTALL_PACKAGES = {
+      'claude-code': '@anthropic-ai/claude-code',
+      'codex': '@openai/codex',
+      'gemini': '@google/gemini-cli',
+    };
+    const pkg = INSTALL_PACKAGES[id];
+
+    res.setHeader('Content-Type', 'application/x-ndjson');
+    res.setHeader('Transfer-Encoding', 'chunked');
+    res.setHeader('Cache-Control', 'no-cache');
+
+    const write = (obj) => {
+      try { res.write(JSON.stringify(obj) + '\n'); } catch { /* client disconnected */ }
+    };
+
+    write({ status: 'installing', output: `Installing ${pkg}...`, progress: 0 });
+
+    const proc = spawn('npm', ['install', '-g', pkg], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, NODE_ENV: undefined },
+    });
+
+    let output = '';
+    let errOutput = '';
+
+    proc.stdout.on('data', (data) => {
+      output += data.toString();
+      write({ status: 'installing', output: data.toString().trim(), progress: 50 });
+    });
+
+    proc.stderr.on('data', (data) => {
+      errOutput += data.toString();
+      const line = data.toString().trim();
+      if (line) write({ status: 'installing', output: line, progress: 50 });
+    });
+
+    proc.on('close', (code) => {
+      clearInstallCache();
+      const providerObj = getProvider(id);
+      const installed = providerObj ? providerObj.constructor.isInstalled() : false;
+
+      if (code === 0 && installed) {
+        write({ status: 'complete', output: `${pkg} installed successfully`, progress: 100, installed: true });
+        daemon.audit.log('provider.install', { provider: id, pkg, success: true });
+        daemon.broadcast({ type: 'provider:status-changed', provider: id });
+      } else {
+        const reason = code !== 0
+          ? (errOutput || output).slice(-500)
+          : 'Install succeeded but provider binary not found in PATH';
+        write({ status: 'error', output: reason, progress: 100, installed: false });
+        daemon.audit.log('provider.install', { provider: id, pkg, success: false, code });
+      }
+      res.end();
+    });
+
+    proc.on('error', (err) => {
+      write({ status: 'error', output: `Failed to start npm: ${err.message}`, progress: 100, installed: false });
+      res.end();
+    });
+
+    req.on('close', () => {
+      try { proc.kill(); } catch { /* already exited */ }
+    });
+  });
+
+  app.post('/api/providers/:id/login', async (req, res) => {
+    const { id } = req.params;
+    if (!MANAGEABLE_PROVIDERS.has(id)) {
+      return res.status(400).json({ error: `Invalid provider. Valid: ${[...MANAGEABLE_PROVIDERS].join(', ')}` });
+    }
+
+    if (id === 'gemini') {
+      return res.json({ status: 'not-supported', message: 'Gemini uses API key authentication. Set your key in Settings.' });
+    }
+
+    if (id === 'claude-code') {
+      const providerObj = getProvider(id);
+      if (!providerObj || !providerObj.constructor.isInstalled()) {
+        return res.status(400).json({ error: 'Claude Code is not installed. Install it first.' });
+      }
+      daemon.audit.log('provider.login.started', { provider: id });
+      try {
+        const result = await ClaudeCodeProvider.startLogin();
+        clearInstallCache();
+        daemon.broadcast({ type: 'provider:status-changed', provider: id });
+        return res.json(result);
+      } catch (err) {
+        return res.status(500).json({ status: 'error', error: err.message });
+      }
+    }
+
+    if (id === 'codex') {
+      const providerObj = getProvider(id);
+      if (!providerObj || !providerObj.constructor.isInstalled()) {
+        return res.status(400).json({ error: 'Codex is not installed. Install it first.' });
+      }
+
+      const { method, key } = req.body || {};
+
+      if (key) {
+        daemon.audit.log('provider.login.started', { provider: id, method: 'api-key' });
+        try {
+          const result = await providerObj.constructor.onKeySet(key);
+          clearInstallCache();
+          daemon.broadcast({ type: 'provider:status-changed', provider: id });
+          return res.json({ status: result.ok ? 'authenticated' : 'error', ...result });
+        } catch (err) {
+          return res.status(500).json({ status: 'error', error: err.message });
+        }
+      }
+
+      if (method === 'chatgpt-plus') {
+        daemon.audit.log('provider.login.started', { provider: id, method: 'chatgpt-plus' });
+        return new Promise((resolve) => {
+          let responded = false;
+          const respond = (data, status) => {
+            if (responded) return;
+            responded = true;
+            clearInstallCache();
+            daemon.broadcast({ type: 'provider:status-changed', provider: id });
+            if (status) res.status(status).json(data);
+            else res.json(data);
+            resolve();
+          };
+
+          const proc = spawn('codex', ['login'], {
+            stdio: ['ignore', 'pipe', 'pipe'],
+          });
+          let stdout = '';
+          let stderr = '';
+          proc.stdout.on('data', (d) => { stdout += d.toString(); });
+          proc.stderr.on('data', (d) => { stderr += d.toString(); });
+
+          const timeout = setTimeout(() => {
+            const urlMatch = (stdout + stderr).match(/https:\/\/\S+/);
+            respond(urlMatch
+              ? { status: 'pending', url: urlMatch[0] }
+              : { status: 'pending', message: 'Login started — check your browser' });
+          }, 5000);
+
+          proc.on('close', (code) => {
+            clearTimeout(timeout);
+            respond(code === 0
+              ? { status: 'authenticated' }
+              : { status: 'error', error: stderr.slice(-200) || `Login failed (exit ${code})` });
+          });
+
+          proc.on('error', (err) => {
+            clearTimeout(timeout);
+            respond({ status: 'error', error: err.message }, 500);
+          });
+        });
+      }
+
+      return res.status(400).json({ error: 'Provide either { key: "..." } or { method: "chatgpt-plus" }' });
+    }
+  });
+
+  app.post('/api/providers/:id/set-path', async (req, res) => {
+    const { id } = req.params;
+    if (!MANAGEABLE_PROVIDERS.has(id)) {
+      return res.status(400).json({ error: `Invalid provider. Valid: ${[...MANAGEABLE_PROVIDERS].join(', ')}` });
+    }
+
+    const { path: customPath } = req.body || {};
+    if (!customPath || typeof customPath !== 'string') {
+      return res.status(400).json({ error: 'path is required' });
+    }
+    if (customPath.length > 500) {
+      return res.status(400).json({ error: 'Path too long' });
+    }
+    if (!customPath.startsWith('/')) {
+      return res.status(400).json({ error: 'Path must be absolute' });
+    }
+
+    if (!existsSync(customPath)) {
+      return res.status(400).json({ error: `Path does not exist: ${customPath}` });
+    }
+
+    try {
+      const stat = statSync(customPath);
+      if (!stat.isFile()) {
+        return res.status(400).json({ error: 'Path must point to a file, not a directory' });
+      }
+      const mode = stat.mode;
+      const isExecutable = !!(mode & 0o111);
+      if (!isExecutable) {
+        return res.status(400).json({ error: 'File is not executable' });
+      }
+    } catch (err) {
+      return res.status(400).json({ error: `Cannot stat path: ${err.message}` });
+    }
+
+    if (!daemon.config.providerPaths) daemon.config.providerPaths = {};
+    daemon.config.providerPaths[id] = customPath;
+
+    const { saveConfig } = await import('./firstrun.js');
+    saveConfig(daemon.grooveDir, daemon.config);
+
+    setProviderPaths(daemon.config.providerPaths);
+    clearInstallCache();
+
+    daemon.audit.log('provider.setPath', { provider: id, path: customPath });
+    daemon.broadcast({ type: 'provider:status-changed', provider: id });
+
+    res.json({ ok: true, path: customPath });
+  });
+
+  app.post('/api/providers/:id/verify', async (req, res) => {
+    const { id } = req.params;
+    if (!MANAGEABLE_PROVIDERS.has(id)) {
+      return res.status(400).json({ error: `Invalid provider. Valid: ${[...MANAGEABLE_PROVIDERS].join(', ')}` });
+    }
+
+    clearInstallCache();
+    const providerObj = getProvider(id);
+    if (!providerObj) {
+      return res.json({ installed: false, authenticated: false, version: null, error: 'Unknown provider' });
+    }
+
+    const installed = providerObj.constructor.isInstalled();
+    let authenticated = false;
+    let version = null;
+    let error = null;
+
+    if (installed) {
+      const authStatus = providerObj.constructor.isAuthenticated?.();
+      authenticated = !!(authStatus?.authenticated);
+
+      const command = providerObj.constructor.command;
+      const customPath = getProviderPath(id);
+      const bin = customPath || command;
+
+      try {
+        version = execFileSync(bin, ['--version'], {
+          encoding: 'utf8',
+          timeout: 5000,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }).trim();
+      } catch (err) {
+        version = null;
+        error = `Version check failed: ${err.message?.slice(0, 200) || 'unknown error'}`;
+      }
+    } else {
+      error = 'Provider not installed';
+    }
+
+    daemon.broadcast({ type: 'provider:status-changed', provider: id });
+
+    res.json({ installed, authenticated, version, error });
   });
 
   // --- Local Models (GGUF via HuggingFace) ---
@@ -3831,9 +4099,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
       const installed = providerObj ? providerObj.constructor.isInstalled() : false;
 
       if (code === 0 && installed) {
+        clearInstallCache();
         write({ status: 'complete', output: `${pkg} installed successfully`, progress: 100, installed: true });
         daemon.audit.log('onboarding.installProvider', { provider, pkg, success: true });
         daemon.broadcast({ type: 'onboarding:provider-installed', provider });
+        daemon.broadcast({ type: 'provider:status-changed', provider });
       } else {
         const reason = code !== 0
           ? (errOutput || output).slice(-500)

@@ -1660,12 +1660,15 @@ export const useGrooveStore = create((set, get) => ({
   providerInstallProgress: {},
 
   async installProvider(providerId) {
-    set((s) => ({
+    const update = (patch) => set((s) => ({
       providerInstallProgress: {
         ...s.providerInstallProgress,
-        [providerId]: { installing: true, percent: 0, message: 'Starting install...', error: null, done: false },
+        [providerId]: { ...s.providerInstallProgress[providerId], ...patch },
       },
     }));
+
+    update({ installing: true, percent: 0, message: 'Starting install...', error: null, done: false });
+
     try {
       const res = await fetch(`/api/providers/${encodeURIComponent(providerId)}/install`, {
         method: 'POST',
@@ -1675,59 +1678,41 @@ export const useGrooveStore = create((set, get) => ({
         const err = await res.text();
         throw new Error(err || `Install failed (${res.status})`);
       }
-      const ct = res.headers.get('content-type') || '';
-      if (ct.includes('ndjson') || ct.includes('octet-stream') || ct.includes('chunked')) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = '';
-        let lastError = null;
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          const lines = buf.split('\n');
-          buf = lines.pop();
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            try {
-              const ev = JSON.parse(line);
-              const isError = ev.status === 'error';
-              const isDone = ev.status === 'complete';
-              if (isError) lastError = ev.output || 'Install failed';
-              set((s) => ({
-                providerInstallProgress: {
-                  ...s.providerInstallProgress,
-                  [providerId]: {
-                    ...s.providerInstallProgress[providerId],
-                    percent: ev.progress ?? s.providerInstallProgress[providerId]?.percent ?? 0,
-                    message: ev.output || s.providerInstallProgress[providerId]?.message,
-                    error: isError ? (ev.output || 'Install failed') : null,
-                    done: isDone,
-                    installing: !isDone && !isError,
-                  },
-                },
-              }));
-            } catch { /* skip malformed NDJSON line */ }
-          }
-        }
-        if (lastError) throw new Error(lastError);
+
+      let body;
+      try {
+        body = await res.text();
+      } catch (e) {
+        throw new Error(`Failed to read response: ${e.message}`);
       }
-      const progress = get().providerInstallProgress[providerId];
-      if (progress?.error) throw new Error(progress.error);
-      set((s) => ({
-        providerInstallProgress: {
-          ...s.providerInstallProgress,
-          [providerId]: { installing: false, percent: 100, message: 'Installed', error: null, done: true },
-        },
-      }));
+
+      let lastError = null;
+      let completed = false;
+      for (const line of body.split('\n')) {
+        if (!line.trim()) continue;
+        try {
+          const ev = JSON.parse(line);
+          const isError = ev.status === 'error';
+          const isDone = ev.status === 'complete';
+          if (isError) lastError = ev.output || 'Install failed';
+          if (isDone) completed = true;
+          update({
+            percent: ev.progress ?? get().providerInstallProgress[providerId]?.percent ?? 0,
+            message: ev.output || get().providerInstallProgress[providerId]?.message,
+            error: isError ? (ev.output || 'Install failed') : null,
+            done: isDone,
+            installing: !isDone && !isError,
+          });
+        } catch { /* skip malformed line */ }
+      }
+
+      if (lastError) throw new Error(lastError);
+      if (!completed) throw new Error(body.slice(0, 500) || 'Install ended without confirmation');
+
+      update({ installing: false, percent: 100, message: 'Installed', error: null, done: true });
       get().addToast('success', `${providerId} installed`);
     } catch (err) {
-      set((s) => ({
-        providerInstallProgress: {
-          ...s.providerInstallProgress,
-          [providerId]: { installing: false, percent: 0, message: null, error: err.message, done: false },
-        },
-      }));
+      update({ installing: false, percent: 0, message: null, error: err.message, done: false });
       get().addToast('error', `Install failed: ${providerId}`, err.message);
       throw err;
     }

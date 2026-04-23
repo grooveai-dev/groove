@@ -123,7 +123,7 @@ function InstallStep({ providerId, meta }) {
             'text-2xs font-sans',
             hasError ? 'text-danger' : isDone ? 'text-success' : 'text-text-3',
           )}>
-            {hasError ? 'Something went wrong' : isDone ? 'Installed successfully' : progress?.message || 'Preparing...'}
+            {hasError ? (typeof hasError === 'string' ? hasError : 'Something went wrong') : isDone ? 'Installed successfully' : progress?.message || 'Preparing...'}
           </span>
           {isInstalling && (
             <button
@@ -145,7 +145,12 @@ function InstallStep({ providerId, meta }) {
 
       {hasError && (
         <div className="space-y-3">
-          <p className="text-xs text-text-2 font-sans">Make sure you are connected to the internet and try again.</p>
+          {typeof hasError === 'string' && hasError.length > 40 && (
+            <div className="p-3 bg-surface-0 border border-border-subtle rounded-md max-h-24 overflow-y-auto">
+              <p className="text-2xs font-mono text-danger/80 whitespace-pre-wrap break-all">{hasError}</p>
+            </div>
+          )}
+          <p className="text-xs text-text-2 font-sans">Check that npm is in your PATH and try again.</p>
           <Button
             variant="primary"
             size="sm"

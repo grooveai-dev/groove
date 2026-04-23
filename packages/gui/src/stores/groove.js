@@ -1467,6 +1467,11 @@ export const useGrooveStore = create((set, get) => ({
     try {
       const data = await api.get('/project-dir');
       const isHome = /^\/home\/[^/]+$/.test(data.projectDir) || data.projectDir === '/root';
+      // Sync editor root before updating store so the editor fetches the correct tree.
+      // Older remote daemons don't auto-sync editorRoot when project-dir changes.
+      if (!isHome && data.projectDir) {
+        try { await api.post('/files/root', { root: data.projectDir }); } catch {}
+      }
       set({
         projectDir: data.projectDir,
         recentProjects: data.recentProjects || [],
@@ -1477,6 +1482,9 @@ export const useGrooveStore = create((set, get) => ({
 
   async setProjectDir(path) {
     const data = await api.post('/project-dir', { path });
+    // Explicitly set editor root — older remote daemons have a stale editorRootDir
+    // that doesn't track project-dir changes, causing the file tree to show /home/ubuntu
+    try { await api.post('/files/root', { root: data.projectDir }); } catch {}
     set({
       projectDir: data.projectDir,
       recentProjects: data.recentProjects || [],

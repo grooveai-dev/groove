@@ -2,7 +2,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import express from 'express';
-import { resolve, dirname, join, sep, relative } from 'path';
+import { resolve, dirname, join, sep, relative, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream, copyFileSync, realpathSync } from 'fs';
 import { spawn, execFile, execFileSync } from 'child_process';
@@ -611,6 +611,7 @@ export function createApi(app, daemon) {
 
     const proc = spawn('npm', ['install', '-g', pkg], {
       stdio: ['ignore', 'pipe', 'pipe'],
+      shell: true,
       env: { ...process.env, NODE_ENV: undefined },
     });
 
@@ -719,6 +720,7 @@ export function createApi(app, daemon) {
 
           const proc = spawn('codex', ['login'], {
             stdio: ['ignore', 'pipe', 'pipe'],
+            shell: true,
           });
           let stdout = '';
           let stderr = '';
@@ -763,7 +765,7 @@ export function createApi(app, daemon) {
     if (customPath.length > 500) {
       return res.status(400).json({ error: 'Path too long' });
     }
-    if (!customPath.startsWith('/')) {
+    if (!isAbsolute(customPath)) {
       return res.status(400).json({ error: 'Path must be absolute' });
     }
 
@@ -830,6 +832,7 @@ export function createApi(app, daemon) {
           encoding: 'utf8',
           timeout: 5000,
           stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true,
         }).trim();
       } catch (err) {
         version = null;
@@ -4077,6 +4080,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
     const proc = spawn('npm', ['install', '-g', pkg], {
       stdio: ['ignore', 'pipe', 'pipe'],
+      shell: true,
       env: { ...process.env, NODE_ENV: undefined },
     });
 

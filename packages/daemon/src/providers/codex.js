@@ -72,6 +72,7 @@ export class CodexProvider extends Provider {
     return new Promise((res) => {
       const proc = spawn('codex', ['login', '--with-api-key'], {
         stdio: ['pipe', 'pipe', 'pipe'],
+        shell: true,
         timeout: 15000,
       });
       let stderr = '';

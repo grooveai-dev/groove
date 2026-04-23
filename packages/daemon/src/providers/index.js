@@ -2,7 +2,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { execSync } from 'child_process';
-import { dirname as pathDirname } from 'path';
+import { dirname as pathDirname, delimiter as pathDelimiter } from 'path';
 import { ClaudeCodeProvider } from './claude-code.js';
 import { CodexProvider } from './codex.js';
 import { GeminiProvider } from './gemini.js';
@@ -26,10 +26,10 @@ function _augmentPathWithCustomPaths() {
   for (const p of Object.values(_providerPaths)) {
     if (p && typeof p === 'string') {
       const dir = pathDirname(p);
-      if (dir && !cur.split(':').includes(dir)) dirs.push(dir);
+      if (dir && !cur.split(pathDelimiter).includes(dir)) dirs.push(dir);
     }
   }
-  if (dirs.length) process.env.PATH = [...dirs, cur].join(':');
+  if (dirs.length) process.env.PATH = [...dirs, cur].join(pathDelimiter);
 }
 
 export function getProviderPath(id) {

@@ -336,6 +336,7 @@ export class ClaudeCodeProvider extends Provider {
     const child = cpSpawn('claude', ['auth', 'login', '--claudeai'], {
       detached: true,
       stdio: 'ignore',
+      shell: true,
     });
     child.unref();
     return { pid: child.pid };
@@ -359,6 +360,7 @@ export class ClaudeCodeProvider extends Provider {
     return new Promise((resolve) => {
       const child = cpSpawn('claude', ['auth', 'login', '--claudeai'], {
         stdio: ['ignore', 'pipe', 'pipe'],
+        shell: true,
       });
       let stdout = '';
       let stderr = '';

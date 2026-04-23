@@ -2,6 +2,7 @@
 import { useRef, useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { HEX, hexAlpha } from '../../lib/theme-hex';
+import { cn } from '../../lib/cn';
 import { Badge } from '../ui/badge';
 
 function shortAddr(addr) {

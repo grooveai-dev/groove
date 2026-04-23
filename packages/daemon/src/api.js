@@ -8,6 +8,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSy
 import { spawn, execFile, execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { hostname, networkInterfaces, homedir } from 'os';
+import { StringDecoder } from 'string_decoder';
 import { lookup as mimeLookup } from './mimetypes.js';
 import { listProviders, getProvider } from './providers/index.js';
 import { OllamaProvider } from './providers/ollama.js';
@@ -4307,8 +4308,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
     broadcastNodeStatus();
 
     let stderrBuf = '';
+    const stderrDecoder = new StringDecoder('utf8');
     proc.stderr.on('data', (chunk) => {
-      stderrBuf += chunk.toString();
+      stderrBuf += stderrDecoder.write(chunk);
       let idx;
       while ((idx = stderrBuf.indexOf('\n')) !== -1) {
         const line = stderrBuf.slice(0, idx).trim();
@@ -4402,9 +4404,16 @@ Keep responses concise. Help them think, don't lecture them about the system the
       }
     });
 
+    let stdoutBuf = '';
+    const stdoutDecoder = new StringDecoder('utf8');
     proc.stdout.on('data', (chunk) => {
-      const line = chunk.toString().trim();
-      if (line) pushNodeEvent('stdout', { line });
+      stdoutBuf += stdoutDecoder.write(chunk);
+      let idx;
+      while ((idx = stdoutBuf.indexOf('\n')) !== -1) {
+        const line = stdoutBuf.slice(0, idx).trim();
+        stdoutBuf = stdoutBuf.slice(idx + 1);
+        if (line) pushNodeEvent('stdout', { line });
+      }
     });
 
     proc.on('error', (err) => {
@@ -4414,6 +4423,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
     });
 
     proc.on('exit', (code, signal) => {
+      const trailing = stdoutDecoder.end();
+      if (trailing) stdoutBuf += trailing;
+      if (stdoutBuf.trim()) pushNodeEvent('stdout', { line: stdoutBuf.trim() });
+      const trailingErr = stderrDecoder.end();
+      if (trailingErr) stderrBuf += trailingErr;
       daemon.networkNode.active = false;
       daemon.networkNode.status = 'stopped';
       daemon.networkNode.pid = null;

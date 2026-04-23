@@ -1036,7 +1036,7 @@ export function createApi(app, daemon) {
     }
     try {
       daemon.setProjectDir(dirPath);
-      editorRootDir = daemon.projectDir;
+      editorRootOverride = null;
       res.json({ projectDir: daemon.projectDir, recentProjects: daemon.config.recentProjects || [] });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -2663,12 +2663,13 @@ Keep responses concise. Help them think, don't lecture them about the system the
     return LANG_MAP[ext] || 'text';
   }
 
-  const IGNORED_NAMES = new Set(['.git', 'node_modules', '.DS_Store', '.groove', '__pycache__', '.next', '.cache', 'dist', 'coverage']);
+  const IGNORED_NAMES = new Set(['.DS_Store', '__pycache__']);
 
-  // Editor root directory — defaults to projectDir but can be changed at runtime
-  let editorRootDir = daemon.projectDir;
+  // Editor root directory — always tracks daemon.projectDir unless explicitly
+  // overridden via POST /api/files/root. Reset on project-dir change.
+  let editorRootOverride = null;
 
-  function getEditorRoot() { return editorRootDir; }
+  function getEditorRoot() { return editorRootOverride || daemon.projectDir; }
 
   function validateFilePath(relPath, projectDir) {
     if (!relPath || typeof relPath !== 'string') return { error: 'path is required' };
@@ -2692,13 +2693,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   // Get/set the editor working directory
   app.get('/api/files/root', (req, res) => {
-    res.json({ root: editorRootDir });
+    res.json({ root: getEditorRoot() });
   });
 
   app.post('/api/files/root', (req, res) => {
     const { root } = req.body || {};
     if (!root || typeof root !== 'string') return res.status(400).json({ error: 'root path is required' });
-    // Must be absolute and exist
     if (!root.startsWith('/')) return res.status(400).json({ error: 'root must be an absolute path' });
     if (root.includes('\0') || root.includes('..')) return res.status(400).json({ error: 'Invalid path' });
     if (!existsSync(root)) return res.status(404).json({ error: 'Directory not found' });
@@ -2706,9 +2706,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
       const stat = statSync(root);
       if (!stat.isDirectory()) return res.status(400).json({ error: 'Path is not a directory' });
     } catch { return res.status(400).json({ error: 'Cannot access directory' }); }
-    editorRootDir = root;
+    editorRootOverride = root;
     daemon.audit.log('editor.root.set', { root });
-    res.json({ ok: true, root: editorRootDir });
+    res.json({ ok: true, root: getEditorRoot() });
   });
 
   // File tree — returns dirs + files for a given path
@@ -2733,18 +2733,22 @@ Keep responses concise. Help them think, don't lecture them about the system the
       const raw = readdirSync(fullPath, { withFileTypes: true });
       const entries = [];
 
-      // Dirs first (sorted), then files (sorted)
-      const isDir = (e) => {
+      const dirs = raw.filter((e) => {
+        if (e.name === '.DS_Store') return false;
         if (e.isDirectory()) return true;
-        if (e.isSymbolicLink()) { try { return statSync(resolve(fullPath, e.name)).isDirectory(); } catch { return false; } }
+        if (e.isSymbolicLink()) {
+          try { return statSync(resolve(fullPath, e.name)).isDirectory(); }
+          catch { return true; }
+        }
         return false;
-      };
-      const dirs = raw.filter((e) => isDir(e) && !IGNORED_NAMES.has(e.name) && !e.name.startsWith('.'))
-        .sort((a, b) => a.name.localeCompare(b.name));
+      }).sort((a, b) => a.name.localeCompare(b.name));
       const files = raw.filter((e) => {
-        if (e.name.startsWith('.')) return false;
+        if (e.name === '.DS_Store') return false;
         if (e.isFile()) return true;
-        if (e.isSymbolicLink()) { try { return statSync(resolve(fullPath, e.name)).isFile(); } catch { return false; } }
+        if (e.isSymbolicLink()) {
+          try { return statSync(resolve(fullPath, e.name)).isFile(); }
+          catch { return false; }
+        }
         return false;
       }).sort((a, b) => a.name.localeCompare(b.name));
 
@@ -2754,7 +2758,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
         let hasChildren = false;
         try {
           const children = readdirSync(childFull, { withFileTypes: true });
-          hasChildren = children.some((c) => !c.name.startsWith('.') && !IGNORED_NAMES.has(c.name));
+          hasChildren = children.some((c) => c.name !== '.DS_Store');
         } catch { /* unreadable */ }
         entries.push({ name: d.name, type: 'dir', path: childPath, hasChildren });
       }

@@ -33,6 +33,7 @@ export default function EditorView() {
   const sidebarWidth = useGrooveStore((s) => s.editorSidebarWidth);
   const setSidebarWidth = useGrooveStore((s) => s.setEditorSidebarWidth);
 
+  const projectDir = useGrooveStore((s) => s.projectDir);
   const [rootDir, setRootDir] = useState('');
   const [previewMode, setPreviewMode] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
@@ -44,10 +45,17 @@ export default function EditorView() {
   const startX = useRef(0);
   const startW = useRef(0);
 
-  // Fetch root dir
+  // Fetch root dir — refetch when project directory changes (e.g. SSH remote folder selection)
   useEffect(() => {
     api.get('/files/root').then((d) => setRootDir(d.root || '')).catch(() => {});
-  }, []);
+  }, [projectDir]);
+
+  // Clear tree cache when project dir changes so stale entries don't persist
+  useEffect(() => {
+    if (projectDir) {
+      useGrooveStore.setState({ editorTreeCache: {} });
+    }
+  }, [projectDir]);
 
   // Reset preview mode when switching files
   useEffect(() => { setPreviewMode(false); }, [activeFile]);

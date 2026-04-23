@@ -2082,8 +2082,11 @@ export const useGrooveStore = create((set, get) => ({
   async fetchTreeDir(dirPath) {
     try {
       const data = await api.get(`/files/tree?path=${encodeURIComponent(dirPath)}`);
-      set((s) => ({ editorTreeCache: { ...s.editorTreeCache, [dirPath]: data.entries } }));
-    } catch { /* ignore */ }
+      set((s) => ({ editorTreeCache: { ...s.editorTreeCache, [dirPath]: data.entries || [] } }));
+    } catch (err) {
+      console.error('[file-tree] fetchTreeDir failed for', dirPath, err.message);
+      set((s) => ({ editorTreeCache: { ...s.editorTreeCache, [dirPath]: [] } }));
+    }
   },
 
   async createFile(relPath) {

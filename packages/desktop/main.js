@@ -8,7 +8,7 @@ import { basename, dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { writeFileSync, readFileSync, unlinkSync, existsSync, renameSync, readdirSync, rmSync } from 'fs';
 import { execSync } from 'child_process';
-import { createServer } from 'net';
+import { createServer, createConnection } from 'net';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const IS_MAC = process.platform === 'darwin';
@@ -34,8 +34,10 @@ function getAvailablePort() {
   if (!IS_MAC) return;
   const shell = process.env.SHELL || '/bin/zsh';
   const apiKeyVars = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'ELEVENLABS_API_KEY'];
+  const envVars = ['SSH_AUTH_SOCK'];
   try {
-    const printCmd = ['echo "PATH=$PATH"', ...apiKeyVars.map(v => `echo "${v}=$${v}"`)].join('; ');
+    const allVars = [...apiKeyVars, ...envVars];
+    const printCmd = ['echo "PATH=$PATH"', ...allVars.map(v => `echo "${v}=$${v}"`)].join('; ');
     const output = execSync(`${shell} -ilc '${printCmd}'`, { encoding: 'utf8', timeout: 5000 }).trim();
     for (const line of output.split('\n')) {
       const eq = line.indexOf('=');
@@ -44,6 +46,7 @@ function getAvailablePort() {
       const val = line.slice(eq + 1);
       if (key === 'PATH' && val) { process.env.PATH = val; }
       else if (apiKeyVars.includes(key) && val && !process.env[key]) { process.env[key] = val; }
+      else if (envVars.includes(key) && val) { process.env[key] = val; }
     }
   } catch {
     const home = app.getPath('home');
@@ -272,7 +275,23 @@ class WorkspaceManager {
 
   _loadSSH() {
     try {
-      return JSON.parse(readFileSync(join(app.getPath('userData'), 'ssh-connections.json'), 'utf8'));
+      const connections = JSON.parse(readFileSync(join(app.getPath('userData'), 'ssh-connections.json'), 'utf8'));
+      let migrated = false;
+      for (const c of connections) {
+        if (c.keyPath && !c.sshKeyPath) {
+          c.sshKeyPath = c.keyPath;
+          delete c.keyPath;
+          migrated = true;
+        }
+      }
+      if (migrated) {
+        writeFileSync(
+          join(app.getPath('userData'), 'ssh-connections.json'),
+          JSON.stringify(connections, null, 2),
+          { mode: 0o600 },
+        );
+      }
+      return connections;
     } catch { return []; }
   }
 
@@ -333,7 +352,14 @@ class WorkspaceManager {
 
     const localPort = await getAvailablePort();
     const knownHostsPath = join(app.getPath('userData'), 'ssh-known-hosts');
-    const sshKey = conn.sshKeyPath || conn.keyPath;
+    const rawKey = conn.sshKeyPath || conn.keyPath;
+    let sshKey = rawKey || null;
+    if (sshKey) {
+      sshKey = sshKey.replace(/^~(?=[/\\]|$)/, app.getPath('home'));
+      if (!existsSync(sshKey)) {
+        throw new Error(`SSH key file not found: ${sshKey}`);
+      }
+    }
     const keyArgs = sshKey ? ['-i', sshKey] : [];
 
     const spawnTunnel = () => {
@@ -345,10 +371,12 @@ class WorkspaceManager {
         '-o', `UserKnownHostsFile=${knownHostsPath}`,
         '-o', 'ConnectTimeout=15',
         '-o', 'ServerAliveInterval=30',
+        '-o', 'ServerAliveCountMax=3',
+        '-o', 'ExitOnForwardFailure=yes',
         '-o', 'BatchMode=yes',
         `${conn.user}@${conn.host}`,
       ];
-      const p = spawn('ssh', sshArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+      const p = spawn('ssh', sshArgs, { stdio: ['ignore', 'pipe', 'pipe'], detached: true, windowsHide: true, shell: process.platform === 'win32' });
       const state = { proc: p, exited: false, exitCode: null, stderr: '' };
       p.stderr.on('data', (chunk) => { state.stderr += chunk.toString(); });
       p.on('exit', (code) => { state.exited = true; state.exitCode = code; });
@@ -361,33 +389,71 @@ class WorkspaceManager {
           ? `[${conn.host}]:${conn.port}`
           : conn.host;
         execFileSync('ssh-keygen', ['-R', hostSpec, '-f', knownHostsPath], {
-          stdio: 'pipe', timeout: 5000,
+          stdio: 'pipe', timeout: 5000, shell: process.platform === 'win32',
         });
         return true;
       } catch { return false; }
     };
 
+    const isPortInUse = (port) => new Promise((resolve) => {
+      const sock = createConnection({ host: '127.0.0.1', port }, () => {
+        sock.destroy();
+        resolve(true);
+      });
+      sock.on('error', () => resolve(false));
+      sock.setTimeout(500, () => { sock.destroy(); resolve(false); });
+    });
+
+    const waitForTunnel = async (state) => {
+      for (let elapsed = 0; elapsed < 8000; elapsed += 500) {
+        await new Promise(r => setTimeout(r, 500));
+        if (state.exited) return false;
+        if (await isPortInUse(localPort)) return true;
+      }
+      return false;
+    };
+
+    const enhancePermissionError = (errText) => {
+      if (/permission denied/i.test(errText)) {
+        if (sshKey) {
+          return `${errText} — the SSH key "${rawKey}" was rejected by the server. Verify this is the correct key for ${conn.user}@${conn.host}.`;
+        }
+        return `${errText} — no SSH key configured for this connection. Edit the connection and add your SSH key, or ensure your SSH agent has the key loaded.`;
+      }
+      return errText;
+    };
+
     let tunnel = spawnTunnel();
-    await new Promise(r => setTimeout(r, 2500));
-    if (tunnel.exited) {
+    let tunnelUp = await waitForTunnel(tunnel);
+
+    if (!tunnelUp && tunnel.exited) {
       const errText = tunnel.stderr.trim();
       if (/host key verification failed|remote host identification has changed/i.test(errText)) {
         if (removeStaleHostKey()) {
           tunnel = spawnTunnel();
-          await new Promise(r => setTimeout(r, 2500));
-          if (tunnel.exited) {
-            const retryErr = tunnel.stderr.trim() || 'unknown SSH error';
-            throw new Error(`SSH tunnel failed after clearing stale host key: ${retryErr}`);
+          tunnelUp = await waitForTunnel(tunnel);
+          if (!tunnelUp) {
+            if (tunnel.exited) {
+              const retryErr = tunnel.stderr.trim() || 'unknown SSH error';
+              throw new Error(`SSH tunnel failed after clearing stale host key: ${enhancePermissionError(retryErr)}`);
+            }
+            try { process.kill(tunnel.proc.pid); } catch {}
+            throw new Error('SSH tunnel started but port forward not active');
           }
         } else {
           throw new Error(`SSH host key verification failed and could not clear stale entry: ${errText}`);
         }
       } else {
-        const detail = errText || `exit code ${tunnel.exitCode}`;
+        const detail = enhancePermissionError(errText) || `exit code ${tunnel.exitCode}`;
         throw new Error(`SSH tunnel failed to establish: ${detail}`);
       }
+    } else if (!tunnelUp) {
+      try { process.kill(tunnel.proc.pid); } catch {}
+      throw new Error('SSH tunnel started but port forward not active');
     }
+
     const proc = tunnel.proc;
+    proc.unref();
 
     let healthy = false;
     for (let i = 0; i < 4; i++) {
@@ -405,7 +471,7 @@ class WorkspaceManager {
           '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes',
           '-o', `UserKnownHostsFile=${knownHostsPath}`,
           `${conn.user}@${conn.host}`, 'groove start -d',
-        ], { timeout: 30000, stdio: 'pipe' });
+        ], { timeout: 30000, stdio: 'pipe', shell: process.platform === 'win32' });
       } catch {}
 
       await new Promise(r => setTimeout(r, 5000));

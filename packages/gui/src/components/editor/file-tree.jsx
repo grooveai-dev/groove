@@ -431,6 +431,17 @@ export function FileTree({ rootDir }) {
                 )}
               </div>
             ))}
+          {rootEntries.length === 0 && !filter && (
+            <div className="px-3 py-6 text-center">
+              <p className="text-xs text-text-4">No files found</p>
+              <button
+                onClick={() => fetchTreeDir('')}
+                className="mt-2 text-xs text-accent hover:underline cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
+          )}
         </div>
       </ScrollArea>
 

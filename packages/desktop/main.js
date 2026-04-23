@@ -289,10 +289,12 @@ class WorkspaceManager {
     const existing = this.sshConnections.find(c => c.id === id);
     if (existing) {
       Object.assign(existing, config, { id });
+      if (existing.keyPath && !existing.sshKeyPath) { existing.sshKeyPath = existing.keyPath; delete existing.keyPath; }
       this._saveSSH();
       return existing;
     }
     const entry = { id, ...config, port: config.port || 22, createdAt: new Date().toISOString() };
+    if (entry.keyPath && !entry.sshKeyPath) { entry.sshKeyPath = entry.keyPath; delete entry.keyPath; }
     this.sshConnections.unshift(entry);
     this._saveSSH();
     return entry;
@@ -331,7 +333,8 @@ class WorkspaceManager {
 
     const localPort = await getAvailablePort();
     const knownHostsPath = join(app.getPath('userData'), 'ssh-known-hosts');
-    const keyArgs = conn.sshKeyPath ? ['-i', conn.sshKeyPath] : [];
+    const sshKey = conn.sshKeyPath || conn.keyPath;
+    const keyArgs = sshKey ? ['-i', sshKey] : [];
 
     const spawnTunnel = () => {
       const sshArgs = [
@@ -1292,7 +1295,7 @@ body {
       host: host,
       port: parseInt(document.getElementById('ssh-port').value) || 22,
       user: user,
-      keyPath: document.getElementById('ssh-key').value.trim() || undefined
+      sshKeyPath: document.getElementById('ssh-key').value.trim() || undefined
     };
     document.getElementById('btn-save-ssh').disabled = true;
     window.groove.home.addSSH(config).then(function() {

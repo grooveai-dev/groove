@@ -211,7 +211,10 @@ class WorkspaceManager {
       return isLocal;
     });
 
-    win.loadURL(`http://localhost:${localPort}?instance=${encodeURIComponent(name)}`);
+    // Clear HTTP cache before loading remote GUI — prevents stale bundles after npm update
+    win.webContents.session.clearCache().then(() => {
+      win.loadURL(`http://localhost:${localPort}?instance=${encodeURIComponent(name)}`);
+    });
     win.once('ready-to-show', () => win.show());
 
     win.webContents.setWindowOpenHandler(({ url }) => {

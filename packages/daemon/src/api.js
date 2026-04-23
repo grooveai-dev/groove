@@ -5658,20 +5658,23 @@ Keep responses concise. Help them think, don't lecture them about the system the
     } catch { /* non-fatal */ }
   };
 
-  // Serve GUI static files (built GUI) — no-cache headers to prevent stale bundles
+  // Serve GUI static files (built GUI) — no-cache headers prevent stale bundles on SSH reconnect
   const guiPath = process.env.GROOVE_GUI_PATH || resolve(__dirname, '../../gui/dist');
-  app.use(express.static(guiPath, { etag: false, maxAge: 0, lastModified: false }));
-  app.use((req, res, next) => {
-    if (!req.path.startsWith('/api/')) {
+  app.use(express.static(guiPath, {
+    etag: false,
+    maxAge: 0,
+    lastModified: false,
+    setHeaders: (res) => {
       res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
       res.set('Pragma', 'no-cache');
-    }
-    next();
-  });
+    },
+  }));
 
   // SPA fallback
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api/')) return next();
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.set('Pragma', 'no-cache');
     res.sendFile(resolve(guiPath, 'index.html'), (err) => {
       if (err) res.status(404).json({ error: 'GUI not built yet. Run: npm run build:gui' });
     });

@@ -55,14 +55,14 @@ export function EditorTabs() {
   if (openTabs.length === 0) return null;
 
   return (
-    <div className="flex items-center h-8 bg-surface-3 border-b border-border-subtle flex-shrink-0">
+    <div className="flex items-stretch h-9 bg-surface-3 border-b border-border-subtle flex-shrink-0">
       {overflows && (
         <button onClick={scrollLeft} className="flex-shrink-0 px-1 h-full text-text-4 hover:text-text-1 hover:bg-surface-4 transition-colors cursor-pointer">
           <ChevronLeft size={14} />
         </button>
       )}
 
-      <div ref={scrollRef} className="flex items-center flex-1 min-w-0 overflow-x-auto scrollbar-none scroll-smooth" style={{ scrollSnapType: 'x mandatory' }}>
+      <div ref={scrollRef} className="flex items-stretch flex-1 min-w-0 overflow-x-auto scrollbar-none scroll-smooth" style={{ scrollSnapType: 'x mandatory' }}>
         {openTabs.map((path) => {
           const isActive = path === activeFile;
           const file = files[path];
@@ -74,12 +74,12 @@ export function EditorTabs() {
               <ContextMenuTrigger asChild>
                 <div
                   className={cn(
-                    'flex items-center gap-1.5 h-full px-3 text-xs font-sans cursor-pointer select-none',
+                    'flex items-center gap-1.5 px-3 text-xs font-sans cursor-pointer select-none',
                     'border-r border-white/5',
                     'transition-colors duration-75 flex-shrink-0',
                     isActive
-                      ? 'bg-surface-1 text-text-0'
-                      : 'bg-surface-3 text-text-4 hover:text-text-1 hover:bg-surface-4',
+                      ? 'bg-surface-0 text-text-0 border-b border-b-accent'
+                      : 'bg-surface-3 text-text-4 hover:text-text-1 hover:bg-surface-4 border-b border-b-transparent',
                   )}
                   style={{ scrollSnapAlign: 'start' }}
                   onClick={() => setActiveFile(path)}

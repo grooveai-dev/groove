@@ -35,6 +35,9 @@ test-*
 .env*
 docs/
 
+# Workspace symlinks + dev caches — npm resolves workspace symlinks into real files
+**/node_modules/
+
 # Working dirs created during local testing / planning — never publish
 trial/
 plans/

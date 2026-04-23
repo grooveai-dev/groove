@@ -26,16 +26,16 @@ const LANGS = {
 
 // Custom theme overrides to match our design tokens
 const grooveTheme = EditorView.theme({
-  '&': { backgroundColor: '#24282f', color: '#bcc2cd', fontFamily: 'var(--font-mono)', fontSize: '13px', height: '100%' },
+  '&': { backgroundColor: '#1a1e25', color: '#bcc2cd', fontFamily: 'var(--font-mono)', fontSize: '13px', height: '100%' },
   '.cm-scroller': { overflow: 'auto' },
   '.cm-content': { caretColor: '#33afbc' },
   '.cm-cursor': { borderLeftColor: '#33afbc' },
-  '.cm-gutters': { backgroundColor: '#24282f', borderRight: '1px solid #2c313a', color: '#505862' },
-  '.cm-activeLineGutter': { backgroundColor: '#2c313a' },
-  '.cm-activeLine': { backgroundColor: 'rgba(44, 49, 58, 0.5)' },
+  '.cm-gutters': { backgroundColor: '#1a1e25', borderRight: '1px solid #22272e', color: '#505862' },
+  '.cm-activeLineGutter': { backgroundColor: '#22272e' },
+  '.cm-activeLine': { backgroundColor: 'rgba(34, 39, 46, 0.5)' },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'rgba(51, 175, 188, 0.15)' },
   // Search panel styling
-  '.cm-panels': { backgroundColor: '#24282f', borderBottom: '1px solid #3e4451' },
+  '.cm-panels': { backgroundColor: '#1a1e25', borderBottom: '1px solid #3e4451' },
   '.cm-panels.cm-panels-top': { borderBottom: '1px solid #3e4451' },
   '.cm-panels.cm-panels-bottom': { borderTop: '1px solid #3e4451' },
   '.cm-search': { padding: '6px 8px', gap: '4px', fontFamily: 'var(--font-sans)', fontSize: '12px', display: 'flex', flexWrap: 'wrap', alignItems: 'center' },

@@ -55,7 +55,7 @@ export function EditorTabs() {
   if (openTabs.length === 0) return null;
 
   return (
-    <div className="flex items-center h-8 bg-surface-3 border-b border-border flex-shrink-0">
+    <div className="flex items-center h-8 bg-surface-3 border-b border-border-subtle flex-shrink-0">
       {overflows && (
         <button onClick={scrollLeft} className="flex-shrink-0 px-1 h-full text-text-4 hover:text-text-1 hover:bg-surface-4 transition-colors cursor-pointer">
           <ChevronLeft size={14} />
@@ -75,11 +75,11 @@ export function EditorTabs() {
                 <div
                   className={cn(
                     'flex items-center gap-1.5 h-full px-3 text-xs font-sans cursor-pointer select-none',
-                    'border-r border-border-subtle',
+                    'border-r border-white/5',
                     'transition-colors duration-75 flex-shrink-0',
                     isActive
-                      ? 'bg-surface-2 text-text-0 border-b-2 border-b-accent'
-                      : 'bg-surface-3 text-text-3 hover:text-text-1 hover:bg-surface-4',
+                      ? 'bg-surface-1 text-text-0'
+                      : 'bg-surface-3 text-text-4 hover:text-text-1 hover:bg-surface-4',
                   )}
                   style={{ scrollSnapAlign: 'start' }}
                   onClick={() => setActiveFile(path)}

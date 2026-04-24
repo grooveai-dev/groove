@@ -831,15 +831,16 @@ body {
 .page {
   flex: 1; display: flex; flex-direction: column;
   align-items: center; overflow-y: auto;
-  padding: 40px 0; -webkit-app-region: no-drag;
+  padding: 24px 0; -webkit-app-region: no-drag;
 }
 .page::-webkit-scrollbar { width: 6px; }
 .page::-webkit-scrollbar-track { background: transparent; }
 .page::-webkit-scrollbar-thumb { background: #2c313a; border-radius: 3px; }
 .page::-webkit-scrollbar-thumb:hover { background: #3e4451; }
 .content {
-  max-width: 660px; width: 100%;
+  max-width: 720px; width: 100%;
   padding: 0 48px;
+  margin: auto 0;
   display: flex; flex-direction: column; align-items: center;
 }
 
@@ -1118,7 +1119,7 @@ body {
   <div class="content">
     <div class="hero">
       <div class="hero-icon">
-        <svg width="34" height="34" viewBox="0 0 24 24" fill="rgba(51,175,188,0.15)" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        <svg width="48" height="24" viewBox="0 6 24 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/></svg>
       </div>
       <h1>Welcome to Groove</h1>
       <div class="sub">Your AI coding team, ready in minutes</div>

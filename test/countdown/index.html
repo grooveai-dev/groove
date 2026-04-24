@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Countdown</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    background: #fff;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  }
+  .countdown {
+    display: flex;
+    gap: 2rem;
+  }
+  .unit {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .value {
+    font-size: 1.2rem;
+    letter-spacing: 0.1em;
+    color: #111;
+  }
+  .label {
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    color: #999;
+    margin-top: 0.35rem;
+    letter-spacing: 0.08em;
+  }
+  .separator {
+    font-size: 1.2rem;
+    color: #111;
+    align-self: flex-start;
+  }
+</style>
+</head>
+<body>
+<div class="countdown">
+  <div class="unit"><span class="value" id="d">00</span><span class="label">Days</span></div>
+  <span class="separator">:</span>
+  <div class="unit"><span class="value" id="h">00</span><span class="label">Hours</span></div>
+  <span class="separator">:</span>
+  <div class="unit"><span class="value" id="m">00</span><span class="label">Minutes</span></div>
+  <span class="separator">:</span>
+  <div class="unit"><span class="value" id="s">00</span><span class="label">Seconds</span></div>
+</div>
+<script>
+  var key = 'countdown_target';
+  var target = localStorage.getItem(key);
+  if (!target) {
+    target = Date.now() + 3 * 24 * 60 * 60 * 1000;
+    localStorage.setItem(key, target);
+  }
+  target = Number(target);
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function tick() {
+    var diff = Math.max(0, target - Date.now());
+    var ts = Math.floor(diff / 1000);
+    var d = Math.floor(ts / 86400);
+    var h = Math.floor((ts % 86400) / 3600);
+    var m = Math.floor((ts % 3600) / 60);
+    var s = ts % 60;
+    document.getElementById('d').textContent = pad(d);
+    document.getElementById('h').textContent = pad(h);
+    document.getElementById('m').textContent = pad(m);
+    document.getElementById('s').textContent = pad(s);
+    if (diff === 0) clearInterval(interval);
+  }
+
+  var interval = setInterval(tick, 1000);
+  tick();
+</script>
+</body>
+</html>

@@ -540,27 +540,76 @@ export class Journalist {
   }
 
   async callHeadless(prompt, { trackAs = '__journalist__' } = {}) {
-    // Find the best available provider for headless synthesis
-    // Priority: claude-code (cheapest via Haiku) > gemini > codex > ollama
-    const priority = ['claude-code', 'gemini', 'codex', 'ollama'];
+    const priority = ['claude-code', 'gemini', 'codex', 'grok', 'ollama'];
     const installed = getInstalledProviders();
-    const providerId = priority.find((p) => installed.some((i) => i.id === p));
-    if (!providerId) {
-      throw new Error('No provider available for synthesis');
+
+    for (const providerId of priority) {
+      if (!installed.some((i) => i.id === providerId)) continue;
+
+      const provider = getProvider(providerId);
+      if (!provider) continue;
+
+      const selectedModel = provider.constructor.models?.find((m) => m.tier === 'medium')
+        || provider.constructor.models?.find((m) => m.tier === 'light')
+        || provider.constructor.models?.[0];
+      const modelId = selectedModel?.id || null;
+
+      // Try CLI headless command first
+      const headlessCmd = provider.buildHeadlessCommand(prompt, modelId);
+      if (headlessCmd) {
+        try {
+          return await this._execHeadlessCmd(headlessCmd, trackAs, modelId);
+        } catch {
+          continue;
+        }
+      }
+
+      // Fallback: streamChat for API-only providers (e.g. Grok)
+      if (typeof provider.streamChat === 'function') {
+        const apiKey = this.daemon.credentials?.getKey(providerId);
+        if (!apiKey) continue;
+
+        try {
+          const text = await new Promise((resolve, reject) => {
+            let collected = '';
+            const ctrl = provider.streamChat(
+              [{ role: 'user', content: prompt }],
+              modelId,
+              apiKey,
+              (chunk) => { collected += chunk; },
+              () => resolve(collected),
+              (err) => reject(err),
+            );
+            if (!ctrl) reject(new Error('streamChat unavailable'));
+          });
+
+          if (text) {
+            const estimatedInputTokens = Math.ceil(prompt.length / 4);
+            const estimatedOutputTokens = Math.ceil(text.length / 4);
+            if (this.daemon?.tokens) {
+              this.daemon.tokens.record(trackAs, {
+                tokens: estimatedInputTokens + estimatedOutputTokens,
+                inputTokens: estimatedInputTokens,
+                outputTokens: estimatedOutputTokens,
+                model: modelId,
+                estimatedCostUsd: 0,
+              });
+            }
+            return text;
+          }
+        } catch {
+          continue;
+        }
+      }
     }
-    const provider = getProvider(providerId);
 
-    // Pick medium tier for higher-quality synthesis (fewer but better cycles)
-    const selectedModel = provider.constructor.models?.find((m) => m.tier === 'medium')
-      || provider.constructor.models?.find((m) => m.tier === 'light')
-      || provider.constructor.models?.[0];
-    const modelId = selectedModel?.id || null;
+    throw new Error('No provider available for synthesis');
+  }
 
-    const headlessCmd = provider.buildHeadlessCommand(prompt, modelId);
+  _execHeadlessCmd(headlessCmd, trackAs, modelId) {
     const { command, args, env, stdin: stdinData } = headlessCmd;
 
     return new Promise((resolve, reject) => {
-      // Use spawn with stdin pipe if provider needs it (e.g., Ollama)
       if (stdinData) {
         let stdout = '';
         const proc = cpSpawn(command, args, {
@@ -576,7 +625,6 @@ export class Journalist {
           clearTimeout(timer);
           if (code !== 0) return reject(new Error(`Headless exited with code ${code}`));
           this._recordHeadlessUsage(stdout, trackAs, modelId);
-          // Process stdout same as execFile path below
           const lines = stdout.split('\n');
           for (const line of lines) {
             try {
@@ -590,17 +638,14 @@ export class Journalist {
         return;
       }
 
-      const proc = execFile(command, args, {
+      execFile(command, args, {
         env: { ...process.env, ...env },
         cwd: this.daemon.projectDir,
         maxBuffer: 1024 * 1024 * 5,
         timeout: 60_000,
       }, (err, stdout, stderr) => {
         if (err) return reject(err);
-
         this._recordHeadlessUsage(stdout, trackAs, modelId);
-
-        // Parse stream-json output to extract the result text
         const lines = stdout.split('\n');
         for (const line of lines) {
           try {
@@ -610,8 +655,6 @@ export class Journalist {
             }
           } catch { /* skip */ }
         }
-
-        // Fallback: return raw stdout
         resolve(stdout);
       });
     });

@@ -154,6 +154,16 @@ export class Daemon {
     this.toys = new Toys(this);
     this.trajectoryCapture = null;
 
+    // Hook teams.delete to clean up agent-loop session files
+    const originalTeamDelete = this.teams.delete.bind(this.teams);
+    this.teams.delete = (id) => {
+      const agents = this.registry.getAll().filter(a => a.teamId === id);
+      const agentIds = agents.map(a => a.id);
+      const result = originalTeamDelete(id);
+      if (agentIds.length > 0) this.state.cleanupSessions(agentIds);
+      return result;
+    };
+
     // Subscription state (populated by Electron IPC or direct auth)
     this.authToken = null;
     this.subscriptionCache = { plan: 'community', status: 'none', features: [], active: false, validatedAt: 0 };
@@ -542,6 +552,17 @@ export class Daemon {
     const runningIds = this.registry.getAll().filter(a => a.status === 'running').map(a => a.id);
     const purged = this.locks.purgeOrphans(runningIds);
     if (purged > 0) console.log(`  Purged ${purged} orphaned lock(s) from previous session`);
+
+    // Mark agents with saved agent-loop sessions as resumable
+    const resumableIds = new Set(this.state.getResumableSessions());
+    if (resumableIds.size > 0) {
+      for (const agent of this.registry.getAll()) {
+        if (resumableIds.has(agent.id) && (agent.status === 'running' || agent.status === 'idle' || agent.status === 'completed')) {
+          this.registry.update(agent.id, { status: 'completed', hasSession: true, pid: null });
+        }
+      }
+      console.log(`  ${resumableIds.size} agent-loop session(s) marked as resumable`);
+    }
 
     // Migrate old agents without teamId to default team
     this.teams.migrateAgents();

@@ -37,6 +37,7 @@ export class GrokProvider extends Provider {
     { id: 'grok-3-mini', name: 'Grok 3 Mini', tier: 'light', maxContext: 131072, pricing: { input: 0.0003, output: 0.0005 } },
     { id: 'grok-imagine-image', name: 'Grok Imagine', tier: 'medium', type: 'image', pricing: { perImage: 0.07 } },
   ];
+  static useAgentLoop = true;
 
   static isInstalled() {
     return true; // API-only, no CLI needed
@@ -52,6 +53,20 @@ export class GrokProvider extends Provider {
 
   buildHeadlessCommand() {
     return null; // No CLI
+  }
+
+  getLoopConfig(agent) {
+    return {
+      apiBase: 'https://api.x.ai/v1',
+      model: agent.model || 'grok-4-1-fast',
+      contextWindow: 131072,
+      temperature: 0.1,
+      maxResponseTokens: 16384,
+      stream: true,
+      apiKey: agent.apiKey,
+      headers: {},
+      introContext: agent.introContext || '',
+    };
   }
 
   switchModel() {

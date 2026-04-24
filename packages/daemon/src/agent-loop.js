@@ -6,6 +6,8 @@
 // existing GROOVE orchestration (rotation, journalist, token tracking, routing).
 
 import { EventEmitter } from 'events';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
+import { resolve, dirname } from 'path';
 import { TOOL_DEFINITIONS, ToolExecutor } from './tool-executor.js';
 
 export class AgentLoop extends EventEmitter {
@@ -36,11 +38,19 @@ export class AgentLoop extends EventEmitter {
       agent.id,
     );
 
-    // Initialize system prompt
-    this.messages.push({
-      role: 'system',
-      content: this._buildSystemPrompt(),
-    });
+    // Session persistence
+    this.sessionPath = resolve(daemon.grooveDir, 'sessions', `${agent.id}.json`);
+
+    // Load existing session or initialize with system prompt
+    const savedMessages = AgentLoop.loadSession(this.sessionPath);
+    if (savedMessages && savedMessages.length > 0) {
+      this.messages = savedMessages;
+    } else {
+      this.messages.push({
+        role: 'system',
+        content: this._buildSystemPrompt(),
+      });
+    }
   }
 
   // --- Lifecycle ---
@@ -68,6 +78,7 @@ export class AgentLoop extends EventEmitter {
       this.emit('error', { message: err.message });
     }
 
+    this._saveSession();
     this.idle = true;
   }
 
@@ -443,5 +454,37 @@ export class AgentLoop extends EventEmitter {
       model: this.config.model,
       uptime: Date.now() - this.startedAt,
     };
+  }
+
+  // --- Session Persistence ---
+
+  _saveSession() {
+    try {
+      mkdirSync(dirname(this.sessionPath), { recursive: true });
+      let toSave = this.messages;
+      if (toSave.length > 201) {
+        const hasSystem = toSave[0]?.role === 'system';
+        toSave = hasSystem
+          ? [toSave[0], ...toSave.slice(-200)]
+          : toSave.slice(-200);
+      }
+      writeFileSync(this.sessionPath, JSON.stringify(toSave), { mode: 0o600 });
+    } catch { /* non-fatal */ }
+  }
+
+  static loadSession(sessionPath) {
+    try {
+      if (!existsSync(sessionPath)) return null;
+      const data = readFileSync(sessionPath, 'utf8');
+      const messages = JSON.parse(data);
+      if (Array.isArray(messages) && messages.length > 0) return messages;
+    } catch { /* corrupted session */ }
+    return null;
+  }
+
+  clearSession() {
+    try {
+      if (existsSync(this.sessionPath)) unlinkSync(this.sessionPath);
+    } catch { /* non-fatal */ }
   }
 }

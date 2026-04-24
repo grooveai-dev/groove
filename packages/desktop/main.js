@@ -829,31 +829,19 @@ body {
 }
 
 .page {
-  flex: 1; display: flex; flex-direction: row;
-  overflow: hidden; -webkit-app-region: no-drag;
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; overflow-y: auto;
+  padding: 40px 0; -webkit-app-region: no-drag;
 }
-@media (max-width: 720px) {
-  .page { flex-direction: column; overflow-y: auto; }
-  .panel-left, .panel-right { width: 100% !important; min-height: auto !important; }
-  .panel-left { padding-bottom: 24px !important; }
-  .panel-right { border-left: none !important; border-top: 1px solid rgba(62,68,81,0.35); }
+.page::-webkit-scrollbar { width: 6px; }
+.page::-webkit-scrollbar-track { background: transparent; }
+.page::-webkit-scrollbar-thumb { background: #2c313a; border-radius: 3px; }
+.page::-webkit-scrollbar-thumb:hover { background: #3e4451; }
+.content {
+  max-width: 660px; width: 100%;
+  padding: 0 48px;
+  display: flex; flex-direction: column; align-items: center;
 }
-
-.panel-left {
-  width: 57%; display: flex; flex-direction: column;
-  justify-content: center; align-items: center;
-  padding: 40px 48px;
-}
-.panel-right {
-  width: 43%; display: flex; flex-direction: column;
-  padding: 32px 36px 24px;
-  border-left: 1px solid rgba(62,68,81,0.35);
-  overflow-y: auto;
-}
-.panel-right::-webkit-scrollbar { width: 6px; }
-.panel-right::-webkit-scrollbar-track { background: transparent; }
-.panel-right::-webkit-scrollbar-thumb { background: #2c313a; border-radius: 3px; }
-.panel-right::-webkit-scrollbar-thumb:hover { background: #3e4451; }
 
 .hero {
   display: flex; flex-direction: column; align-items: center;
@@ -951,27 +939,27 @@ body {
   margin-bottom: 8px;
 }
 
+.recents-area {
+  width: 100%; max-width: 400px;
+  margin-top: 24px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 32px;
+}
 .list-row {
   display: flex; align-items: center;
-  padding: 8px 10px; border-radius: 6px;
-  cursor: pointer; transition: background 0.12s;
+  padding: 5px 0;
+  cursor: pointer; transition: color 0.12s;
   -webkit-app-region: no-drag; position: relative;
 }
-.list-row:hover { background: #24282f; }
+.list-row:hover .list-name { color: #e6e6e6; }
 .list-row.connecting { opacity: 0.6; pointer-events: none; }
 .list-info { flex: 1; min-width: 0; }
 .list-name {
-  font-size: 13px; font-weight: 600; color: #e6e6e6;
+  font-size: 13px; font-weight: 500; color: #b0b8c4;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  line-height: 1.4;
-}
-.list-meta {
-  font-size: 10px; color: #6e7681; line-height: 1.4;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+  line-height: 1.4; transition: color 0.12s;
 }
 .list-delete {
-  opacity: 0; width: 24px; height: 24px; border: none;
+  opacity: 0; width: 20px; height: 20px; border: none;
   background: transparent; color: #6e7681; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   border-radius: 4px; flex-shrink: 0;
@@ -984,11 +972,6 @@ body {
   width: 12px; height: 12px; border: 2px solid #3e4451;
   border-top-color: #33afbc; border-radius: 50%;
   animation: spin 0.8s linear infinite; flex-shrink: 0;
-}
-
-.separator {
-  height: 1px; background: rgba(62,68,81,0.35);
-  margin: 16px 0;
 }
 
 .empty-text {
@@ -1105,12 +1088,34 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-text { font-size: 13px; color: #e6e6e6; font-weight: 500; }
+
+.update-inner {
+  display: flex; align-items: center; gap: 12px;
+  max-width: 600px; margin: 0 auto;
+}
+.update-title { font-size: 13px; font-weight: 600; color: #e6e6e6; }
+.update-detail { font-size: 11px; color: #6e7681; margin-top: 2px; }
+.update-info { flex: 1; min-width: 0; }
+.update-action {
+  display: none; font-size: 11px; font-weight: 600; color: #33afbc;
+  background: rgba(51,175,188,0.15); padding: 6px 14px; border-radius: 6px;
+  white-space: nowrap; cursor: pointer;
+}
+.update-progress-bar {
+  margin-top: 10px; height: 3px; border-radius: 2px;
+  background: rgba(51,175,188,0.12); overflow: hidden;
+  max-width: 600px; margin-left: auto; margin-right: auto;
+}
+.update-progress-fill {
+  height: 100%; width: 0%; border-radius: 2px;
+  background: #33afbc; transition: width 0.4s ease-out;
+}
 </style>
 </head>
 <body>
 <div class="titlebar"><span class="titlebar-label">GROOVE</span></div>
 <div class="page">
-  <div class="panel-left">
+  <div class="content">
     <div class="hero">
       <div class="hero-icon">
         <svg width="34" height="34" viewBox="0 0 24 24" fill="rgba(51,175,188,0.15)" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
@@ -1154,23 +1159,21 @@ body {
         </button>
       </div>
     </div>
-  </div>
 
-  <div class="panel-right">
-    <div id="recents-section" style="display:none">
-      <div class="section-title">Recent</div>
-      <div id="recents"></div>
-    </div>
+    <div class="recents-area">
+      <div id="recents-section" style="display:none">
+        <div class="section-title">Recent Projects</div>
+        <div id="recents"></div>
+      </div>
 
-    <div class="separator" id="sections-sep" style="display:none"></div>
-
-    <div id="ssh-section">
-      <div class="section-title">SSH Connections</div>
-      <div id="ssh-list"></div>
-      <button class="add-link" id="btn-add-ssh">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-        Add Server
-      </button>
+      <div id="ssh-section">
+        <div class="section-title">SSH Connections</div>
+        <div id="ssh-list"></div>
+        <button class="add-link" id="btn-add-ssh">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          Add Server
+        </button>
+      </div>
     </div>
 
     <div id="empty-state" style="display:none">
@@ -1209,16 +1212,16 @@ body {
 </div>
 
 <div class="update-banner" id="update-btn">
-  <div style="display:flex;align-items:center;gap:12px;max-width:600px;margin:0 auto">
+  <div class="update-inner">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#33afbc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4"/><path d="M12 16V8"/></svg>
-    <div style="flex:1;min-width:0">
-      <div id="update-title" style="font-size:13px;font-weight:600;color:#e6e6e6">Update Available</div>
-      <div id="update-detail" style="font-size:11px;color:#6e7681;margin-top:2px">Downloading...</div>
+    <div class="update-info">
+      <div class="update-title" id="update-title">Update Available</div>
+      <div class="update-detail" id="update-detail">Downloading...</div>
     </div>
-    <div id="update-action" style="display:none;font-size:11px;font-weight:600;color:#33afbc;background:rgba(51,175,188,0.15);padding:6px 14px;border-radius:6px;white-space:nowrap;cursor:pointer">Update &amp; Restart</div>
+    <div class="update-action" id="update-action">Update &amp; Restart</div>
   </div>
-  <div id="update-progress-bar" style="margin-top:10px;height:3px;border-radius:2px;background:rgba(51,175,188,0.12);overflow:hidden;max-width:600px;margin-left:auto;margin-right:auto">
-    <div id="update-progress-fill" style="height:100%;width:0%;border-radius:2px;background:#33afbc;transition:width 0.4s ease-out"></div>
+  <div class="update-progress-bar" id="update-progress-bar">
+    <div class="update-progress-fill" id="update-progress-fill"></div>
   </div>
 </div>
 
@@ -1329,25 +1332,21 @@ body {
   var recentsData = [];
   var recentsEl = document.getElementById('recents');
   var recentsSec = document.getElementById('recents-section');
-  var sepEl = document.getElementById('sections-sep');
   var emptyEl = document.getElementById('empty-state');
 
   function renderRecents(recents) {
     recentsData = recents || [];
     if (!recentsData.length) {
       recentsSec.style.display = 'none';
-      sepEl.style.display = 'none';
       checkEmpty();
       return;
     }
     recentsSec.style.display = '';
-    sepEl.style.display = '';
-    var items = recentsData.slice(0, 8);
+    var items = recentsData.slice(0, 3);
     recentsEl.innerHTML = items.map(function(r) {
       return '<div class="list-row" data-dir="' + esc(r.dir) + '" title="' + esc(r.dir) + '">' +
         '<div class="list-info">' +
           '<div class="list-name">' + esc(r.name || r.dir.split(/[\\/]/).pop()) + '</div>' +
-          '<div class="list-meta">' + esc(shortenPath(r.dir)) + '</div>' +
         '</div>' +
         '<button class="list-delete" data-del-dir="' + esc(r.dir) + '" title="Remove from recents">' + X_IC + '</button>' +
       '</div>';
@@ -1396,11 +1395,10 @@ body {
       checkEmpty();
       return;
     }
-    sshListEl.innerHTML = sshData.map(function(c) {
+    sshListEl.innerHTML = sshData.slice(0, 3).map(function(c) {
       return '<div class="list-row" data-id="' + esc(c.id) + '">' +
         '<div class="list-info">' +
           '<div class="list-name">' + esc(c.name || c.host) + '</div>' +
-          '<div class="list-meta">' + esc((c.user || 'root') + '@' + c.host + ':' + (c.port || 22)) + '</div>' +
         '</div>' +
         '<div class="list-spinner" style="display:none"></div>' +
         '<button class="list-delete" data-del-id="' + esc(c.id) + '" title="Remove server">' + X_IC + '</button>' +

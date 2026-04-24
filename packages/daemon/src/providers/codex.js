@@ -36,6 +36,7 @@ export class CodexProvider extends Provider {
   // Auth hint — Codex uses its own auth system, not just env vars
   static authHint = 'Codex requires `codex login` — run: echo "YOUR_KEY" | codex login --with-api-key';
   static models = [
+    { id: 'gpt-5.5', name: 'GPT-5.5', tier: 'heavy', maxContext: 200000, pricing: { input: 0.03, output: 0.12 } },
     { id: 'gpt-5.4-pro', name: 'GPT-5.4 Pro', tier: 'heavy', maxContext: 200000, pricing: { input: 0.015, output: 0.06 } },
     { id: 'gpt-5.4', name: 'GPT-5.4', tier: 'heavy', maxContext: 200000, pricing: { input: 0.005, output: 0.02 } },
     { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', tier: 'medium', maxContext: 200000, pricing: { input: 0.001, output: 0.004 } },

@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { randomUUID } from 'crypto';
 import { spawn as cpSpawn } from 'child_process';
-import { getProvider, getInstalledProviders, isProviderInstalled } from './providers/index.js';
+import { getProvider, getInstalledProviders, isProviderInstalled, resolveProviderCommand } from './providers/index.js';
 
 export class ConversationManager {
   constructor(daemon) {
@@ -371,7 +371,8 @@ export class ConversationManager {
       });
       return;
     }
-    const { command, args, env, stdin: stdinData, cwd } = headlessCmd;
+    const { command: rawCommand, args, env, stdin: stdinData, cwd } = headlessCmd;
+    const command = resolveProviderCommand(providerName) || rawCommand;
 
     const spawnOpts = {
       env: { ...process.env, ...env },
@@ -381,6 +382,14 @@ export class ConversationManager {
 
     const proc = cpSpawn(command, args, spawnOpts);
     this._getStreamingProcesses().set(id, proc);
+
+    proc.on('error', (err) => {
+      this._getStreamingProcesses().delete(id);
+      this.daemon.broadcast({
+        type: 'conversation:error',
+        data: { conversationId: id, error: err.message },
+      });
+    });
 
     if (stdinData) {
       proc.stdin.write(stdinData);

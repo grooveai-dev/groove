@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { execFile, spawn as cpSpawn } from 'child_process';
-import { getProvider, getInstalledProviders } from './providers/index.js';
+import { getProvider, getInstalledProviders, resolveProviderCommand } from './providers/index.js';
 
 const DEFAULT_INTERVAL = 300_000; // 5 minutes (safety-net fallback; event-driven triggers handle the normal case)
 const MAX_LOG_CHARS = 100_000; // ~25k tokens budget for synthesis input (captures 80-90% of recent activity)
@@ -558,7 +558,7 @@ export class Journalist {
       const headlessCmd = provider.buildHeadlessCommand(prompt, modelId);
       if (headlessCmd) {
         try {
-          return await this._execHeadlessCmd(headlessCmd, trackAs, modelId);
+          return await this._execHeadlessCmd(headlessCmd, trackAs, modelId, providerId);
         } catch {
           continue;
         }
@@ -606,8 +606,9 @@ export class Journalist {
     throw new Error('No provider available for synthesis');
   }
 
-  _execHeadlessCmd(headlessCmd, trackAs, modelId) {
-    const { command, args, env, stdin: stdinData } = headlessCmd;
+  _execHeadlessCmd(headlessCmd, trackAs, modelId, providerId) {
+    const { command: rawCommand, args, env, stdin: stdinData } = headlessCmd;
+    const command = (providerId && resolveProviderCommand(providerId)) || rawCommand;
 
     return new Promise((resolve, reject) => {
       if (stdinData) {
@@ -617,6 +618,7 @@ export class Journalist {
           cwd: this.daemon.projectDir,
           stdio: ['pipe', 'pipe', 'pipe'],
         });
+        proc.on('error', (err) => reject(err));
         proc.stdin.write(stdinData);
         proc.stdin.end();
         proc.stdout.on('data', (d) => { stdout += d.toString(); });

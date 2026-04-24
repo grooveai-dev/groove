@@ -5,7 +5,7 @@ import { spawn as cpSpawn } from 'child_process';
 import { createWriteStream, mkdirSync, chmodSync, existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync, copyFileSync } from 'fs';
 import { resolve, dirname, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
-import { getProvider, getInstalledProviders } from './providers/index.js';
+import { getProvider, getInstalledProviders, resolveProviderCommand } from './providers/index.js';
 import { AgentLoop } from './agent-loop.js';
 import { validateAgentConfig } from './validate.js';
 
@@ -780,7 +780,8 @@ For normal file edits within your scope, proceed without review.
     }
 
     const spawnCmd = provider.buildSpawnCommand(spawnConfig);
-    const { command, args, env, stdin: stdinData, cwd: providerCwd } = spawnCmd;
+    const { command: rawCommand, args, env, stdin: stdinData, cwd: providerCwd } = spawnCmd;
+    const command = resolveProviderCommand(agent.provider || config.provider) || rawCommand;
 
     // Log the spawn command (mask anything that looks like an API key)
     const maskArg = (a) => /^(sk-|AIza|key-|token-)/.test(a) ? '***' : a;
@@ -804,11 +805,20 @@ For normal file edits within your scope, proceed without review.
     }
 
     // Spawn the process (use pipe for stdin if provider needs to send prompt via stdin)
+    const spawnCwd = [providerCwd, agent.workingDir, this.daemon.projectDir].find(d => d && existsSync(d)) || this.daemon.projectDir;
     const proc = cpSpawn(command, args, {
-      cwd: providerCwd || agent.workingDir || this.daemon.projectDir,
+      cwd: spawnCwd,
       env: { ...process.env, ...env, ...integrationEnv, GROOVE_AGENT_ID: agent.id, GROOVE_AGENT_NAME: agent.name, GROOVE_DAEMON_HOST: this.daemon.host || '127.0.0.1', GROOVE_DAEMON_PORT: String(this.daemon.port || 31415) },
       stdio: [stdinData ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       detached: false,
+    });
+
+    proc.on('error', (err) => {
+      if (!logStream.destroyed) logStream.write(`[${new Date().toISOString()}] Spawn error: ${err.message}\n`);
+      if (!logStream.destroyed) logStream.end();
+      this.handles.delete(agent.id);
+      registry.update(agent.id, { status: 'crashed', pid: null });
+      this.daemon.broadcast({ type: 'agent:exit', agentId: agent.id, code: null, signal: null, status: 'crashed', error: err.message });
     });
 
     // Write prompt via stdin if provider requested it (e.g., Ollama avoids arg length limits)
@@ -820,7 +830,7 @@ For normal file edits within your scope, proceed without review.
     if (!proc.pid) {
       registry.remove(agent.id);
       locks.release(agent.id);
-      logStream.end();
+      if (!logStream.destroyed) logStream.end();
       throw new Error(`Failed to spawn ${command} — process has no PID`);
     }
 
@@ -1568,7 +1578,8 @@ For normal file edits within your scope, proceed without review.
     locks.release(agentId);
 
     // Build resume command
-    const { command, args, env } = provider.buildResumeCommand(sessionId, message, config.model);
+    const { command: rawCommand, args, env } = provider.buildResumeCommand(sessionId, message, config.model);
+    const command = resolveProviderCommand(config.provider || 'claude-code') || rawCommand;
 
     // Set up log capture
     const logDir = resolve(this.daemon.grooveDir, 'logs');
@@ -1603,17 +1614,26 @@ For normal file edits within your scope, proceed without review.
     }
 
     // Spawn the resumed process
+    const resumeCwd = [config.workingDir, this.daemon.projectDir].find(d => d && existsSync(d)) || this.daemon.projectDir;
     const proc = cpSpawn(command, args, {
-      cwd: config.workingDir || this.daemon.projectDir,
+      cwd: resumeCwd,
       env: { ...process.env, ...env, GROOVE_AGENT_ID: newAgent.id, GROOVE_AGENT_NAME: newAgent.name, GROOVE_DAEMON_HOST: this.daemon.host || '127.0.0.1', GROOVE_DAEMON_PORT: String(this.daemon.port || 31415) },
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
     });
 
+    proc.on('error', (err) => {
+      if (!logStream.destroyed) logStream.write(`[${new Date().toISOString()}] Resume spawn error: ${err.message}\n`);
+      if (!logStream.destroyed) logStream.end();
+      this.handles.delete(newAgent.id);
+      registry.update(newAgent.id, { status: 'crashed', pid: null });
+      this.daemon.broadcast({ type: 'agent:exit', agentId: newAgent.id, code: null, signal: null, status: 'crashed', error: err.message });
+    });
+
     if (!proc.pid) {
       registry.remove(newAgent.id);
       locks.release(newAgent.id);
-      logStream.end();
+      if (!logStream.destroyed) logStream.end();
       throw new Error(`Failed to resume — process has no PID`);
     }
 

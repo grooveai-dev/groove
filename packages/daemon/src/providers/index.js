@@ -41,6 +41,22 @@ export function getProviderPath(id) {
 (function augmentPath() {
   const isWin = process.platform === 'win32';
   const extra = isWin ? [] : ['/usr/local/bin', '/opt/homebrew/bin'];
+
+  // Electron forked processes may not inherit the user's full shell PATH.
+  // Try to resolve it from a login shell (non-interactive to avoid compinit noise).
+  if (!isWin) {
+    try {
+      const shell = process.env.SHELL || '/bin/zsh';
+      const shellPath = execSync(`${shell} -lc 'echo $PATH'`, { encoding: 'utf8', timeout: 5000 }).trim();
+      if (shellPath && shellPath.includes('/')) {
+        const last = shellPath.split('\n').pop();
+        for (const dir of last.split(pathDelimiter)) {
+          if (dir && !extra.includes(dir)) extra.push(dir);
+        }
+      }
+    } catch { /* login shell unavailable — fall through to static paths */ }
+  }
+
   try {
     const suppressErr = isWin ? '2>NUL' : '2>/dev/null';
     const npmPrefix = execSync(`npm config get prefix ${suppressErr}`, { encoding: 'utf8', timeout: 5000 }).trim();
@@ -77,6 +93,23 @@ const providers = {
 };
 
 const installCache = new Map();
+const _resolvedCommands = new Map();
+
+export function resolveProviderCommand(providerId) {
+  if (_resolvedCommands.has(providerId)) return _resolvedCommands.get(providerId);
+  const custom = getProviderPath(providerId);
+  if (custom) { _resolvedCommands.set(providerId, custom); return custom; }
+  const p = providers[providerId];
+  if (!p) return null;
+  const command = p.constructor.command;
+  if (!command) return null;
+  try {
+    const cmd = process.platform === 'win32' ? `where ${command}` : `which ${command}`;
+    const resolved = execSync(cmd, { encoding: 'utf8', timeout: 5000 }).trim().split('\n')[0];
+    if (resolved) { _resolvedCommands.set(providerId, resolved); return resolved; }
+  } catch { /* not found — fall through */ }
+  return command;
+}
 
 export function isProviderInstalled(providerId) {
   if (installCache.has(providerId)) return installCache.get(providerId);

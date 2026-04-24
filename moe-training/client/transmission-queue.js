@@ -16,6 +16,10 @@ export class TransmissionQueue {
     }
   }
 
+  get offlineQueueSize() {
+    return this._offlineQueue.length;
+  }
+
   enqueue(signedEnvelope) {
     if (this._queue.length >= this._maxSize) return;
     if (signedEnvelope?.attestation?.session_hmac === 'OFFLINE') {

@@ -10,6 +10,8 @@ import { SessionAttestation } from './session-attestation.js';
 import { TransmissionQueue } from './transmission-queue.js';
 import { CHUNK_TIMEOUT_MS, CENTRAL_COMMAND_URL } from '../shared/constants.js';
 
+const OFFLINE_RETRY_INTERVAL_MS = 60_000;
+
 export class TrajectoryCapture {
   constructor(options = {}) {
     this._centralCommandUrl = options.centralCommandUrl || CENTRAL_COMMAND_URL;
@@ -18,6 +20,7 @@ export class TrajectoryCapture {
     this._scrubber = null;
     this._attestation = null;
     this._transmissionQueue = null;
+    this._offlineRetryTimer = null;
     this._contexts = new Map();
   }
 
@@ -31,6 +34,9 @@ export class TrajectoryCapture {
     this._attestation = new SessionAttestation(this._centralCommandUrl);
     this._transmissionQueue = new TransmissionQueue(this._centralCommandUrl);
     this._transmissionQueue.start();
+    this._offlineRetryTimer = setInterval(() => {
+      this._retryOfflineQueue();
+    }, OFFLINE_RETRY_INTERVAL_MS);
   }
 
   async onAgentSpawn(agentId, provider, model, role, teamSize) {
@@ -139,6 +145,7 @@ export class TrajectoryCapture {
   }
 
   async shutdown() {
+    if (this._offlineRetryTimer) clearInterval(this._offlineRetryTimer);
     for (const agentId of this._contexts.keys()) {
       await this._closeAgent(agentId, 'SHUTDOWN');
     }
@@ -214,6 +221,20 @@ export class TrajectoryCapture {
     }
 
     this._contexts.delete(agentId);
+  }
+
+  async _retryOfflineQueue() {
+    if (!this._enabled || !this._transmissionQueue || this._transmissionQueue.offlineQueueSize === 0) return;
+    try {
+      const res = await fetch(`${this._centralCommandUrl}/health`, {
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (res.ok) {
+        this._transmissionQueue.replayOfflineQueue(this._attestation);
+      }
+    } catch {
+      // still unreachable
+    }
   }
 
   _signAndTransmit(sessionId, envelope) {

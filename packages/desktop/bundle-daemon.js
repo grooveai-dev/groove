@@ -2,7 +2,7 @@
 // Creates a standalone daemon bundle with its own node_modules for Electron packaging.
 // npm workspaces hoist deps to root, but the packaged app needs them alongside the daemon.
 import { execSync } from 'child_process';
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -95,6 +95,16 @@ cpSync(join(moeSourceDir, 'package.json'), join(moeBundleDir, 'package.json'));
 // is what downloads the prebuilt .node binary (or compiles from source). Without
 // it, the daemon crashes at startup when moe-training tries to open SQLite.
 execSync('npm install --omit=dev', {
+  cwd: moeBundleDir,
+  stdio: 'inherit',
+  env: { ...process.env, npm_config_workspaces: 'false' },
+});
+
+// Rebuild better-sqlite3 against Electron's Node headers so the ABI matches.
+const desktopPkg = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8'));
+const electronVersion = desktopPkg.devDependencies.electron.replace('^', '');
+console.log(`[bundle-daemon] Rebuilding better-sqlite3 for Electron ${electronVersion}...`);
+execSync(`npx @electron/rebuild -v ${electronVersion} -m . -o better-sqlite3`, {
   cwd: moeBundleDir,
   stdio: 'inherit',
   env: { ...process.env, npm_config_workspaces: 'false' },

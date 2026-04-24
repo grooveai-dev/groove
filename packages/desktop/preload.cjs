@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('groove', {
     connectSSH: (id) => ipcRenderer.invoke('home-connect-ssh', id),
     addSSH: (config) => ipcRenderer.invoke('home-add-ssh', config),
     removeSSH: (id) => ipcRenderer.invoke('home-remove-ssh', id),
+    removeRecent: (dir) => ipcRenderer.invoke('home-remove-recent', dir),
     pickKeyFile: () => ipcRenderer.invoke('home-pick-key'),
     getCachedSub: () => ipcRenderer.invoke('home-get-cached-sub'),
   },

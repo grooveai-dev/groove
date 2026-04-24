@@ -10,7 +10,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const daemonDir = join(__dirname, '..', 'daemon');
 const bundleDir = join(__dirname, '.daemon-bundle');
 
-rmSync(bundleDir, { recursive: true, force: true });
+if (existsSync(bundleDir)) {
+  // Node's rmSync hangs on large node_modules trees on macOS — use native rm
+  if (process.platform === 'win32') {
+    rmSync(bundleDir, { recursive: true, force: true });
+  } else {
+    execSync(`rm -rf ${JSON.stringify(bundleDir)}`, { stdio: 'ignore' });
+  }
+}
 mkdirSync(bundleDir, { recursive: true });
 
 cpSync(join(daemonDir, 'src'), join(bundleDir, 'src'), { recursive: true });

@@ -59,7 +59,7 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
       : 'Send a message...';
 
   return (
-    <div className="px-4 py-3">
+    <div className="border-t border-border-subtle px-4 py-3 bg-surface-1">
       {replyContext && (
         <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-lg bg-accent/5 border border-accent/15">
           <ImageIcon size={12} className="text-accent flex-shrink-0" />
@@ -69,10 +69,22 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
           </button>
         </div>
       )}
-      <div className={cn(
-        'flex items-end gap-2 rounded-2xl bg-surface-1/80 border px-3 py-2 transition-all chat-input-focus',
-        isImageModel ? 'border-purple/20' : 'border-accent/8',
-      )}>
+
+      {currentModel && (
+        <div className="flex items-center gap-2 mb-2">
+          <div className={cn(
+            'flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-mono border',
+            isImageModel
+              ? 'bg-purple/8 border-purple/20 text-purple'
+              : 'bg-surface-3 border-border-subtle text-text-3',
+          )}>
+            {isImageModel && <ImageIcon size={9} />}
+            <span className="max-w-[80px] truncate">{formatModelName(currentModel)}</span>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-end gap-2">
         <input
           ref={fileInputRef}
           type="file"
@@ -84,10 +96,10 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-text-4 hover:text-text-1 hover:bg-surface-4 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0"
+          className="w-10 h-10 flex items-center justify-center rounded-xl text-text-4 hover:text-text-1 hover:bg-surface-3 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0"
           title="Attach file"
         >
-          <Paperclip size={15} />
+          <Paperclip size={16} />
         </button>
 
         <textarea
@@ -98,26 +110,21 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
           placeholder={placeholder}
           disabled={disabled}
           rows={1}
-          style={{ minHeight: '36px' }}
-          className="flex-1 resize-none bg-transparent text-sm text-text-0 font-sans placeholder:text-text-4 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed py-1.5"
+          className={cn(
+            'flex-1 resize-y rounded-xl px-4 py-2.5 text-sm',
+            'bg-surface-0 border text-text-0 font-sans',
+            'placeholder:text-text-4',
+            'focus:outline-none focus:ring-1',
+            'min-h-[40px]',
+            'border-border focus:ring-accent/40',
+            'disabled:opacity-50 disabled:cursor-not-allowed',
+          )}
         />
-
-        {currentModel && (
-          <div className={cn(
-            'flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-mono flex-shrink-0 border',
-            isImageModel
-              ? 'bg-purple/8 border-purple/20 text-purple'
-              : 'bg-surface-3 border-border-subtle text-text-3',
-          )}>
-            {isImageModel && <ImageIcon size={9} />}
-            <span className="max-w-[80px] truncate">{formatModelName(currentModel)}</span>
-          </div>
-        )}
 
         {isActive ? (
           <button
             onClick={onStop}
-            className="w-8 h-8 flex items-center justify-center rounded-xl bg-danger/80 text-white hover:bg-danger transition-all cursor-pointer shadow-lg shadow-danger/20 flex-shrink-0"
+            className="w-10 h-10 flex items-center justify-center rounded-xl bg-danger/80 text-white hover:bg-danger transition-all cursor-pointer shadow-lg shadow-danger/20 flex-shrink-0"
             title="Stop generation"
           >
             <Square size={14} fill="currentColor" />
@@ -127,16 +134,14 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
             onClick={handleSend}
             disabled={!canSend}
             className={cn(
-              'w-9 h-9 flex items-center justify-center rounded-xl transition-all cursor-pointer flex-shrink-0',
+              'w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer flex-shrink-0',
               'disabled:opacity-20 disabled:cursor-not-allowed',
               canSend
-                ? isImageModel
-                  ? 'bg-purple/15 text-purple hover:bg-purple/25 border border-purple/25'
-                  : 'bg-accent/15 text-accent hover:bg-accent/25 border border-accent/25'
+                ? 'bg-accent/15 text-accent hover:bg-accent/25 border border-accent/25'
                 : 'bg-surface-4 text-text-4',
             )}
           >
-            {sending ? <Loader2 size={16} className="animate-spin" /> : isImageModel ? <ImageIcon size={16} /> : <Send size={16} />}
+            {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
           </button>
         )}
       </div>

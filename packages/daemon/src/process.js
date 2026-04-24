@@ -114,6 +114,9 @@ CRITICAL — NEVER DO THESE:
 - NEVER kill the daemon process. No "kill <pid>", "pkill groove", "killall node", etc.
 - NEVER run "./promote.sh", "./promote-local.sh", or any publish/deploy script.
 - NEVER start long-running dev servers (vite dev, npm start, next dev, etc.).
+- NEVER use 'git add -f' or 'git add --force' to bypass .gitignore. If a file is gitignored, it should stay gitignored. Only stage files that git tracks normally. If .gitignore prevents staging, report it in your output — do NOT force-add.
+- NEVER use 'git push --force' or 'git push -f'. Force-pushing can destroy shared history.
+- NEVER modify .gitignore to include files that were previously excluded.
 
 Restarting the daemon destroys ALL other agents currently running in other teams. Verification is done via "npm run build" and "npm test", which exit cleanly. If code changes require a daemon restart to take effect, report that in your output so the user can restart manually — do NOT do it yourself.
 
@@ -1161,7 +1164,7 @@ For normal file edits within your scope, proceed without review.
     const workingDir = plan.workingDir;
     preview.launch(teamId, workingDir, plan.preview).then((result) => {
       if (!result.launched) {
-        const intentionalSkips = new Set(['no_preview', 'cli', 'none']);
+        const intentionalSkips = new Set(['no_preview', 'cli', 'none', 'no_command', 'no_dev_script']);
         if (intentionalSkips.has(result.reason)) {
           console.log(`[Groove] Preview for team ${teamId} intentionally skipped: ${result.reason}`);
           return;

@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, X } from 'lucide-react';
+import { Send, X, Loader2 } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 
 export function ScreenshotOverlay({ iframeRef }) {
@@ -11,8 +11,9 @@ export function ScreenshotOverlay({ iframeRef }) {
   const [dragging, setDragging] = useState(false);
   const [start, setStart] = useState(null);
   const [end, setEnd] = useState(null);
-  const [captured, setCaptured] = useState(null); // { base64, rect }
+  const [captured, setCaptured] = useState(null); // { base64, rect, loading }
   const [comment, setComment] = useState('');
+  const [flashRect, setFlashRect] = useState(null);
 
   const handleMouseDown = useCallback((e) => {
     if (captured) return;
@@ -48,9 +49,37 @@ export function ScreenshotOverlay({ iframeRef }) {
       return;
     }
 
+    setCaptured({ base64: null, rect: selRect, loading: true });
+
+    function finishCapture(base64) {
+      setCaptured({ base64, rect: selRect, loading: false });
+      setFlashRect(selRect);
+      setTimeout(() => setFlashRect(null), 600);
+    }
+
+    function drawPlaceholder() {
+      const canvas = document.createElement('canvas');
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = selRect.w * dpr;
+      canvas.height = selRect.h * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      ctx.fillStyle = '#1e2127';
+      ctx.fillRect(0, 0, selRect.w, selRect.h);
+      ctx.strokeStyle = '#3e4451';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(4, 4, selRect.w - 8, selRect.h - 8);
+      ctx.fillStyle = '#6e7681';
+      ctx.font = '12px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${Math.round(selRect.w)} × ${Math.round(selRect.h)}`, selRect.w / 2, selRect.h / 2);
+      return canvas.toDataURL('image/png');
+    }
+
     try {
       const iframe = iframeRef.current;
-      if (!iframe) { setStart(null); setEnd(null); return; }
+      if (!iframe) { finishCapture(drawPlaceholder()); return; }
 
       const canvas = document.createElement('canvas');
       const dpr = window.devicePixelRatio || 1;
@@ -59,53 +88,25 @@ export function ScreenshotOverlay({ iframeRef }) {
       const ctx = canvas.getContext('2d');
       ctx.scale(dpr, dpr);
 
-      // Same-origin proxy iframe — serialize DOM to SVG foreignObject for capture
-      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (iframeDoc) {
-        const serializer = new XMLSerializer();
-        const html = serializer.serializeToString(iframeDoc.documentElement);
-        const iframeRect = iframe.getBoundingClientRect();
-        const overlayRect = overlayRef.current.getBoundingClientRect();
-        const offsetX = selRect.x - (iframeRect.left - overlayRect.left);
-        const offsetY = selRect.y - (iframeRect.top - overlayRect.top);
+      const iframeRect = iframe.getBoundingClientRect();
+      const overlayRect = overlayRef.current.getBoundingClientRect();
+      const offsetX = selRect.x - (iframeRect.left - overlayRect.left);
+      const offsetY = selRect.y - (iframeRect.top - overlayRect.top);
 
-        const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="${selRect.w}" height="${selRect.h}">
-          <foreignObject x="${-offsetX}" y="${-offsetY}" width="${iframeRect.width}" height="${iframeRect.height}">
-            ${html}
-          </foreignObject>
-        </svg>`;
-        const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const img = new Image();
-        img.onload = () => {
-          ctx.drawImage(img, 0, 0, selRect.w, selRect.h);
-          URL.revokeObjectURL(url);
-          setCaptured({ base64: canvas.toDataURL('image/png'), rect: selRect });
-        };
-        img.onerror = () => {
-          URL.revokeObjectURL(url);
-          // Fallback: region placeholder
-          ctx.fillStyle = '#1e2127';
-          ctx.fillRect(0, 0, selRect.w, selRect.h);
-          ctx.fillStyle = '#6e7681';
-          ctx.font = '12px Inter, sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(`Region ${Math.round(selRect.w)}×${Math.round(selRect.h)}`, selRect.w / 2, selRect.h / 2);
-          setCaptured({ base64: canvas.toDataURL('image/png'), rect: selRect });
-        };
-        img.src = url;
-      } else {
-        ctx.fillStyle = '#1e2127';
-        ctx.fillRect(0, 0, selRect.w, selRect.h);
-        ctx.fillStyle = '#6e7681';
-        ctx.font = '12px Inter, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`Region ${Math.round(selRect.w)}×${Math.round(selRect.h)}`, selRect.w / 2, selRect.h / 2);
-        setCaptured({ base64: canvas.toDataURL('image/png'), rect: selRect });
+      try {
+        ctx.drawImage(iframe, -offsetX * dpr, -offsetY * dpr, iframeRect.width * dpr, iframeRect.height * dpr, 0, 0, selRect.w, selRect.h);
+        const testPixel = ctx.getImageData(0, 0, 1, 1).data;
+        if (testPixel[0] === 0 && testPixel[1] === 0 && testPixel[2] === 0 && testPixel[3] === 0) {
+          throw new Error('blank');
+        }
+        finishCapture(canvas.toDataURL('image/png'));
+      } catch {
+        finishCapture(drawPlaceholder());
       }
     } catch {
       setStart(null);
       setEnd(null);
+      setCaptured(null);
     }
   }, [dragging, start, end, iframeRef]);
 
@@ -118,7 +119,7 @@ export function ScreenshotOverlay({ iframeRef }) {
   }, [toggleScreenshotMode]);
 
   function handleSubmit() {
-    if (!captured) return;
+    if (!captured || captured.loading) return;
     iteratePreview(comment || 'See screenshot', captured.base64);
     toggleScreenshotMode();
   }
@@ -129,6 +130,19 @@ export function ScreenshotOverlay({ iframeRef }) {
     width: Math.abs(end.x - start.x),
     height: Math.abs(end.y - start.y),
   } : null;
+
+  const popoverPosition = useCallback((rect) => {
+    if (!rect || !overlayRef.current) return {};
+    const overlayH = overlayRef.current.clientHeight;
+    const overlayW = overlayRef.current.clientWidth;
+    const spaceBelow = overlayH - (rect.y + rect.h + 8);
+    const popoverH = 200;
+    const placeAbove = spaceBelow < popoverH && rect.y > popoverH;
+    return {
+      left: Math.max(8, Math.min(rect.x, overlayW - 300)),
+      top: placeAbove ? rect.y - popoverH - 8 : rect.y + rect.h + 8,
+    };
+  }, []);
 
   return (
     <div
@@ -150,21 +164,40 @@ export function ScreenshotOverlay({ iframeRef }) {
         />
       )}
 
+      {/* Capture flash */}
+      {flashRect && (
+        <div
+          className="absolute pointer-events-none animate-capture-flash rounded"
+          style={{ left: flashRect.x, top: flashRect.y, width: flashRect.w, height: flashRect.h }}
+        />
+      )}
+
+      {/* Captured selection outline */}
+      {captured && (
+        <div
+          className="absolute border-2 border-accent rounded pointer-events-none"
+          style={{ left: captured.rect.x, top: captured.rect.y, width: captured.rect.w, height: captured.rect.h }}
+        />
+      )}
+
       {/* Capture popover */}
       {captured && (
         <div
           className="absolute z-40 w-72 bg-surface-2 border border-border rounded-lg shadow-2xl animate-chat-fade-in"
-          style={{
-            left: Math.min(captured.rect.x, overlayRef.current?.clientWidth - 300 || 0),
-            top: captured.rect.y + captured.rect.h + 8,
-          }}
+          style={popoverPosition(captured.rect)}
         >
           <div className="p-3 border-b border-border-subtle">
-            <img
-              src={captured.base64}
-              alt="Screenshot"
-              className="w-full h-auto rounded border border-border-subtle max-h-32 object-contain bg-surface-0"
-            />
+            {captured.loading ? (
+              <div className="w-full h-24 rounded border border-border-subtle bg-surface-0 flex items-center justify-center">
+                <Loader2 size={20} className="text-accent animate-spin" />
+              </div>
+            ) : (
+              <img
+                src={captured.base64}
+                alt="Screenshot"
+                className="w-full h-auto rounded border border-border-subtle max-h-32 object-contain bg-surface-0"
+              />
+            )}
           </div>
           <div className="p-3 flex items-center gap-2">
             <input
@@ -178,7 +211,8 @@ export function ScreenshotOverlay({ iframeRef }) {
             />
             <button
               onClick={handleSubmit}
-              className="w-8 h-8 flex items-center justify-center rounded-md bg-accent/15 text-accent hover:bg-accent/25 transition-colors cursor-pointer"
+              disabled={captured.loading}
+              className="w-8 h-8 flex items-center justify-center rounded-md bg-accent/15 text-accent hover:bg-accent/25 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
             >
               <Send size={14} />
             </button>

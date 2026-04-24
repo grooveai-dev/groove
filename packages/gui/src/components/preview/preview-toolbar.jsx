@@ -1,5 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { RefreshCw, Monitor, Tablet, Smartphone, Camera, Square } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { RefreshCw, Monitor, Tablet, Smartphone, Camera, X } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useGrooveStore } from '../../stores/groove';
 
@@ -14,6 +15,24 @@ export function PreviewToolbar({ onRefresh }) {
   const setPreviewDevice = useGrooveStore((s) => s.setPreviewDevice);
   const toggleScreenshotMode = useGrooveStore((s) => s.toggleScreenshotMode);
   const closePreview = useGrooveStore((s) => s.closePreview);
+
+  const [confirming, setConfirming] = useState(false);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
+
+  function handleClose() {
+    if (confirming) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      setConfirming(false);
+      closePreview();
+    } else {
+      setConfirming(true);
+      timerRef.current = setTimeout(() => setConfirming(false), 2000);
+    }
+  }
 
   const proxyUrl = previewState.teamId
     ? `${window.location.origin}/api/preview/${previewState.teamId}/proxy/`
@@ -68,13 +87,22 @@ export function PreviewToolbar({ onRefresh }) {
         <Camera size={14} />
       </button>
 
-      {/* Stop preview */}
+      {/* Close preview — two-click confirmation */}
       <button
-        onClick={closePreview}
-        className="w-7 h-7 flex items-center justify-center rounded-md text-text-3 hover:text-danger hover:bg-danger/10 transition-colors cursor-pointer"
-        title="Stop preview"
+        onClick={handleClose}
+        className={cn(
+          'h-7 flex items-center justify-center rounded-md transition-all cursor-pointer',
+          confirming
+            ? 'px-2 gap-1.5 bg-danger/15 text-danger border border-danger/25'
+            : 'w-7 text-text-3 hover:text-danger hover:bg-danger/10',
+        )}
+        title="Close Preview"
       >
-        <Square size={13} />
+        {confirming ? (
+          <span className="text-2xs font-semibold font-sans whitespace-nowrap">Close?</span>
+        ) : (
+          <X size={14} />
+        )}
       </button>
     </div>
   );

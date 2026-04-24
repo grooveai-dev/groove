@@ -3,6 +3,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { Copy, Check, ArrowRight, Download, Maximize2, X, Image as ImageIcon, RefreshCw } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
+import { Avatar } from '../ui/avatar';
 import { ThinkingIndicator } from '../ui/thinking-indicator';
 
 const API_STATUS_MESSAGES = [
@@ -238,9 +239,9 @@ function RenderedMarkdown({ text }) {
 
 function UserMessage({ msg }) {
   return (
-    <div className="flex justify-end animate-chat-fade-in">
-      <div className="max-w-[75%]">
-        <div className="px-4 py-3 rounded-2xl rounded-br-md bg-gradient-to-br from-accent/12 to-accent/6 border border-accent/15 backdrop-blur-sm">
+    <div className="flex justify-end">
+      <div className="max-w-[85%]">
+        <div className="px-3.5 py-2.5 rounded-2xl rounded-br-md bg-accent/10 border border-accent/15">
           <p className="text-sm text-text-0 font-sans whitespace-pre-wrap break-words leading-relaxed">{msg.text}</p>
         </div>
         <div className="text-2xs text-text-4 font-sans mt-1 text-right">{timeAgo(msg.timestamp)}</div>
@@ -251,19 +252,22 @@ function UserMessage({ msg }) {
 
 function AssistantMessage({ msg, model }) {
   return (
-    <div className="max-w-[85%] animate-chat-fade-in">
-      {model && <div className="text-2xs text-text-3 font-mono mb-1.5 font-medium">{model}</div>}
-      <div className="rounded-2xl rounded-tl-md bg-surface-1/80 border border-border-subtle px-4 py-3">
-        <RenderedMarkdown text={msg.text} />
+    <div className="flex gap-2.5">
+      <Avatar name={model || 'assistant'} role="assistant" size="sm" className="mt-1 flex-shrink-0" />
+      <div className="max-w-[85%]">
+        {model && <div className="text-2xs text-text-3 font-sans mb-1 font-medium">{model}</div>}
+        <div className="text-sm text-text-1 font-sans whitespace-pre-wrap break-words leading-relaxed">
+          <RenderedMarkdown text={msg.text} />
+        </div>
+        <div className="text-2xs text-text-4 font-sans mt-1">{timeAgo(msg.timestamp)}</div>
       </div>
-      <div className="text-2xs text-text-4 font-sans mt-1">{timeAgo(msg.timestamp)}</div>
     </div>
   );
 }
 
 function ImageLoadingMessage({ msg }) {
   return (
-    <div className="max-w-[85%] animate-chat-fade-in">
+    <div className="max-w-[85%]">
       <div className="rounded-2xl rounded-tl-md bg-surface-1/80 border border-border-subtle overflow-hidden">
         <div className="w-80 h-80 image-loading-shimmer flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
@@ -299,7 +303,7 @@ function ImageMessage({ msg, onReply }) {
 
   return (
     <>
-      <div className="max-w-[85%] animate-chat-fade-in">
+      <div className="max-w-[85%]">
         {msg.model && <div className="text-2xs text-text-3 font-mono mb-1.5 font-medium flex items-center gap-1.5"><ImageIcon size={10} /> {msg.model}</div>}
         <div className="rounded-2xl rounded-tl-md bg-surface-1/80 border border-border-subtle overflow-hidden">
           <div
@@ -314,7 +318,7 @@ function ImageMessage({ msg, onReply }) {
               onClick={() => setExpanded(true)}
             />
             {hovering && (
-              <div className="absolute top-2 right-2 flex gap-1.5 animate-chat-fade-in">
+              <div className="absolute top-2 right-2 flex gap-1.5">
                 <button
                   onClick={handleDownload}
                   className="w-8 h-8 rounded-lg bg-surface-0/90 backdrop-blur-sm border border-border-subtle flex items-center justify-center text-text-2 hover:text-accent hover:border-accent/30 transition-colors cursor-pointer"
@@ -350,7 +354,7 @@ function ImageMessage({ msg, onReply }) {
 
       {expanded && (
         <div
-          className="fixed inset-0 z-[200] bg-surface-0/95 backdrop-blur-md flex items-center justify-center animate-chat-fade-in"
+          className="fixed inset-0 z-[200] bg-surface-0/95 backdrop-blur-md flex items-center justify-center"
           onClick={() => setExpanded(false)}
         >
           <button
@@ -386,7 +390,7 @@ function ImageMessage({ msg, onReply }) {
 
 function SystemMessage({ msg }) {
   return (
-    <div className="flex justify-center py-1 animate-chat-fade-in">
+    <div className="flex justify-center py-1">
       <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-4/50">
         <ArrowRight size={10} className="text-text-4" />
         <span className="text-2xs text-text-3 font-sans">{msg.text}</span>
@@ -425,18 +429,16 @@ function ApiTypingIndicator() {
   }, []);
 
   return (
-    <div className="rounded-2xl rounded-tl-md bg-surface-1/80 border border-border-subtle px-4 py-3 max-w-[85%] animate-chat-fade-in">
-      <div className="flex items-center gap-2.5">
-        <div className="relative w-3.5 h-3.5 flex-shrink-0">
-          <span className="absolute inset-0 rounded-full border border-transparent border-t-accent animate-spin" style={{ animationDuration: '0.9s' }} />
-        </div>
-        <span
-          className="text-[12px] font-sans text-text-3 transition-opacity duration-[250ms]"
-          style={{ opacity: fade ? 1 : 0 }}
-        >
-          {API_STATUS_MESSAGES[idx]}
-        </span>
+    <div className="flex items-center gap-2.5 ml-8 py-1">
+      <div className="relative w-3.5 h-3.5 flex-shrink-0">
+        <span className="absolute inset-0 rounded-full border border-transparent border-t-accent animate-spin" style={{ animationDuration: '0.9s' }} />
       </div>
+      <span
+        className="text-2xs font-sans text-text-3 transition-opacity duration-[250ms]"
+        style={{ opacity: fade ? 1 : 0 }}
+      >
+        {API_STATUS_MESSAGES[idx]}
+      </span>
     </div>
   );
 }

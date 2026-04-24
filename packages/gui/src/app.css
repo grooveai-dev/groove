@@ -1,3 +1,4 @@
+/* FSL-1.1-Apache-2.0 — see LICENSE */
 @import "tailwindcss";
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
@@ -172,6 +173,17 @@ html {
   background: linear-gradient(90deg, var(--color-surface-3) 25%, var(--color-surface-5) 50%, var(--color-surface-3) 75%);
   background-size: 200% 100%;
   animation: image-shimmer 1.5s ease-in-out infinite;
+}
+
+/* ── Screenshot capture flash ────────────────────────────── */
+
+@keyframes capture-flash {
+  0% { background: rgba(51, 175, 188, 0.35); }
+  50% { background: rgba(51, 175, 188, 0.15); }
+  100% { background: transparent; }
+}
+.animate-capture-flash {
+  animation: capture-flash 0.6s ease-out forwards;
 }
 
 /* ── Sharper corners globally ─────────────────────────────── */

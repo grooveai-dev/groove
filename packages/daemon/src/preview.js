@@ -168,6 +168,20 @@ export class PreviewService {
     if (!command) {
       return Promise.resolve({ launched: false, reason: 'no_command' });
     }
+    // If command references an npm script, verify it exists in package.json
+    const npmRunMatch = command.match(/npm\s+run\s+(\S+)/);
+    if (npmRunMatch) {
+      const scriptName = npmRunMatch[1];
+      const pkgPath = resolve(baseDir, 'package.json');
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+        if (!pkg.scripts || !pkg.scripts[scriptName]) {
+          return Promise.resolve({ launched: false, reason: 'no_dev_script' });
+        }
+      } catch {
+        return Promise.resolve({ launched: false, reason: 'no_dev_script' });
+      }
+    }
     const urlPattern = preview.urlPattern
       ? new RegExp(preview.urlPattern)
       : /https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0):\d+/;

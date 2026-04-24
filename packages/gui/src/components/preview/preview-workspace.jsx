@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, Paperclip, MonitorX, Loader2 } from 'lucide-react';
+import { Send, Paperclip, MonitorX, Loader2, MessageCircle, Camera, RefreshCw } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
@@ -137,9 +137,24 @@ function PreviewChat() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {previewChat.length === 0 && (
           <div className="flex items-center justify-center h-full">
-            <p className="text-sm text-text-3 font-sans text-center">
-              Describe changes and they'll be routed to the team planner
-            </p>
+            <div className="max-w-xs w-full px-5 py-5 bg-surface-1 border border-border-subtle rounded-xl text-center">
+              <MessageCircle size={24} className="mx-auto text-accent mb-3" />
+              <h3 className="text-sm font-semibold text-text-0 font-sans mb-3">Preview is live!</h3>
+              <ul className="text-left space-y-2 text-2xs text-text-2 font-sans">
+                <li className="flex gap-2">
+                  <Send size={11} className="text-text-3 mt-0.5 flex-shrink-0" />
+                  <span>Type a message to request changes — your feedback goes to the team planner who routes it to the right agent</span>
+                </li>
+                <li className="flex gap-2">
+                  <Camera size={11} className="text-text-3 mt-0.5 flex-shrink-0" />
+                  <span>Use the camera icon to screenshot a specific area and annotate it</span>
+                </li>
+                <li className="flex gap-2">
+                  <RefreshCw size={11} className="text-text-3 mt-0.5 flex-shrink-0" />
+                  <span>Changes auto-refresh via hot module reload</span>
+                </li>
+              </ul>
+            </div>
           </div>
         )}
         {previewChat.map((msg, i) => (

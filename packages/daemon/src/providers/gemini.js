@@ -40,7 +40,8 @@ export class GeminiProvider extends Provider {
 
   static isInstalled() {
     try {
-      execSync('which gemini', { stdio: 'ignore' });
+      const cmd = process.platform === 'win32' ? 'where gemini' : 'which gemini';
+      execSync(cmd, { stdio: 'ignore' });
       return true;
     } catch {
       return false;

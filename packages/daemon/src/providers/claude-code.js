@@ -46,7 +46,8 @@ export class ClaudeCodeProvider extends Provider {
 
   static isInstalled() {
     try {
-      execSync('which claude', { stdio: 'ignore' });
+      const cmd = process.platform === 'win32' ? 'where claude' : 'which claude';
+      execSync(cmd, { stdio: 'ignore' });
       return true;
     } catch {
       return false;

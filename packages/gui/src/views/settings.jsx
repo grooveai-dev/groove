@@ -14,7 +14,7 @@ import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { fmtUptime } from '../lib/format';
 import {
-  Key, Eye, EyeOff, Check, Cpu, Download, Loader2,
+  Key, Eye, EyeOff, Check, Cpu, Download, Loader2, RefreshCw, Terminal, Copy,
   FolderOpen, FolderSearch, Users, Gauge, ChevronRight,
   ShieldCheck, Settings, Lock,
   Newspaper, Radio, Send, MessageSquare, MessageCircle,
@@ -62,6 +62,9 @@ function ProviderCard({ provider, onKeyChange }) {
   const installProgress = useGrooveStore((s) => s.providerInstallProgress[provider.id]);
   const loginProvider = useGrooveStore((s) => s.loginProvider);
   const setProviderPath = useGrooveStore((s) => s.setProviderPath);
+  const verifyProvider = useGrooveStore((s) => s.verifyProvider);
+  const installProvider = useGrooveStore((s) => s.installProvider);
+  const [checking, setChecking] = useState(false);
 
   const isLocal = provider.authType === 'local';
   const isSubscription = provider.authType === 'subscription';
@@ -221,20 +224,87 @@ function ProviderCard({ provider, onKeyChange }) {
             </div>
           )}
 
-          {/* Not installed — prominent Install button */}
+          {/* Not installed */}
           {!provider.installed && !isInstalling && !settingKey && (
-            <div className="flex flex-col items-center justify-center flex-1 gap-3 py-2">
-              <p className="text-xs text-text-3 font-sans text-center">
-                {provider.name} is not installed on this machine.
-              </p>
+            <div className="flex flex-col gap-2.5 flex-1">
+              {/* Install error from last attempt */}
+              {installProgress?.error && (
+                <div className="p-2.5 bg-danger/5 border border-danger/15 rounded-md">
+                  <p className="text-2xs text-danger font-sans break-all">{installProgress.error}</p>
+                </div>
+              )}
+
+              {/* Auto-install button */}
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => openWizard(0)}
-                className="h-8 px-4 text-xs gap-1.5"
+                onClick={() => installProvider(provider.id).catch(() => {})}
+                className="w-full h-8 text-2xs gap-1.5"
               >
-                <Download size={12} /> Install {provider.name}
+                <Download size={11} /> Install {provider.name}
               </Button>
+
+              {/* Manual install command */}
+              {provider.installCommand && (
+                <div className="space-y-1">
+                  <p className="text-2xs text-text-4 font-sans">Or install manually in your terminal:</p>
+                  <div className="flex items-center gap-1">
+                    <code className="flex-1 px-2 py-1.5 bg-surface-0 border border-border-subtle rounded text-2xs font-mono text-text-2 select-all">
+                      {provider.installCommand}
+                    </code>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(provider.installCommand); addToast('success', 'Copied'); }}
+                      className="p-1.5 text-text-4 hover:text-text-2 cursor-pointer"
+                    >
+                      <Copy size={10} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Re-check + custom path */}
+              <div className="flex items-center gap-2 pt-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    setChecking(true);
+                    try {
+                      await verifyProvider(provider.id);
+                      if (onKeyChange) onKeyChange();
+                    } catch { /* handled in store */ }
+                    setChecking(false);
+                  }}
+                  disabled={checking}
+                  className="h-7 text-2xs gap-1 px-2"
+                >
+                  <RefreshCw size={10} className={checking ? 'animate-spin' : ''} /> Re-check
+                </Button>
+                <button
+                  onClick={() => setCustomPathOpen(!customPathOpen)}
+                  className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans"
+                >
+                  Set custom path
+                </button>
+              </div>
+
+              {/* Custom path input (shown for not-installed too) */}
+              {customPathOpen && (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      value={customPath}
+                      onChange={(e) => setCustomPath(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSavePath()}
+                      placeholder={`/path/to/${provider.id}`}
+                      className="flex-1 h-7 px-2 text-2xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+                    />
+                    <Button variant="primary" size="sm" onClick={handleSavePath} disabled={!customPath.trim() || savingPath} className="h-7 text-2xs px-2.5">
+                      {savingPath ? '...' : 'Save'}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

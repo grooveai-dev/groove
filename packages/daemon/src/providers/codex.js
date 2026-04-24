@@ -46,7 +46,8 @@ export class CodexProvider extends Provider {
 
   static isInstalled() {
     try {
-      execSync('which codex', { stdio: 'ignore' });
+      const cmd = process.platform === 'win32' ? 'where codex' : 'which codex';
+      execSync(cmd, { stdio: 'ignore' });
       return true;
     } catch {
       return false;

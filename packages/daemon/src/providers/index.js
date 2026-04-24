@@ -37,17 +37,30 @@ export function getProviderPath(id) {
 }
 
 (function augmentPath() {
-  const extra = ['/usr/local/bin', '/opt/homebrew/bin'];
+  const isWin = process.platform === 'win32';
+  const extra = isWin ? [] : ['/usr/local/bin', '/opt/homebrew/bin'];
   try {
-    const npmPrefix = execSync('npm config get prefix 2>/dev/null', { encoding: 'utf8', timeout: 5000 }).trim();
-    const npmGlobal = npmPrefix ? `${npmPrefix}/bin` : '';
-    if (npmGlobal) extra.push(npmGlobal);
+    const suppressErr = isWin ? '2>NUL' : '2>/dev/null';
+    const npmPrefix = execSync(`npm config get prefix ${suppressErr}`, { encoding: 'utf8', timeout: 5000 }).trim();
+    if (npmPrefix) {
+      extra.push(isWin ? npmPrefix : `${npmPrefix}/bin`);
+    }
   } catch { /* npm itself may not be in PATH yet */ }
-  const home = process.env.HOME || '';
-  if (home) extra.push(`${home}/.npm-global/bin`);
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  if (home) {
+    if (isWin) {
+      extra.push(`${home}\\AppData\\Roaming\\npm`);
+    } else {
+      extra.push(`${home}/.npm-global/bin`);
+    }
+  }
+  if (isWin) {
+    const pf = process.env.ProgramFiles || 'C:\\Program Files';
+    extra.push(`${pf}\\nodejs`);
+  }
   const cur = process.env.PATH || '';
-  const toAdd = extra.filter(p => p && !cur.split(':').includes(p));
-  if (toAdd.length) process.env.PATH = [...toAdd, cur].join(':');
+  const toAdd = extra.filter(p => p && !cur.split(pathDelimiter).includes(p));
+  if (toAdd.length) process.env.PATH = [...toAdd, cur].join(pathDelimiter);
 })();
 
 const providers = {

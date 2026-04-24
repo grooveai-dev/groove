@@ -4172,10 +4172,10 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   app.post('/api/tunnels', (req, res) => {
     try {
-      const { name, host, user, port, sshKeyPath, autoStart, autoConnect } = req.body;
+      const { name, host, user, port, sshKeyPath, autoStart, autoConnect, projectDir } = req.body;
       if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name is required (string)' });
       if (!host || typeof host !== 'string') return res.status(400).json({ error: 'host is required (string)' });
-      const result = daemon.tunnelManager.save({ name, host, user, port, sshKeyPath, autoStart, autoConnect });
+      const result = daemon.tunnelManager.save({ name, host, user, port, sshKeyPath, autoStart, autoConnect, projectDir });
       res.json(result);
     } catch (err) {
       res.status(400).json({ error: err.message });

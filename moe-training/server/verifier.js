@@ -26,6 +26,11 @@ export class EnvelopeVerifier {
     const attestation = envelope.attestation;
     if (!attestation) return { valid: false, reason: 'missing attestation' };
 
+    if (!attestation.session_hmac || typeof attestation.session_hmac !== 'string' || attestation.session_hmac.length === 0) {
+      return { valid: false, reason: 'empty or missing HMAC' };
+    }
+
+    // HMAC covers the entire envelope EXCEPT the attestation block
     const envelopeForHmac = { ...envelope };
     delete envelopeForHmac.attestation;
     const envelopeBytes = JSON.stringify(envelopeForHmac);
@@ -38,16 +43,16 @@ export class EnvelopeVerifier {
     );
     if (!hmacValid) return { valid: false, reason: 'HMAC verification failed' };
 
-    if (attestation.sequence !== session.expected_sequence) {
-      return { valid: false, reason: `sequence mismatch: expected ${session.expected_sequence}, got ${attestation.sequence}` };
+    // Atomic sequence check + increment (prevents race conditions)
+    const seqResult = this.sessionRegistry.checkAndIncrementSequence(sessionId, attestation.sequence);
+    if (!seqResult.valid) {
+      return { valid: false, reason: seqResult.reason };
     }
 
     const schemaResult = validateEnvelope(envelope);
     if (!schemaResult.valid) {
       return { valid: false, reason: `schema validation failed: ${schemaResult.reason || schemaResult.errors?.join(', ')}` };
     }
-
-    this.sessionRegistry.incrementSequence(sessionId);
 
     return { valid: true };
   }
@@ -63,6 +68,11 @@ export class EnvelopeVerifier {
     const attestation = envelope.attestation;
     if (!attestation) return { valid: false, reason: 'missing attestation' };
 
+    if (!attestation.session_hmac || typeof attestation.session_hmac !== 'string' || attestation.session_hmac.length === 0) {
+      return { valid: false, reason: 'empty or missing HMAC' };
+    }
+
+    // HMAC covers the entire envelope EXCEPT the attestation block
     const envelopeForHmac = { ...envelope };
     delete envelopeForHmac.attestation;
     const envelopeBytes = JSON.stringify(envelopeForHmac);
@@ -74,6 +84,17 @@ export class EnvelopeVerifier {
       attestation.session_hmac
     );
     if (!hmacValid) return { valid: false, reason: 'HMAC verification failed' };
+
+    // Sequence check for close envelopes too
+    const seqResult = this.sessionRegistry.checkAndIncrementSequence(sessionId, attestation.sequence);
+    if (!seqResult.valid) {
+      return { valid: false, reason: seqResult.reason };
+    }
+
+    const schemaResult = validateEnvelope(envelope);
+    if (!schemaResult.valid) {
+      return { valid: false, reason: `schema validation failed: ${schemaResult.reason || schemaResult.errors?.join(', ')}` };
+    }
 
     this.sessionRegistry.closeSession(sessionId);
     return { valid: true };

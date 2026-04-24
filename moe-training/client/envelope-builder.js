@@ -13,6 +13,12 @@ export class EnvelopeBuilder {
   }
 
   addStep(step) {
+    if (step.content && typeof step.content === 'string' && step.content.length > 10_000) {
+      step.content = step.content.slice(0, 10_000);
+    }
+    if (typeof step.token_count === 'number' && step.token_count > 100_000) {
+      step.token_count = 100_000;
+    }
     this._buffer.push(step);
     if (this._buffer.length >= CHUNK_SIZE) {
       return this._buildEnvelope();

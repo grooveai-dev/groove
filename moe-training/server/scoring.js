@@ -9,42 +9,43 @@ export class TrajectoryScorer {
   score(stitchedTrajectory) {
     const steps = stitchedTrajectory.trajectory_log || [];
     const metadata = stitchedTrajectory.metadata || {};
-    const outcome = stitchedTrajectory.outcome || {};
 
-    const basePoints = steps.length;
+    // DERIVE from actual steps — never trust client-reported outcome
+    const correctionSteps = steps.filter(s => s.type === 'correction').length;
+    const coordinationSteps = steps.filter(s => s.type === 'coordination').length;
+    const errorSteps = steps.filter(s => s.type === 'error').length;
+    const resolutionSteps = steps.filter(s => s.type === 'resolution').length;
+    const errorsRecovered = Math.min(errorSteps, resolutionSteps);
+
+    const basePoints = Math.min(steps.length, 5000);
 
     const modelEngine = metadata.model_engine || '';
     const modelMultiplier = this.modelTiers[modelEngine] || 1;
 
-    let correctionBonus = 0;
-    if (outcome.user_interventions > 0) {
-      const correctionSteps = steps.filter(s => s.type === 'correction').length;
-      correctionBonus = correctionSteps * (this.multipliers.correction || 10);
-    }
+    // Correction bonus: 10x on ACTUAL correction steps, capped at 30% of trajectory
+    const maxCorrectionSteps = Math.floor(steps.length * 0.3);
+    const cappedCorrectionSteps = Math.min(correctionSteps, maxCorrectionSteps);
+    const correctionBonus = cappedCorrectionSteps * (this.multipliers.correction || 10);
 
-    let coordinationBonus = 0;
-    if (outcome.coordination_events > 0) {
-      const coordSteps = steps.filter(s => s.type === 'coordination').length;
-      coordinationBonus = coordSteps * (this.multipliers.coordination || 5);
-    }
+    // Coordination bonus: 5x on ACTUAL coordination steps, capped at 20% of trajectory
+    const maxCoordSteps = Math.floor(steps.length * 0.2);
+    const cappedCoordSteps = Math.min(coordinationSteps, maxCoordSteps);
+    const coordinationBonus = cappedCoordSteps * (this.multipliers.coordination || 5);
 
-    let errorRecoveryBonus = 0;
-    if (outcome.errors_encountered > 0 && outcome.errors_recovered > 0) {
-      const errorSteps = steps.filter(s => s.type === 'error').length;
-      errorRecoveryBonus = errorSteps * (this.multipliers.errorRecovery || 3);
-    }
+    // Error recovery: 3x if errors AND resolutions exist in the trajectory
+    const errorRecoveryBonus = errorsRecovered > 0 ? Math.min(errorsRecovered, errorSteps) * (this.multipliers.errorRecovery || 3) : 0;
 
-    let complexityBonus = 0;
-    if (metadata.task_complexity === 'heavy') {
-      complexityBonus = basePoints * ((this.multipliers.heavyTask || 2) - 1);
-    }
+    // Complexity bonus: only if validated value
+    const validComplexity = ['light', 'medium', 'heavy'];
+    const complexityBonus = validComplexity.includes(metadata.task_complexity) && metadata.task_complexity === 'heavy'
+      ? basePoints * 1
+      : 0;
 
-    let subtotal = (basePoints * modelMultiplier) + correctionBonus + coordinationBonus + errorRecoveryBonus + complexityBonus;
-
-    let qualityBonus = 0;
-    if (metadata.session_quality >= 80) {
-      qualityBonus = subtotal * ((this.multipliers.highQuality || 1.5) - 1);
-    }
+    // Quality bonus: server-derived from trajectory completeness
+    const hasResolution = resolutionSteps > 0;
+    const reasonableLength = steps.length >= 5 && steps.length <= 5000;
+    const subtotal = (basePoints * modelMultiplier) + correctionBonus + coordinationBonus + errorRecoveryBonus + complexityBonus;
+    const qualityBonus = (hasResolution && reasonableLength) ? Math.floor(subtotal * 0.1) : 0;
 
     const totalPoints = subtotal + qualityBonus;
 

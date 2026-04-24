@@ -9,12 +9,15 @@ import { generateECDHKeypair, deriveSharedSecret, signEnvelope } from '../../sha
 import { SessionRegistry } from '../../server/session-registry.js';
 import { EnvelopeVerifier } from '../../server/verifier.js';
 
+const VALID_CONTRIBUTOR = 'c'.repeat(32);
+const VALID_APP_HASH = 'b'.repeat(64);
+
 function makeSignedEnvelope(sessionId, sequence, sharedSecret, extra = {}) {
   const envelope = {
     envelope_id: `env_test_${sequence}`,
     session_id: sessionId,
     chunk_sequence: sequence,
-    contributor_id: 'test_contributor',
+    contributor_id: VALID_CONTRIBUTOR,
     metadata: { model_engine: 'claude-opus-4-6', provider: 'claude-code', agent_role: 'frontend', agent_id: 'frontend-1' },
     trajectory_log: [{ step: 1, type: 'thought', timestamp: Date.now() / 1000, content: 'test', token_count: 10 }],
     ...extra,
@@ -27,7 +30,39 @@ function makeSignedEnvelope(sessionId, sequence, sharedSecret, extra = {}) {
   envelope.attestation = {
     session_hmac: hmac,
     sequence,
-    app_version_hash: 'hash_test',
+    app_version_hash: VALID_APP_HASH,
+  };
+
+  return envelope;
+}
+
+function makeSignedCloseEnvelope(sessionId, sequence, sharedSecret) {
+  const envelope = {
+    envelope_id: `env_close_${sequence}`,
+    session_id: sessionId,
+    type: 'SESSION_CLOSE',
+    outcome: {
+      status: 'SUCCESS',
+      total_steps: 10,
+      total_chunks: 1,
+      user_interventions: 0,
+      total_tokens: 500,
+      duration_seconds: 60,
+      files_modified: 1,
+      errors_encountered: 0,
+      errors_recovered: 0,
+      coordination_events: 0,
+    },
+  };
+
+  const forHmac = { ...envelope };
+  const envelopeBytes = JSON.stringify(forHmac);
+  const hmac = signEnvelope(sharedSecret, envelopeBytes, sequence);
+
+  envelope.attestation = {
+    session_hmac: hmac,
+    sequence,
+    app_version_hash: VALID_APP_HASH,
   };
 
   return envelope;
@@ -119,4 +154,79 @@ describe('EnvelopeVerifier', () => {
     const session = registry.getSession(sessionId);
     assert.equal(session.expected_sequence, 2);
   });
+
+  // --- New security tests ---
+
+  it('rejects empty HMAC string', () => {
+    const envelope = makeSignedEnvelope(sessionId, 0, sharedSecret);
+    envelope.attestation.session_hmac = '';
+    const result = verifier.verify(envelope);
+    assert.equal(result.valid, false);
+    assert.ok(result.reason.includes('HMAC'));
+  });
+
+  it('rejects missing HMAC field', () => {
+    const envelope = makeSignedEnvelope(sessionId, 0, sharedSecret);
+    delete envelope.attestation.session_hmac;
+    const result = verifier.verify(envelope);
+    assert.equal(result.valid, false);
+    assert.ok(result.reason.includes('HMAC'));
+  });
+
+  it('atomic sequence prevents duplicate sequence acceptance', () => {
+    const env0 = makeSignedEnvelope(sessionId, 0, sharedSecret);
+    const r0 = verifier.verify(env0);
+    assert.equal(r0.valid, true);
+
+    // Re-sign with sequence 0 again (replay attempt)
+    const env0replay = makeSignedEnvelope(sessionId, 0, sharedSecret);
+    const rReplay = verifier.verify(env0replay);
+    assert.equal(rReplay.valid, false);
+    assert.ok(rReplay.reason.includes('sequence'));
+  });
+
+  it('verifyClose checks sequence number', () => {
+    // Send one regular envelope first (sequence 0)
+    const env0 = makeSignedEnvelope(sessionId, 0, sharedSecret);
+    verifier.verify(env0);
+
+    // Close with wrong sequence
+    const closeWrong = makeSignedCloseEnvelope(sessionId, 0, sharedSecret);
+    const resultWrong = verifyClose(verifier, closeWrong);
+    assert.equal(resultWrong.valid, false);
+    assert.ok(resultWrong.reason.includes('sequence'));
+
+    // Close with correct sequence
+    const closeRight = makeSignedCloseEnvelope(sessionId, 1, sharedSecret);
+    const resultRight = verifyClose(verifier, closeRight);
+    assert.equal(resultRight.valid, true);
+  });
+
+  it('verifyClose rejects empty HMAC', () => {
+    const closeEnv = makeSignedCloseEnvelope(sessionId, 0, sharedSecret);
+    closeEnv.attestation.session_hmac = '';
+    const result = verifier.verifyClose(closeEnv);
+    assert.equal(result.valid, false);
+    assert.ok(result.reason.includes('HMAC'));
+  });
+
+  it('rejects OFFLINE HMAC marker from offline client', () => {
+    const envelope = makeSignedEnvelope(sessionId, 0, sharedSecret);
+    envelope.attestation.session_hmac = 'OFFLINE';
+    const result = verifier.verify(envelope);
+    assert.equal(result.valid, false);
+    assert.ok(result.reason.includes('HMAC'));
+  });
+
+  it('rejects mega-length HMAC string', () => {
+    const envelope = makeSignedEnvelope(sessionId, 0, sharedSecret);
+    envelope.attestation.session_hmac = 'a'.repeat(1_000_000);
+    const result = verifier.verify(envelope);
+    assert.equal(result.valid, false);
+    assert.ok(result.reason.includes('HMAC'));
+  });
 });
+
+function verifyClose(verifier, envelope) {
+  return verifier.verifyClose(envelope);
+}

@@ -75,7 +75,39 @@ describe('PIIScrubber', () => {
 
   it('scrubs home directory paths', () => {
     const input = 'file at /Users/john/Documents/secret.txt';
-    assert.equal(scrubber.scrub(input), 'file at [FILE_PATH]Documents/secret.txt');
+    assert.equal(scrubber.scrub(input), 'file at [FILE_PATH]');
+  });
+
+  it('scrubs URL-encoded emails', () => {
+    const input = 'param=ryan%40motovizion.com&next=home';
+    assert.equal(scrubber.scrub(input), 'param=[EMAIL]&next=home');
+  });
+
+  it('scrubs international phone numbers', () => {
+    const input = 'call +44 20 7946 0958 for help';
+    assert.equal(scrubber.scrub(input), 'call [PHONE] for help');
+  });
+
+  it('scrubs JWT tokens without Bearer prefix', () => {
+    const input = 'token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+    const result = scrubber.scrub(input);
+    assert.ok(result.includes('[API_KEY]'));
+    assert.ok(!result.includes('eyJhbGciOi'));
+  });
+
+  it('scrubs file paths without trailing slash', () => {
+    const input = 'reading /home/alice/project/secret.key now';
+    const result = scrubber.scrub(input);
+    assert.ok(result.includes('[FILE_PATH]'));
+    assert.ok(!result.includes('/home/alice'));
+  });
+
+  it('scrubs base64 encoded secrets', () => {
+    const b64 = 'YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY3ODk=';
+    const input = `secret: ${b64} done`;
+    const result = scrubber.scrub(input);
+    assert.ok(result.includes('[API_KEY]'));
+    assert.ok(!result.includes(b64));
   });
 
   it('passes through non-PII content unchanged', () => {

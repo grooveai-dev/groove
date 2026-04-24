@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { platform, arch, cpus, totalmem } from 'node:os';
+import { platform, arch, cpus, totalmem, hostname, release, endianness } from 'node:os';
 import { createHash } from 'node:crypto';
 import { generateECDHKeypair, deriveSharedSecret, signEnvelope, computeAppHash } from '../shared/crypto.js';
 
@@ -58,16 +58,16 @@ export class SessionAttestation {
 
     if (session.offline || !session.sharedSecret) {
       envelope.attestation = {
-        session_hmac: '',
+        session_hmac: 'OFFLINE',
         sequence: session.sequence++,
         app_version_hash: session.appVersionHash,
       };
       return envelope;
     }
 
-    const envelopeForHmac = { ...envelope };
-    delete envelopeForHmac.attestation;
-    const envelopeBytes = JSON.stringify(envelopeForHmac);
+    const forSigning = { ...envelope };
+    delete forSigning.attestation;
+    const envelopeBytes = JSON.stringify(forSigning);
     const hmac = signEnvelope(session.sharedSecret, envelopeBytes, session.sequence);
     envelope.attestation = {
       session_hmac: hmac,
@@ -99,7 +99,16 @@ export class SessionAttestation {
   }
 
   static getMachineFingerprint() {
-    const raw = `${platform()}|${arch()}|${cpus()[0]?.model || ''}|${totalmem()}`;
-    return createHash('sha256').update(raw).digest('hex');
+    const signals = [
+      platform(),
+      arch(),
+      cpus()[0]?.model || '',
+      String(totalmem()),
+      hostname(),
+      String(cpus().length),
+      release(),
+      endianness(),
+    ];
+    return createHash('sha256').update(signals.join('|')).digest('hex');
   }
 }

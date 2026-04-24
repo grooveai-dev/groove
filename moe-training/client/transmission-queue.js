@@ -7,14 +7,37 @@ export class TransmissionQueue {
     this._centralCommandUrl = centralCommandUrl;
     this._maxSize = maxSize;
     this._queue = [];
+    this._offlineQueue = [];
     this._running = false;
     this._drainPromise = null;
+
+    if (process.env.NODE_ENV === 'production' && !centralCommandUrl.startsWith('https://')) {
+      console.warn('[TransmissionQueue] WARNING: centralCommandUrl does not use HTTPS in production');
+    }
   }
 
   enqueue(signedEnvelope) {
     if (this._queue.length >= this._maxSize) return;
+    if (signedEnvelope?.attestation?.session_hmac === 'OFFLINE') {
+      this._offlineQueue.push(signedEnvelope);
+      return;
+    }
     this._queue.push(signedEnvelope);
     if (this._running) this._kick();
+  }
+
+  replayOfflineQueue(sessionAttestation) {
+    const pending = this._offlineQueue.splice(0);
+    for (const envelope of pending) {
+      const sessionId = envelope.session_id;
+      const resigned = sessionAttestation.signEnvelope(sessionId, envelope);
+      if (resigned?.attestation?.session_hmac === 'OFFLINE') {
+        this._offlineQueue.push(resigned);
+        continue;
+      }
+      this._queue.push(resigned);
+    }
+    if (this._running && this._queue.length > 0) this._kick();
   }
 
   start() {

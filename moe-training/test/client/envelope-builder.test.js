@@ -74,6 +74,21 @@ describe('EnvelopeBuilder', () => {
     assert.deepEqual(close.outcome, outcome);
   });
 
+  it('truncates step content at 10000 characters', () => {
+    const builder = new EnvelopeBuilder('sess_1', 'user_1', metadata);
+    const longContent = 'x'.repeat(15_000);
+    builder.addStep({ step: 1, type: 'thought', timestamp: 123, content: longContent });
+    const envelope = builder.flush();
+    assert.equal(envelope.trajectory_log[0].content.length, 10_000);
+  });
+
+  it('caps token_count at 100000', () => {
+    const builder = new EnvelopeBuilder('sess_1', 'user_1', metadata);
+    builder.addStep({ step: 1, type: 'thought', timestamp: 123, token_count: 999_999 });
+    const envelope = builder.flush();
+    assert.equal(envelope.trajectory_log[0].token_count, 100_000);
+  });
+
   it('chunk sequence increments correctly', () => {
     const builder = new EnvelopeBuilder('sess_1', 'user_1', metadata);
     let first = null;

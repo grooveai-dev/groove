@@ -29,6 +29,11 @@ export class PIIScrubber {
         replacement: '[AWS_KEY]',
       },
       {
+        name: 'jwt_token',
+        regex: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+        replacement: '[API_KEY]',
+      },
+      {
         name: 'bearer_token',
         regex: /Bearer\s+[A-Za-z0-9._~+/\-]+=*/g,
         replacement: '[API_KEY]',
@@ -54,6 +59,11 @@ export class PIIScrubber {
         replacement: '[EMAIL]',
       },
       {
+        name: 'email_urlencoded',
+        regex: /[a-zA-Z0-9._%+-]+%40[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
+        replacement: '[EMAIL]',
+      },
+      {
         name: 'ipv6',
         regex: /(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,7}:|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|::(?:[fF]{4}:)?(?:\d{1,3}\.){3}\d{1,3}|::1?\b/g,
         replacement: '[IP]',
@@ -62,6 +72,11 @@ export class PIIScrubber {
         name: 'ipv4',
         regex: /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g,
         replacement: '[IP]',
+      },
+      {
+        name: 'intl_phone',
+        regex: /\+\d{1,3}[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{2,4}[\s.-]?\d{2,4}(?:[\s.-]?\d{1,4})?/g,
+        replacement: '[PHONE]',
       },
       {
         name: 'phone',
@@ -80,8 +95,13 @@ export class PIIScrubber {
       },
       {
         name: 'home_path',
-        regex: /(?:\/Users\/[^/\s]+\/|\/home\/[^/\s]+\/|C:\\\\Users\\\\[^\\\s]+\\\\)/g,
+        regex: /(?:\/Users\/[^\s]+|\/home\/[^\s]+|C:\\Users\\[^\s]+)/g,
         replacement: '[FILE_PATH]',
+      },
+      {
+        name: 'base64_secret',
+        regex: /(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{40,}={0,2}(?![A-Za-z0-9+/])/g,
+        replacement: '[API_KEY]',
       },
     ];
   }

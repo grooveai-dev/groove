@@ -1,63 +1,21 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { SUPPORTED_PROVIDERS } from './constants.js';
+import { SUPPORTED_PROVIDERS, MODEL_TIERS } from './constants.js';
 
 export const STEP_TYPES = ['thought', 'action', 'observation', 'correction', 'resolution', 'error', 'coordination'];
 
-/**
- * Envelope shape:
- * @typedef {Object} TrajectoryEnvelope
- * @property {string} envelope_id - 'env_<uuid>'
- * @property {string} session_id - 'sess_<uuid>'
- * @property {number} chunk_sequence
- * @property {string} contributor_id - anonymous install uuid
- * @property {Object} attestation
- * @property {string} attestation.session_hmac - HMAC-SHA256 hex
- * @property {number} attestation.sequence
- * @property {string} attestation.app_version_hash - SHA256 hex
- * @property {Object} metadata
- * @property {string} metadata.model_engine
- * @property {string} metadata.provider
- * @property {string} metadata.agent_role
- * @property {string} metadata.agent_id
- * @property {string} metadata.task_complexity
- * @property {number} metadata.team_size
- * @property {number} metadata.session_quality
- * @property {string} metadata.groove_version
- * @property {Array<TrajectoryStep>} trajectory_log
- *
- * @typedef {Object} TrajectoryStep
- * @property {number} step
- * @property {string} type - one of STEP_TYPES
- * @property {number} timestamp
- * @property {string} [content]
- * @property {number} [token_count]
- * @property {string} [tool]
- * @property {Object} [arguments]
- * @property {boolean} [truncated]
- * @property {string} [coordination_id]
- * @property {string} [direction] - 'inbound' | 'outbound'
- * @property {string} [target_agent]
- * @property {string} [protocol] - 'knock' | 'qc' | 'lock'
- * @property {string} [source]
- *
- * @typedef {Object} SessionCloseEnvelope
- * @property {string} envelope_id
- * @property {string} session_id
- * @property {string} type - 'SESSION_CLOSE'
- * @property {Object} attestation
- * @property {Object} outcome
- * @property {string} outcome.status
- * @property {number} outcome.user_interventions
- * @property {number} outcome.total_steps
- * @property {number} outcome.total_chunks
- * @property {number} outcome.total_tokens
- * @property {number} outcome.duration_seconds
- * @property {number} outcome.files_modified
- * @property {number} outcome.errors_encountered
- * @property {number} outcome.errors_recovered
- * @property {number} outcome.coordination_events
- */
+const VALID_MODEL_ENGINES = Object.keys(MODEL_TIERS);
+const VALID_COMPLEXITIES = ['light', 'medium', 'heavy'];
+const VALID_OUTCOME_STATUSES = ['SUCCESS', 'CRASH', 'KILLED'];
+const MAX_STEPS_PER_ENVELOPE = 500;
+const MAX_STEP_CONTENT_LENGTH = 10_000;
+const MAX_TOKEN_COUNT = 100_000;
+const MAX_STEP_NUMBER = 50_000;
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+const ONE_HOUR_MS = 60 * 60 * 1000;
+const HEX_32 = /^[0-9a-f]{32}$/;
+const HEX_64 = /^[0-9a-f]{64}$/;
+const MAX_OUTCOME_NUMERIC = 50_000;
 
 export class EnvelopeBuilder {
   constructor() {
@@ -103,43 +61,105 @@ export function validateEnvelope(envelope) {
     return validateSessionClose(envelope);
   }
 
-  if (!envelope.envelope_id || typeof envelope.envelope_id !== 'string') {
-    errors.push('Missing or invalid envelope_id');
-  }
   if (!envelope.session_id || typeof envelope.session_id !== 'string') {
     errors.push('Missing or invalid session_id');
   }
   if (typeof envelope.chunk_sequence !== 'number') {
     errors.push('Missing or invalid chunk_sequence');
   }
+
+  // contributor_id: must be 32-char hex (UUID without dashes)
   if (!envelope.contributor_id || typeof envelope.contributor_id !== 'string') {
     errors.push('Missing or invalid contributor_id');
+  } else if (!HEX_32.test(envelope.contributor_id)) {
+    errors.push('contributor_id must be a 32-character hex string');
   }
+
+  // Attestation validation
   if (!envelope.attestation || typeof envelope.attestation !== 'object') {
     errors.push('Missing attestation');
+  } else {
+    if (typeof envelope.attestation.session_hmac !== 'string' || !HEX_64.test(envelope.attestation.session_hmac)) {
+      errors.push('attestation.session_hmac must be exactly 64 hex characters');
+    }
+    if (typeof envelope.attestation.sequence !== 'number' || !Number.isInteger(envelope.attestation.sequence) || envelope.attestation.sequence < 0 || envelope.attestation.sequence > 1_000_000) {
+      errors.push('attestation.sequence must be a non-negative integer, max 1000000');
+    }
+    if (typeof envelope.attestation.app_version_hash !== 'string' || !HEX_64.test(envelope.attestation.app_version_hash)) {
+      errors.push('attestation.app_version_hash must be exactly 64 hex characters');
+    }
   }
+
+  // Metadata validation
   if (!envelope.metadata || typeof envelope.metadata !== 'object') {
     errors.push('Missing metadata');
   } else {
-    if (!envelope.metadata.provider) errors.push('Missing metadata.provider');
-    if (!envelope.metadata.model_engine) errors.push('Missing metadata.model_engine');
-    if (!envelope.metadata.agent_role) errors.push('Missing metadata.agent_role');
-    if (!envelope.metadata.agent_id) errors.push('Missing metadata.agent_id');
+    const m = envelope.metadata;
+    if (!m.provider || !SUPPORTED_PROVIDERS.includes(m.provider)) {
+      errors.push(`metadata.provider must be one of: ${SUPPORTED_PROVIDERS.join(', ')}`);
+    }
+    if (!m.model_engine || !VALID_MODEL_ENGINES.includes(m.model_engine)) {
+      errors.push(`metadata.model_engine must be one of: ${VALID_MODEL_ENGINES.join(', ')}`);
+    }
+    if (!m.agent_role || typeof m.agent_role !== 'string' || m.agent_role.length > 50) {
+      errors.push('metadata.agent_role must be a string, max 50 characters');
+    }
+    if (!m.agent_id || typeof m.agent_id !== 'string' || m.agent_id.length > 100) {
+      errors.push('metadata.agent_id must be a string, max 100 characters');
+    }
+    if (m.team_size !== undefined && m.team_size !== null) {
+      if (!Number.isInteger(m.team_size) || m.team_size < 1 || m.team_size > 50) {
+        errors.push('metadata.team_size must be an integer 1-50');
+      }
+    }
+    if (m.task_complexity !== undefined && m.task_complexity !== null) {
+      if (!VALID_COMPLEXITIES.includes(m.task_complexity)) {
+        errors.push('metadata.task_complexity must be light, medium, or heavy');
+      }
+    }
+    if (m.groove_version !== undefined && m.groove_version !== null) {
+      if (typeof m.groove_version !== 'string' || m.groove_version.length > 20) {
+        errors.push('metadata.groove_version must be a string, max 20 characters');
+      }
+    }
+    // session_quality is ignored from client — server derives quality
   }
 
+  // Trajectory log validation
   if (!Array.isArray(envelope.trajectory_log)) {
     errors.push('Missing or invalid trajectory_log');
   } else {
-    for (let i = 0; i < envelope.trajectory_log.length; i++) {
+    if (envelope.trajectory_log.length > MAX_STEPS_PER_ENVELOPE) {
+      errors.push(`trajectory_log exceeds maximum of ${MAX_STEPS_PER_ENVELOPE} steps (got ${envelope.trajectory_log.length})`);
+    }
+
+    const now = Date.now();
+    const sevenDaysAgo = now - SEVEN_DAYS_MS;
+    const futureLimit = now + ONE_HOUR_MS;
+
+    for (let i = 0; i < Math.min(envelope.trajectory_log.length, MAX_STEPS_PER_ENVELOPE); i++) {
       const step = envelope.trajectory_log[i];
       if (!STEP_TYPES.includes(step.type)) {
         errors.push(`Invalid step type "${step.type}" at index ${i}`);
       }
-      if (typeof step.step !== 'number') {
-        errors.push(`Missing step number at index ${i}`);
+      if (typeof step.step !== 'number' || !Number.isInteger(step.step) || step.step < 0 || step.step > MAX_STEP_NUMBER) {
+        errors.push(`step.step must be a non-negative integer, max ${MAX_STEP_NUMBER} at index ${i}`);
       }
       if (typeof step.timestamp !== 'number') {
         errors.push(`Missing timestamp at index ${i}`);
+      } else {
+        const tsMs = step.timestamp < 1e12 ? step.timestamp * 1000 : step.timestamp;
+        if (tsMs < sevenDaysAgo || tsMs > futureLimit) {
+          errors.push(`Timestamp out of range at index ${i} (must be within last 7 days, max 1 hour in future)`);
+        }
+      }
+      if (step.content !== undefined && typeof step.content === 'string' && step.content.length > MAX_STEP_CONTENT_LENGTH) {
+        errors.push(`step.content exceeds ${MAX_STEP_CONTENT_LENGTH} characters at index ${i}`);
+      }
+      if (step.token_count !== undefined) {
+        if (typeof step.token_count !== 'number' || step.token_count < 0 || step.token_count > MAX_TOKEN_COUNT) {
+          errors.push(`step.token_count must be 0-${MAX_TOKEN_COUNT} at index ${i}`);
+        }
       }
     }
   }
@@ -150,24 +170,50 @@ export function validateEnvelope(envelope) {
 function validateSessionClose(envelope) {
   const errors = [];
 
-  if (!envelope.envelope_id || typeof envelope.envelope_id !== 'string') {
-    errors.push('Missing or invalid envelope_id');
-  }
   if (!envelope.session_id || typeof envelope.session_id !== 'string') {
     errors.push('Missing or invalid session_id');
   }
   if (envelope.type !== 'SESSION_CLOSE') {
     errors.push('Invalid type for SESSION_CLOSE envelope');
   }
+
+  // Attestation validation
   if (!envelope.attestation || typeof envelope.attestation !== 'object') {
     errors.push('Missing attestation');
+  } else {
+    if (typeof envelope.attestation.session_hmac !== 'string' || !HEX_64.test(envelope.attestation.session_hmac)) {
+      errors.push('attestation.session_hmac must be exactly 64 hex characters');
+    }
+    if (typeof envelope.attestation.sequence !== 'number' || !Number.isInteger(envelope.attestation.sequence) || envelope.attestation.sequence < 0 || envelope.attestation.sequence > 1_000_000) {
+      errors.push('attestation.sequence must be a non-negative integer, max 1000000');
+    }
+    if (typeof envelope.attestation.app_version_hash !== 'string' || !HEX_64.test(envelope.attestation.app_version_hash)) {
+      errors.push('attestation.app_version_hash must be exactly 64 hex characters');
+    }
   }
+
+  // Outcome validation
   if (!envelope.outcome || typeof envelope.outcome !== 'object') {
     errors.push('Missing outcome');
   } else {
-    if (typeof envelope.outcome.status !== 'string') errors.push('Missing outcome.status');
-    if (typeof envelope.outcome.total_steps !== 'number') errors.push('Missing outcome.total_steps');
-    if (typeof envelope.outcome.total_chunks !== 'number') errors.push('Missing outcome.total_chunks');
+    if (!VALID_OUTCOME_STATUSES.includes(envelope.outcome.status)) {
+      errors.push(`outcome.status must be one of: ${VALID_OUTCOME_STATUSES.join(', ')}`);
+    }
+    if (typeof envelope.outcome.total_steps !== 'number' || !Number.isInteger(envelope.outcome.total_steps) || envelope.outcome.total_steps < 0 || envelope.outcome.total_steps > MAX_OUTCOME_NUMERIC) {
+      errors.push('Missing or invalid outcome.total_steps');
+    }
+    if (typeof envelope.outcome.total_chunks !== 'number' || !Number.isInteger(envelope.outcome.total_chunks) || envelope.outcome.total_chunks < 0 || envelope.outcome.total_chunks > MAX_OUTCOME_NUMERIC) {
+      errors.push('Missing or invalid outcome.total_chunks');
+    }
+    const numericFields = ['user_interventions', 'total_tokens', 'duration_seconds', 'files_modified', 'errors_encountered', 'errors_recovered', 'coordination_events'];
+    for (const field of numericFields) {
+      if (envelope.outcome[field] !== undefined) {
+        const v = envelope.outcome[field];
+        if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > MAX_OUTCOME_NUMERIC) {
+          errors.push(`outcome.${field} must be a non-negative integer, max ${MAX_OUTCOME_NUMERIC}`);
+        }
+      }
+    }
   }
 
   return { valid: errors.length === 0, errors };

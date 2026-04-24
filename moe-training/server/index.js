@@ -37,6 +37,52 @@ app.use((_req, res, next) => {
 
 app.use(express.json({ limit: '5mb' }));
 
+// Per-IP rate limiting
+const ipWindows = new Map();
+const RATE_LIMIT_PER_MINUTE = 100;
+const RATE_LIMIT_PER_HOUR = 1000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of ipWindows) {
+    if (now - entry.minuteStart > 120_000 && now - entry.hourStart > 7200_000) {
+      ipWindows.delete(ip);
+    }
+  }
+}, 300_000);
+
+app.use((req, res, next) => {
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
+  const now = Date.now();
+
+  let entry = ipWindows.get(ip);
+  if (!entry) {
+    entry = { minuteCount: 0, minuteStart: now, hourCount: 0, hourStart: now };
+    ipWindows.set(ip, entry);
+  }
+
+  if (now - entry.minuteStart > 60_000) {
+    entry.minuteCount = 0;
+    entry.minuteStart = now;
+  }
+  if (now - entry.hourStart > 3600_000) {
+    entry.hourCount = 0;
+    entry.hourStart = now;
+  }
+
+  entry.minuteCount++;
+  entry.hourCount++;
+
+  if (entry.minuteCount > RATE_LIMIT_PER_MINUTE) {
+    return res.status(429).json({ error: 'Too Many Requests', retryAfter: Math.ceil((entry.minuteStart + 60_000 - now) / 1000) });
+  }
+  if (entry.hourCount > RATE_LIMIT_PER_HOUR) {
+    return res.status(429).json({ error: 'Too Many Requests', retryAfter: Math.ceil((entry.hourStart + 3600_000 - now) / 1000) });
+  }
+
+  next();
+});
+
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
@@ -49,7 +95,7 @@ app.use((req, res, next) => {
 app.get('/health', (_req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
 app.use(createSessionRoutes(sessionRegistry));
-app.use(createIngestRoutes(verifier, storage, stitcher, scorer, enrichment, ledger));
+app.use(createIngestRoutes(verifier, storage, stitcher, scorer, enrichment, ledger, sessionRegistry));
 app.use(createStatsRoutes(centralStats));
 
 const server = app.listen(PORT, () => {

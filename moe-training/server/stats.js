@@ -1,6 +1,9 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
+
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+const MAX_LINES_PER_FILE = 100_000;
 
 export class CentralStats {
   constructor(storage, ledger, sessionRegistry) {
@@ -26,6 +29,7 @@ export class CentralStats {
   }
 
   dailyGrowth(days = 7) {
+    days = Math.max(1, Math.min(365, Number(days) || 7));
     const storageDaily = this.storage.getDailyStats(days);
     const creditDaily = this.ledger.getDailyCredits(days);
 
@@ -48,16 +52,24 @@ export class CentralStats {
     const models = {};
 
     for (const file of files) {
-      const lines = readFileSync(file, 'utf-8').split('\n').filter(Boolean);
-      for (const line of lines) {
-        try {
-          const env = JSON.parse(line);
-          const model = env.metadata?.model_engine || 'unknown';
-          if (!models[model]) models[model] = { sessions: new Set(), steps: 0, points: 0 };
-          models[model].sessions.add(env.session_id);
-          models[model].steps += env.trajectory_log?.length || 0;
-        } catch { /* skip */ }
-      }
+      try {
+        const stat = statSync(file);
+        if (stat.size > MAX_FILE_SIZE) continue;
+      } catch { continue; }
+
+      try {
+        const lines = readFileSync(file, 'utf-8').split('\n').filter(Boolean);
+        const capped = lines.slice(0, MAX_LINES_PER_FILE);
+        for (const line of capped) {
+          try {
+            const env = JSON.parse(line);
+            const model = env.metadata?.model_engine || 'unknown';
+            if (!models[model]) models[model] = { sessions: new Set(), steps: 0, points: 0 };
+            models[model].sessions.add(env.session_id);
+            models[model].steps += env.trajectory_log?.length || 0;
+          } catch { /* skip */ }
+        }
+      } catch { /* skip file */ }
     }
 
     const total = Object.values(models).reduce((sum, m) => sum + m.steps, 0) || 1;
@@ -78,16 +90,24 @@ export class CentralStats {
     const providers = {};
 
     for (const file of files) {
-      const lines = readFileSync(file, 'utf-8').split('\n').filter(Boolean);
-      for (const line of lines) {
-        try {
-          const env = JSON.parse(line);
-          const provider = env.metadata?.provider || 'unknown';
-          if (!providers[provider]) providers[provider] = { sessions: new Set(), steps: 0, points: 0 };
-          providers[provider].sessions.add(env.session_id);
-          providers[provider].steps += env.trajectory_log?.length || 0;
-        } catch { /* skip */ }
-      }
+      try {
+        const stat = statSync(file);
+        if (stat.size > MAX_FILE_SIZE) continue;
+      } catch { continue; }
+
+      try {
+        const lines = readFileSync(file, 'utf-8').split('\n').filter(Boolean);
+        const capped = lines.slice(0, MAX_LINES_PER_FILE);
+        for (const line of capped) {
+          try {
+            const env = JSON.parse(line);
+            const provider = env.metadata?.provider || 'unknown';
+            if (!providers[provider]) providers[provider] = { sessions: new Set(), steps: 0, points: 0 };
+            providers[provider].sessions.add(env.session_id);
+            providers[provider].steps += env.trajectory_log?.length || 0;
+          } catch { /* skip */ }
+        }
+      } catch { /* skip file */ }
     }
 
     const result = {};
@@ -98,6 +118,7 @@ export class CentralStats {
   }
 
   topContributors(limit = 10) {
+    limit = Math.max(1, Math.min(1000, Number(limit) || 10));
     const leaders = this.ledger.getLeaderboard(limit);
     return leaders.map(l => ({
       contributor_id: l.contributor_id.slice(0, 8) + '...',

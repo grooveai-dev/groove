@@ -19,6 +19,8 @@ export function deriveSharedSecret(privateKeyB64, otherPublicKeyB64) {
   return secret.toString('base64');
 }
 
+// envelopeBytes MUST contain ALL envelope fields EXCEPT attestation (which holds the HMAC itself).
+// Callers must strip attestation before JSON.stringify to produce envelopeBytes.
 export function signEnvelope(sharedSecretB64, envelopeBytes, sequenceNumber) {
   const key = Buffer.from(sharedSecretB64, 'base64');
   const seqBuf = Buffer.alloc(4);

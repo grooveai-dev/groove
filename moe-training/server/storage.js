@@ -3,13 +3,32 @@
 import { mkdirSync, appendFileSync, readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+const QUOTA_BYTES = 50 * 1024 * 1024 * 1024; // 50GB
+const WARN_BYTES = 40 * 1024 * 1024 * 1024;  // 40GB
+
 export class EnvelopeStorage {
   constructor(basePath = './data/envelopes') {
     this.basePath = basePath;
     if (!existsSync(basePath)) mkdirSync(basePath, { recursive: true, mode: 0o700 });
   }
 
+  checkQuota() {
+    const files = this._listFiles();
+    let total = 0;
+    for (const file of files) {
+      try { total += statSync(file).size; } catch { /* skip */ }
+    }
+    if (total > WARN_BYTES && total <= QUOTA_BYTES) {
+      console.warn(`[storage] WARNING: storage at ${(total / (1024 * 1024 * 1024)).toFixed(1)}GB, approaching 50GB quota`);
+    }
+    return total < QUOTA_BYTES;
+  }
+
   store(envelope) {
+    if (!this.checkQuota()) {
+      throw new Error('STORAGE_QUOTA_EXCEEDED');
+    }
+
     const date = new Date().toISOString().slice(0, 10);
     const filePath = join(this.basePath, `${date}.jsonl`);
 

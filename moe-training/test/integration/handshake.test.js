@@ -52,7 +52,7 @@ describe('ECDH Handshake End-to-End', () => {
       envelope_id: 'env_hs_001',
       session_id: 'sess_hs_002',
       chunk_sequence: 0,
-      contributor_id: 'contrib_test',
+      contributor_id: 'cccccccccccccccccccccccccccccccc',
       metadata: {
         model_engine: 'claude-opus-4-6',
         provider: 'claude-code',
@@ -69,7 +69,7 @@ describe('ECDH Handshake End-to-End', () => {
     delete envelopeForHmac.attestation;
     const envelopeBytes = JSON.stringify(envelopeForHmac);
     const hmac = signEnvelope(sharedSecret, envelopeBytes, 0);
-    envelope.attestation = { session_hmac: hmac, sequence: 0, app_version_hash: 'hash_test' };
+    envelope.attestation = { session_hmac: hmac, sequence: 0, app_version_hash: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' };
 
     const verifyResult = verifier.verify(envelope);
     assert.equal(verifyResult.valid, true);
@@ -88,7 +88,7 @@ describe('ECDH Handshake End-to-End', () => {
       envelope_id: 'env_hs_002',
       session_id: 'sess_hs_003',
       chunk_sequence: 0,
-      contributor_id: 'contrib_test',
+      contributor_id: 'cccccccccccccccccccccccccccccccc',
       metadata: {
         model_engine: 'claude-opus-4-6',
         provider: 'claude-code',
@@ -105,7 +105,7 @@ describe('ECDH Handshake End-to-End', () => {
     delete envelopeForHmac.attestation;
     const envelopeBytes = JSON.stringify(envelopeForHmac);
     const hmac = signEnvelope(sharedSecret, envelopeBytes, 0);
-    envelope.attestation = { session_hmac: hmac, sequence: 0, app_version_hash: 'hash_test' };
+    envelope.attestation = { session_hmac: hmac, sequence: 0, app_version_hash: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' };
 
     envelope.trajectory_log.push({ step: 2, type: 'action', timestamp: Date.now() / 1000, content: 'injected' });
 
@@ -127,13 +127,13 @@ describe('ECDH Handshake End-to-End', () => {
         envelope_id: `env_hs_seq_${seq}`,
         session_id: 'sess_hs_004',
         chunk_sequence: seq,
-        contributor_id: 'contrib_test',
+        contributor_id: 'cccccccccccccccccccccccccccccccc',
         metadata: { model_engine: 'claude-opus-4-6', provider: 'claude-code', agent_role: 'frontend', agent_id: 'frontend-1' },
         trajectory_log: [{ step: seq + 1, type: 'thought', timestamp: Date.now() / 1000, content: `step ${seq}`, token_count: 5 }],
       };
       const bytes = JSON.stringify(env);
       const hmac = signEnvelope(sharedSecret, bytes, seq);
-      env.attestation = { session_hmac: hmac, sequence: seq, app_version_hash: 'hash_test' };
+      env.attestation = { session_hmac: hmac, sequence: seq, app_version_hash: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' };
       return env;
     }
 
@@ -172,7 +172,7 @@ describe('ECDH Handshake End-to-End', () => {
     );
     const sharedSecret = deriveSharedSecret(clientKeypair.privateKey, result.serverPublicKey);
 
-    const builder = new EnvelopeBuilder('sess_hs_006', 'contrib_test', {
+    const builder = new EnvelopeBuilder('sess_hs_006', 'cccccccccccccccccccccccccccccccc', {
       model_engine: 'claude-opus-4-6',
       provider: 'claude-code',
       agent_role: 'frontend',
@@ -191,7 +191,7 @@ describe('ECDH Handshake End-to-End', () => {
     delete envelopeForHmac.attestation;
     const envelopeBytes = JSON.stringify(envelopeForHmac);
     const hmac = signEnvelope(sharedSecret, envelopeBytes, 0);
-    envelope.attestation = { session_hmac: hmac, sequence: 0, app_version_hash: 'hash_test' };
+    envelope.attestation = { session_hmac: hmac, sequence: 0, app_version_hash: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' };
 
     const verifyResult = verifier.verify(envelope);
     assert.equal(verifyResult.valid, true);
@@ -205,7 +205,7 @@ describe('ECDH Handshake End-to-End', () => {
     );
     const sharedSecret = deriveSharedSecret(clientKeypair.privateKey, result.serverPublicKey);
 
-    const builder = new EnvelopeBuilder('sess_hs_007', 'contrib_test', {
+    const builder = new EnvelopeBuilder('sess_hs_007', 'cccccccccccccccccccccccccccccccc', {
       model_engine: 'claude-opus-4-6',
       provider: 'claude-code',
       agent_role: 'frontend',
@@ -229,7 +229,7 @@ describe('ECDH Handshake End-to-End', () => {
     delete forHmac.attestation;
     const bytes = JSON.stringify(forHmac);
     const hmac = signEnvelope(sharedSecret, bytes, 0);
-    closeEnvelope.attestation = { session_hmac: hmac, sequence: 0, app_version_hash: 'hash_test' };
+    closeEnvelope.attestation = { session_hmac: hmac, sequence: 0, app_version_hash: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' };
 
     const verifyResult = verifier.verifyClose(closeEnvelope);
     assert.equal(verifyResult.valid, true);

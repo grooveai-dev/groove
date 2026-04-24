@@ -805,13 +805,13 @@ function getWelcomeHtml() {
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+  content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:">
 <title>Groove</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { height: 100%; }
 body {
-  background: radial-gradient(ellipse at 30% 40%, rgba(51,175,188,0.07) 0%, transparent 65%) #1a1e25;
+  background: radial-gradient(ellipse at 50% 30%, rgba(51,175,188,0.04) 0%, transparent 70%) #0f1115;
   color: #e6e6e6;
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
   overflow: hidden; user-select: none;
@@ -830,7 +830,7 @@ body {
 
 .page {
   flex: 1; display: flex; flex-direction: column;
-  align-items: center; overflow-y: auto;
+  align-items: center; justify-content: center; overflow-y: auto;
   padding: 24px 0; -webkit-app-region: no-drag;
 }
 .page::-webkit-scrollbar { width: 6px; }

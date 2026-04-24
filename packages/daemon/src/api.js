@@ -9,6 +9,7 @@ import { spawn, execFile, execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { hostname, networkInterfaces, homedir } from 'os';
 import { StringDecoder } from 'string_decoder';
+import { request as httpRequest } from 'http';
 import { lookup as mimeLookup } from './mimetypes.js';
 import { listProviders, getProvider, clearInstallCache, getProviderMetadata, getProviderPath, setProviderPaths } from './providers/index.js';
 import { OllamaProvider } from './providers/ollama.js';
@@ -97,12 +98,18 @@ export function createApi(app, daemon) {
     next();
   });
 
-  // Security headers
+  // Security headers — preview proxy routes get relaxed framing policy so the
+  // GUI can iframe the proxied dev server content.
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('X-XSS-Protection', '0');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
+    const isPreviewProxy = req.path.match(/^\/api\/preview\/[^/]+\/proxy/);
+    if (isPreviewProxy) {
+      res.setHeader('Content-Security-Policy', "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; frame-ancestors 'self'");
+    } else {
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-src 'self'; frame-ancestors 'none'");
+    }
     next();
   });
 
@@ -1255,6 +1262,66 @@ export function createApi(app, daemon) {
       res.json({ ok: true });
     } catch (err) {
       res.status(400).json({ error: err.message });
+    }
+  });
+
+  // --- Image Generation ---
+
+  app.post('/api/conversations/:id/generate-image', async (req, res) => {
+    try {
+      const { prompt, model, size, quality } = req.body;
+      if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+        return res.status(400).json({ error: 'prompt is required' });
+      }
+      const conv = daemon.conversations.get(req.params.id);
+      if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+
+      let providerName = conv.provider;
+      let provider = getProvider(providerName);
+
+      // If a specific image model was requested, find the right provider
+      if (model) {
+        const imageProviders = ['codex', 'grok', 'nano-banana'];
+        for (const pid of imageProviders) {
+          const p = getProvider(pid);
+          if (p?.constructor.models.some((m) => m.id === model)) {
+            provider = p;
+            providerName = pid;
+            break;
+          }
+        }
+      }
+
+      if (!provider?.generateImage) {
+        return res.status(400).json({ error: 'Provider does not support image generation' });
+      }
+
+      const apiKey = daemon.conversations._getApiKey(providerName);
+      if (!apiKey) {
+        return res.status(400).json({ error: `No API key configured for ${providerName}` });
+      }
+
+      daemon.broadcast({
+        type: 'conversation:image-progress',
+        data: { conversationId: req.params.id, status: 'generating', prompt: prompt.trim() },
+      });
+
+      const result = await provider.generateImage(prompt.trim(), { model, size, quality, apiKey });
+
+      daemon.broadcast({
+        type: 'conversation:image',
+        data: { conversationId: req.params.id, ...result, prompt: prompt.trim() },
+      });
+
+      daemon.conversations.touchUpdatedAt(req.params.id);
+      daemon.audit.log('conversation.image', { id: req.params.id, model: result.model, provider: result.provider });
+      res.json(result);
+    } catch (err) {
+      daemon.broadcast({
+        type: 'conversation:image-progress',
+        data: { conversationId: req.params.id, status: 'error', error: err.message },
+      });
+      res.status(500).json({ error: err.message });
     }
   });
 
@@ -3385,6 +3452,191 @@ Keep responses concise. Help them think, don't lecture them about the system the
     res.json(result);
   });
 
+  // --- Preview Proxy (same-origin iframe support) ---
+  // Forwards HTTP requests to the dev server so the GUI can iframe the preview
+  // without cross-origin issues. WebSocket upgrade for HMR is handled in index.js.
+  app.all('/api/preview/:teamId/proxy/*', (req, res) => {
+    const entry = daemon.preview?.get(req.params.teamId);
+    if (!entry || !entry.url) return res.status(404).json({ error: 'No active preview for this team' });
+
+    let targetUrl;
+    try { targetUrl = new URL(entry.url); } catch { return res.status(500).json({ error: 'Invalid preview URL' }); }
+
+    const proxyPath = req.params[0] || '';
+    const search = req.url.includes('?') ? '?' + req.url.split('?').slice(1).join('?') : '';
+    const fullPath = '/' + proxyPath + search;
+
+    const headers = { ...req.headers };
+    delete headers.host;
+    headers.host = targetUrl.host;
+
+    const proxyReq = httpRequest({
+      hostname: targetUrl.hostname,
+      port: targetUrl.port,
+      path: fullPath,
+      method: req.method,
+      headers,
+    }, (proxyRes) => {
+      const fwdHeaders = { ...proxyRes.headers };
+      delete fwdHeaders['content-security-policy'];
+      delete fwdHeaders['x-frame-options'];
+      res.writeHead(proxyRes.statusCode, fwdHeaders);
+      proxyRes.pipe(res);
+    });
+
+    proxyReq.on('error', (err) => {
+      if (!res.headersSent) res.status(502).json({ error: `Proxy error: ${err.message}` });
+    });
+    req.pipe(proxyReq);
+  });
+
+  // Also handle the bare path (no trailing wildcard)
+  app.all('/api/preview/:teamId/proxy', (req, res) => {
+    const entry = daemon.preview?.get(req.params.teamId);
+    if (!entry || !entry.url) return res.status(404).json({ error: 'No active preview for this team' });
+
+    let targetUrl;
+    try { targetUrl = new URL(entry.url); } catch { return res.status(500).json({ error: 'Invalid preview URL' }); }
+
+    const search = req.url.includes('?') ? '?' + req.url.split('?').slice(1).join('?') : '';
+
+    const headers = { ...req.headers };
+    delete headers.host;
+    headers.host = targetUrl.host;
+
+    const proxyReq = httpRequest({
+      hostname: targetUrl.hostname,
+      port: targetUrl.port,
+      path: '/' + search,
+      method: req.method,
+      headers,
+    }, (proxyRes) => {
+      const fwdHeaders = { ...proxyRes.headers };
+      delete fwdHeaders['content-security-policy'];
+      delete fwdHeaders['x-frame-options'];
+      res.writeHead(proxyRes.statusCode, fwdHeaders);
+      proxyRes.pipe(res);
+    });
+
+    proxyReq.on('error', (err) => {
+      if (!res.headersSent) res.status(502).json({ error: `Proxy error: ${err.message}` });
+    });
+    req.pipe(proxyReq);
+  });
+
+  // --- Iteration endpoint (planner routing for live preview feedback) ---
+  app.post('/api/preview/:teamId/iterate', async (req, res) => {
+    try {
+      const { message, screenshot } = req.body;
+      if (!message || typeof message !== 'string' || !message.trim()) {
+        return res.status(400).json({ error: 'message is required and must be a non-empty string' });
+      }
+
+      const teamId = req.params.teamId;
+      const agents = daemon.registry.getAll().filter((a) => a.teamId === teamId);
+      const planner = agents.find((a) => a.role === 'planner');
+
+      if (!planner) {
+        return res.status(400).json({ error: 'No planner found for this team. Iteration routing requires a planner-based team.' });
+      }
+
+      const terminal = new Set(['completed', 'crashed', 'stopped', 'killed']);
+      const feedbackPrompt = [
+        'ITERATION REQUEST: The user is viewing the live preview and wants changes.',
+        '',
+        `User feedback: ${message.trim()}`,
+        '',
+        screenshot ? 'The user attached a screenshot highlighting what they want changed.' : '',
+        '',
+        'Analyze this feedback and route it to the appropriate team agent (frontend, backend, or fullstack) by writing .groove/recommended-team.json. Be specific about what files to change and what the change should be.',
+      ].filter(Boolean).join('\n');
+
+      if (terminal.has(planner.status)) {
+        const newAgent = await daemon.processes.spawn({
+          role: planner.role,
+          scope: planner.scope,
+          provider: planner.provider,
+          model: planner.model,
+          prompt: feedbackPrompt,
+          permission: planner.permission || 'full',
+          workingDir: planner.workingDir,
+          name: planner.name,
+          teamId: planner.teamId,
+        });
+        daemon.audit.log('preview.iterate', { teamId, plannerId: newAgent.id, respawned: true });
+        return res.json({ status: 'routed', plannerAgent: newAgent.id, message: 'Feedback sent to respawned planner for routing' });
+      }
+
+      if (daemon.processes.hasAgentLoop(planner.id)) {
+        await daemon.processes.sendMessage(planner.id, feedbackPrompt);
+      } else if (daemon.processes.isRunning(planner.id)) {
+        daemon.processes.queueMessage(planner.id, feedbackPrompt);
+      } else {
+        return res.status(400).json({ error: 'Planner exists but is not reachable. Try again.' });
+      }
+
+      daemon.audit.log('preview.iterate', { teamId, plannerId: planner.id, respawned: false });
+      res.json({ status: 'routed', plannerAgent: planner.id, message: 'Feedback sent to planner for routing' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- Screenshot storage for preview iteration ---
+  app.post('/api/preview/:teamId/screenshot', (req, res) => {
+    try {
+      const { image, filename } = req.body;
+      if (!image || typeof image !== 'string') {
+        return res.status(400).json({ error: 'image (base64 string) is required' });
+      }
+
+      const teamId = req.params.teamId;
+      const agents = daemon.registry.getAll().filter((a) => a.teamId === teamId);
+      const teamAgent = agents[0];
+      if (!teamAgent) return res.status(404).json({ error: 'No agents found for this team' });
+
+      const workDir = teamAgent.workingDir || daemon.projectDir;
+      const screenshotDir = resolve(workDir, '.groove', 'screenshots');
+      mkdirSync(screenshotDir, { recursive: true });
+
+      const ts = Date.now();
+      const safeName = (filename || 'screenshot').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const fname = `${ts}-${safeName}.png`;
+      const filePath = resolve(screenshotDir, fname);
+
+      const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
+      writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+
+      const relativePath = `.groove/screenshots/${fname}`;
+      daemon.audit.log('preview.screenshot', { teamId, path: relativePath });
+      res.json({
+        path: relativePath,
+        url: `/api/preview/${teamId}/screenshots/${fname}`,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/preview/:teamId/screenshots/:filename', (req, res) => {
+    const teamId = req.params.teamId;
+    const fname = req.params.filename;
+    if (!fname || fname.includes('..') || fname.includes('/') || fname.includes('\\')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+
+    const agents = daemon.registry.getAll().filter((a) => a.teamId === teamId);
+    const teamAgent = agents[0];
+    if (!teamAgent) return res.status(404).json({ error: 'No agents found for this team' });
+
+    const workDir = teamAgent.workingDir || daemon.projectDir;
+    const filePath = resolve(workDir, '.groove', 'screenshots', fname);
+    if (!existsSync(filePath)) return res.status(404).json({ error: 'Screenshot not found' });
+
+    res.setHeader('Content-Type', 'image/png');
+    createReadStream(filePath).pipe(res);
+  });
+
   // Clean up stale artifacts. Scope to a single team when teamId is provided —
   // wiping every agent's working dir on a global cleanup would delete other
   // in-flight teams' unlaunched plans. When called with no teamId, only the
@@ -4166,7 +4418,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     const ALLOWED_KEYS = [
       'port', 'journalistInterval', 'rotationThreshold', 'autoRotation',
       'qcThreshold', 'maxAgents', 'defaultProvider', 'defaultWorkingDir',
-      'onboardingDismissed', 'defaultModel',
+      'onboardingDismissed', 'defaultModel', 'defaultChatProvider', 'defaultChatModel',
     ];
     for (const key of Object.keys(req.body)) {
       if (!ALLOWED_KEYS.includes(key)) {

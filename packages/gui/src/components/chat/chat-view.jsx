@@ -7,6 +7,7 @@ import { ConversationList } from './conversation-list';
 import { ChatHeader } from './chat-header';
 import { ChatMessages } from './chat-messages';
 import { ChatInput } from './chat-input';
+import { isImageModel } from './model-picker';
 
 function EmptyState({ onNewChat }) {
   return (
@@ -35,16 +36,19 @@ export function ChatView() {
   const createConversation = useGrooveStore((s) => s.createConversation);
   const setActiveConversation = useGrooveStore((s) => s.setActiveConversation);
   const sendChatMessage = useGrooveStore((s) => s.sendChatMessage);
+  const sendImageMessage = useGrooveStore((s) => s.sendImageMessage);
   const stopAgent = useGrooveStore((s) => s.stopAgent);
   const stopChatStreaming = useGrooveStore((s) => s.stopChatStreaming);
   const setConversationMode = useGrooveStore((s) => s.setConversationMode);
   const setConversationModel = useGrooveStore((s) => s.setConversationModel);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [replyContext, setReplyContext] = useState(null);
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId) || null;
   const messages = activeConversationId ? (conversationMessages[activeConversationId] || []) : [];
   const isStreaming = streamingConversationId === activeConversationId && sendingMessage;
+  const currentModelIsImage = activeConversation ? isImageModel(activeConversation.model) : false;
 
   const handleNewChat = useCallback(async (provider, model) => {
     const p = provider || 'claude-code';
@@ -61,8 +65,17 @@ export function ChatView() {
 
   const handleSend = useCallback((text) => {
     if (!activeConversationId) return;
-    sendChatMessage(activeConversationId, text);
-  }, [activeConversationId, sendChatMessage]);
+
+    if (currentModelIsImage) {
+      const prompt = replyContext
+        ? `${text} (iterating on: "${replyContext.prompt}")`
+        : text;
+      sendImageMessage(activeConversationId, prompt, { model: activeConversation.model });
+      setReplyContext(null);
+    } else {
+      sendChatMessage(activeConversationId, text);
+    }
+  }, [activeConversationId, activeConversation, currentModelIsImage, replyContext, sendChatMessage, sendImageMessage]);
 
   const handleStop = useCallback(() => {
     if (!activeConversation) return;
@@ -80,6 +93,10 @@ export function ChatView() {
       await handleNewChat(selection.provider, selection.model);
     }
   }, [activeConversationId, setConversationModel, handleNewChat]);
+
+  const handleImageReply = useCallback((msg) => {
+    setReplyContext(msg);
+  }, []);
 
   const currentModel = activeConversation
     ? { provider: activeConversation.provider, model: activeConversation.model }
@@ -105,6 +122,7 @@ export function ChatView() {
               isStreaming={isStreaming}
               model={activeConversation.model}
               mode={activeConversation.mode || 'api'}
+              onImageReply={handleImageReply}
             />
             <ChatInput
               onSend={handleSend}
@@ -112,6 +130,10 @@ export function ChatView() {
               sending={sendingMessage}
               streaming={isStreaming}
               disabled={false}
+              isImageModel={currentModelIsImage}
+              currentModel={activeConversation.model}
+              replyContext={replyContext}
+              onClearReply={() => setReplyContext(null)}
             />
           </>
         ) : (
@@ -130,6 +152,8 @@ export function ChatView() {
               sending={false}
               streaming={false}
               disabled={false}
+              isImageModel={false}
+              currentModel={null}
             />
           </>
         )}

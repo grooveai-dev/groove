@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useEffect, useRef } from 'react';
-import { ChevronDown, Globe, Cpu, Zap, Sparkles } from 'lucide-react';
+import { ChevronDown, Globe, Cpu, Zap, Sparkles, Image as ImageIcon } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/badge';
@@ -38,6 +38,12 @@ function getContextSize(model) {
   return '128k';
 }
 
+export function isImageModel(modelId) {
+  if (!modelId) return false;
+  const id = modelId.toLowerCase();
+  return id.includes('dall-e') || id.includes('imagen') || id.includes('gpt-image') || id.includes('imagine') || id.includes('nano-banana');
+}
+
 export function ModelPicker({ value, onChange, disabled }) {
   const [open, setOpen] = useState(false);
   const [providers, setProviders] = useState([]);
@@ -64,6 +70,99 @@ export function ModelPicker({ value, onChange, disabled }) {
   const currentModelDisplay = currentModel ? formatModelName(currentModel) : 'Select model';
   const currentProvider = value?.provider || '';
   const isNetwork = currentProvider === 'groove-network';
+  const isCurrentImage = isImageModel(currentModel);
+
+  const chatModels = [];
+  const imageModels = [];
+
+  for (const provider of providers) {
+    const models = provider.models || [];
+    const chatGroup = [];
+    const imgGroup = [];
+    for (const model of models) {
+      const modelId = typeof model === 'string' ? model : model.id || model.name;
+      const modelType = typeof model === 'object' ? model.type : undefined;
+      if (modelType === 'image' || isImageModel(modelId)) {
+        imgGroup.push(model);
+      } else {
+        chatGroup.push(model);
+      }
+    }
+    if (chatGroup.length > 0) chatModels.push({ ...provider, models: chatGroup });
+    if (imgGroup.length > 0) imageModels.push({ ...provider, models: imgGroup });
+  }
+
+  function renderModelGroup(providerList, sectionLabel) {
+    if (providerList.length === 0) return null;
+    return (
+      <>
+        {sectionLabel && (
+          <div className="px-3 py-1.5 text-2xs font-semibold text-text-4 uppercase tracking-wider font-sans bg-surface-0 border-b border-border-subtle flex items-center gap-1.5">
+            {sectionLabel === 'Image Generation' && <ImageIcon size={10} className="text-purple" />}
+            {sectionLabel}
+          </div>
+        )}
+        {providerList.map((provider) => {
+          const isNetworkProvider = provider.id === 'groove-network';
+          return (
+            <div key={provider.id}>
+              <div className="px-3 py-1.5 text-2xs font-semibold text-text-3 uppercase tracking-wider font-sans bg-surface-2 border-b border-border-subtle flex items-center gap-1.5">
+                {isNetworkProvider && <Globe size={10} className="text-purple" />}
+                {provider.name || provider.id}
+              </div>
+              {provider.models.map((model) => {
+                const modelId = typeof model === 'string' ? model : model.id || model.name;
+                const modelDisplayName = typeof model === 'string' ? model : model.name || model.id;
+                const modelType = typeof model === 'object' ? model.type : undefined;
+                const isImg = modelType === 'image' || isImageModel(modelId);
+                const tier = isImg ? null : getTier(modelId);
+                const tierConfig = tier ? TIER_CONFIG[tier] : null;
+                const TierIcon = tierConfig?.icon;
+                const isActive = currentModel === modelId && currentProvider === provider.id;
+                return (
+                  <button
+                    key={modelId}
+                    onClick={() => {
+                      onChange({ provider: provider.id, model: modelId });
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      'w-full flex items-center gap-2 px-3 py-2 text-left transition-colors cursor-pointer',
+                      isActive ? 'bg-accent/10 text-text-0' : 'hover:bg-surface-3 text-text-1',
+                    )}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        {isImg && <ImageIcon size={11} className="text-purple flex-shrink-0" />}
+                        <span className="text-xs font-medium font-sans truncate">{modelDisplayName}</span>
+                      </div>
+                      {!isImg && <div className="text-2xs text-text-4 font-sans">{getContextSize(modelId)} context</div>}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {isNetworkProvider && (
+                        <Badge variant="purple" className="text-[9px]">
+                          <Globe size={8} /> Decentralized
+                        </Badge>
+                      )}
+                      {isImg ? (
+                        <Badge variant="purple" className="text-[9px]">
+                          <ImageIcon size={8} /> Image
+                        </Badge>
+                      ) : tierConfig && (
+                        <Badge variant={tierConfig.variant} className="text-[9px]">
+                          <TierIcon size={8} /> {tierConfig.label}
+                        </Badge>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })}
+      </>
+    );
+  }
 
   return (
     <div ref={ref} className="relative">
@@ -75,10 +174,11 @@ export function ModelPicker({ value, onChange, disabled }) {
           'bg-surface-4 border border-border-subtle hover:bg-surface-5',
           'disabled:opacity-40 disabled:cursor-not-allowed',
           isNetwork && 'border-purple/30 bg-purple/8',
+          isCurrentImage && 'border-purple/30 bg-purple/8',
         )}
       >
-        {isNetwork ? <Globe size={12} className="text-purple" /> : <Cpu size={12} className="text-text-3" />}
-        <span className="text-text-1 max-w-[120px] truncate">{currentModelDisplay}</span>
+        {isCurrentImage ? <ImageIcon size={12} className="text-purple" /> : isNetwork ? <Globe size={12} className="text-purple" /> : <Cpu size={12} className="text-text-3" />}
+        <span className={cn('max-w-[120px] truncate', isCurrentImage ? 'text-purple' : 'text-text-1')}>{currentModelDisplay}</span>
         <ChevronDown size={12} className="text-text-4" />
       </button>
 
@@ -87,55 +187,8 @@ export function ModelPicker({ value, onChange, disabled }) {
           {providers.length === 0 && (
             <div className="px-4 py-6 text-center text-xs text-text-3 font-sans">No providers available</div>
           )}
-          {providers.map((provider) => {
-            const models = provider.models || [];
-            if (models.length === 0) return null;
-            const isNetworkProvider = provider.id === 'groove-network';
-            return (
-              <div key={provider.id}>
-                <div className="px-3 py-1.5 text-2xs font-semibold text-text-3 uppercase tracking-wider font-sans bg-surface-2 border-b border-border-subtle flex items-center gap-1.5">
-                  {isNetworkProvider && <Globe size={10} className="text-purple" />}
-                  {provider.name || provider.id}
-                </div>
-                {models.map((model) => {
-                  const modelId = typeof model === 'string' ? model : model.id || model.name;
-                  const modelDisplayName = typeof model === 'string' ? model : model.name || model.id;
-                  const tier = getTier(modelId);
-                  const tierConfig = TIER_CONFIG[tier];
-                  const TierIcon = tierConfig.icon;
-                  const isActive = currentModel === modelId && currentProvider === provider.id;
-                  return (
-                    <button
-                      key={modelId}
-                      onClick={() => {
-                        onChange({ provider: provider.id, model: modelId });
-                        setOpen(false);
-                      }}
-                      className={cn(
-                        'w-full flex items-center gap-2 px-3 py-2 text-left transition-colors cursor-pointer',
-                        isActive ? 'bg-accent/10 text-text-0' : 'hover:bg-surface-3 text-text-1',
-                      )}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium font-sans truncate">{modelDisplayName}</div>
-                        <div className="text-2xs text-text-4 font-sans">{getContextSize(modelId)} context</div>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        {isNetworkProvider && (
-                          <Badge variant="purple" className="text-[9px]">
-                            <Globe size={8} /> Decentralized
-                          </Badge>
-                        )}
-                        <Badge variant={tierConfig.variant} className="text-[9px]">
-                          <TierIcon size={8} /> {tierConfig.label}
-                        </Badge>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })}
+          {renderModelGroup(chatModels, null)}
+          {renderModelGroup(imageModels, 'Image Generation')}
         </div>
       )}
     </div>

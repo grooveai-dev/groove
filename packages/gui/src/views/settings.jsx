@@ -46,6 +46,7 @@ const KEY_PLACEHOLDERS = {
   'claude-code': 'sk-ant-...',
   codex: 'Paste from platform.openai.com',
   gemini: 'Paste from aistudio.google.com',
+  grok: 'xai-...',
 };
 
 function ProviderCard({ provider, onKeyChange }) {
@@ -395,6 +396,48 @@ function ProviderCard({ provider, onKeyChange }) {
                 </>
               )}
 
+              {/* ── Grok (xAI) auth ── */}
+              {provider.id === 'grok' && (
+                <>
+                  <div className="space-y-2">
+                    <p className="text-xs text-text-1 font-sans font-medium">Add your xAI API key</p>
+                    <div className="space-y-1.5">
+                      <div className="flex items-start gap-2">
+                        <span className="text-2xs font-bold text-accent font-mono mt-0.5">1</span>
+                        <p className="text-2xs text-text-2 font-sans">
+                          Go to <button onClick={() => window.open('https://console.x.ai', '_blank')} className="text-accent hover:underline cursor-pointer font-sans">console.x.ai</button> and sign in
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-2xs font-bold text-accent font-mono mt-0.5">2</span>
+                        <p className="text-2xs text-text-2 font-sans">Create an API key and copy it</p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-2xs font-bold text-accent font-mono mt-0.5">3</span>
+                        <p className="text-2xs text-text-2 font-sans">Paste it below</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <input
+                      value={keyInput}
+                      onChange={(e) => setKeyInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSetKey()}
+                      type={showKey ? 'text' : 'password'}
+                      placeholder="xai-..."
+                      className="w-full h-9 px-3 pr-9 text-xs bg-surface-0 border border-border rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+                      autoFocus
+                    />
+                    <button onClick={() => setShowKey(!showKey)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-4 hover:text-text-2 cursor-pointer">
+                      {showKey ? <EyeOff size={12} /> : <Eye size={12} />}
+                    </button>
+                  </div>
+                  <Button variant="primary" size="sm" onClick={handleSetKey} disabled={!keyInput.trim()} className="w-full h-8 text-xs">
+                    Save Key
+                  </Button>
+                </>
+              )}
+
               {/* ── Any provider: login pending state ── */}
               {(provider.id === 'claude-code' || provider.id === 'codex') && loginPending && (
                 <div className="flex flex-col gap-3">
@@ -465,6 +508,11 @@ function ProviderCard({ provider, onKeyChange }) {
                 {!provider.hasKey && provider.id === 'gemini' && (
                   <p className="text-2xs text-text-3 font-sans mb-1.5">
                     Get yours at <button onClick={() => window.open('https://aistudio.google.com/apikey', '_blank')} className="text-accent hover:underline cursor-pointer font-sans">aistudio.google.com</button>
+                  </p>
+                )}
+                {!provider.hasKey && provider.id === 'grok' && (
+                  <p className="text-2xs text-text-3 font-sans mb-1.5">
+                    Get yours at <button onClick={() => window.open('https://console.x.ai', '_blank')} className="text-accent hover:underline cursor-pointer font-sans">console.x.ai</button>
                   </p>
                 )}
                 <div className="relative">
@@ -1522,85 +1570,45 @@ export default function SettingsView() {
                   </div>
                 </ConfigCard>
 
-                <ConfigCard icon={Gauge} label="Rotation Threshold" description="Context usage that triggers auto-rotation.">
-                  <div className="flex bg-surface-0 rounded-md p-0.5 border border-border-subtle">
-                    {['auto', '50%', '65%', '75%', '85%'].map((opt) => {
-                      const val = opt === 'auto' ? 0 : parseInt(opt, 10) / 100;
-                      const isActive = rotationValue === val;
-                      return (
-                        <button
-                          key={opt}
-                          onClick={() => updateConfig('rotationThreshold', val)}
-                          className={cn(
-                            'flex-1 px-2 py-1.5 text-2xs font-semibold font-sans rounded transition-all cursor-pointer',
-                            isActive ? 'bg-accent/15 text-accent shadow-sm' : 'text-text-3 hover:text-text-1',
-                          )}
-                        >
-                          {opt === 'auto' ? 'Auto' : opt}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </ConfigCard>
-
-                <ConfigCard icon={ShieldCheck} label="QC Threshold" description="Running agents count that triggers auto-QC.">
-                  <div className="flex bg-surface-0 rounded-md p-0.5 border border-border-subtle">
-                    {[2, 3, 4, 6, 8].map((n) => {
-                      const isActive = (config.qcThreshold || 2) === n;
-                      return (
-                        <button
-                          key={n}
-                          onClick={() => updateConfig('qcThreshold', n)}
-                          className={cn(
-                            'flex-1 px-2 py-1.5 text-2xs font-semibold font-sans rounded transition-all cursor-pointer',
-                            isActive ? 'bg-accent/15 text-accent shadow-sm' : 'text-text-3 hover:text-text-1',
-                          )}
-                        >
-                          {n}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </ConfigCard>
-
-                <ConfigCard icon={Users} label="Max Agents" description="Concurrent agent limit. 0 = unlimited.">
-                  <div className="flex bg-surface-0 rounded-md p-0.5 border border-border-subtle">
-                    {[0, 4, 8, 12, 20].map((n) => {
-                      const isActive = (config.maxAgents || 0) === n;
-                      return (
-                        <button
-                          key={n}
-                          onClick={() => updateConfig('maxAgents', n)}
-                          className={cn(
-                            'flex-1 px-2 py-1.5 text-2xs font-semibold font-sans rounded transition-all cursor-pointer',
-                            isActive ? 'bg-accent/15 text-accent shadow-sm' : 'text-text-3 hover:text-text-1',
-                          )}
-                        >
-                          {n === 0 ? '\u221E' : n}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </ConfigCard>
-
-                <ConfigCard icon={Newspaper} label="Journalist Interval" description="Seconds between synthesis cycles.">
-                  <div className="flex bg-surface-0 rounded-md p-0.5 border border-border-subtle">
-                    {[60, 120, 300, 600].map((n) => {
-                      const isActive = (config.journalistInterval || 120) === n;
-                      const label = n < 60 ? `${n}s` : `${n / 60}m`;
-                      return (
-                        <button
-                          key={n}
-                          onClick={() => updateConfig('journalistInterval', n)}
-                          className={cn(
-                            'flex-1 px-2 py-1.5 text-2xs font-semibold font-sans rounded transition-all cursor-pointer',
-                            isActive ? 'bg-accent/15 text-accent shadow-sm' : 'text-text-3 hover:text-text-1',
-                          )}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
+                <ConfigCard icon={MessageSquare} label="Default Chat Model" description="Provider and model for new chat conversations.">
+                  <div className="space-y-2">
+                    <select
+                      value={config.defaultChatProvider || config.defaultProvider || 'claude-code'}
+                      onChange={(e) => {
+                        updateConfig('defaultChatProvider', e.target.value);
+                        const prov = providers.find((p) => p.id === e.target.value);
+                        const chatModels = (prov?.models || []).filter((m) => {
+                          const id = (typeof m === 'string' ? m : m.id || '').toLowerCase();
+                          return !id.includes('dall-e') && !id.includes('imagen') && !id.includes('image');
+                        });
+                        if (chatModels.length > 0) {
+                          const first = typeof chatModels[0] === 'string' ? chatModels[0] : chatModels[0].id;
+                          updateConfig('defaultChatModel', first);
+                        }
+                      }}
+                      className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
+                    >
+                      {visibleProviders.filter((p) => p.installed && (p.authType === 'local' || p.authType === 'subscription' || p.hasKey)).map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={config.defaultChatModel || ''}
+                      onChange={(e) => updateConfig('defaultChatModel', e.target.value || null)}
+                      className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
+                    >
+                      <option value="">Auto (Sonnet)</option>
+                      {(providers.find((p) => p.id === (config.defaultChatProvider || config.defaultProvider || 'claude-code'))?.models || [])
+                        .filter((m) => {
+                          const id = (typeof m === 'string' ? m : m.id || '').toLowerCase();
+                          return !id.includes('dall-e') && !id.includes('imagen') && !id.includes('image');
+                        })
+                        .map((m) => {
+                          const id = typeof m === 'string' ? m : m.id;
+                          const name = typeof m === 'string' ? m : m.name || m.id;
+                          return <option key={id} value={id}>{name}</option>;
+                        })}
+                    </select>
                   </div>
                 </ConfigCard>
 

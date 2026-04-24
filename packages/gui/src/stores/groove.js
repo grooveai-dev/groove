@@ -56,8 +56,13 @@ export const useGrooveStore = create((set, get) => ({
     selectedPeerId: null,
   },
 
+  // ── Preview ───────────────────────────────────────────────
+  previewState: { url: null, teamId: null, kind: null, deviceSize: 'desktop', screenshotMode: false },
+  previewChat: [],
+  previewIterating: false,
+
   // ── Navigation ────────────────────────────────────────────
-  activeView: 'agents',           // 'agents' | 'editor' | 'dashboard' | 'marketplace' | 'teams' | 'settings'
+  activeView: 'agents',           // 'agents' | 'editor' | 'dashboard' | 'marketplace' | 'teams' | 'settings' | 'preview'
   detailPanel: null,              // null | { type: 'agent', agentId } | { type: 'spawn' } | { type: 'journalist' }
   teamDetailPanels: {},            // { [teamId]: detailPanel } — persists panel state per team
   commandPaletteOpen: false,
@@ -455,21 +460,30 @@ export const useGrooveStore = create((set, get) => ({
             'success',
             'Project ready to preview',
             msg.url,
-            { label: 'View Site', url: msg.url },
+            { label: 'Open Preview', onClick: () => get().openPreview(msg.url, msg.teamId, msg.kind) },
             { persistent: true },
           );
           break;
 
-        case 'preview:failed':
-          get().addToast(
-            'warning',
-            'Preview could not launch',
-            msg.reason ? String(msg.reason).slice(0, 200) : 'Unknown error',
-          );
+        case 'preview:failed': {
+          const failKind = msg.kind || '';
+          if (failKind !== 'no_preview' && failKind !== 'cli' && failKind !== 'none') {
+            get().addToast(
+              'warning',
+              'Preview could not launch',
+              msg.reason ? String(msg.reason).slice(0, 200) : 'Unknown error',
+            );
+          }
           break;
+        }
 
-        case 'preview:stopped':
+        case 'preview:stopped': {
+          const ps = get().previewState;
+          if (ps.teamId && ps.teamId === msg.teamId) {
+            set({ previewState: { url: null, teamId: null, kind: null, deviceSize: 'desktop', screenshotMode: false }, previewChat: [], previewIterating: false });
+          }
           break;
+        }
 
         case 'agent:stalled': {
           const name = msg.agentName || msg.agentId;
@@ -899,6 +913,55 @@ export const useGrooveStore = create((set, get) => ({
           break;
         }
 
+        case 'conversation:image': {
+          const { conversationId, prompt, url, b64_json, mimeType, model: imgModel, provider: imgProvider } = msg.data || msg;
+          if (!conversationId) break;
+          const imageUrl = url || (b64_json ? `data:${mimeType || 'image/png'};base64,${b64_json}` : null);
+          set((s) => {
+            const msgs = { ...s.conversationMessages };
+            if (!msgs[conversationId]) msgs[conversationId] = [];
+            const arr = [...msgs[conversationId]];
+            const loadingIdx = arr.findLastIndex((m) => m.type === 'image-loading' && m.prompt === prompt);
+            if (loadingIdx >= 0) {
+              arr[loadingIdx] = { from: 'assistant', type: 'image', imageUrl, prompt, model: imgModel, provider: imgProvider, timestamp: Date.now() };
+            } else {
+              arr.push({ from: 'assistant', type: 'image', imageUrl, prompt, model: imgModel, provider: imgProvider, timestamp: Date.now() });
+            }
+            msgs[conversationId] = arr.slice(-200);
+            persistJSON('groove:conversationMessages', msgs);
+            const isActive = s.streamingConversationId === conversationId;
+            return { conversationMessages: msgs, sendingMessage: isActive ? false : s.sendingMessage, streamingConversationId: isActive ? null : s.streamingConversationId };
+          });
+          break;
+        }
+
+        case 'conversation:image-progress': {
+          const { conversationId, status, prompt: imgPrompt, error: imgError } = msg.data || msg;
+          if (!conversationId) break;
+          if (status === 'generating') {
+            set((s) => {
+              const msgs = { ...s.conversationMessages };
+              if (!msgs[conversationId]) msgs[conversationId] = [];
+              msgs[conversationId] = [...msgs[conversationId], { from: 'assistant', type: 'image-loading', prompt: imgPrompt, timestamp: Date.now() }];
+              return { conversationMessages: msgs, streamingConversationId: conversationId };
+            });
+          } else if (status === 'error') {
+            set((s) => {
+              const msgs = { ...s.conversationMessages };
+              if (!msgs[conversationId]) msgs[conversationId] = [];
+              const arr = [...msgs[conversationId]];
+              const loadingIdx = arr.findLastIndex((m) => m.type === 'image-loading');
+              if (loadingIdx >= 0) arr.splice(loadingIdx, 1);
+              arr.push({ from: 'system', text: `Image generation failed: ${imgError || 'Unknown error'}`, timestamp: Date.now() });
+              msgs[conversationId] = arr;
+              persistJSON('groove:conversationMessages', msgs);
+              const isActive = s.streamingConversationId === conversationId;
+              return { conversationMessages: msgs, sendingMessage: isActive ? false : s.sendingMessage, streamingConversationId: isActive ? null : s.streamingConversationId };
+            });
+          }
+          break;
+        }
+
         case 'conversation:error': {
           const { conversationId, error } = msg.data || msg;
           if (conversationId) {
@@ -1105,6 +1168,50 @@ export const useGrooveStore = create((set, get) => ({
     if (!expanded[id]) delete expanded[id];
     set({ expandedNodes: expanded });
     persistJSON('groove:expandedNodes', expanded);
+  },
+
+  // ── Preview ──────────────────────────────────────────────
+
+  openPreview(url, teamId, kind) {
+    set({ previewState: { url, teamId, kind, deviceSize: 'desktop', screenshotMode: false }, previewChat: [], activeView: 'preview' });
+  },
+  closePreview() {
+    const { previewState } = get();
+    if (previewState.teamId) {
+      api.delete(`/preview/${previewState.teamId}`).catch(() => {});
+    }
+    set({ previewState: { url: null, teamId: null, kind: null, deviceSize: 'desktop', screenshotMode: false }, previewChat: [], previewIterating: false, activeView: 'agents' });
+  },
+  setPreviewDevice(size) {
+    set((s) => ({ previewState: { ...s.previewState, deviceSize: size } }));
+  },
+  toggleScreenshotMode() {
+    set((s) => ({ previewState: { ...s.previewState, screenshotMode: !s.previewState.screenshotMode } }));
+  },
+  async iteratePreview(message, screenshotBase64) {
+    const { previewState } = get();
+    if (!previewState.teamId) return;
+
+    const userMsg = { role: 'user', content: message, screenshot: screenshotBase64 || null, timestamp: Date.now() };
+    set((s) => ({ previewChat: [...s.previewChat, userMsg], previewIterating: true }));
+
+    try {
+      const body = { message };
+      if (screenshotBase64) body.screenshot = screenshotBase64;
+      const res = await api.post(`/preview/${previewState.teamId}/iterate`, body);
+      const assistantMsg = { role: 'assistant', content: res.response || res.message || 'Changes routed to planner.', timestamp: Date.now() };
+      set((s) => ({ previewChat: [...s.previewChat, assistantMsg], previewIterating: false }));
+    } catch (err) {
+      const errMsg = { role: 'assistant', content: `Failed to iterate: ${err.message}`, timestamp: Date.now() };
+      set((s) => ({ previewChat: [...s.previewChat, errMsg], previewIterating: false }));
+    }
+  },
+  addPreviewChatMessage(role, content, screenshot) {
+    const msg = { role, content, screenshot: screenshot || null, timestamp: Date.now() };
+    set((s) => ({ previewChat: [...s.previewChat, msg] }));
+  },
+  clearPreviewChat() {
+    set({ previewChat: [] });
   },
 
   // ── Toasts ────────────────────────────────────────────────
@@ -1486,6 +1593,13 @@ export const useGrooveStore = create((set, get) => ({
       editorTreeCache: {},
     });
     get().fetchTreeDir('');
+  },
+
+  async removeRecentProject(path) {
+    try {
+      await api.delete('/projects/recent', { path });
+    } catch {}
+    get().fetchProjectDir();
   },
 
   toggleProjectPicker() {
@@ -1974,6 +2088,32 @@ export const useGrooveStore = create((set, get) => ({
         return { conversationMessages: msgs, sendingMessage: false, streamingConversationId: null };
       });
       get().addToast('error', 'Message failed', err.message);
+    }
+  },
+
+  async sendImageMessage(conversationId, prompt, { model, size, quality } = {}) {
+    const conv = get().conversations.find((c) => c.id === conversationId);
+    if (!conv) return;
+
+    set((s) => {
+      const msgs = { ...s.conversationMessages };
+      if (!msgs[conversationId]) msgs[conversationId] = [];
+      msgs[conversationId] = [...msgs[conversationId], { from: 'user', text: prompt, timestamp: Date.now() }];
+      persistJSON('groove:conversationMessages', msgs);
+      return { conversationMessages: msgs, sendingMessage: true, streamingConversationId: conversationId };
+    });
+
+    try {
+      await api.post(`/conversations/${encodeURIComponent(conversationId)}/generate-image`, { prompt, model, size, quality });
+    } catch (err) {
+      set((s) => {
+        const msgs = { ...s.conversationMessages };
+        if (!msgs[conversationId]) msgs[conversationId] = [];
+        msgs[conversationId] = [...msgs[conversationId], { from: 'system', text: `Image failed: ${err.message}`, timestamp: Date.now() }];
+        persistJSON('groove:conversationMessages', msgs);
+        return { conversationMessages: msgs, sendingMessage: false, streamingConversationId: null };
+      });
+      get().addToast('error', 'Image generation failed', err.message);
     }
   },
 

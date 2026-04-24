@@ -22,6 +22,7 @@ import FederationView from './views/federation';
 import ToysView from './views/toys';
 import NetworkView from './views/network';
 import ChatView from './views/chat';
+import PreviewView from './views/preview';
 
 // Agent components
 import { AgentPanel } from './components/agents/agent-panel';
@@ -74,6 +75,7 @@ function ViewRouter() {
     case 'federation':  content = <FederationView />;  break;
     case 'settings':    content = <SettingsView />;    break;
     case 'chat':        content = <ChatView />;        break;
+    case 'preview':     content = <PreviewView />;     break;
     case 'network':     content = networkUnlocked ? <NetworkView /> : <AgentsView />; break;
     default:            content = <AgentsView />;
   }

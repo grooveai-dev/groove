@@ -1161,6 +1161,11 @@ For normal file edits within your scope, proceed without review.
     const workingDir = plan.workingDir;
     preview.launch(teamId, workingDir, plan.preview).then((result) => {
       if (!result.launched) {
+        const intentionalSkips = new Set(['no_preview', 'cli', 'none']);
+        if (intentionalSkips.has(result.reason)) {
+          console.log(`[Groove] Preview for team ${teamId} intentionally skipped: ${result.reason}`);
+          return;
+        }
         console.warn(`[Groove] Preview for team ${teamId} did not launch: ${result.reason}`);
         this.daemon.broadcast({
           type: 'preview:failed',
@@ -1171,7 +1176,7 @@ For normal file edits within your scope, proceed without review.
       }
     }).catch((err) => {
       console.error(`[Groove] Preview launch error for team ${teamId}:`, err.message);
-      this.daemon.broadcast({ type: 'preview:failed', teamId, reason: err.message });
+      this.daemon.broadcast({ type: 'preview:failed', teamId, kind: plan.preview?.kind, reason: err.message });
     });
   }
 

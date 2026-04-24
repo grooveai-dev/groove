@@ -1,7 +1,7 @@
 // GROOVE Daemon — Entry Point
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { createServer as createHttpServer } from 'http';
+import { createServer as createHttpServer, request as httpProxyRequest } from 'http';
 import { createServer as createNetServer } from 'net';
 import { execFileSync } from 'child_process';
 import { resolve } from 'path';
@@ -208,6 +208,46 @@ export class Daemon {
         this.federationWss.handleUpgrade(req, socket, head, (ws) => {
           this.federation.handleWsUpgrade(ws, daemonId, callerIp, signatureHeader);
         });
+      } else if (req.url?.startsWith('/api/preview/') && req.url.includes('/proxy')) {
+        // HMR WebSocket proxy — forward to the dev server's WebSocket
+        const match = req.url.match(/^\/api\/preview\/([^/]+)\/proxy\/?(.*)$/);
+        if (!match || !this.preview) { socket.destroy(); return; }
+        const entry = this.preview.get(match[1]);
+        if (!entry?.url) { socket.destroy(); return; }
+        let targetUrl;
+        try { targetUrl = new URL(entry.url); } catch { socket.destroy(); return; }
+        const wsPath = '/' + (match[2] || '');
+        const opts = {
+          hostname: targetUrl.hostname,
+          port: targetUrl.port,
+          path: wsPath,
+          method: 'GET',
+          headers: { ...req.headers, host: targetUrl.host },
+        };
+        const upstream = httpProxyRequest(opts);
+        upstream.on('upgrade', (_res, upSocket, upHead) => {
+          const skipHeaders = new Set(['upgrade', 'connection', 'sec-websocket-accept']);
+          const extra = Object.entries(_res.headers)
+            .filter(([k]) => !skipHeaders.has(k))
+            .map(([k, v]) => `${k}: ${v}\r\n`).join('');
+          socket.write(
+            'HTTP/1.1 101 Switching Protocols\r\n' +
+            `Upgrade: ${_res.headers.upgrade || 'websocket'}\r\n` +
+            `Connection: Upgrade\r\n` +
+            `Sec-WebSocket-Accept: ${_res.headers['sec-websocket-accept'] || ''}\r\n` +
+            extra +
+            '\r\n'
+          );
+          if (upHead.length) socket.write(upHead);
+          upSocket.pipe(socket);
+          socket.pipe(upSocket);
+          upSocket.on('error', () => socket.destroy());
+          socket.on('error', () => upSocket.destroy());
+          upSocket.on('close', () => socket.destroy());
+          socket.on('close', () => upSocket.destroy());
+        });
+        upstream.on('error', () => socket.destroy());
+        upstream.end();
       } else {
         this.wss.handleUpgrade(req, socket, head, (ws) => {
           this.wss.emit('connection', ws, req);

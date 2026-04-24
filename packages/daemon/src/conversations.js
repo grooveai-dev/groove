@@ -56,6 +56,13 @@ export class ConversationManager {
   }
 
   async create(provider, model, title, mode = 'api') {
+    if (!provider && this.daemon.config?.defaultChatProvider) {
+      provider = this.daemon.config.defaultChatProvider;
+    }
+    if (!model && this.daemon.config?.defaultChatModel) {
+      model = this.daemon.config.defaultChatModel;
+    }
+
     const id = randomUUID().slice(0, 12);
     const now = new Date().toISOString();
 
@@ -285,6 +292,8 @@ export class ConversationManager {
       'claude-code': 'ANTHROPIC_API_KEY',
       'codex': 'OPENAI_API_KEY',
       'gemini': 'GEMINI_API_KEY',
+      'grok': 'XAI_API_KEY',
+      'nano-banana': 'GEMINI_API_KEY',
     };
     const envVar = envMap[providerName];
     if (envVar && process.env[envVar]) return process.env[envVar];
@@ -355,6 +364,13 @@ export class ConversationManager {
     // Fallback: headless CLI spawn (for providers without streamChat or missing API key)
     const prompt = this._buildHistoryPrompt(history, message);
     const headlessCmd = provider.buildHeadlessCommand(prompt, modelId);
+    if (!headlessCmd) {
+      this.daemon.broadcast({
+        type: 'conversation:error',
+        data: { conversationId: id, error: `${providerName} requires an API key for chat` },
+      });
+      return;
+    }
     const { command, args, env, stdin: stdinData, cwd } = headlessCmd;
 
     const spawnOpts = {

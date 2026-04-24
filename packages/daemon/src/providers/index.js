@@ -7,6 +7,8 @@ import { ClaudeCodeProvider } from './claude-code.js';
 import { CodexProvider } from './codex.js';
 import { GeminiProvider } from './gemini.js';
 import { OllamaProvider } from './ollama.js';
+import { GrokProvider } from './grok.js';
+import { NanaBananaProvider } from './nano-banana.js';
 import { LocalProvider } from './local.js';
 import { GrooveNetworkProvider } from './groove-network.js';
 
@@ -67,7 +69,9 @@ const providers = {
   'claude-code': new ClaudeCodeProvider(),
   'codex': new CodexProvider(),
   'gemini': new GeminiProvider(),
+  'grok': new GrokProvider(),
   'ollama': new OllamaProvider(),
+  'nano-banana': new NanaBananaProvider(),
   'local': new LocalProvider(),
   'groove-network': new GrooveNetworkProvider(),
 };
@@ -93,7 +97,7 @@ export function getProvider(name) {
 
 // Providers hidden from UI but kept for backward compatibility
 // (existing agents with provider='ollama' still resolve via getProvider)
-const HIDDEN_PROVIDERS = new Set(['ollama']);
+const HIDDEN_PROVIDERS = new Set(['ollama', 'nano-banana']);
 
 export function listProviders() {
   return Object.entries(providers)

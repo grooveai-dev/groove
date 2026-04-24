@@ -145,6 +145,35 @@ html {
   100% { stroke-dashoffset: 0; }
 }
 
+/* ── Chat Animations ─────────────────────────────────────── */
+
+@keyframes chat-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-chat-fade-in {
+  animation: chat-fade-in 0.3s ease-out forwards;
+}
+
+@keyframes input-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(51, 175, 188, 0.15); }
+  50% { box-shadow: 0 0 12px 1px rgba(51, 175, 188, 0.1); }
+}
+.chat-input-focus:focus-within {
+  animation: input-glow 2s ease-in-out infinite;
+  border-color: rgba(51, 175, 188, 0.35);
+}
+
+@keyframes image-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.image-loading-shimmer {
+  background: linear-gradient(90deg, var(--color-surface-3) 25%, var(--color-surface-5) 50%, var(--color-surface-3) 75%);
+  background-size: 200% 100%;
+  animation: image-shimmer 1.5s ease-in-out infinite;
+}
+
 /* ── Sharper corners globally ─────────────────────────────── */
 
 * {

@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useRef, useEffect, useState } from 'react';
-import { Copy, Check, ArrowRight } from 'lucide-react';
+import { useRef, useEffect, useState, useCallback } from 'react';
+import { Copy, Check, ArrowRight, Download, Maximize2, X, Image as ImageIcon, RefreshCw } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
 import { ThinkingIndicator } from '../ui/thinking-indicator';
@@ -12,7 +12,7 @@ const API_STATUS_MESSAGES = [
   'Almost there...',
 ];
 
-function CopyButton({ text }) {
+function CopyButton({ text, className }) {
   const [copied, setCopied] = useState(false);
   function handleCopy() {
     navigator.clipboard.writeText(text).then(() => {
@@ -23,7 +23,7 @@ function CopyButton({ text }) {
   return (
     <button
       onClick={handleCopy}
-      className="flex items-center gap-1 px-2 py-1 text-2xs font-sans text-text-3 hover:text-text-1 transition-colors cursor-pointer"
+      className={cn('flex items-center gap-1 px-2 py-1 text-2xs font-sans text-text-3 hover:text-text-1 transition-colors cursor-pointer', className)}
     >
       {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
       {copied ? 'Copied' : 'Copy'}
@@ -54,7 +54,6 @@ function parseMarkdown(text) {
   while (i < lines.length) {
     const line = lines[i];
 
-    // Fenced code block
     if (line.startsWith('```')) {
       const lang = line.slice(3).trim();
       const codeLines = [];
@@ -63,12 +62,11 @@ function parseMarkdown(text) {
         codeLines.push(lines[i]);
         i++;
       }
-      i++; // skip closing ```
+      i++;
       blocks.push({ type: 'code', language: lang, code: codeLines.join('\n') });
       continue;
     }
 
-    // Heading
     const headingMatch = line.match(/^(#{1,6})\s+(.+)/);
     if (headingMatch) {
       blocks.push({ type: 'heading', level: headingMatch[1].length, text: headingMatch[2] });
@@ -76,14 +74,12 @@ function parseMarkdown(text) {
       continue;
     }
 
-    // Horizontal rule
     if (/^(-{3,}|_{3,}|\*{3,})$/.test(line.trim())) {
       blocks.push({ type: 'hr' });
       i++;
       continue;
     }
 
-    // Blockquote
     if (line.startsWith('> ')) {
       const quoteLines = [line.slice(2)];
       i++;
@@ -95,7 +91,6 @@ function parseMarkdown(text) {
       continue;
     }
 
-    // Unordered list
     if (/^[-*+]\s/.test(line)) {
       const items = [line.replace(/^[-*+]\s/, '')];
       i++;
@@ -107,7 +102,6 @@ function parseMarkdown(text) {
       continue;
     }
 
-    // Ordered list
     if (/^\d+\.\s/.test(line)) {
       const items = [line.replace(/^\d+\.\s/, '')];
       i++;
@@ -119,10 +113,9 @@ function parseMarkdown(text) {
       continue;
     }
 
-    // Table
     if (line.includes('|') && i + 1 < lines.length && /^\|?\s*[-:]+/.test(lines[i + 1])) {
       const headerCells = line.split('|').map((c) => c.trim()).filter(Boolean);
-      i += 2; // skip header + separator
+      i += 2;
       const rows = [];
       while (i < lines.length && lines[i].includes('|')) {
         rows.push(lines[i].split('|').map((c) => c.trim()).filter(Boolean));
@@ -132,13 +125,11 @@ function parseMarkdown(text) {
       continue;
     }
 
-    // Empty line
     if (line.trim() === '') {
       i++;
       continue;
     }
 
-    // Paragraph — collect consecutive non-empty lines
     const paraLines = [line];
     i++;
     while (i < lines.length && lines[i].trim() !== '' && !lines[i].startsWith('```') && !lines[i].startsWith('#') && !/^[-*+]\s/.test(lines[i]) && !/^\d+\.\s/.test(lines[i]) && !lines[i].startsWith('> ') && !/^(-{3,}|_{3,}|\*{3,})$/.test(lines[i].trim())) {
@@ -247,9 +238,9 @@ function RenderedMarkdown({ text }) {
 
 function UserMessage({ msg }) {
   return (
-    <div className="flex justify-end">
+    <div className="flex justify-end animate-chat-fade-in">
       <div className="max-w-[75%]">
-        <div className="px-4 py-3 rounded-xl bg-surface-3/80 border border-border-subtle">
+        <div className="px-4 py-3 rounded-2xl rounded-br-md bg-gradient-to-br from-accent/12 to-accent/6 border border-accent/15 backdrop-blur-sm">
           <p className="text-sm text-text-0 font-sans whitespace-pre-wrap break-words leading-relaxed">{msg.text}</p>
         </div>
         <div className="text-2xs text-text-4 font-sans mt-1 text-right">{timeAgo(msg.timestamp)}</div>
@@ -260,9 +251,9 @@ function UserMessage({ msg }) {
 
 function AssistantMessage({ msg, model }) {
   return (
-    <div className="max-w-[85%]">
-      {model && <div className="text-2xs text-text-3 font-sans mb-1 font-medium">{model}</div>}
-      <div className="border-l-2 border-accent/30 pl-3.5">
+    <div className="max-w-[85%] animate-chat-fade-in">
+      {model && <div className="text-2xs text-text-3 font-mono mb-1.5 font-medium">{model}</div>}
+      <div className="rounded-2xl rounded-tl-md bg-surface-1/80 border border-border-subtle px-4 py-3">
         <RenderedMarkdown text={msg.text} />
       </div>
       <div className="text-2xs text-text-4 font-sans mt-1">{timeAgo(msg.timestamp)}</div>
@@ -270,9 +261,132 @@ function AssistantMessage({ msg, model }) {
   );
 }
 
+function ImageLoadingMessage({ msg }) {
+  return (
+    <div className="max-w-[85%] animate-chat-fade-in">
+      <div className="rounded-2xl rounded-tl-md bg-surface-1/80 border border-border-subtle overflow-hidden">
+        <div className="w-80 h-80 image-loading-shimmer flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-surface-3/80 flex items-center justify-center">
+              <ImageIcon size={18} className="text-accent animate-pulse" />
+            </div>
+            <span className="text-xs text-text-3 font-sans">Generating image...</span>
+          </div>
+        </div>
+        {msg.prompt && (
+          <div className="px-4 py-2.5 border-t border-border-subtle">
+            <p className="text-2xs text-text-3 font-sans italic truncate">&quot;{msg.prompt}&quot;</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ImageMessage({ msg, onReply }) {
+  const [expanded, setExpanded] = useState(false);
+  const [hovering, setHovering] = useState(false);
+
+  const handleDownload = useCallback(() => {
+    if (!msg.imageUrl) return;
+    const a = document.createElement('a');
+    a.href = msg.imageUrl;
+    a.download = `groove-${msg.model || 'image'}-${Date.now()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, [msg.imageUrl, msg.model]);
+
+  return (
+    <>
+      <div className="max-w-[85%] animate-chat-fade-in">
+        {msg.model && <div className="text-2xs text-text-3 font-mono mb-1.5 font-medium flex items-center gap-1.5"><ImageIcon size={10} /> {msg.model}</div>}
+        <div className="rounded-2xl rounded-tl-md bg-surface-1/80 border border-border-subtle overflow-hidden">
+          <div
+            className="relative group"
+            onMouseEnter={() => setHovering(true)}
+            onMouseLeave={() => setHovering(false)}
+          >
+            <img
+              src={msg.imageUrl}
+              alt={msg.prompt || 'Generated image'}
+              className="max-w-full max-h-[480px] object-contain cursor-pointer"
+              onClick={() => setExpanded(true)}
+            />
+            {hovering && (
+              <div className="absolute top-2 right-2 flex gap-1.5 animate-chat-fade-in">
+                <button
+                  onClick={handleDownload}
+                  className="w-8 h-8 rounded-lg bg-surface-0/90 backdrop-blur-sm border border-border-subtle flex items-center justify-center text-text-2 hover:text-accent hover:border-accent/30 transition-colors cursor-pointer"
+                  title="Download"
+                >
+                  <Download size={14} />
+                </button>
+                <button
+                  onClick={() => setExpanded(true)}
+                  className="w-8 h-8 rounded-lg bg-surface-0/90 backdrop-blur-sm border border-border-subtle flex items-center justify-center text-text-2 hover:text-accent hover:border-accent/30 transition-colors cursor-pointer"
+                  title="Fullscreen"
+                >
+                  <Maximize2 size={14} />
+                </button>
+                <CopyButton text={msg.prompt || ''} className="h-8 rounded-lg bg-surface-0/90 backdrop-blur-sm border border-border-subtle text-text-2 hover:text-accent" />
+              </div>
+            )}
+          </div>
+          <div className="px-4 py-2.5 border-t border-border-subtle flex items-center gap-2">
+            <p className="flex-1 text-2xs text-text-3 font-sans italic truncate">&quot;{msg.prompt}&quot;</p>
+            {onReply && (
+              <button
+                onClick={() => onReply(msg)}
+                className="text-2xs text-accent hover:text-accent/80 font-sans font-medium cursor-pointer flex items-center gap-1 flex-shrink-0"
+              >
+                <RefreshCw size={10} /> Iterate
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="text-2xs text-text-4 font-sans mt-1">{timeAgo(msg.timestamp)}</div>
+      </div>
+
+      {expanded && (
+        <div
+          className="fixed inset-0 z-[200] bg-surface-0/95 backdrop-blur-md flex items-center justify-center animate-chat-fade-in"
+          onClick={() => setExpanded(false)}
+        >
+          <button
+            onClick={() => setExpanded(false)}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-surface-3 border border-border flex items-center justify-center text-text-2 hover:text-text-0 transition-colors cursor-pointer z-10"
+          >
+            <X size={18} />
+          </button>
+          <div className="absolute bottom-4 right-4 flex gap-2 z-10">
+            <button
+              onClick={(e) => { e.stopPropagation(); handleDownload(); }}
+              className="h-9 px-4 rounded-lg bg-surface-3 border border-border flex items-center gap-2 text-xs font-sans text-text-1 hover:text-accent hover:border-accent/30 transition-colors cursor-pointer"
+            >
+              <Download size={14} /> Download
+            </button>
+          </div>
+          <img
+            src={msg.imageUrl}
+            alt={msg.prompt || 'Generated image'}
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          {msg.prompt && (
+            <div className="absolute bottom-4 left-4 max-w-md px-4 py-2 rounded-lg bg-surface-3/90 backdrop-blur-sm border border-border-subtle z-10">
+              <p className="text-xs text-text-2 font-sans italic">&quot;{msg.prompt}&quot;</p>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 function SystemMessage({ msg }) {
   return (
-    <div className="flex justify-center py-1">
+    <div className="flex justify-center py-1 animate-chat-fade-in">
       <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-4/50">
         <ArrowRight size={10} className="text-text-4" />
         <span className="text-2xs text-text-3 font-sans">{msg.text}</span>
@@ -311,21 +425,23 @@ function ApiTypingIndicator() {
   }, []);
 
   return (
-    <div className="border-l-2 border-accent/30 pl-3.5 py-1 flex items-center gap-2.5">
-      <div className="relative w-3.5 h-3.5 flex-shrink-0">
-        <span className="absolute inset-0 rounded-full border border-transparent border-t-accent animate-spin" style={{ animationDuration: '0.9s' }} />
+    <div className="rounded-2xl rounded-tl-md bg-surface-1/80 border border-border-subtle px-4 py-3 max-w-[85%] animate-chat-fade-in">
+      <div className="flex items-center gap-2.5">
+        <div className="relative w-3.5 h-3.5 flex-shrink-0">
+          <span className="absolute inset-0 rounded-full border border-transparent border-t-accent animate-spin" style={{ animationDuration: '0.9s' }} />
+        </div>
+        <span
+          className="text-[12px] font-sans text-text-3 transition-opacity duration-[250ms]"
+          style={{ opacity: fade ? 1 : 0 }}
+        >
+          {API_STATUS_MESSAGES[idx]}
+        </span>
       </div>
-      <span
-        className="text-[12px] font-sans text-text-3 transition-opacity duration-[250ms]"
-        style={{ opacity: fade ? 1 : 0 }}
-      >
-        {API_STATUS_MESSAGES[idx]}
-      </span>
     </div>
   );
 }
 
-export function ChatMessages({ messages, isStreaming, model, mode }) {
+export function ChatMessages({ messages, isStreaming, model, mode, onImageReply }) {
   const scrollRef = useRef(null);
   const isAtBottomRef = useRef(true);
 
@@ -356,6 +472,8 @@ export function ChatMessages({ messages, isStreaming, model, mode }) {
   return (
     <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
       {messages.map((msg, i) => {
+        if (msg.type === 'image-loading') return <ImageLoadingMessage key={i} msg={msg} />;
+        if (msg.type === 'image') return <ImageMessage key={i} msg={msg} onReply={onImageReply} />;
         if (msg.from === 'user') return <UserMessage key={i} msg={msg} />;
         if (msg.from === 'system') return <SystemMessage key={i} msg={msg} />;
         return <AssistantMessage key={i} msg={msg} model={model} />;

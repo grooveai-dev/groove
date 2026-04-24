@@ -17,7 +17,7 @@ import { existsSync, readFileSync, statSync } from 'fs';
 import { createServer } from 'http';
 import { lookup as mimeLookup } from './mimetypes.js';
 
-const READY_TIMEOUT_MS = 60_000;  // give dev servers a minute to boot
+const READY_TIMEOUT_MS = 120_000;  // give dev servers 2 minutes (large projects need npm install)
 const MAX_STDOUT_BYTES = 256 * 1024;
 // Strip CSI/OSC/other ANSI escape sequences — Vite prints URLs with inline
 // bold/color codes (e.g. "http://localhost:\x1b[1m5175\x1b[22m/") which would
@@ -147,8 +147,24 @@ export class PreviewService {
     });
   }
 
+  _autoDetectDevCommand(baseDir) {
+    const pkgPath = resolve(baseDir, 'package.json');
+    if (!existsSync(pkgPath)) return null;
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+      const scripts = pkg.scripts || {};
+      for (const name of ['dev', 'start', 'serve']) {
+        if (scripts[name]) return `npm run ${name}`;
+      }
+    } catch { /* malformed package.json */ }
+    return null;
+  }
+
   _launchDevServer(teamId, baseDir, preview) {
-    const command = String(preview.command || '').trim();
+    let command = String(preview.command || '').trim();
+    if (!command) {
+      command = this._autoDetectDevCommand(baseDir) || '';
+    }
     if (!command) {
       return Promise.resolve({ launched: false, reason: 'no_command' });
     }

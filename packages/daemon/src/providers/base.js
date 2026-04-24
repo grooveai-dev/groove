@@ -37,6 +37,10 @@ export class Provider {
     return null;
   }
 
+  async generateImage(prompt, options = {}) {
+    return null;
+  }
+
   static setupGuide() {
     return { installSteps: [], authMethods: [], authInstructions: {} };
   }

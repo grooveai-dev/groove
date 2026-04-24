@@ -43,6 +43,8 @@ export class CodexProvider extends Provider {
     { id: 'gpt-5.4-nano', name: 'GPT-5.4 Nano', tier: 'light', maxContext: 200000, pricing: { input: 0.0004, output: 0.0016 } },
     { id: 'gpt-5-mini', name: 'GPT-5 Mini', tier: 'medium', maxContext: 200000, pricing: { input: 0.0005, output: 0.002 } },
     { id: 'gpt-5-nano', name: 'GPT-5 Nano', tier: 'light', maxContext: 200000, pricing: { input: 0.0001, output: 0.0004 } },
+    { id: 'gpt-image-2', name: 'GPT Image 2', tier: 'medium', type: 'image', pricing: { perImage: 0.07 } },
+    { id: 'gpt-image-1', name: 'GPT Image 1', tier: 'medium', type: 'image', pricing: { perImage: 0.02 } },
   ];
 
   static isInstalled() {
@@ -184,6 +186,42 @@ export class CodexProvider extends Provider {
       onError(err);
     });
     return controller;
+  }
+
+  async generateImage(prompt, options = {}) {
+    const apiKey = options.apiKey;
+    if (!apiKey) throw new Error('OPENAI_API_KEY required for image generation');
+
+    const body = {
+      model: options.model || 'gpt-image-1',
+      prompt,
+      n: 1,
+    };
+    if (options.size) body.size = options.size;
+    if (options.quality) body.quality = options.quality;
+
+    const res = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`OpenAI Image API ${res.status}: ${text.slice(0, 200)}`);
+    }
+
+    const data = await res.json();
+    const image = data.data?.[0];
+    return {
+      url: image?.url || null,
+      b64_json: image?.b64_json || null,
+      model: body.model,
+      provider: 'codex',
+    };
   }
 
   parseOutput(line) {

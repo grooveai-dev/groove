@@ -2,7 +2,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, existsSync } from 'fs';
-import { execSync, execFileSync } from 'child_process';
+import { execSync } from 'child_process';
 import { resolve, relative, dirname, sep } from 'path';
 import { minimatch } from 'minimatch';
 
@@ -120,10 +120,11 @@ export const TOOL_DEFINITIONS = [
 ];
 
 export class ToolExecutor {
-  constructor(workingDir, daemon, agentId) {
+  constructor(workingDir, daemon, agentId, projectDir) {
     this.workingDir = resolve(workingDir);
     this.daemon = daemon;
     this.agentId = agentId;
+    this.projectDir = resolve(projectDir || workingDir);
   }
 
   async execute(name, args) {
@@ -155,6 +156,15 @@ export class ToolExecutor {
     return resolved;
   }
 
+  _resolveReadPath(filePath) {
+    if (!filePath) throw new Error('Path is required');
+    const resolved = resolve(this.workingDir, filePath);
+    if (!resolved.startsWith(this.projectDir + sep) && resolved !== this.projectDir) {
+      throw new Error(`Access denied: path outside project directory`);
+    }
+    return resolved;
+  }
+
   _checkWriteScope(resolvedPath) {
     if (!this.daemon?.locks) return;
     const rel = relative(this.workingDir, resolvedPath);
@@ -171,7 +181,7 @@ export class ToolExecutor {
   // --- Tool Implementations ---
 
   readFile({ path: filePath, offset, limit }) {
-    const resolved = this._resolvePath(filePath);
+    const resolved = this._resolveReadPath(filePath);
     if (!existsSync(resolved)) {
       return { success: false, error: `File not found: ${filePath}` };
     }
@@ -241,16 +251,17 @@ export class ToolExecutor {
     const execCwd = cwd ? this._resolvePath(cwd) : this.workingDir;
     const timeoutMs = Math.min(timeout || 30000, 120000);
 
+    if (/\brm\s+(-\w+\s+)*-rf\s+(\/|~)/.test(command) || /\bsudo\b/.test(command)) {
+      return { success: false, error: 'Command blocked: dangerous shell pattern detected' };
+    }
+
     try {
-      // Split command safely for shell: false — avoids shell injection
-      const parts = command.split(/\s+/);
-      const cmd = parts[0];
-      const cmdArgs = parts.slice(1);
-      const output = execFileSync(cmd, cmdArgs, {
+      const output = execSync(command, {
         cwd: execCwd,
         timeout: timeoutMs,
         maxBuffer: 1024 * 1024,
         encoding: 'utf8',
+        shell: true,
         env: { ...process.env, GROOVE_AGENT_ID: this.agentId },
       });
       // Cap output to prevent context window blowup
@@ -265,7 +276,7 @@ export class ToolExecutor {
   }
 
   searchFiles({ pattern, cwd }) {
-    const searchDir = cwd ? this._resolvePath(cwd) : this.workingDir;
+    const searchDir = cwd ? this._resolveReadPath(cwd) : this.workingDir;
     const results = [];
 
     const walk = (dir, depth) => {
@@ -298,7 +309,7 @@ export class ToolExecutor {
     if (!/^[a-zA-Z0-9_.\-\/\\*?[\]{}()|^$+\s]+$/.test(pattern)) {
       throw new Error('Invalid search pattern');
     }
-    const searchDir = searchPath ? this._resolvePath(searchPath) : this.workingDir;
+    const searchDir = searchPath ? this._resolveReadPath(searchPath) : this.workingDir;
 
     // Prefer ripgrep (faster, respects .gitignore), fall back to grep
     const escapedPattern = pattern.replace(/'/g, "'\\''");
@@ -342,7 +353,7 @@ export class ToolExecutor {
   }
 
   listDirectory({ path: dirPath } = {}) {
-    const resolved = dirPath ? this._resolvePath(dirPath) : this.workingDir;
+    const resolved = dirPath ? this._resolveReadPath(dirPath) : this.workingDir;
 
     if (!existsSync(resolved)) {
       return { success: false, error: `Directory not found: ${dirPath || '.'}` };

@@ -36,6 +36,7 @@ export class AgentLoop extends EventEmitter {
       agent.workingDir || daemon.projectDir,
       daemon,
       agent.id,
+      daemon.projectDir,
     );
 
     // Session persistence
@@ -57,6 +58,7 @@ export class AgentLoop extends EventEmitter {
 
   async start(initialPrompt) {
     this.running = true;
+    this.isInitialPrompt = true;
     this._writeLog({ type: 'system', event: 'start', model: this.config.model });
 
     if (initialPrompt) {
@@ -78,6 +80,19 @@ export class AgentLoop extends EventEmitter {
       this.emit('error', { message: err.message });
     }
 
+    if (this.running && this.isInitialPrompt && this._shouldAutoComplete()) {
+      this.running = false;
+      const duration = Date.now() - this.startedAt;
+      this.daemon.tokens.recordResult(this.agent.id, { durationMs: duration, turns: this.turns });
+      this.emit('exit', { code: 0, signal: null, status: 'completed' });
+    }
+
+    if (this.running && this.isInitialPrompt && this.turns <= 1 && this.totalTokensIn === 0 && this.totalTokensOut === 0) {
+      this.running = false;
+      this.emit('exit', { code: 1, signal: null, status: 'crashed' });
+    }
+
+    this.isInitialPrompt = false;
     this._saveSession();
     this.idle = true;
   }
@@ -142,14 +157,14 @@ export class AgentLoop extends EventEmitter {
         if (content) {
           this._writeLog({ type: 'assistant', content: content.slice(0, 2000) });
         }
-        this.emit('output', { type: 'result', data: content || 'Turn complete', turns: this.turns });
+        this.emit('output', { type: 'result', subtype: 'assistant', data: content || 'Turn complete', turns: this.turns });
         break;
       }
 
       // Has tool calls — broadcast text before executing tools (if model sent text + tools)
       if (content) {
         this._writeLog({ type: 'assistant', content: content.slice(0, 2000) });
-        this.emit('output', { type: 'activity', subtype: 'text', data: content });
+        this.emit('output', { type: 'activity', subtype: 'assistant', data: content });
       }
 
       // Execute each tool call
@@ -168,7 +183,7 @@ export class AgentLoop extends EventEmitter {
 
         // Log + broadcast tool invocation
         this._writeLog({ type: 'tool_use', tool: toolName, input: inputSummary });
-        this.emit('output', { type: 'activity', subtype: 'tool_use', data: `${toolName}: ${inputSummary}` });
+        this.emit('output', { type: 'activity', subtype: 'tool_use', data: [{ type: 'tool_use', name: toolName, input: args }] });
 
         // Feed classifier for adaptive routing
         this.daemon.classifier.addEvent(this.agent.id, {
@@ -188,7 +203,7 @@ export class AgentLoop extends EventEmitter {
         });
         this.emit('output', {
           type: 'activity', subtype: 'tool_result',
-          data: result.success ? `${toolName}: done` : `${toolName}: error — ${result.error}`,
+          data: [{ type: 'tool_result', name: toolName, success: result.success, output: resultPreview }],
         });
 
         if (!result.success) {
@@ -209,11 +224,15 @@ export class AgentLoop extends EventEmitter {
     }
   }
 
+  _shouldAutoComplete() {
+    const lastAssistant = [...this.messages].reverse().find(m => m.role === 'assistant');
+    if (!lastAssistant) return false;
+    return lastAssistant.content && (!lastAssistant.tool_calls || lastAssistant.tool_calls.length === 0) && this.turns >= 1;
+  }
+
   // --- API Communication ---
 
   async _callApi() {
-    this.abortController = new AbortController();
-
     const body = {
       model: this.config.model,
       messages: this.messages,
@@ -223,46 +242,75 @@ export class AgentLoop extends EventEmitter {
       max_tokens: this.config.maxResponseTokens || 4096,
     };
 
-    // Streaming for real-time output
     if (this.config.stream !== false) {
       body.stream = true;
       body.stream_options = { include_usage: true };
     }
 
     const url = `${this.config.apiBase}/chat/completions`;
+    const maxRetries = 3;
+    let lastError = null;
 
-    let response;
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}),
-          ...this.config.headers,
-        },
-        body: JSON.stringify(body),
-        signal: this.abortController.signal,
-      });
-    } catch (err) {
-      if (err.name === 'AbortError') return null;
-      this._writeLog({ type: 'error', text: `API request failed: ${err.message}` });
-      this.emit('error', { message: `Inference API unreachable: ${err.message}` });
-      return null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      this.abortController = new AbortController();
+
+      let response;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}),
+            ...this.config.headers,
+          },
+          body: JSON.stringify(body),
+          signal: this.abortController.signal,
+        });
+      } catch (err) {
+        if (err.name === 'AbortError') return null;
+        lastError = `Inference API unreachable: ${err.message}`;
+        if (attempt < 2) {
+          this._writeLog({ type: 'retry', attempt: attempt + 1, reason: lastError, delayMs: 2000 });
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+        this._writeLog({ type: 'error', text: `API request failed: ${err.message}` });
+        this.emit('error', { message: lastError });
+        return null;
+      }
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        const errMsg = `API error ${response.status}: ${text.slice(0, 500)}`;
+
+        if (response.status === 401 || response.status === 403) {
+          this._writeLog({ type: 'error', text: errMsg });
+          this.emit('error', { message: errMsg });
+          return null;
+        }
+
+        if ((response.status === 429 || response.status === 503) && attempt < maxRetries) {
+          const delay = Math.pow(2, attempt + 1) * 1000;
+          this._writeLog({ type: 'retry', attempt: attempt + 1, reason: errMsg, delayMs: delay });
+          await new Promise(r => setTimeout(r, delay));
+          lastError = errMsg;
+          continue;
+        }
+
+        this._writeLog({ type: 'error', text: errMsg });
+        this.emit('error', { message: errMsg });
+        return null;
+      }
+
+      if (body.stream) {
+        return this._parseSSE(response);
+      }
+      return this._parseJSON(response);
     }
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      const errMsg = `API error ${response.status}: ${text.slice(0, 500)}`;
-      this._writeLog({ type: 'error', text: errMsg });
-      this.emit('error', { message: errMsg });
-      return null;
-    }
-
-    // Parse streaming or non-streaming response
-    if (body.stream) {
-      return this._parseSSE(response);
-    }
-    return this._parseJSON(response);
+    this._writeLog({ type: 'error', text: `API failed after retries: ${lastError}` });
+    this.emit('error', { message: lastError });
+    return null;
   }
 
   async _parseSSE(response) {

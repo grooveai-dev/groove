@@ -454,6 +454,14 @@ export class ProcessManager {
       );
     }
 
+    // Validate explicit model against provider's supported models
+    if (config.model && config.model !== 'auto' && provider.constructor.models) {
+      const valid = provider.constructor.models.some(m => m.id === config.model);
+      if (!valid) {
+        throw new Error(`Model '${config.model}' is not available for ${provider.constructor.displayName}. Available: ${provider.constructor.models.map(m => m.id).join(', ')}`);
+      }
+    }
+
     // Resolve auto model routing before registering
     // Treat missing/null/empty model as 'auto' — GUI sends empty string for "Auto" option
     let resolvedModel = config.model;
@@ -753,12 +761,15 @@ For normal file edits within your scope, proceed without review.
         }
       });
 
-      // Wire errors — broadcast to GUI for display
+      // Wire errors — broadcast to GUI for display, crash on fatal API errors
       loop.on('error', ({ message }) => {
         this.daemon.broadcast({
           type: 'agent:output', agentId: agent.id,
           data: { type: 'activity', subtype: 'error', data: message },
         });
+        if ((message.includes('API error 4') && !message.includes('API error 429')) || message.includes('Inference API unreachable')) {
+          loop.stop();
+        }
       });
 
       // Start the agent loop with the fully assembled prompt
@@ -1833,6 +1844,9 @@ For normal file edits within your scope, proceed without review.
         type: 'agent:output', agentId: newAgent.id,
         data: { type: 'activity', subtype: 'error', data: errMsg },
       });
+      if ((errMsg.includes('API error 4') && !errMsg.includes('API error 429')) || errMsg.includes('Inference API unreachable')) {
+        loop.stop();
+      }
     });
 
     loop.start();

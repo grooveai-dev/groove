@@ -104,7 +104,7 @@ execSync('npm install --omit=dev', {
 const desktopPkg = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8'));
 const electronVersion = desktopPkg.devDependencies.electron.replace('^', '');
 console.log(`[bundle-daemon] Rebuilding better-sqlite3 for Electron ${electronVersion}...`);
-execSync(`npx @electron/rebuild -v ${electronVersion} -m . -o better-sqlite3`, {
+execSync(`npx --yes @electron/rebuild -v ${electronVersion} -m . -o better-sqlite3`, {
   cwd: moeBundleDir,
   stdio: 'inherit',
   env: { ...process.env, npm_config_workspaces: 'false' },

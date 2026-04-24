@@ -58,6 +58,7 @@ function ProviderCard({ provider, onKeyChange }) {
   const [customPathOpen, setCustomPathOpen] = useState(false);
   const [customPath, setCustomPath] = useState('');
   const [savingPath, setSavingPath] = useState(false);
+  const [loginPending, setLoginPending] = useState(false);
   const addToast = useGrooveStore((s) => s.addToast);
   const installProgress = useGrooveStore((s) => s.providerInstallProgress[provider.id]);
   const loginProvider = useGrooveStore((s) => s.loginProvider);
@@ -97,8 +98,11 @@ function ProviderCard({ provider, onKeyChange }) {
 
   async function handleLogin(body) {
     try {
+      setLoginPending(true);
       await loginProvider(provider.id, body);
-    } catch { /* handled in store */ }
+    } catch {
+      setLoginPending(false);
+    }
   }
 
   async function handleSavePath() {
@@ -310,54 +314,112 @@ function ProviderCard({ provider, onKeyChange }) {
 
           {/* Installed but needs auth */}
           {provider.installed && !isReady && !settingKey && !isInstalling && (
-            <div className="flex flex-col gap-2.5 flex-1">
-              {isSubscription ? (
+            <div className="flex flex-col gap-3 flex-1">
+              {/* ── Claude Code auth ── */}
+              {provider.id === 'claude-code' && !loginPending && (
                 <>
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-text-1 font-sans font-medium">Sign in with your Claude account</p>
+                    <p className="text-2xs text-text-3 font-sans">A browser window will open where you can sign in with your existing Anthropic account or Claude subscription.</p>
+                  </div>
+                  <Button variant="primary" size="sm" onClick={() => handleLogin()} className="w-full h-9 text-xs gap-1.5">
+                    <ExternalLink size={12} /> Sign In
+                  </Button>
+                  <button
+                    onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
+                    className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans text-center"
+                  >
+                    I have an API key instead
+                  </button>
+                </>
+              )}
+
+              {/* ── Codex auth ── */}
+              {provider.id === 'codex' && !loginPending && (
+                <>
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-text-1 font-sans font-medium">Sign in with your ChatGPT account</p>
+                    <p className="text-2xs text-text-3 font-sans">A browser window will open where you can sign in with your ChatGPT Plus or Teams subscription.</p>
+                  </div>
+                  <Button variant="primary" size="sm" onClick={() => handleLogin({ method: 'chatgpt-plus' })} className="w-full h-9 text-xs gap-1.5">
+                    <ExternalLink size={12} /> Sign In
+                  </Button>
+                  <button
+                    onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
+                    className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans text-center"
+                  >
+                    I have an API key instead
+                  </button>
+                </>
+              )}
+
+              {/* ── Gemini auth ── */}
+              {provider.id === 'gemini' && (
+                <>
+                  <div className="space-y-2">
+                    <p className="text-xs text-text-1 font-sans font-medium">Add your Gemini API key</p>
+                    <div className="space-y-1.5">
+                      <div className="flex items-start gap-2">
+                        <span className="text-2xs font-bold text-accent font-mono mt-0.5">1</span>
+                        <p className="text-2xs text-text-2 font-sans">
+                          Go to <button onClick={() => window.open('https://aistudio.google.com/apikey', '_blank')} className="text-accent hover:underline cursor-pointer font-sans">aistudio.google.com</button> and sign in with Google
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-2xs font-bold text-accent font-mono mt-0.5">2</span>
+                        <p className="text-2xs text-text-2 font-sans">Click "Create API Key" and copy it</p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-2xs font-bold text-accent font-mono mt-0.5">3</span>
+                        <p className="text-2xs text-text-2 font-sans">Paste it below</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <input
+                      value={keyInput}
+                      onChange={(e) => setKeyInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSetKey()}
+                      type={showKey ? 'text' : 'password'}
+                      placeholder="AIza..."
+                      className="w-full h-9 px-3 pr-9 text-xs bg-surface-0 border border-border rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+                      autoFocus
+                    />
+                    <button onClick={() => setShowKey(!showKey)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-4 hover:text-text-2 cursor-pointer">
+                      {showKey ? <EyeOff size={12} /> : <Eye size={12} />}
+                    </button>
+                  </div>
+                  <Button variant="primary" size="sm" onClick={handleSetKey} disabled={!keyInput.trim()} className="w-full h-8 text-xs">
+                    Save Key
+                  </Button>
+                </>
+              )}
+
+              {/* ── Any provider: login pending state ── */}
+              {(provider.id === 'claude-code' || provider.id === 'codex') && loginPending && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2 p-3 bg-accent/5 border border-accent/15 rounded-md">
+                    <Loader2 size={14} className="text-accent animate-spin" />
+                    <div>
+                      <p className="text-xs text-accent font-sans font-medium">Check your browser</p>
+                      <p className="text-2xs text-text-3 font-sans">Complete the sign-in in the browser window that opened.</p>
+                    </div>
+                  </div>
                   <Button
                     variant="primary"
                     size="sm"
-                    onClick={handleLogin}
-                    className="w-full h-8 text-2xs gap-1.5"
+                    onClick={() => { setLoginPending(false); if (onKeyChange) onKeyChange(); }}
+                    className="w-full h-8 text-xs gap-1.5"
                   >
-                    <ExternalLink size={11} /> Sign In with Anthropic
+                    <Check size={12} /> I've signed in
                   </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
-                    className="w-full h-8 text-2xs gap-1.5"
+                  <button
+                    onClick={() => setLoginPending(false)}
+                    className="text-2xs text-text-4 hover:text-text-2 cursor-pointer font-sans text-center"
                   >
-                    <Key size={11} /> Add API Key Instead
-                  </Button>
-                </>
-              ) : provider.id === 'codex' ? (
-                <>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
-                    className="w-full h-8 text-2xs gap-1.5"
-                  >
-                    <Key size={11} /> Add API Key
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => handleLogin({ method: 'chatgpt-plus' })}
-                    className="w-full h-8 text-2xs gap-1.5"
-                  >
-                    <ExternalLink size={11} /> Sign in with ChatGPT Plus
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
-                  className="w-full h-8 text-2xs gap-1.5"
-                >
-                  <Key size={11} /> Add API Key
-                </Button>
+                    Cancel
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -390,6 +452,21 @@ function ProviderCard({ provider, onKeyChange }) {
                 <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">
                   {provider.hasKey ? 'Update API Key' : `${provider.name} API Key`}
                 </label>
+                {!provider.hasKey && provider.id === 'claude-code' && (
+                  <p className="text-2xs text-text-3 font-sans mb-1.5">
+                    Get yours at <button onClick={() => window.open('https://console.anthropic.com/settings/keys', '_blank')} className="text-accent hover:underline cursor-pointer font-sans">console.anthropic.com</button>
+                  </p>
+                )}
+                {!provider.hasKey && provider.id === 'codex' && (
+                  <p className="text-2xs text-text-3 font-sans mb-1.5">
+                    Get yours at <button onClick={() => window.open('https://platform.openai.com/api-keys', '_blank')} className="text-accent hover:underline cursor-pointer font-sans">platform.openai.com</button>
+                  </p>
+                )}
+                {!provider.hasKey && provider.id === 'gemini' && (
+                  <p className="text-2xs text-text-3 font-sans mb-1.5">
+                    Get yours at <button onClick={() => window.open('https://aistudio.google.com/apikey', '_blank')} className="text-accent hover:underline cursor-pointer font-sans">aistudio.google.com</button>
+                  </p>
+                )}
                 <div className="relative">
                   <input
                     value={keyInput}

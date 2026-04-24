@@ -42,8 +42,13 @@ export function ChatView() {
   const setConversationMode = useGrooveStore((s) => s.setConversationMode);
   const setConversationModel = useGrooveStore((s) => s.setConversationModel);
 
+  const conversationRoles = useGrooveStore((s) => s.conversationRoles);
+  const setConversationRole = useGrooveStore((s) => s.setConversationRole);
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [replyContext, setReplyContext] = useState(null);
+
+  const activeRole = activeConversationId ? (conversationRoles?.[activeConversationId] || null) : null;
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId) || null;
   const messages = activeConversationId ? (conversationMessages[activeConversationId] || []) : [];
@@ -62,6 +67,11 @@ export function ChatView() {
     if (!activeConversationId) return;
     setConversationMode(activeConversationId, mode);
   }, [activeConversationId, setConversationMode]);
+
+  const handleRoleChange = useCallback((role) => {
+    if (!activeConversationId) return;
+    setConversationRole(activeConversationId, role);
+  }, [activeConversationId, setConversationRole]);
 
   const handleSend = useCallback((text) => {
     if (!activeConversationId) return;
@@ -116,7 +126,7 @@ export function ChatView() {
       <div className="flex-1 flex flex-col min-w-0">
         {activeConversation ? (
           <>
-            <ChatHeader conversation={activeConversation} model={currentModel} onModelChange={handleModelChange} onModeChange={handleModeChange} />
+            <ChatHeader conversation={activeConversation} model={currentModel} onModelChange={handleModelChange} onModeChange={handleModeChange} role={activeRole} onRoleChange={handleRoleChange} />
             <ChatMessages
               messages={messages}
               isStreaming={isStreaming}
@@ -134,6 +144,7 @@ export function ChatView() {
               currentModel={activeConversation.model}
               replyContext={replyContext}
               onClearReply={() => setReplyContext(null)}
+              role={activeRole}
             />
           </>
         ) : (

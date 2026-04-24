@@ -13,6 +13,14 @@ const API_STATUS_MESSAGES = [
   'Almost there...',
 ];
 
+function stripEmojis(text) {
+  if (!text) return '';
+  return text
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/[️‍⃣]/g, '')
+    .replace(/\s{2,}/g, ' ');
+}
+
 function CopyButton({ text, className }) {
   const [copied, setCopied] = useState(false);
   function handleCopy() {
@@ -194,13 +202,13 @@ function RenderedMarkdown({ text }) {
             );
           case 'ul':
             return (
-              <ul key={i} className="list-disc list-inside space-y-0.5 text-sm text-text-1 font-sans">
+              <ul key={i} className="list-disc list-inside space-y-0.5 text-sm text-text-0 font-sans">
                 {block.items.map((item, j) => <li key={j}><InlineMarkdown text={item} /></li>)}
               </ul>
             );
           case 'ol':
             return (
-              <ol key={i} className="list-decimal list-inside space-y-0.5 text-sm text-text-1 font-sans">
+              <ol key={i} className="list-decimal list-inside space-y-0.5 text-sm text-text-0 font-sans">
                 {block.items.map((item, j) => <li key={j}><InlineMarkdown text={item} /></li>)}
               </ol>
             );
@@ -219,7 +227,7 @@ function RenderedMarkdown({ text }) {
                     {block.rows.map((row, j) => (
                       <tr key={j} className="border-b border-border-subtle">
                         {row.map((cell, k) => (
-                          <td key={k} className="px-3 py-1.5 text-text-1"><InlineMarkdown text={cell} /></td>
+                          <td key={k} className="px-3 py-1.5 text-text-0"><InlineMarkdown text={cell} /></td>
                         ))}
                       </tr>
                     ))}
@@ -228,7 +236,7 @@ function RenderedMarkdown({ text }) {
               </div>
             );
           case 'paragraph':
-            return <p key={i} className="text-sm text-text-1 font-sans leading-relaxed whitespace-pre-wrap break-words"><InlineMarkdown text={block.text} /></p>;
+            return <p key={i} className="text-sm text-text-0 font-sans leading-relaxed whitespace-pre-wrap break-words"><InlineMarkdown text={block.text} /></p>;
           default:
             return null;
         }
@@ -251,13 +259,16 @@ function UserMessage({ msg }) {
 }
 
 function AssistantMessage({ msg, model }) {
+  const cleanText = stripEmojis(msg.text);
   return (
     <div className="flex gap-2.5">
       <Avatar name={model || 'assistant'} role="assistant" size="sm" className="mt-1 flex-shrink-0" />
       <div className="max-w-[85%]">
         {model && <div className="text-2xs text-text-3 font-sans mb-1 font-medium">{model}</div>}
-        <div className="text-sm text-text-1 font-sans whitespace-pre-wrap break-words leading-relaxed">
-          <RenderedMarkdown text={msg.text} />
+        <div className="px-3.5 py-2.5 rounded-2xl rounded-bl-md bg-surface-4 border border-border-subtle">
+          <div className="text-sm text-text-0 font-sans leading-relaxed">
+            <RenderedMarkdown text={cleanText} />
+          </div>
         </div>
         <div className="text-2xs text-text-4 font-sans mt-1">{timeAgo(msg.timestamp)}</div>
       </div>

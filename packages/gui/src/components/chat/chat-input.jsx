@@ -4,7 +4,7 @@ import { Send, Loader2, Square, Paperclip, Image as ImageIcon } from 'lucide-rea
 import { cn } from '../../lib/cn';
 import { formatModelName } from './model-picker';
 
-export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImageModel, currentModel, replyContext, onClearReply }) {
+export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImageModel, currentModel, replyContext, onClearReply, role }) {
   const [input, setInput] = useState('');
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -56,7 +56,9 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
     ? 'Select a model to start chatting...'
     : isImageModel
       ? 'Describe the image you want to generate...'
-      : 'Send a message...';
+      : role
+        ? `Ask your ${role}...`
+        : 'Send a message...';
 
   return (
     <div className="border-t border-border-subtle px-4 py-3 bg-surface-1">

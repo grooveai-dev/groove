@@ -90,6 +90,7 @@ export const useGrooveStore = create((set, get) => ({
   conversationMessages: loadJSON('groove:conversationMessages'),
   sendingMessage: false,
   streamingConversationId: null,
+  conversationRoles: loadJSON('groove:conversationRoles'),
 
   // ── Approvals ─────────────────────────────────────────────
   pendingApprovals: [],
@@ -2042,7 +2043,10 @@ export const useGrooveStore = create((set, get) => ({
           ? (conversations[0]?.id || null)
           : s.activeConversationId;
         localStorage.setItem('groove:activeConversationId', activeConversationId || '');
-        return { conversations, conversationMessages, activeConversationId };
+        const conversationRoles = { ...s.conversationRoles };
+        delete conversationRoles[id];
+        persistJSON('groove:conversationRoles', conversationRoles);
+        return { conversations, conversationMessages, conversationRoles, activeConversationId };
       });
     } catch (err) {
       get().addToast('error', 'Delete failed', err.message);
@@ -2072,6 +2076,19 @@ export const useGrooveStore = create((set, get) => ({
     localStorage.setItem('groove:activeConversationId', id || '');
   },
 
+  setConversationRole(id, role) {
+    set((s) => {
+      const roles = { ...s.conversationRoles };
+      if (role) {
+        roles[id] = role;
+      } else {
+        delete roles[id];
+      }
+      persistJSON('groove:conversationRoles', roles);
+      return { conversationRoles: roles };
+    });
+  },
+
   async sendChatMessage(conversationId, message) {
     const conv = get().conversations.find((c) => c.id === conversationId);
     if (!conv) return;
@@ -2090,6 +2107,16 @@ export const useGrooveStore = create((set, get) => ({
       if (conv.mode === 'api' || !conv.mode) {
         const history = get().conversationMessages[conversationId] || [];
         body.history = history.slice(0, -1);
+
+        const role = get().conversationRoles?.[conversationId];
+        const rules = ['Never use emojis in your responses.', 'Be professional, concise, and direct.'];
+        if (role) rules.unshift(`You are a professional ${role}. Respond with deep expertise in that domain.`);
+        const systemCtx = rules.join(' ');
+        body.history = [
+          { from: 'user', text: `Instructions: ${systemCtx}` },
+          { from: 'assistant', text: 'Understood.' },
+          ...body.history,
+        ];
       }
       await api.post(`/conversations/${encodeURIComponent(conversationId)}/message`, body);
     } catch (err) {

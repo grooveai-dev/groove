@@ -1,13 +1,31 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useRef, useEffect } from 'react';
-import { Pencil, Pin, PinOff, Trash2, Hash, MoreHorizontal, Zap, Bot } from 'lucide-react';
+import { Pencil, Pin, PinOff, Trash2, Hash, MoreHorizontal, Zap, Bot, ChevronDown, X } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { fmtNum } from '../../lib/format';
 import { ModelPicker, formatModelName } from './model-picker';
 import { Tooltip } from '../ui/tooltip';
 import { cn } from '../../lib/cn';
+import { roleColor } from '../../lib/status';
 
-export function ChatHeader({ conversation, model, onModelChange, onModeChange }) {
+const CHAT_ROLES = [
+  { id: 'fullstack', label: 'Fullstack', desc: 'End-to-end engineering' },
+  { id: 'backend', label: 'Backend', desc: 'APIs, services, databases' },
+  { id: 'frontend', label: 'Frontend', desc: 'UI, components, styling' },
+  { id: 'devops', label: 'DevOps', desc: 'CI/CD, infra, deployment' },
+  { id: 'security', label: 'Security', desc: 'Audits, vulnerabilities' },
+  { id: 'database', label: 'Database', desc: 'Schema, migrations, queries' },
+  { id: 'testing', label: 'Testing', desc: 'Tests, coverage, QA' },
+  { id: 'docs', label: 'Docs', desc: 'Documentation, guides' },
+  { id: 'cmo', label: 'CMO', desc: 'Marketing, content, growth' },
+  { id: 'cfo', label: 'CFO', desc: 'Finance, metrics, forecasting' },
+  { id: 'ea', label: 'EA', desc: 'Executive assistant' },
+  { id: 'analyst', label: 'Analyst', desc: 'Data analysis, insights' },
+  { id: 'creative', label: 'Writer', desc: 'Copy, articles, proposals' },
+  { id: 'support', label: 'Support', desc: 'Customer support, FAQs' },
+];
+
+export function ChatHeader({ conversation, model, onModelChange, onModeChange, role, onRoleChange }) {
   const renameConversation = useGrooveStore((s) => s.renameConversation);
   const pinConversation = useGrooveStore((s) => s.pinConversation);
   const deleteConversation = useGrooveStore((s) => s.deleteConversation);
@@ -15,8 +33,10 @@ export function ChatHeader({ conversation, model, onModelChange, onModeChange })
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(conversation.title || '');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
   const inputRef = useRef(null);
   const menuRef = useRef(null);
+  const roleMenuRef = useRef(null);
 
   useEffect(() => {
     setTitle(conversation.title || '');
@@ -35,6 +55,15 @@ export function ChatHeader({ conversation, model, onModelChange, onModeChange })
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!roleMenuOpen) return;
+    function handleClick(e) {
+      if (roleMenuRef.current && !roleMenuRef.current.contains(e.target)) setRoleMenuOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [roleMenuOpen]);
 
   function handleRename() {
     const trimmed = title.trim();
@@ -99,6 +128,58 @@ export function ChatHeader({ conversation, model, onModelChange, onModeChange })
               <Bot size={11} /> Agent
             </button>
           </Tooltip>
+        </div>
+
+        <div ref={roleMenuRef} className="relative">
+          <button
+            onClick={() => setRoleMenuOpen(!roleMenuOpen)}
+            className={cn(
+              'flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-2xs font-semibold font-sans transition-colors cursor-pointer border',
+              role
+                ? 'border-current/20'
+                : 'bg-surface-3 border-border-subtle text-text-3 hover:text-text-1',
+            )}
+            style={role ? { background: roleColor(role).bg, color: roleColor(role).text, borderColor: `${roleColor(role).border}33` } : undefined}
+          >
+            {role ? CHAT_ROLES.find((r) => r.id === role)?.label || role : 'Role'}
+            {role ? (
+              <X
+                size={10}
+                className="opacity-60 hover:opacity-100"
+                onClick={(e) => { e.stopPropagation(); onRoleChange?.(null); }}
+              />
+            ) : (
+              <ChevronDown size={10} />
+            )}
+          </button>
+          {roleMenuOpen && (
+            <div className="absolute left-0 top-full mt-1 w-56 rounded-lg border border-border bg-surface-1 shadow-xl z-50 py-1 max-h-72 overflow-y-auto">
+              {CHAT_ROLES.map((r) => {
+                const rc = roleColor(r.id);
+                const active = role === r.id;
+                return (
+                  <button
+                    key={r.id}
+                    onClick={() => { onRoleChange?.(r.id); setRoleMenuOpen(false); }}
+                    className={cn(
+                      'w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-3 cursor-pointer transition-colors',
+                      active && 'bg-surface-3',
+                    )}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ background: rc.text }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-semibold font-sans text-text-0">{r.label}</div>
+                      <div className="text-2xs text-text-3 font-sans">{r.desc}</div>
+                    </div>
+                    {active && <span className="text-2xs text-accent font-mono">active</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <ModelPicker

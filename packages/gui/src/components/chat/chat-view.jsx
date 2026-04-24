@@ -133,6 +133,7 @@ export function ChatView() {
               model={activeConversation.model}
               mode={activeConversation.mode || 'api'}
               onImageReply={handleImageReply}
+              role={activeRole}
             />
             <ChatInput
               onSend={handleSend}

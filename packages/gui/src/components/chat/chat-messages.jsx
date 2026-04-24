@@ -258,15 +258,17 @@ function UserMessage({ msg }) {
   );
 }
 
-function AssistantMessage({ msg, model }) {
+function AssistantMessage({ msg, model, role }) {
   const cleanText = stripEmojis(msg.text);
+  const displayName = model || 'Assistant';
+  const avatarRole = role || 'chat';
   return (
     <div className="flex gap-2.5">
-      <Avatar name={model || 'assistant'} role="assistant" size="sm" className="mt-1 flex-shrink-0" />
+      <Avatar name={displayName} role={avatarRole} size="sm" className="mt-1 flex-shrink-0" />
       <div className="max-w-[85%]">
-        {model && <div className="text-2xs text-text-3 font-sans mb-1 font-medium">{model}</div>}
-        <div className="px-3.5 py-2.5 rounded-2xl rounded-bl-md bg-surface-4 border border-border-subtle">
-          <div className="text-sm text-text-0 font-sans leading-relaxed">
+        <div className="text-2xs text-text-3 font-sans mb-1 font-medium">{displayName}</div>
+        <div className="border-l-2 border-accent/40 pl-3.5 py-1">
+          <div className="text-sm text-text-1 font-sans whitespace-pre-wrap break-words leading-relaxed">
             <RenderedMarkdown text={cleanText} />
           </div>
         </div>
@@ -454,7 +456,7 @@ function ApiTypingIndicator() {
   );
 }
 
-export function ChatMessages({ messages, isStreaming, model, mode, onImageReply }) {
+export function ChatMessages({ messages, isStreaming, model, mode, onImageReply, role }) {
   const scrollRef = useRef(null);
   const isAtBottomRef = useRef(true);
 
@@ -489,7 +491,7 @@ export function ChatMessages({ messages, isStreaming, model, mode, onImageReply 
         if (msg.type === 'image') return <ImageMessage key={i} msg={msg} onReply={onImageReply} />;
         if (msg.from === 'user') return <UserMessage key={i} msg={msg} />;
         if (msg.from === 'system') return <SystemMessage key={i} msg={msg} />;
-        return <AssistantMessage key={i} msg={msg} model={model} />;
+        return <AssistantMessage key={i} msg={msg} model={model} role={role} />;
       })}
       {isStreaming && (
         mode === 'agent' ? (

@@ -739,6 +739,22 @@ For normal file edits within your scope, proceed without review.
           });
         }
 
+        if (this.daemon.trajectoryCapture) {
+          try {
+            if (status === 'completed') {
+              this.daemon.trajectoryCapture.onAgentComplete(agent.id, {
+                status: 'SUCCESS', exit_code: code || 0, signal,
+              });
+            } else {
+              this.daemon.trajectoryCapture.onAgentCrash(agent.id,
+                signal ? 'Killed by signal ' + signal : 'Exit status ' + status
+              );
+            }
+            const count = (this.daemon.state.get('training_sessions_captured') || 0) + 1;
+            this.daemon.state.set('training_sessions_captured', count);
+          } catch (e) { /* fail silent */ }
+        }
+
         this.daemon.broadcast({ type: 'agent:exit', agentId: agent.id, code: code || 0, signal, status });
         if (this.daemon.integrations) this.daemon.integrations.refreshMcpJson();
         if (status === 'completed' && this.daemon.journalist) {
@@ -1888,6 +1904,13 @@ For normal file edits within your scope, proceed without review.
     if (loop) {
       await loop.stop();
       this.handles.delete(agentId);
+      if (this.daemon.trajectoryCapture) {
+        try {
+          this.daemon.trajectoryCapture.onAgentComplete(agentId, { status: 'STOPPED' });
+          const count = (this.daemon.state.get('training_sessions_captured') || 0) + 1;
+          this.daemon.state.set('training_sessions_captured', count);
+        } catch (e) { /* fail silent */ }
+      }
       this.daemon.registry.update(agentId, { status: 'stopped', pid: null });
       return;
     }

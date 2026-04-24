@@ -15,6 +15,7 @@ import { listProviders, getProvider, clearInstallCache, getProviderMetadata, get
 import { OllamaProvider } from './providers/ollama.js';
 import { ClaudeCodeProvider } from './providers/claude-code.js';
 import { supportsSignalFlag, compareSemver, parseSemver } from './providers/groove-network.js';
+import { ConsentManager } from '../../../moe-training/client/index.js';
 import { validateAgentConfig } from './validate.js';
 import { ROLE_INTEGRATIONS, wrapWithRoleReminder } from './process.js';
 
@@ -4402,6 +4403,81 @@ Keep responses concise. Help them think, don't lecture them about the system the
     res.json({ ok: true });
   });
 
+  // --- Training Data ---
+
+  app.get('/api/training/status', (req, res) => {
+    let userId = null;
+    try { userId = ConsentManager.isCaptureEnabled() ? ConsentManager.getOrCreateUserId() : null; } catch (e) { /* no db yet */ }
+    res.json({
+      optedIn: !!daemon.config.training_opt_in,
+      userId: userId ? userId.substring(0, 8) + '...' : null,
+      captureActive: !!daemon.trajectoryCapture,
+      sessionsCaptured: daemon.state.get('training_sessions_captured') || 0,
+      envelopesSent: daemon.state.get('training_envelopes_sent') || 0,
+    });
+  });
+
+  app.post('/api/training/opt-in', async (req, res) => {
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be boolean' });
+
+    daemon.config.training_opt_in = enabled;
+    const { saveConfig } = await import('./firstrun.js');
+    saveConfig(daemon.grooveDir, daemon.config);
+
+    if (enabled) {
+      const userId = ConsentManager.getOrCreateUserId();
+      const consent = new ConsentManager();
+      try {
+        consent.recordConsent(userId, true, '1.0');
+      } finally {
+        consent.close();
+      }
+      await daemon._initTrajectoryCapture();
+      daemon.state.set('training_enrolled_at', new Date().toISOString());
+    } else {
+      if (daemon.trajectoryCapture) {
+        try { await daemon.trajectoryCapture.shutdown(); } catch (e) { /* */ }
+        daemon.trajectoryCapture = null;
+      }
+      try {
+        const userId = ConsentManager.getOrCreateUserId();
+        const consent = new ConsentManager();
+        try {
+          consent.revokeConsent(userId);
+        } finally {
+          consent.close();
+        }
+      } catch (e) { /* no user_id yet */ }
+    }
+
+    daemon.broadcast({ type: 'training:status', data: { optedIn: enabled, captureActive: !!daemon.trajectoryCapture } });
+    if (daemon.audit) daemon.audit.log('training.consent', { opt_in: enabled });
+    res.json({ ok: true, optedIn: enabled });
+  });
+
+  app.post('/api/training/opt-in/delete', async (req, res) => {
+    try {
+      daemon.config.training_opt_in = false;
+      const { saveConfig } = await import('./firstrun.js');
+      saveConfig(daemon.grooveDir, daemon.config);
+      if (daemon.trajectoryCapture) {
+        try { await daemon.trajectoryCapture.shutdown(); } catch (e) { /* */ }
+        daemon.trajectoryCapture = null;
+      }
+      try {
+        const userId = ConsentManager.getOrCreateUserId();
+        const consent = new ConsentManager();
+        try { consent.revokeConsent(userId); } finally { consent.close(); }
+      } catch (e) { /* */ }
+      daemon.broadcast({ type: 'training:status', data: { optedIn: false, captureActive: false } });
+      if (daemon.audit) daemon.audit.log('training.delete', {});
+      res.json({ ok: true, deleted: true });
+    } catch (e) {
+      res.status(500).json({ error: 'Failed to delete data' });
+    }
+  });
+
   // --- Config ---
 
   app.get('/api/config', (req, res) => {
@@ -4419,6 +4495,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       'port', 'journalistInterval', 'rotationThreshold', 'autoRotation',
       'qcThreshold', 'maxAgents', 'defaultProvider', 'defaultWorkingDir',
       'onboardingDismissed', 'defaultModel', 'defaultChatProvider', 'defaultChatModel',
+      'training_opt_in',
     ];
     for (const key of Object.keys(req.body)) {
       if (!ALLOWED_KEYS.includes(key)) {

@@ -43,6 +43,7 @@ import { LlamaServerManager } from './llama-server.js';
 import { RepoImporter } from './repo-import.js';
 import { ConversationManager } from './conversations.js';
 import { Toys } from './toys.js';
+import { TrajectoryCapture, ConsentManager } from '../../../moe-training/client/index.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 import { bindDaemon as bindGrooveNetworkDaemon } from './providers/groove-network.js';
 import { setProviderPaths } from './providers/index.js';
@@ -151,6 +152,7 @@ export class Daemon {
     this.tunnelManager = new TunnelManager(this);
     this.repoImporter = new RepoImporter(this);
     this.toys = new Toys(this);
+    this.trajectoryCapture = null;
 
     // Subscription state (populated by Electron IPC or direct auth)
     this.authToken = null;
@@ -390,6 +392,20 @@ export class Daemon {
         client.send(payload);
       }
     }
+    if (this.trajectoryCapture && message.type) {
+      try {
+        if (['approval:request', 'approval:resolved', 'conflict:detected', 'qc:activated'].includes(message.type)) {
+          const agentId = message.data?.agentId || message.agentId;
+          if (agentId) {
+            this.trajectoryCapture.onCoordinationEvent(agentId, {
+              type: message.type,
+              data: message.data,
+              timestamp: Date.now(),
+            });
+          }
+        }
+      } catch (e) { /* fail silent */ }
+    }
   }
 
   async setAuthToken(token) {
@@ -542,6 +558,7 @@ export class Daemon {
         printWelcome(this.port, this.host, this._firstRun);
 
         // Start background services
+        this._initTrajectoryCapture().catch(() => {});
         this.journalist.start();
         this.rotator.start();
         this.scheduler.start();
@@ -625,6 +642,23 @@ export class Daemon {
         resolvePromise(this);
       });
     });
+  }
+
+  async _initTrajectoryCapture() {
+    if (!this.config.training_opt_in) return;
+    try {
+      if (ConsentManager.isCaptureEnabled()) {
+        const pkgPath = new URL('../package.json', import.meta.url);
+        const version = JSON.parse(readFileSync(pkgPath, 'utf8')).version;
+        this.trajectoryCapture = new TrajectoryCapture({
+          centralCommandUrl: process.env.GROOVE_CENTRAL_URL || 'https://api.groovedev.ai',
+          grooveVersion: version,
+        });
+        this.trajectoryCapture.init();
+      }
+    } catch (e) {
+      // Training capture is never critical
+    }
   }
 
   _startGarbageCollector() {
@@ -736,6 +770,12 @@ export class Daemon {
 
     // Disconnect all SSH tunnels
     this.tunnelManager.shutdown();
+
+    // Shut down training capture
+    if (this.trajectoryCapture) {
+      try { await this.trajectoryCapture.shutdown(); } catch (e) { /* fail silent */ }
+      this.trajectoryCapture = null;
+    }
 
     // Kill all agent processes, stop MCP servers, and stop inference servers
     await this.processes.killAll();

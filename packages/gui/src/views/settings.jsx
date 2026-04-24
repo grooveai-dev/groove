@@ -13,10 +13,11 @@ import { Sheet, SheetContent } from '../components/ui/sheet';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { fmtUptime } from '../lib/format';
+import { Dialog, DialogContent } from '../components/ui/dialog';
 import {
   Key, Eye, EyeOff, Check, Cpu, Download, Loader2, RefreshCw, Terminal, Copy,
   FolderOpen, FolderSearch, Users, Gauge, ChevronRight,
-  ShieldCheck, Settings, Lock,
+  ShieldCheck, Settings, Lock, Database, Shield,
   Newspaper, Radio, Send, MessageSquare, MessageCircle,
   Plus, Trash2, Plug, PlugZap, TestTube, X, HelpCircle, ExternalLink,
 } from 'lucide-react';
@@ -1304,6 +1305,168 @@ function AddGatewayCard({ existingTypes, onAdd }) {
   );
 }
 
+/* ── Training Data Section ────────────────────────────────── */
+
+function TrainingDataSection() {
+  const trainingOptIn = useGrooveStore((s) => s.trainingOptIn);
+  const trainingStats = useGrooveStore((s) => s.trainingStats);
+  const setTrainingOptIn = useGrooveStore((s) => s.setTrainingOptIn);
+  const fetchTrainingStatus = useGrooveStore((s) => s.fetchTrainingStatus);
+  const addToast = useGrooveStore((s) => s.addToast);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => { fetchTrainingStatus(); }, []);
+
+  function handleToggle(next) {
+    if (next) {
+      setConsentOpen(true);
+    } else {
+      setTrainingOptIn(false);
+    }
+  }
+
+  async function handleAgree() {
+    await setTrainingOptIn(true);
+    setConsentOpen(false);
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await api.post('/training/opt-in/delete');
+      useGrooveStore.setState({ trainingOptIn: false, trainingStats: null });
+      addToast('info', 'Training data deleted');
+      setDeleteOpen(false);
+    } catch (err) {
+      addToast('error', 'Failed to delete data', err.message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const sessions = trainingStats?.sessionsCaptured ?? 0;
+  const envelopes = trainingStats?.envelopesSent ?? 0;
+  const active = trainingStats?.captureActive ?? false;
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2.5 px-0.5">
+        <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Training Data</span>
+        <div className="flex-1 h-px bg-border-subtle" />
+      </div>
+
+      {/* Opt-in card */}
+      <div className="rounded-lg border border-border-subtle bg-surface-1 px-4 py-3.5 max-w-md space-y-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-6 h-6 rounded bg-accent/8 flex items-center justify-center flex-shrink-0">
+            <Database size={12} className="text-accent" />
+          </div>
+          <div className="flex-1">
+            <div className="text-[13px] font-medium text-text-0 font-sans leading-tight">Share Usage Data</div>
+            <div className="text-2xs text-text-4 font-sans leading-relaxed mt-0.5">
+              Contribute anonymized session data to train Groove&apos;s MoE models. All data is PII-scrubbed before leaving your machine.
+            </div>
+          </div>
+          <Toggle value={trainingOptIn} onChange={handleToggle} />
+        </div>
+
+        {/* Stats panel — only when opted in */}
+        {trainingOptIn && (
+          <div className="border-t border-border-subtle pt-3 space-y-2.5">
+            {sessions === 0 && envelopes === 0 ? (
+              <div className="text-2xs text-text-3 font-sans">
+                No data captured yet — stats will appear after your first agent session.
+              </div>
+            ) : (
+              <div className="flex items-center gap-4">
+                <div>
+                  <div className="text-2xs text-text-2 font-sans">Sessions</div>
+                  <div className="text-sm font-semibold text-text-0 font-mono">{sessions}</div>
+                </div>
+                <div>
+                  <div className="text-2xs text-text-2 font-sans">Envelopes</div>
+                  <div className="text-sm font-semibold text-text-0 font-mono">{envelopes}</div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <StatusDot status={active ? 'running' : 'crashed'} size="sm" />
+                  <span className="text-2xs text-text-2 font-sans">{active ? 'Capturing' : 'Idle'}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Delete data */}
+            <div>
+              <Button variant="ghost" size="sm" onClick={() => setDeleteOpen(true)} className="h-7 text-2xs text-danger hover:text-danger gap-1.5">
+                <Trash2 size={10} />
+                Delete My Data
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Consent dialog */}
+      <Dialog open={consentOpen} onOpenChange={setConsentOpen}>
+        <DialogContent title="Data Collection Consent" description="Review what data is collected and how it is used.">
+          <div className="px-5 py-4 space-y-3">
+            <div className="space-y-2.5 text-xs text-text-1 font-sans leading-relaxed">
+              <div className="flex items-start gap-2.5">
+                <Database size={13} className="text-accent flex-shrink-0 mt-0.5" />
+                <div><span className="font-semibold text-text-0">What is collected:</span> Agent session trajectories — thoughts, tool calls, observations, and outcomes.</div>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <Cpu size={13} className="text-accent flex-shrink-0 mt-0.5" />
+                <div><span className="font-semibold text-text-0">How it is used:</span> Training MoE expert models that become Groove agents.</div>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <Shield size={13} className="text-accent flex-shrink-0 mt-0.5" />
+                <div><span className="font-semibold text-text-0">PII protection:</span> 13 categories of sensitive data (emails, API keys, file paths, etc.) are automatically scrubbed before transmission.</div>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <Settings size={13} className="text-accent flex-shrink-0 mt-0.5" />
+                <div><span className="font-semibold text-text-0">Opt out anytime:</span> Toggle the setting OFF to stop collection immediately.</div>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <Trash2 size={13} className="text-danger flex-shrink-0 mt-0.5" />
+                <div><span className="font-semibold text-text-0">Delete data:</span> Permanently delete all previously collected data at any time.</div>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 px-5 py-4 border-t border-border-subtle">
+            <Button variant="primary" size="sm" onClick={handleAgree} className="flex-1 h-8 text-xs">
+              I Agree — Start Contributing
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setConsentOpen(false)} className="h-8 text-xs px-3">
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent title="Delete Training Data" description="Confirm permanent deletion of all collected training data.">
+          <div className="px-5 py-4">
+            <p className="text-xs text-text-1 font-sans leading-relaxed">
+              This will permanently delete all your collected training data and opt you out. This cannot be undone.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 px-5 py-4 border-t border-border-subtle">
+            <Button variant="danger" size="sm" onClick={handleDelete} disabled={deleting} className="flex-1 h-8 text-xs">
+              {deleting ? 'Deleting...' : 'Delete All Data'}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setDeleteOpen(false)} className="h-8 text-xs px-3">
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 /* ── Early Access Section ─────────────────────────────────── */
 
 function EarlyAccessSection() {
@@ -1618,6 +1781,9 @@ export default function SettingsView() {
 
           {/* ═══════ EARLY ACCESS ═══════ */}
           <EarlyAccessSection />
+
+          {/* ═══════ TRAINING DATA ═══════ */}
+          <TrainingDataSection />
 
         </div>
       </ScrollArea>

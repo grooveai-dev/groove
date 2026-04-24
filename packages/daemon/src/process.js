@@ -466,6 +466,15 @@ export class ProcessManager {
       model: isAutoRouted ? null : config.model, // Set after routing
     });
 
+    if (this.daemon.trajectoryCapture) {
+      try {
+        const teamSize = registry.getAll().filter(a => a.status === 'active' || a.status === 'running' || a.status === 'starting').length;
+        this.daemon.trajectoryCapture.onAgentSpawn(
+          agent.id, providerName, config.model || null, config.role, teamSize
+        ).catch(() => {});
+      } catch (e) { /* fail silent */ }
+    }
+
     // Auto-route: let the router pick the model based on role/complexity
     if (isAutoRouted) {
       const { router } = this.daemon;
@@ -668,6 +677,12 @@ For normal file edits within your scope, proceed without review.
     mkdirSync(logDir, { recursive: true });
     const logPath = resolve(logDir, `${sanitizeFilename(agent.name)}.log`);
     const logStream = createWriteStream(logPath, { flags: 'a', mode: 0o600 });
+
+    // Inject API key from credential store for agent-loop providers
+    if (provider.constructor.useAgentLoop && this.daemon.credentials) {
+      const storedKey = this.daemon.credentials.getKey(providerName);
+      if (storedKey) spawnConfig.apiKey = storedKey;
+    }
 
     // ─── Agent Loop path (local models with built-in agentic runtime) ───
     if (provider.constructor.useAgentLoop) {
@@ -878,6 +893,22 @@ For normal file edits within your scope, proceed without review.
         });
       }
 
+      if (this.daemon.trajectoryCapture) {
+        try {
+          if (finalStatus === 'completed') {
+            this.daemon.trajectoryCapture.onAgentComplete(agent.id, {
+              status: 'SUCCESS', exit_code: code, signal,
+            });
+          } else {
+            this.daemon.trajectoryCapture.onAgentCrash(agent.id,
+              signal ? 'Killed by signal ' + signal : 'Exit code ' + code
+            );
+          }
+          const count = (this.daemon.state.get('training_sessions_captured') || 0) + 1;
+          this.daemon.state.set('training_sessions_captured', count);
+        } catch (e) { /* fail silent */ }
+      }
+
       this.daemon.broadcast({
         type: 'agent:exit',
         agentId: agent.id,
@@ -1024,6 +1055,12 @@ For normal file edits within your scope, proceed without review.
         if (output) this._handleAgentOutput(agentId, output);
       } catch (err) {
         console.error(`[Groove] parseOutput error for ${agentId}: ${err.message}`);
+      }
+      if (this.daemon.trajectoryCapture) {
+        try {
+          const parsed = JSON.parse(line);
+          this.daemon.trajectoryCapture.onStdoutLine(agentId, parsed);
+        } catch (e) { /* fail silent — non-JSON lines are expected */ }
       }
     }
   }
@@ -1500,6 +1537,15 @@ For normal file edits within your scope, proceed without review.
     const agent = registry.get(agentId);
     if (!agent) throw new Error(`Agent ${agentId} not found`);
 
+    // Agent-loop providers: resume from saved session file
+    const resumeProvider = getProvider(agent.provider || 'claude-code');
+    if (resumeProvider?.constructor?.useAgentLoop) {
+      const sessionPath = resolve(this.daemon.grooveDir, 'sessions', `${agentId}.json`);
+      if (existsSync(sessionPath)) {
+        return this._resumeAgentLoop(agentId, agent, message, resumeProvider);
+      }
+    }
+
     // If no session ID, fall back to rotation (handoff brief)
     if (!agent.sessionId) {
       return this.daemon.rotator.rotate(agentId, { additionalPrompt: message });
@@ -1645,6 +1691,155 @@ For normal file edits within your scope, proceed without review.
     return newAgent;
   }
 
+  async _resumeAgentLoop(agentId, agent, message, provider) {
+    const { registry, locks } = this.daemon;
+    const config = { ...agent };
+
+    if (this.handles.has(agentId)) {
+      await this.kill(agentId);
+    }
+    registry.remove(agentId);
+    locks.release(agentId);
+
+    const newAgent = registry.add({
+      role: config.role,
+      scope: config.scope,
+      provider: config.provider,
+      model: config.model,
+      prompt: config.prompt,
+      permission: config.permission,
+      workingDir: config.workingDir || undefined,
+      name: config.name,
+      teamId: config.teamId,
+    });
+
+    if (config.tokensUsed > 0) {
+      registry.update(newAgent.id, { tokensUsed: config.tokensUsed });
+    }
+
+    if (newAgent.scope?.length > 0) {
+      locks.register(newAgent.id, newAgent.scope, newAgent.workingDir);
+    }
+
+    // Move session file from old agent ID to new agent ID
+    const sessionsDir = resolve(this.daemon.grooveDir, 'sessions');
+    const oldSessionPath = resolve(sessionsDir, `${agentId}.json`);
+    const newSessionPath = resolve(sessionsDir, `${newAgent.id}.json`);
+    if (oldSessionPath !== newSessionPath && existsSync(oldSessionPath)) {
+      try {
+        mkdirSync(sessionsDir, { recursive: true });
+        copyFileSync(oldSessionPath, newSessionPath);
+        unlinkSync(oldSessionPath);
+      } catch { /* AgentLoop will start fresh if file is missing */ }
+    }
+
+    const logDir = resolve(this.daemon.grooveDir, 'logs');
+    mkdirSync(logDir, { recursive: true });
+    const logPath = resolve(logDir, `${sanitizeFilename(newAgent.name)}.log`);
+    const logStream = createWriteStream(logPath, { flags: 'a', mode: 0o600 });
+    logStream.write(`[${new Date().toISOString()}] GROOVE resuming agent-loop session\n`);
+
+    // Inject API key
+    const spawnConfig = { ...newAgent, ...config };
+    if (this.daemon.credentials) {
+      const storedKey = this.daemon.credentials.getKey(newAgent.provider);
+      if (storedKey) spawnConfig.apiKey = storedKey;
+    }
+
+    const loopConfig = provider.getLoopConfig(spawnConfig);
+    const loop = new AgentLoop({ daemon: this.daemon, agent: newAgent, loopConfig, logStream });
+
+    this.handles.set(newAgent.id, { loop, logStream });
+    registry.update(newAgent.id, { status: 'running' });
+
+    if (this.daemon.timeline) {
+      this.daemon.timeline.recordEvent('spawn', {
+        agentId: newAgent.id, agentName: newAgent.name, role: newAgent.role,
+        provider: newAgent.provider, model: loopConfig.model,
+      });
+    }
+
+    loop.on('output', (output) => {
+      this._handleAgentOutput(newAgent.id, output);
+    });
+
+    loop.on('exit', ({ code, signal, status }) => {
+      logStream.write(`[${new Date().toISOString()}] Agent loop exited: status=${status}\n`);
+      logStream.end();
+      this.handles.delete(newAgent.id);
+
+      const throttle = this._streamThrottle.get(newAgent.id);
+      if (throttle?.timer) clearTimeout(throttle.timer);
+      this._streamThrottle.delete(newAgent.id);
+      this.peakContextUsage.delete(newAgent.id);
+      this.pendingMessages.delete(newAgent.id);
+      registry.update(newAgent.id, { status, pid: null });
+
+      const agentData = registry.get(newAgent.id);
+
+      if (this.daemon.timeline) {
+        const evtType = status === 'completed' ? 'complete' : status === 'crashed' ? 'crash' : 'kill';
+        this.daemon.timeline.recordEvent(evtType, {
+          agentId: newAgent.id, agentName: newAgent.name, role: newAgent.role,
+          finalTokens: agentData?.tokensUsed || 0, costUsd: agentData?.costUsd || 0,
+        });
+      }
+
+      this.daemon.broadcast({ type: 'agent:exit', agentId: newAgent.id, code: code || 0, signal, status });
+      if (this.daemon.integrations) this.daemon.integrations.refreshMcpJson();
+
+      if (status === 'completed' && this.daemon.journalist) {
+        const turns = agentData?.turns || 0;
+        const tok = agentData?.tokensUsed || 0;
+        if (turns > 1 || tok >= 100) this.daemon.journalist.requestSynthesis('completion');
+      }
+      this._checkPhase2(newAgent.id);
+
+      if (status === 'completed') {
+        const files = this.daemon.journalist?.getAgentFiles(newAgent) || [];
+        if (files.length > 0) this._triggerIdleQC(newAgent);
+        this._processHandoffs(newAgent);
+        if (this._rotatingAgents.has(newAgent.id)) {
+          this._rotatingAgents.delete(newAgent.id);
+        } else {
+          this._writeCompletionHandoff(newAgent).catch(err =>
+            console.error(`[Groove] Completion handoff failed for ${newAgent.name}:`, err.message));
+        }
+      }
+    });
+
+    loop.on('error', ({ message: errMsg }) => {
+      this.daemon.broadcast({
+        type: 'agent:output', agentId: newAgent.id,
+        data: { type: 'activity', subtype: 'error', data: errMsg },
+      });
+    });
+
+    loop.start();
+    loop.sendMessage(message);
+
+    this.daemon.broadcast({
+      type: 'rotation:complete',
+      agentId: newAgent.id,
+      agentName: newAgent.name,
+      oldAgentId: agentId,
+      reason: 'resume',
+      tokensSaved: 0,
+    });
+
+    return newAgent;
+  }
+
+  cleanupTeamSessions(teamId) {
+    const { registry } = this.daemon;
+    const teamAgents = registry.getAll().filter(a => a.teamId === teamId);
+    const sessionsDir = resolve(this.daemon.grooveDir, 'sessions');
+    for (const agent of teamAgents) {
+      const sessionPath = resolve(sessionsDir, `${agent.id}.json`);
+      try { if (existsSync(sessionPath)) unlinkSync(sessionPath); } catch { /* non-fatal */ }
+    }
+  }
+
   /**
    * Stop the agent's current work without killing the agent.
    * The process is terminated but the agent stays in the registry with its
@@ -1751,6 +1946,10 @@ For normal file edits within your scope, proceed without review.
 
     const agent = this.daemon.registry.get(agentId);
     const wrapped = agent ? wrapWithRoleReminder(agent.role, message) : message;
+
+    if (this.daemon.trajectoryCapture) {
+      try { this.daemon.trajectoryCapture.onUserMessage(agentId, message); } catch (e) { /* fail silent */ }
+    }
 
     loop.sendMessage(wrapped).catch(() => {});
     return true;

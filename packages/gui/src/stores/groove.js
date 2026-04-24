@@ -122,6 +122,10 @@ export const useGrooveStore = create((set, get) => ({
   networkWallet: { connected: false, address: null, balance: '0.00', token: 'GROOVE', chain: 'base-l2' },
   networkEarnings: { today: 0, thisWeek: 0, allTime: 0, history: [] },
 
+  // ── Training Data ──────────────────────────────────────────
+  trainingOptIn: false,
+  trainingStats: null,
+
   // ── Marketplace Auth ───────────────────────────────────────
   marketplaceUser: null,        // { id, displayName, avatar, ... } or null
   marketplaceAuthenticated: false,
@@ -197,6 +201,7 @@ export const useGrooveStore = create((set, get) => ({
       get().fetchTunnels();
       get().fetchBetaStatus();
       get().fetchNetworkInstallStatus();
+      get().fetchTrainingStatus();
       if (!get().onboardingComplete) get().fetchOnboardingStatus();
       if (window.groove?.auth?.onSubscriptionStatus) {
         window.groove.auth.onSubscriptionStatus((data) => {
@@ -850,6 +855,14 @@ export const useGrooveStore = create((set, get) => ({
               },
             });
           }
+          break;
+        }
+
+        case 'training:status': {
+          set({
+            trainingOptIn: msg.data?.optedIn ?? false,
+            trainingStats: msg.data,
+          });
           break;
         }
 
@@ -2318,6 +2331,25 @@ export const useGrooveStore = create((set, get) => ({
       get().addToast('error', 'Pouch send failed', err.message);
       throw err;
     }
+  },
+
+  // ── Training Data ─────────────────────────────────────────
+
+  async setTrainingOptIn(enabled) {
+    try {
+      await api.post('/training/opt-in', { enabled });
+      set({ trainingOptIn: enabled });
+      if (!enabled) set({ trainingStats: null });
+    } catch (e) {
+      get().addToast('error', 'Failed to update training preference');
+    }
+  },
+
+  async fetchTrainingStatus() {
+    try {
+      const data = await api.get('/training/status');
+      set({ trainingOptIn: data.optedIn, trainingStats: data });
+    } catch { /* endpoint may not exist on older daemons */ }
   },
 
   // ── Network (Early Access) ────────────────────────────────

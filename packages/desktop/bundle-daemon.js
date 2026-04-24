@@ -9,15 +9,19 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const daemonDir = join(__dirname, '..', 'daemon');
 const bundleDir = join(__dirname, '.daemon-bundle');
+const moeSourceDir = join(__dirname, '..', '..', 'moe-training');
+const moeBundleDir = join(__dirname, '.moe-training-bundle');
 
-if (existsSync(bundleDir)) {
-  // Node's rmSync hangs on large node_modules trees on macOS — use native rm
+function nukeDir(path) {
+  if (!existsSync(path)) return;
   if (process.platform === 'win32') {
-    rmSync(bundleDir, { recursive: true, force: true });
+    rmSync(path, { recursive: true, force: true });
   } else {
-    execSync(`rm -rf ${JSON.stringify(bundleDir)}`, { stdio: 'ignore' });
+    execSync(`rm -rf ${JSON.stringify(path)}`, { stdio: 'ignore' });
   }
 }
+
+nukeDir(bundleDir);
 mkdirSync(bundleDir, { recursive: true });
 
 cpSync(join(daemonDir, 'src'), join(bundleDir, 'src'), { recursive: true });
@@ -76,4 +80,39 @@ console.log(`[bundle-daemon] Bundle at: ${bundleDir}`);
 console.log(`[bundle-daemon] Bundle contents: ${topLevel.join(', ')}`);
 console.log(`[bundle-daemon] node_modules: ${nmPackages.length} packages`);
 console.log(`[bundle-daemon] Critical: ${critical.map(d => `${d}=${existsSync(join(nmDir, d)) ? 'OK' : 'MISSING'}`).join(', ')}`);
-console.log('[bundle-daemon] Done — standalone daemon ready at .daemon-bundle/');
+
+// moe-training lives at groove/moe-training (outside packages/) and is imported by
+// the daemon via ../../../moe-training/client/index.js. Ship it alongside the daemon
+// so the same relative path resolves inside the packaged app (Contents/moe-training/).
+nukeDir(moeBundleDir);
+mkdirSync(moeBundleDir, { recursive: true });
+for (const d of ['client', 'shared']) {
+  cpSync(join(moeSourceDir, d), join(moeBundleDir, d), { recursive: true });
+}
+cpSync(join(moeSourceDir, 'package.json'), join(moeBundleDir, 'package.json'));
+
+execSync('npm install --omit=dev --ignore-scripts', {
+  cwd: moeBundleDir,
+  stdio: 'inherit',
+  env: { ...process.env, npm_config_workspaces: 'false' },
+});
+
+writeFileSync(join(moeBundleDir, '.npmignore'), '');
+stripSymlinksAndBinDirs(join(moeBundleDir, 'node_modules'));
+
+const moeCritical = ['better-sqlite3'];
+const moeNmDir = join(moeBundleDir, 'node_modules');
+const moeMissing = moeCritical.filter(dep => !existsSync(join(moeNmDir, dep)));
+if (moeMissing.length) {
+  throw new Error(
+    `[bundle-daemon] Missing moe-training dependencies: ${moeMissing.join(', ')}. ` +
+    `Expected at ${moeNmDir}`
+  );
+}
+const moeTopLevel = readdirSync(moeBundleDir);
+const moeNmPackages = existsSync(moeNmDir) ? readdirSync(moeNmDir).filter(f => !f.startsWith('.')) : [];
+console.log(`[bundle-daemon] moe-training bundle at: ${moeBundleDir}`);
+console.log(`[bundle-daemon] moe-training contents: ${moeTopLevel.join(', ')}`);
+console.log(`[bundle-daemon] moe-training node_modules: ${moeNmPackages.length} packages`);
+
+console.log('[bundle-daemon] Done — standalone daemon ready at .daemon-bundle/ (+ .moe-training-bundle/)');

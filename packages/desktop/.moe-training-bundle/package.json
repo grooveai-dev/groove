@@ -1,0 +1,20 @@
+{
+  "name": "@groove-dev/moe-training",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "MoE TrajectoryCapture client — captures agent session data into structured Trajectory Envelopes",
+  "license": "FSL-1.1-Apache-2.0",
+  "exports": {
+    ".": "./client/index.js",
+    "./shared/*": "./shared/*.js"
+  },
+  "scripts": {
+    "test": "node --test test/**/*.test.js",
+    "start:server": "node server/index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "uuid": "^9.0.0",
+    "express": "^4.18.0"
+  }
+}

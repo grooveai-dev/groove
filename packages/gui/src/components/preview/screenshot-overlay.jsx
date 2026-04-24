@@ -2,6 +2,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Send, X, Loader2 } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
+import html2canvas from 'html2canvas';
 
 export function ScreenshotOverlay({ iframeRef }) {
   const toggleScreenshotMode = useGrooveStore((s) => s.toggleScreenshotMode);
@@ -77,37 +78,48 @@ export function ScreenshotOverlay({ iframeRef }) {
       return canvas.toDataURL('image/png');
     }
 
+    const iframe = iframeRef.current;
+    if (!iframe) { finishCapture(drawPlaceholder()); return; }
+
+    const iframeRect = iframe.getBoundingClientRect();
+    const overlayRect = overlayRef.current.getBoundingClientRect();
+    const offsetX = selRect.x - (iframeRect.left - overlayRect.left);
+    const offsetY = selRect.y - (iframeRect.top - overlayRect.top);
+
+    let iframeBody;
     try {
-      const iframe = iframeRef.current;
-      if (!iframe) { finishCapture(drawPlaceholder()); return; }
+      iframeBody = iframe.contentDocument?.body || iframe.contentWindow?.document?.body;
+    } catch { /* cross-origin fallback */ }
 
-      const canvas = document.createElement('canvas');
+    if (!iframeBody) { finishCapture(drawPlaceholder()); return; }
+
+    html2canvas(iframeBody, {
+      width: iframeRect.width,
+      height: iframeRect.height,
+      windowWidth: iframeRect.width,
+      windowHeight: iframeRect.height,
+      x: 0,
+      y: 0,
+      useCORS: true,
+      logging: false,
+    }).then((fullCanvas) => {
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = selRect.w * dpr;
-      canvas.height = selRect.h * dpr;
-      const ctx = canvas.getContext('2d');
-      ctx.scale(dpr, dpr);
-
-      const iframeRect = iframe.getBoundingClientRect();
-      const overlayRect = overlayRef.current.getBoundingClientRect();
-      const offsetX = selRect.x - (iframeRect.left - overlayRect.left);
-      const offsetY = selRect.y - (iframeRect.top - overlayRect.top);
-
-      try {
-        ctx.drawImage(iframe, -offsetX * dpr, -offsetY * dpr, iframeRect.width * dpr, iframeRect.height * dpr, 0, 0, selRect.w, selRect.h);
-        const testPixel = ctx.getImageData(0, 0, 1, 1).data;
-        if (testPixel[0] === 0 && testPixel[1] === 0 && testPixel[2] === 0 && testPixel[3] === 0) {
-          throw new Error('blank');
-        }
-        finishCapture(canvas.toDataURL('image/png'));
-      } catch {
-        finishCapture(drawPlaceholder());
-      }
-    } catch {
-      setStart(null);
-      setEnd(null);
-      setCaptured(null);
-    }
+      const cropCanvas = document.createElement('canvas');
+      cropCanvas.width = selRect.w * dpr;
+      cropCanvas.height = selRect.h * dpr;
+      const ctx = cropCanvas.getContext('2d');
+      ctx.drawImage(
+        fullCanvas,
+        offsetX * (fullCanvas.width / iframeRect.width),
+        offsetY * (fullCanvas.height / iframeRect.height),
+        selRect.w * (fullCanvas.width / iframeRect.width),
+        selRect.h * (fullCanvas.height / iframeRect.height),
+        0, 0, cropCanvas.width, cropCanvas.height,
+      );
+      finishCapture(cropCanvas.toDataURL('image/png'));
+    }).catch(() => {
+      finishCapture(drawPlaceholder());
+    });
   }, [dragging, start, end, iframeRef]);
 
   useEffect(() => {

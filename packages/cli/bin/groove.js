@@ -18,6 +18,7 @@ import { providers, setKey } from '../src/commands/providers.js';
 import { configShow, configSet } from '../src/commands/config.js';
 import { connect } from '../src/commands/connect.js';
 import { disconnect } from '../src/commands/disconnect.js';
+import { remotes } from '../src/commands/remotes.js';
 import { audit } from '../src/commands/audit.js';
 import { federationPair, federationUnpair, federationList, federationStatus } from '../src/commands/federation.js';
 import { createRequire } from 'node:module';
@@ -108,12 +109,20 @@ program
   .description('Connect to a remote GROOVE daemon via SSH tunnel')
   .option('-i, --identity <keyfile>', 'SSH private key file')
   .option('--no-browser', 'Don\'t open browser automatically')
+  .option('-p, --port <port>', 'SSH port', '22')
+  .option('--project-dir <path>', 'Remote working directory')
+  .option('--auto-connect', 'Save with autoConnect (reconnect on daemon start)')
   .action(connect);
 
 program
-  .command('disconnect')
+  .command('disconnect [target]')
   .description('Disconnect from remote GROOVE daemon')
   .action(disconnect);
+
+program
+  .command('remotes')
+  .description('List saved remote connections')
+  .action(remotes);
 
 // Audit
 program

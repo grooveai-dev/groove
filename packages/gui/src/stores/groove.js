@@ -58,6 +58,7 @@ export const useGrooveStore = create((set, get) => ({
 
   // ── Preview ───────────────────────────────────────────────
   previewState: { url: null, teamId: null, kind: null, deviceSize: 'desktop', screenshotMode: false },
+  showPreviewInAgents: false,
   previewChat: [],
   previewIterating: false,
 
@@ -1187,14 +1188,17 @@ export const useGrooveStore = create((set, get) => ({
   // ── Preview ──────────────────────────────────────────────
 
   openPreview(url, teamId, kind) {
-    set({ previewState: { url, teamId, kind, deviceSize: 'desktop', screenshotMode: false }, previewChat: [], activeView: 'preview' });
+    set({ previewState: { url, teamId, kind, deviceSize: 'desktop', screenshotMode: false }, previewChat: [], showPreviewInAgents: true });
   },
   closePreview() {
     const { previewState } = get();
     if (previewState.teamId) {
       api.delete(`/preview/${previewState.teamId}`).catch(() => {});
     }
-    set({ previewState: { url: null, teamId: null, kind: null, deviceSize: 'desktop', screenshotMode: false }, previewChat: [], previewIterating: false, activeView: 'agents' });
+    set({ previewState: { url: null, teamId: null, kind: null, deviceSize: 'desktop', screenshotMode: false }, previewChat: [], previewIterating: false, showPreviewInAgents: false, activeView: 'agents' });
+  },
+  togglePreviewInAgents() {
+    set((s) => ({ showPreviewInAgents: !s.showPreviewInAgents }));
   },
   setPreviewDevice(size) {
     set((s) => ({ previewState: { ...s.previewState, deviceSize: size } }));

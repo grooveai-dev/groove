@@ -999,7 +999,9 @@ For normal file edits within your scope, proceed without review.
       // Preview launch: when every agent in this team is in a terminal state,
       // kick off the one-click preview (dev server or static serve) the planner
       // staged in the team plan. Fires once per team launch.
-      if (finalStatus === 'completed' && agent.teamId) {
+      // Fire on any terminal status so crashed QC agents don't block preview
+      // when builders completed successfully.
+      if (agent.teamId) {
         this._checkPreviewReady(agent.teamId);
       }
 
@@ -1198,6 +1200,9 @@ For normal file edits within your scope, proceed without review.
    * Fire the one-click preview when the whole team has finished building.
    * Requirements:
    *   - The daemon has a preview plan stashed for this team (planner wrote one).
+   *   - If the team plan has multiple phases, at least one agent from the highest
+   *     phase exists in the registry AND is in a terminal state (prevents launching
+   *     before QC finishes — _checkPhase2 consumes _pendingPhase2 before we run).
    *   - No pending phase 2 groups for this team (QC hasn't spawned yet).
    *   - Every non-planner team agent is in a terminal state.
    *   - At least one non-planner agent completed successfully.
@@ -1217,6 +1222,56 @@ For normal file edits within your scope, proceed without review.
     if (!plan) {
       this.daemon.audit?.log('preview.skipped', { teamId, reason: 'no_plan_stashed' });
       return;
+    }
+
+    // Multi-phase guard: read the team plan to detect phase 2 (QC) agents.
+    // _checkPhase2 runs before this method and consumes _pendingPhase2, so the
+    // pending-group check below may pass even though QC hasn't registered yet.
+    let maxPhase = 1;
+    const maxPhaseRoles = new Set();
+    const expectedRoleCounts = {};
+    const searchPaths = [];
+    if (plan.workingDir) searchPaths.push(resolve(plan.workingDir, '.groove', 'recommended-team.json'));
+    const plannerAgent = this.daemon.registry.getAll().find(a => a.role === 'planner' && a.teamId === teamId);
+    if (plannerAgent?.workingDir) searchPaths.push(resolve(plannerAgent.workingDir, '.groove', 'recommended-team.json'));
+    searchPaths.push(resolve(this.daemon.grooveDir, 'recommended-team.json'));
+
+    for (const planPath of searchPaths) {
+      if (!existsSync(planPath)) continue;
+      try {
+        const raw = JSON.parse(readFileSync(planPath, 'utf8'));
+        const configs = Array.isArray(raw) ? raw : (raw?.agents || []);
+        if (configs.length === 0) continue;
+        for (const cfg of configs) {
+          const phase = typeof cfg.phase === 'number' ? cfg.phase : 1;
+          if (phase > maxPhase) maxPhase = phase;
+        }
+        if (maxPhase > 1) {
+          for (const cfg of configs) {
+            if (cfg.role === 'planner') continue;
+            const role = cfg.role || 'fullstack';
+            const phase = typeof cfg.phase === 'number' ? cfg.phase : 1;
+            expectedRoleCounts[role] = (expectedRoleCounts[role] || 0) + 1;
+            if (phase === maxPhase) maxPhaseRoles.add(role);
+          }
+        }
+        break;
+      } catch { /* malformed, try next */ }
+    }
+
+    if (maxPhase > 1) {
+      const terminalSet = new Set(['completed', 'crashed', 'stopped', 'killed']);
+      const allTeamAgents = this.daemon.registry.getAll().filter(
+        a => a.teamId === teamId && a.role !== 'planner'
+      );
+      for (const role of maxPhaseRoles) {
+        const actual = allTeamAgents.filter(a => a.role === role).length;
+        if (actual < (expectedRoleCounts[role] || 0)) return;
+      }
+      const anyMaxPhaseTerminal = allTeamAgents.some(
+        a => maxPhaseRoles.has(a.role) && terminalSet.has(a.status)
+      );
+      if (!anyMaxPhaseTerminal) return;
     }
 
     const pendingPhase2 = this.daemon._pendingPhase2 || [];

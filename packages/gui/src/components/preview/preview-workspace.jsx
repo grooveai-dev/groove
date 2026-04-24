@@ -224,7 +224,7 @@ const DEVICE_WIDTHS = {
   mobile: '375px',
 };
 
-export function PreviewWorkspace() {
+export function PreviewWorkspace({ embedded = false }) {
   const previewState = useGrooveStore((s) => s.previewState);
   const iframeRef = useRef(null);
   const [iframeKey, setIframeKey] = useState(0);
@@ -269,10 +269,11 @@ export function PreviewWorkspace() {
         </div>
       </div>
 
-      {/* Right pane: chat */}
-      <div className="flex-[2] min-w-[280px] max-w-[480px] border-l border-border md:max-w-none md:flex-[2]">
-        <PreviewChat />
-      </div>
+      {!embedded && (
+        <div className="flex-[2] min-w-[280px] max-w-[480px] border-l border-border md:max-w-none md:flex-[2]">
+          <PreviewChat />
+        </div>
+      )}
     </div>
   );
 }

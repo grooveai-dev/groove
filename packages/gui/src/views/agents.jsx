@@ -10,7 +10,8 @@ import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Radio } from 'lucide-react';
+import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Radio, Eye } from 'lucide-react';
+import { PreviewWorkspace } from '../components/preview/preview-workspace';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../components/ui/context-menu';
 
 const NODE_TYPES = { agentNode: AgentNode, rootNode: RootNode };
@@ -795,6 +796,9 @@ export default function AgentsView() {
   const selectAgent = useGrooveStore((s) => s.selectAgent);
   const recommendedTeam = useGrooveStore((s) => s.recommendedTeam);
   const checkRecommendedTeam = useGrooveStore((s) => s.checkRecommendedTeam);
+  const showPreviewInAgents = useGrooveStore((s) => s.showPreviewInAgents);
+  const previewState = useGrooveStore((s) => s.previewState);
+  const togglePreviewInAgents = useGrooveStore((s) => s.togglePreviewInAgents);
 
   // Poll for recommended team while a planner is running
   useEffect(() => {
@@ -845,6 +849,8 @@ export default function AgentsView() {
           </div>
         ) : teamAgents.length === 0 ? (
           <EmptyState onPlanner={launchPlanner} onSpawn={() => openDetail({ type: 'spawn' })} />
+        ) : showPreviewInAgents && previewState.url ? (
+          <PreviewWorkspace embedded />
         ) : (
           <ReactFlowProvider key={activeTeamId}>
             <AgentTreeInner />
@@ -859,6 +865,14 @@ export default function AgentsView() {
         >
           <Plus size={14} />
           Spawn
+        </button>
+      )}
+      {!isLoading && teamAgents.length > 0 && previewState.url && (
+        <button
+          onClick={togglePreviewInAgents}
+          className="absolute bottom-4 right-4 z-40 flex items-center gap-1.5 h-8 px-4 rounded-md bg-info/15 text-info text-xs font-semibold font-sans hover:bg-info/25 transition-colors cursor-pointer select-none shadow-lg shadow-black/10"
+        >
+          {showPreviewInAgents ? <><Users size={14} /> Team</> : <><Eye size={14} /> Preview</>}
         </button>
       )}
     </div>

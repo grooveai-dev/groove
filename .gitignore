@@ -30,6 +30,7 @@
 packages/gui/dist/
 packages/desktop/dist/
 packages/desktop/.daemon-bundle/
+packages/desktop/.moe-training-bundle/
 **/node_modules/
 **/*.log
 **/*.pid

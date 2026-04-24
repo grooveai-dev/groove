@@ -91,11 +91,23 @@ for (const d of ['client', 'shared']) {
 }
 cpSync(join(moeSourceDir, 'package.json'), join(moeBundleDir, 'package.json'));
 
-execSync('npm install --omit=dev --ignore-scripts', {
+// No --ignore-scripts: better-sqlite3 is a native module and its install script
+// is what downloads the prebuilt .node binary (or compiles from source). Without
+// it, the daemon crashes at startup when moe-training tries to open SQLite.
+execSync('npm install --omit=dev', {
   cwd: moeBundleDir,
   stdio: 'inherit',
   env: { ...process.env, npm_config_workspaces: 'false' },
 });
+
+// Sanity-check the native binding actually landed — fail loudly if not.
+const moeSqliteNode = join(moeBundleDir, 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node');
+if (!existsSync(moeSqliteNode)) {
+  throw new Error(
+    `[bundle-daemon] better-sqlite3 native binding missing at ${moeSqliteNode}. ` +
+    `The install script failed to download/build it — check npm logs above.`
+  );
+}
 
 writeFileSync(join(moeBundleDir, '.npmignore'), '');
 stripSymlinksAndBinDirs(join(moeBundleDir, 'node_modules'));

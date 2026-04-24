@@ -70,6 +70,18 @@ exports.default = async function (context) {
     stripSymlinksAndBinDirs(moeTargetNM);
     const moeCount = readdirSync(moeTargetNM).filter(f => !f.startsWith('.')).length;
     console.log(`  • afterPack: restored ${moeCount} moe-training packages (${moeCritical.join(', ')} verified)`);
+
+    if (platform === 'darwin') {
+      const nativeBin = join(moeTargetNM, 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node');
+      if (existsSync(nativeBin)) {
+        try {
+          execSync(`/usr/bin/codesign --force --sign - --timestamp "${nativeBin}"`, { stdio: 'pipe' });
+          console.log(`  • afterPack: ad-hoc signed ${nativeBin}`);
+        } catch (err) {
+          console.warn(`  • afterPack: codesign of better_sqlite3.node failed (non-fatal): ${err.message}`);
+        }
+      }
+    }
   } else {
     throw new Error(`afterPack: .moe-training-bundle/node_modules not found at ${moeSourceNM}`);
   }

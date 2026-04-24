@@ -458,39 +458,88 @@ class WorkspaceManager {
     const proc = tunnel.proc;
     proc.unref();
 
-    let healthy = false;
-    for (let i = 0; i < 4; i++) {
-      try {
-        const resp = await fetch(`http://localhost:${localPort}/api/health`, { signal: AbortSignal.timeout(3000) });
-        if (resp.ok) { healthy = true; break; }
-      } catch {}
-      await new Promise(r => setTimeout(r, 2000));
-    }
+    const sshExec = (cmd, timeout = 60000) => {
+      return execFileSync('ssh', [
+        ...keyArgs, '-p', String(conn.port || 22),
+        '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes',
+        '-o', `UserKnownHostsFile=${knownHostsPath}`,
+        `${conn.user}@${conn.host}`, cmd,
+      ], { timeout, stdio: 'pipe', shell: process.platform === 'win32' }).toString().trim();
+    };
 
-    if (!healthy) {
-      try {
-        execFileSync('ssh', [
-          ...keyArgs, '-p', String(conn.port || 22),
-          '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes',
-          '-o', `UserKnownHostsFile=${knownHostsPath}`,
-          `${conn.user}@${conn.host}`, 'groove start -d',
-        ], { timeout: 30000, stdio: 'pipe', shell: process.platform === 'win32' });
-      } catch {}
-
-      await new Promise(r => setTimeout(r, 5000));
-      for (let i = 0; i < 3; i++) {
+    const checkHealth = async (attempts = 4, delay = 2000) => {
+      for (let i = 0; i < attempts; i++) {
         try {
           const resp = await fetch(`http://localhost:${localPort}/api/health`, { signal: AbortSignal.timeout(3000) });
-          if (resp.ok) { healthy = true; break; }
+          if (resp.ok) return true;
         } catch {}
-        if (i < 2) await new Promise(r => setTimeout(r, 2000));
+        if (i < attempts - 1) await new Promise(r => setTimeout(r, delay));
       }
+      return false;
+    };
+
+    const emitProgress = (msg) => {
+      if (this._homeWindow && !this._homeWindow.isDestroyed()) {
+        this._homeWindow.webContents.executeJavaScript(
+          `document.getElementById('loading-text').textContent = ${JSON.stringify(msg)}`
+        ).catch(() => {});
+      }
+    };
+
+    let healthy = await checkHealth();
+
+    if (!healthy) {
+      let grooveInstalled = false;
+      try {
+        sshExec('groove --version', 10000);
+        grooveInstalled = true;
+      } catch {}
+
+      if (!grooveInstalled) {
+        emitProgress('Installing Groove on remote server...');
+        try {
+          sshExec('npm i -g groove-dev', 120000);
+        } catch (e) {
+          proc.kill();
+          throw new Error(`Failed to install Groove on remote server: ${e.message || 'npm install failed'}`);
+        }
+      }
+
+      emitProgress('Starting remote daemon...');
+      try { sshExec('groove start -d', 30000); } catch {}
+
+      await new Promise(r => setTimeout(r, 5000));
+      healthy = await checkHealth(3);
     }
 
     if (!healthy) {
       proc.kill();
-      throw new Error('Remote daemon not responding — is Groove installed on the server?');
+      throw new Error('Remote daemon not responding — check that Node.js and npm are installed on the server');
     }
+
+    const localVersion = app.getVersion();
+    try {
+      const resp = await fetch(`http://localhost:${localPort}/api/status`, { signal: AbortSignal.timeout(3000) });
+      if (resp.ok) {
+        const status = await resp.json();
+        const remoteVersion = status.version;
+        if (remoteVersion && remoteVersion !== localVersion) {
+          emitProgress(`Updating remote Groove ${remoteVersion} → ${localVersion}...`);
+          try {
+            sshExec(`npm i -g groove-dev@${localVersion}`, 120000);
+            sshExec('groove stop', 10000);
+          } catch {}
+          await new Promise(r => setTimeout(r, 1000));
+          try { sshExec('groove start -d', 30000); } catch {}
+          await new Promise(r => setTimeout(r, 5000));
+          if (!await checkHealth(3)) {
+            emitProgress('Remote updated but daemon slow to restart — retrying...');
+            await new Promise(r => setTimeout(r, 5000));
+            await checkHealth(3);
+          }
+        }
+      }
+    } catch {}
 
     this._sshTunnels = this._sshTunnels || new Map();
     this._sshTunnels.set(id, proc);

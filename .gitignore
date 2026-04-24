@@ -23,6 +23,8 @@
 !packages/gui/**
 !packages/desktop/
 !packages/desktop/**
+!moe-training/
+!moe-training/**
 
 # But still ignore generated/installed stuff inside packages
 packages/gui/dist/

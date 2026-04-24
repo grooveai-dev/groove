@@ -109,6 +109,12 @@ export class TrajectoryCapture {
       this._processStep(agentId, ctx, event);
     }
 
+    if ((!ctx.metadata.model_engine || ctx.metadata.model_engine === 'auto') &&
+        typeof ctx.parser.extractModel === 'function') {
+      const resolved = ctx.parser.extractModel(jsonEvent);
+      if (resolved) ctx.metadata.model_engine = resolved;
+    }
+
     const tokens = ctx.parser.extractTokens(jsonEvent);
     if (tokens) {
       ctx.totalTokens += (tokens.input || 0) + (tokens.output || 0);
@@ -155,20 +161,25 @@ export class TrajectoryCapture {
   }
 
   _processStep(agentId, ctx, event) {
-    ctx.classifier.onStep(event);
+    const classified = ctx.classifier.onStep(event);
+    const ev = classified || event;
 
-    if (event.content && typeof event.content === 'string') {
-      event.content = this._scrubber.scrub(event.content);
+    if (ev.content && typeof ev.content === 'string') {
+      ev.content = this._scrubber.scrub(ev.content);
+    }
+
+    if (ev.arguments && typeof ev.arguments === 'object') {
+      ev.arguments = this._scrubObject(ev.arguments);
     }
 
     const step = {
       step: ++ctx.stepCount,
-      type: event.type,
+      type: ev.type,
       timestamp: Date.now() / 1000,
-      ...event,
+      ...ev,
     };
 
-    if (event.type === 'error') ctx.errorsEncountered++;
+    if (ev.type === 'error') ctx.errorsEncountered++;
     ctx.allSteps.push(step);
 
     const envelope = ctx.builder.addStep(step);
@@ -178,9 +189,29 @@ export class TrajectoryCapture {
     }
   }
 
+  _computeQuality(ctx) {
+    let score = 50;
+    const types = new Set();
+    let hasCorrection = false;
+
+    for (const step of ctx.allSteps) {
+      if (step.type) types.add(step.type);
+      if (step.type === 'correction') hasCorrection = true;
+    }
+
+    if (hasCorrection) score += 10;
+    if (ctx.coordinationEvents > 0) score += 10;
+    if (ctx.errorsRecovered > 0) score += 10;
+    if (ctx.stepCount >= 20) score += 10;
+    if (types.size >= 3) score += 10;
+
+    return Math.min(score, 100);
+  }
+
   _flushContext(agentId) {
     const ctx = this._contexts.get(agentId);
     if (!ctx) return;
+    ctx.metadata.session_quality = this._computeQuality(ctx);
     const envelope = ctx.builder.flush();
     if (envelope) {
       this._signAndTransmit(ctx.sessionId, envelope);
@@ -199,8 +230,11 @@ export class TrajectoryCapture {
     const hasRecovery = StepClassifier.detectErrorRecovery(ctx.allSteps);
     if (hasRecovery) ctx.errorsRecovered++;
 
+    ctx.metadata.session_quality = this._computeQuality(ctx);
+
     const closeEnvelope = ctx.builder.buildSessionClose({
       status,
+      session_quality: ctx.metadata.session_quality,
       user_interventions: StepClassifier.countUserInterventions(ctx.allSteps),
       total_steps: ctx.stepCount,
       total_chunks: ctx.chunkCount,
@@ -213,6 +247,12 @@ export class TrajectoryCapture {
     });
 
     this._signAndTransmit(ctx.sessionId, closeEnvelope);
+
+    try {
+      await this._transmissionQueue.waitForDrain();
+    } catch {
+      // drain timeout
+    }
 
     try {
       await this._attestation.closeSession(ctx.sessionId);
@@ -235,6 +275,19 @@ export class TrajectoryCapture {
     } catch {
       // still unreachable
     }
+  }
+
+  _scrubObject(obj) {
+    if (typeof obj === 'string') return this._scrubber.scrub(obj);
+    if (Array.isArray(obj)) return obj.map((v) => this._scrubObject(v));
+    if (obj && typeof obj === 'object') {
+      const out = {};
+      for (const [k, v] of Object.entries(obj)) {
+        out[k] = this._scrubObject(v);
+      }
+      return out;
+    }
+    return obj;
   }
 
   _signAndTransmit(sessionId, envelope) {

@@ -95,8 +95,8 @@ export class PIIScrubber {
       },
       {
         name: 'home_path',
-        regex: /(?:\/Users\/[^\s]+|\/home\/[^\s]+|C:\\Users\\[^\s]+)/g,
-        replacement: '[FILE_PATH]',
+        regex: /(?:\/Users\/[^\/\s]+|\/home\/[^\/\s]+|C:\\Users\\[^\\\s]+)([\/\\][^\s]*)?/g,
+        replacement: null,
       },
       {
         name: 'base64_secret',
@@ -116,6 +116,8 @@ export class PIIScrubber {
           const digits = (g1 + g2 + g3 + g4);
           return luhnCheck(digits) ? '[CREDIT_CARD]' : match;
         });
+      } else if (pattern.name === 'home_path') {
+        result = result.replace(pattern.regex, (_match, relPath) => '~' + (relPath || ''));
       } else {
         result = result.replace(pattern.regex, pattern.replacement);
       }

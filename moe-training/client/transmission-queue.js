@@ -50,6 +50,13 @@ export class TransmissionQueue {
     this._kick();
   }
 
+  async waitForDrain() {
+    while (this._queue.length > 0 || this._drainPromise) {
+      if (this._drainPromise) await this._drainPromise;
+      else await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+
   async stop() {
     this._running = false;
     if (this._drainPromise) {

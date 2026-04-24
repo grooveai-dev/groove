@@ -85,4 +85,51 @@ describe('StepClassifier', () => {
     ];
     assert.equal(StepClassifier.countUserInterventions(steps), 0);
   });
+
+  it('reclassifies action with error content to error', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'action', content: 'Command failed with exit code 1' };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'error');
+  });
+
+  it('reclassifies observation with error content to error', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'observation', content: 'TypeError: cannot read properties of undefined' };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'error');
+  });
+
+  it('does not reclassify thought with error content', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'thought', content: 'I see the Error and will fix it' };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'thought');
+  });
+
+  it('marks thought after correction as correction_context', () => {
+    const classifier = new StepClassifier();
+    classifier.onStep({ type: 'action' });
+    classifier.onStep({ type: 'correction', content: 'no, fix the bug' });
+    const step = { type: 'thought', content: 'I see the issue, let me fix it' };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'thought');
+    assert.equal(result.correction_context, true);
+  });
+
+  it('does not mark thought as correction_context without prior correction', () => {
+    const classifier = new StepClassifier();
+    classifier.onStep({ type: 'action', content: 'running test' });
+    const step = { type: 'thought', content: 'let me fix this' };
+    const result = classifier.onStep(step);
+    assert.equal(result.correction_context, undefined);
+  });
+
+  it('returns the step from onStep', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'action', content: 'hello' };
+    const result = classifier.onStep(step);
+    assert.ok(result);
+    assert.equal(result.type, 'action');
+  });
 });

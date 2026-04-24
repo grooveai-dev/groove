@@ -14,12 +14,14 @@ import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { fmtUptime } from '../lib/format';
 import { Dialog, DialogContent } from '../components/ui/dialog';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import {
   Key, Eye, EyeOff, Check, Cpu, Download, Loader2, RefreshCw, Terminal, Copy,
   FolderOpen, FolderSearch, Users, Gauge, ChevronRight,
   ShieldCheck, Settings, Lock, Database, Shield,
   Newspaper, Radio, Send, MessageSquare, MessageCircle,
   Plus, Trash2, Plug, PlugZap, TestTube, X, HelpCircle, ExternalLink,
+  Sparkles, Share2, Gift,
 } from 'lucide-react';
 
 /* ── Toggle ────────────────────────────────────────────────── */
@@ -1409,39 +1411,115 @@ function TrainingDataSection() {
 
       {/* Consent dialog */}
       <Dialog open={consentOpen} onOpenChange={setConsentOpen}>
-        <DialogContent title="Data Collection Consent" description="Review what data is collected and how it is used.">
-          <div className="px-5 py-4 space-y-3">
-            <div className="space-y-2.5 text-xs text-text-1 font-sans leading-relaxed">
-              <div className="flex items-start gap-2.5">
-                <Database size={13} className="text-accent flex-shrink-0 mt-0.5" />
-                <div><span className="font-semibold text-text-0">What is collected:</span> Agent session trajectories — thoughts, tool calls, observations, and outcomes.</div>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <Cpu size={13} className="text-accent flex-shrink-0 mt-0.5" />
-                <div><span className="font-semibold text-text-0">How it is used:</span> Training MoE expert models that become Groove agents.</div>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <Shield size={13} className="text-accent flex-shrink-0 mt-0.5" />
-                <div><span className="font-semibold text-text-0">PII protection:</span> 13 categories of sensitive data (emails, API keys, file paths, etc.) are automatically scrubbed before transmission.</div>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <Settings size={13} className="text-accent flex-shrink-0 mt-0.5" />
-                <div><span className="font-semibold text-text-0">Opt out anytime:</span> Toggle the setting OFF to stop collection immediately.</div>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <Trash2 size={13} className="text-danger flex-shrink-0 mt-0.5" />
-                <div><span className="font-semibold text-text-0">Delete data:</span> Permanently delete all previously collected data at any time.</div>
+        <DialogContent className="max-w-2xl" description="Review how your data helps build open source AI">
+
+          {/* 1. Hero Section */}
+          <div className="relative bg-gradient-to-br from-accent/5 to-transparent px-6 pt-8 pb-6 text-center">
+            <DialogPrimitive.Close className="absolute top-3 right-3 p-1.5 rounded-md text-text-3 hover:text-text-0 hover:bg-surface-5 transition-colors">
+              <X size={16} />
+            </DialogPrimitive.Close>
+            <div className="flex justify-center mb-3">
+              <div className="w-14 h-14 rounded-xl bg-accent/10 flex items-center justify-center">
+                <Sparkles size={32} className="text-accent" />
               </div>
             </div>
+            <DialogPrimitive.Title className="text-xl font-bold text-text-0 font-sans">Help Build Open Source Intelligence</DialogPrimitive.Title>
+            <p className="text-sm text-text-2 font-sans mt-2 max-w-md mx-auto">
+              Your usage data trains a free, local MoE model that every Groove user gets to use — including you.
+            </p>
           </div>
-          <div className="flex items-center gap-2 px-5 py-4 border-t border-border-subtle">
-            <Button variant="primary" size="sm" onClick={handleAgree} className="flex-1 h-8 text-xs">
-              I Agree — Start Contributing
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setConsentOpen(false)} className="h-8 text-xs px-3">
-              Cancel
-            </Button>
+
+          {/* 2. Value Proposition */}
+          <div className="px-6 pt-5 pb-1">
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { icon: Share2, title: 'You Share', desc: 'Anonymized agent session data: tool calls, error patterns, task flows' },
+                { icon: Cpu, title: 'We Train', desc: 'A Groove-specific Mixture of Experts model built on real multi-agent workflows' },
+                { icon: Gift, title: 'Everyone Wins', desc: 'Free, local, open source model for all Groove users. More data = smarter agents' },
+              ].map(({ icon: Icon, title, desc }) => (
+                <div key={title} className="rounded-lg border border-border-subtle bg-surface-2/50 p-3 text-center">
+                  <div className="flex justify-center mb-2">
+                    <Icon size={18} className="text-accent" />
+                  </div>
+                  <div className="text-xs font-semibold text-text-0 font-sans mb-1">{title}</div>
+                  <div className="text-2xs text-text-2 font-sans leading-relaxed">{desc}</div>
+                </div>
+              ))}
+            </div>
           </div>
+
+          {/* 3. What We Collect */}
+          <div className="px-6 pt-4">
+            <div className="text-xs font-semibold uppercase text-text-3 tracking-wider font-sans mb-2.5">What We Collect</div>
+            <div className="space-y-1.5">
+              {[
+                'Agent tool calling patterns',
+                'Error and recovery sequences',
+                'Task complexity and coordination events',
+                'Model and provider usage metadata',
+                'Session duration and outcomes',
+              ].map((item) => (
+                <div key={item} className="flex items-center gap-2">
+                  <Check size={12} className="text-accent flex-shrink-0" />
+                  <span className="text-xs text-text-1 font-sans">{item}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-text-0 font-sans font-medium mt-3">
+              That&apos;s it. Groove orchestration data only.
+            </p>
+          </div>
+
+          {/* 4. What We Never Collect */}
+          <div className="px-6 pt-4">
+            <div className="rounded-lg border border-border-subtle bg-surface-2/30 p-4">
+              <div className="flex items-center gap-2 mb-2.5">
+                <Shield size={14} className="text-text-2" />
+                <span className="text-xs font-semibold uppercase text-text-3 tracking-wider font-sans">What We Never Collect</span>
+              </div>
+              <div className="space-y-1.5">
+                {[
+                  'Your source code or file contents',
+                  'API keys, passwords, or credentials',
+                  'Personal information — emails, names, file paths',
+                  'Anything that could identify your IP or projects',
+                ].map((item) => (
+                  <div key={item} className="flex items-center gap-2">
+                    <X size={12} className="text-danger flex-shrink-0" />
+                    <span className="text-xs text-text-1 font-sans">{item}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-text-0 font-sans font-medium mt-3">
+                13 categories of PII are automatically scrubbed before any data leaves your machine.
+              </p>
+            </div>
+          </div>
+
+          {/* 5. Mission Statement */}
+          <div className="px-6 pt-4">
+            <div className="border-l-2 border-accent/30 pl-3">
+              <p className="text-xs text-text-3 italic leading-relaxed font-sans">
+                We believe in open source, decentralized intelligence. Not walled gardens. Not data hoarding. Every contribution makes the model better for everyone. We need your help to get there.
+              </p>
+            </div>
+          </div>
+
+          {/* 6. CTA Section */}
+          <div className="border-t border-border-subtle mt-5 pt-4 pb-1 px-6">
+            <Button variant="primary" size="sm" onClick={handleAgree} className="w-full h-10 text-sm font-semibold">
+              Join the Movement — Start Contributing
+            </Button>
+            <div className="text-center mt-2.5">
+              <button onClick={() => setConsentOpen(false)} className="text-xs text-text-3 hover:text-text-1 transition-colors font-sans cursor-pointer">
+                Not now
+              </button>
+            </div>
+            <p className="text-center text-2xs text-text-4 font-sans mt-2 mb-1">
+              You can opt out and delete your data anytime in Settings
+            </p>
+          </div>
+
         </DialogContent>
       </Dialog>
 

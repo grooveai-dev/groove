@@ -1,8 +1,12 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
+const ERROR_SIGNAL_RE = /\b(?:error|Error|ERROR|exception|Exception|EXCEPTION|failed|FAILED|exit code [1-9]|ENOENT|EACCES|EPERM|TypeError|ReferenceError|SyntaxError|Cannot find|Module not found|Command failed|non-zero exit)\b/;
+const FIX_SIGNAL_RE = /\b(?:fix|correcting|I see the issue|let me fix|the (?:issue|problem|bug) (?:is|was)|instead I should|my mistake)\b/i;
+
 export class StepClassifier {
   constructor() {
     this.hasAgentActed = false;
+    this._lastStepType = null;
   }
 
   classifyUserMessage(text) {
@@ -31,6 +35,19 @@ export class StepClassifier {
     if (step.type === 'action') {
       this.hasAgentActed = true;
     }
+
+    const content = step.content || '';
+
+    if ((step.type === 'action' || step.type === 'observation') && ERROR_SIGNAL_RE.test(content)) {
+      step.type = 'error';
+    }
+
+    if (step.type === 'thought' && this._lastStepType === 'correction' && FIX_SIGNAL_RE.test(content)) {
+      step.correction_context = true;
+    }
+
+    this._lastStepType = step.type;
+    return step;
   }
 
   static detectErrorRecovery(steps) {

@@ -73,9 +73,9 @@ describe('PIIScrubber', () => {
     assert.equal(scrubber.scrub(input), 'hash: [API_KEY]');
   });
 
-  it('scrubs home directory paths', () => {
+  it('scrubs home directory paths preserving relative path', () => {
     const input = 'file at /Users/john/Documents/secret.txt';
-    assert.equal(scrubber.scrub(input), 'file at [FILE_PATH]');
+    assert.equal(scrubber.scrub(input), 'file at ~/Documents/secret.txt');
   });
 
   it('scrubs URL-encoded emails', () => {
@@ -95,10 +95,10 @@ describe('PIIScrubber', () => {
     assert.ok(!result.includes('eyJhbGciOi'));
   });
 
-  it('scrubs file paths without trailing slash', () => {
+  it('scrubs file paths preserving relative path', () => {
     const input = 'reading /home/alice/project/secret.key now';
     const result = scrubber.scrub(input);
-    assert.ok(result.includes('[FILE_PATH]'));
+    assert.equal(result, 'reading ~/project/secret.key now');
     assert.ok(!result.includes('/home/alice'));
   });
 
@@ -119,6 +119,16 @@ describe('PIIScrubber', () => {
     assert.equal(scrubber.scrub(null), null);
     assert.equal(scrubber.scrub(undefined), undefined);
     assert.equal(scrubber.scrub(''), '');
+  });
+
+  it('scrubs Windows home paths preserving relative path', () => {
+    const input = 'file at C:\\Users\\bob\\Desktop\\project\\app.js';
+    assert.equal(scrubber.scrub(input), 'file at ~\\Desktop\\project\\app.js');
+  });
+
+  it('scrubs home path with no trailing path', () => {
+    const input = 'cd /Users/john';
+    assert.equal(scrubber.scrub(input), 'cd ~');
   });
 
   it('patterns do not interfere with each other', () => {

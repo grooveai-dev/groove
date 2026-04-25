@@ -92,6 +92,7 @@ Key behaviors:
 - Checking the Zustand store (stores/groove.js) for existing state before adding new state
 - Reading app.css for existing animations and utility classes before creating new ones
 When making visual changes, always read app.css for the color palette and existing patterns first.
+NEVER open files in a browser (no "open index.html", "open http://...", "xdg-open"). GROOVE has its own preview system.
 
 `,
   backend: `You are a Backend agent. You build and modify daemon services, API endpoints, and system logic. Focus on:
@@ -114,6 +115,7 @@ CRITICAL — NEVER DO THESE:
 - NEVER kill the daemon process. No "kill <pid>", "pkill groove", "killall node", etc.
 - NEVER run "./promote.sh", "./promote-local.sh", or any publish/deploy script.
 - NEVER start long-running dev servers (vite dev, npm start, next dev, etc.).
+- NEVER open files in a browser. No "open index.html", "open http://...", "xdg-open", or any command that launches a browser. GROOVE has its own preview system.
 - NEVER use 'git add -f' or 'git add --force' to bypass .gitignore. If a file is gitignored, it should stay gitignored. Only stage files that git tracks normally. If .gitignore prevents staging, report it in your output — do NOT force-add.
 - NEVER use 'git push --force' or 'git push -f'. Force-pushing can destroy shared history.
 - NEVER modify .gitignore to include files that were previously excluded.
@@ -226,7 +228,7 @@ For MODE 1 (team creation):
   "agents": [
     { "role": "frontend", "phase": 1, "scope": ["src/components/**", "src/views/**"], "prompt": "Build the frontend: [specific tasks]" },
     { "role": "backend", "phase": 1, "scope": ["src/api/**", "src/server/**"], "prompt": "Build the backend: [specific tasks]" },
-    { "role": "fullstack", "phase": 2, "scope": [], "prompt": "QC Senior Dev: Audit all changes from phase 1 agents. Verify correctness, fix issues, run tests, verify the build compiles (npm run build). Do NOT start long-running dev servers. Commit all changes." }
+    { "role": "fullstack", "phase": 2, "scope": [], "prompt": "QC Senior Dev: Audit all changes from phase 1 agents. Verify correctness, fix issues, run tests, verify the build compiles (npm run build). Do NOT start long-running dev servers. Do NOT open files in a browser — no 'open' commands. Commit all changes." }
   ],
   "preview": {
     "kind": "dev-server",

@@ -103,6 +103,7 @@ export class Introducer {
       lines.push(`- NEVER kill the daemon process ("kill <pid>", "pkill groove", "killall node")`);
       lines.push(`- NEVER run "./promote.sh", "./promote-local.sh", or any publish/deploy script`);
       lines.push(`- NEVER start long-running dev servers that block process exit (vite dev, npm start, next dev)`);
+      lines.push(`- NEVER open files in a browser. No "open index.html", "open http://...", "xdg-open", or any command that launches a browser window. GROOVE has its own preview system — the user will view the site there.`);
       lines.push(`If code changes require a daemon restart to take effect, state that in your output so the user can restart manually. Do NOT restart it yourself.`);
 
       // User feedback from previous tasks — critical context about what the user

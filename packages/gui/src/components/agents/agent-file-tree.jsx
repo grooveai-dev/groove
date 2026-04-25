@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { api } from '../../lib/api';
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Clock, FilePlus, FolderPlus, RefreshCw, ChevronsDownUp } from 'lucide-react';
+import { ChevronRight, ChevronDown, File, Folder, FolderOpen, FileEdit, Eye, FilePlus, FolderPlus, RefreshCw, ChevronsDownUp } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
 
 const FILE_COLORS = {
@@ -78,7 +78,6 @@ function TreeEntry({ entry, depth, onOpen, expandedDirs, onToggleDir }) {
 
 export function AgentFileTree({ agentId }) {
   const agents = useGrooveStore((s) => s.agents);
-  const activityLog = useGrooveStore((s) => s.activityLog);
   const openFile = useGrooveStore((s) => s.openFile);
   const editorActiveFile = useGrooveStore((s) => s.editorActiveFile);
   const createFile = useGrooveStore((s) => s.createFile);
@@ -86,29 +85,26 @@ export function AgentFileTree({ agentId }) {
 
   const agent = agents.find((a) => a.id === agentId);
   const scope = agent?.scope || [];
-  const log = activityLog[agentId] || [];
+  const isRunning = agent?.status === 'running' || agent?.status === 'starting';
 
   const [treeData, setTreeData] = useState([]);
   const [expandedDirs, setExpandedDirs] = useState(new Set());
   const [loading, setLoading] = useState(true);
+  const [touchedFiles, setTouchedFiles] = useState([]);
   const fetchedRef = useRef(new Set());
 
-  const recentFiles = (() => {
-    const seen = new Set();
-    const files = [];
-    for (let i = log.length - 1; i >= 0; i--) {
-      const t = (log[i].text || '').toLowerCase();
-      if (!(t.includes('writ') || t.includes('edit') || t.includes('creat') || t.includes('read'))) continue;
-      const match = log[i].text.match(/(?:Write|Edit|Create|Read|wrote|editing|writing|reading)\S*\s+([\w./-]+\.[\w]+)/i);
-      if (!match) continue;
-      const path = match[1];
-      if (seen.has(path) || path.startsWith('.') || path.includes('node_modules')) continue;
-      seen.add(path);
-      files.push(path);
-      if (files.length >= 10) break;
+  useEffect(() => {
+    let cancelled = false;
+    async function poll() {
+      try {
+        const data = await api.get(`/agents/${encodeURIComponent(agentId)}/files-touched`);
+        if (!cancelled && data.files) setTouchedFiles(data.files);
+      } catch { /* agent may not exist yet */ }
     }
-    return files;
-  })();
+    poll();
+    const interval = isRunning ? setInterval(poll, 5000) : null;
+    return () => { cancelled = true; if (interval) clearInterval(interval); };
+  }, [agentId, isRunning]);
 
   const fetchDir = useCallback(async (dirPath) => {
     if (fetchedRef.current.has(dirPath)) return;
@@ -230,26 +226,31 @@ export function AgentFileTree({ agentId }) {
       </div>
       <ScrollArea className="flex-1 min-h-0">
       <div className="py-2">
-        {recentFiles.length > 0 && (
+        {touchedFiles.length > 0 && (
           <div className="mb-3">
             <div className="flex items-center gap-1.5 px-3 py-1.5 text-2xs font-semibold text-text-3 uppercase tracking-wider">
-              <Clock size={10} />
-              Recently Touched
+              <FileEdit size={10} />
+              Agent Files
             </div>
-            {recentFiles.map((path) => {
-              const name = path.split('/').pop();
+            {touchedFiles.slice(0, 15).map((f) => {
+              const name = f.path.split('/').pop();
+              const hasWrites = f.writes > 0;
               return (
                 <button
-                  key={path}
-                  onClick={() => openFile(path)}
+                  key={f.path}
+                  onClick={() => openFile(f.path)}
                   className={cn(
                     'w-full flex items-center gap-1.5 px-3 py-1 text-xs font-sans cursor-pointer',
                     'hover:bg-surface-4/50 transition-colors text-left',
-                    editorActiveFile === path && 'bg-accent/8 text-accent',
+                    editorActiveFile === f.path && 'bg-accent/8 text-accent',
                   )}
                 >
-                  <File size={12} className={cn(getFileColor(name), 'flex-shrink-0')} />
-                  <span className="truncate text-text-1">{name}</span>
+                  {hasWrites
+                    ? <FileEdit size={12} className="text-warning flex-shrink-0" />
+                    : <Eye size={12} className="text-info flex-shrink-0" />
+                  }
+                  <span className="truncate text-text-1 flex-1">{name}</span>
+                  {hasWrites && <span className="text-2xs text-warning/60 flex-shrink-0">{f.writes}w</span>}
                 </button>
               );
             })}

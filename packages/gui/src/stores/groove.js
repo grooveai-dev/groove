@@ -428,6 +428,19 @@ export const useGrooveStore = create((set, get) => ({
             set({ activityLog: log });
             persistJSON('groove:activityLog', log);
           }
+
+          // Open-on-write: auto-open files the agent writes in workspace mode
+          if (get().workspaceMode && Array.isArray(data.data)) {
+            const WRITE_TOOLS = new Set(['Write', 'Edit', 'write_file', 'edit_file', 'create_file']);
+            for (const block of data.data) {
+              if (block.type !== 'tool_use' || !WRITE_TOOLS.has(block.name)) continue;
+              const filePath = block.input?.file_path || block.input?.path;
+              if (filePath && agentId === get().workspaceAgentId) {
+                const relPath = filePath.replace(/^\/[^/]+.*?\/groove\//, '');
+                get().openFile(relPath);
+              }
+            }
+          }
           break;
         }
 
@@ -1946,10 +1959,13 @@ export const useGrooveStore = create((set, get) => ({
     get().addChatMessage(id, 'user', message, false);
     set((s) => ({ thinkingAgents: new Set([...s.thinkingAgents, id]) }));
 
-    // Snapshot per-agent state before the async call — a WebSocket state broadcast
-    // can arrive before the HTTP response returns and prune chatHistory[id], losing
-    // the user's message.  The snapshot guarantees the transfer to the new agent ID
-    // always has the full history.
+    // Auto-attach active file context when in workspace mode
+    let enriched = message;
+    if (get().workspaceMode && get().workspaceAgentId === id && get().editorActiveFile) {
+      const filePath = get().editorActiveFile;
+      enriched = `[Active file: ${filePath}]\n\n${message}`;
+    }
+
     const snapshot = {
       chatHistory: [...(get().chatHistory[id] || [])],
       activityLog: [...(get().activityLog[id] || [])],
@@ -1957,7 +1973,7 @@ export const useGrooveStore = create((set, get) => ({
     };
 
     try {
-      const data = await api.post(`/agents/${encodeURIComponent(id)}/instruct`, { message });
+      const data = await api.post(`/agents/${encodeURIComponent(id)}/instruct`, { message: enriched });
 
       if (data.status === 'message_sent') {
         return data;

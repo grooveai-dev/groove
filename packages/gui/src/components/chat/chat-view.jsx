@@ -64,10 +64,8 @@ export function ChatView() {
   const currentModelIsImage = activeConversation ? isImageModel(activeConversation.model) : false;
 
   const handleNewChat = useCallback(async (provider, model) => {
-    const p = provider || 'claude-code';
-    const m = model || 'claude-sonnet-4-6';
     try {
-      await createConversation(p, m, 'api');
+      await createConversation(provider || null, model || null, 'api');
     } catch { /* toast handles */ }
   }, [createConversation]);
 

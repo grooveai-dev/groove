@@ -94,7 +94,7 @@ export class GeminiProvider extends Provider {
     const controller = new AbortController();
     let finished = false;
     const finish = () => { if (!finished) { finished = true; onDone(); } };
-    const m = model || 'gemini-2.5-flash';
+    const m = model;
     const contents = messages.map((msg) => ({
       role: msg.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: msg.content }],

@@ -2,6 +2,7 @@
 
 import { platform, arch, cpus, totalmem, hostname, release, endianness } from 'node:os';
 import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { generateECDHKeypair, deriveSharedSecret, signEnvelope, computeAppHash } from '../shared/crypto.js';
 
 export class SessionAttestation {
@@ -14,7 +15,7 @@ export class SessionAttestation {
     const keypair = generateECDHKeypair();
     let appVersionHash = '';
     try {
-      appVersionHash = computeAppHash(new URL(import.meta.url).pathname);
+      appVersionHash = computeAppHash(fileURLToPath(import.meta.url));
     } catch {
       appVersionHash = 'unknown';
     }

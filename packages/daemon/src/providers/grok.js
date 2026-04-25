@@ -58,7 +58,7 @@ export class GrokProvider extends Provider {
   getLoopConfig(agent) {
     return {
       apiBase: 'https://api.x.ai/v1',
-      model: agent.model || 'grok-4-1-fast',
+      model: agent.model,
       contextWindow: 131072,
       temperature: 0.1,
       maxResponseTokens: 16384,
@@ -97,7 +97,7 @@ export class GrokProvider extends Provider {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: model || 'grok-4-1-fast',
+        model,
         messages,
         stream: true,
       }),

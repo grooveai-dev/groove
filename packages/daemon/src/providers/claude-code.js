@@ -282,7 +282,7 @@ export class ClaudeCodeProvider extends Provider {
     let finished = false;
     const finish = () => { if (!finished) { finished = true; onDone(); } };
     const body = JSON.stringify({
-      model: model || 'claude-sonnet-4-6',
+      model,
       messages,
       max_tokens: 8192,
       stream: true,

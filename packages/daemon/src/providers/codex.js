@@ -163,7 +163,7 @@ export class CodexProvider extends Provider {
     const effort = reasoningEffort || 'medium';
     const verb = verbosity || 'medium';
     const body = {
-      model: model || 'gpt-5.5',
+      model,
       input: previousResponseId ? [messages[messages.length - 1]] : messages,
       stream: true,
       reasoning: { effort },

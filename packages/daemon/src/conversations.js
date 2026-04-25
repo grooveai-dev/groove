@@ -55,12 +55,34 @@ export class ConversationManager {
     return null;
   }
 
+  _resolveAutoProviderModel(preferredProvider) {
+    const priority = ['claude-code', 'codex', 'gemini', 'grok', 'ollama'];
+    const candidates = preferredProvider ? [preferredProvider] : priority;
+
+    for (const pid of candidates) {
+      if (!isProviderInstalled(pid)) continue;
+      const p = getProvider(pid);
+      if (!p) continue;
+      const models = p.constructor.models || [];
+      const chatModel = models.find((m) => m.type !== 'image') || models[0];
+      if (chatModel) return { provider: pid, model: chatModel.id };
+    }
+
+    return { provider: 'claude-code', model: 'claude-sonnet-4-6' };
+  }
+
   async create(provider, model, title, mode = 'api', options = {}) {
     if (!provider && this.daemon.config?.defaultChatProvider) {
       provider = this.daemon.config.defaultChatProvider;
     }
     if (!model && this.daemon.config?.defaultChatModel) {
       model = this.daemon.config.defaultChatModel;
+    }
+
+    if (!provider || !model) {
+      const resolved = this._resolveAutoProviderModel(provider);
+      if (!provider) provider = resolved.provider;
+      if (!model) model = resolved.model;
     }
 
     const id = randomUUID().slice(0, 12);
@@ -328,12 +350,16 @@ export class ConversationManager {
     let providerName = conv.provider;
 
     if (!provider || !isProviderInstalled(conv.provider)) {
-      const priority = ['claude-code', 'gemini', 'codex', 'ollama'];
-      const fallbackId = priority.find((p) => isProviderInstalled(p));
-      if (!fallbackId) throw new Error('No provider available for chat');
-      provider = getProvider(fallbackId);
-      providerName = fallbackId;
-      modelId = null;
+      const resolved = this._resolveAutoProviderModel(null);
+      provider = getProvider(resolved.provider);
+      if (!provider) throw new Error('No provider available for chat');
+      providerName = resolved.provider;
+      modelId = resolved.model;
+    }
+
+    if (!modelId) {
+      const resolved = this._resolveAutoProviderModel(providerName);
+      modelId = resolved.model;
     }
 
     // Build messages array for direct API call

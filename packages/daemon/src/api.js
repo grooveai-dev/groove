@@ -1115,8 +1115,8 @@ export function createApi(app, daemon) {
   app.post('/api/conversations', async (req, res) => {
     try {
       const { provider, model, title, mode, reasoning_effort, verbosity } = req.body;
-      if (!provider || typeof provider !== 'string') {
-        return res.status(400).json({ error: 'provider is required' });
+      if (provider && typeof provider !== 'string') {
+        return res.status(400).json({ error: 'provider must be a string' });
       }
       if (mode && mode !== 'api' && mode !== 'agent') {
         return res.status(400).json({ error: 'mode must be "api" or "agent"' });
@@ -4504,8 +4504,10 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
 
     daemon.config.defaultProvider = provider;
+    daemon.config.defaultChatProvider = provider;
     if (model && typeof model === 'string' && model.length <= 100) {
       daemon.config.defaultModel = model.trim();
+      daemon.config.defaultChatModel = model.trim();
     }
     const { saveConfig } = await import('./firstrun.js');
     saveConfig(daemon.grooveDir, daemon.config);
@@ -4537,15 +4539,20 @@ Keep responses concise. Help them think, don't lecture them about the system the
     saveConfig(daemon.grooveDir, daemon.config);
 
     if (enabled) {
-      const userId = ConsentManager.getOrCreateUserId();
-      const consent = new ConsentManager();
       try {
-        consent.recordConsent(userId, true, '1.0');
-      } finally {
-        consent.close();
+        const userId = ConsentManager.getOrCreateUserId();
+        const consent = new ConsentManager();
+        try {
+          consent.recordConsent(userId, true, '1.0');
+        } finally {
+          consent.close();
+        }
+        await daemon._initTrajectoryCapture();
+        daemon.state.set('training_enrolled_at', new Date().toISOString());
+      } catch (e) {
+        daemon.config.training_opt_in = false;
+        return res.status(500).json({ error: 'Failed to enable data sharing', detail: e.message });
       }
-      await daemon._initTrajectoryCapture();
-      daemon.state.set('training_enrolled_at', new Date().toISOString());
     } else {
       if (daemon.trajectoryCapture) {
         try { await daemon.trajectoryCapture.shutdown(); } catch (e) { /* */ }

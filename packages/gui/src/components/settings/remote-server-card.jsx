@@ -79,13 +79,15 @@ export function RemoteServerCard({ server, onEdit, onDelete, onConnect, onDiscon
 
   const connectLabel = connectStep === 'installing'
     ? 'Installing Groove...'
-    : connectStep === 'starting'
-      ? 'Starting daemon...'
-      : connectStep === 'forwarding'
-        ? 'Establishing tunnel...'
-        : connecting
-          ? 'Connecting...'
-          : 'Connect';
+    : connectStep === 'upgrading'
+      ? 'Updating Groove...'
+      : connectStep === 'starting'
+        ? 'Starting daemon...'
+        : connectStep === 'forwarding'
+          ? 'Establishing tunnel...'
+          : connecting
+            ? 'Connecting...'
+            : 'Connect';
 
   const uptimeSeconds = server.active && server.startedAt
     ? Math.floor((Date.now() - new Date(server.startedAt).getTime()) / 1000)

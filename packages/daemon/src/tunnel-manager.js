@@ -334,6 +334,8 @@ export class TunnelManager {
       failCount: 0,
     });
 
+    await this._checkAndUpgradeRunning(id, config, localPort);
+
     const url = `http://localhost:${localPort}?instance=${encodeURIComponent(config.name)}`;
 
     this.daemon.audit.log('tunnel.connect', { id, name: config.name, host: config.host, localPort });
@@ -373,11 +375,74 @@ export class TunnelManager {
     }
   }
 
+  async _checkAndUpgradeRunning(id, config, localPort) {
+    const localVer = getLocalVersion();
+    if (localVer === '0.0.0') return;
+
+    try {
+      const resp = await fetch(`http://localhost:${localPort}/api/status`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!resp.ok) return;
+      const status = await resp.json();
+      const remoteVersion = status.version;
+      if (!remoteVersion || remoteVersion === localVer) return;
+
+      this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'upgrading', from: remoteVersion, to: localVer } });
+
+      const target = `${config.user}@${config.host}`;
+      const keyArgs = config.sshKeyPath ? ['-i', config.sshKeyPath] : [];
+      const sshBase = [...keyArgs, '-p', String(config.port || 22), '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes', target];
+      const pkg = `groove-dev@${localVer}`;
+      const installCmd = config.user === 'root' ? `npm i -g ${pkg}` : `sudo npm i -g ${pkg}`;
+
+      execFileSync('ssh', [...sshBase, `bash -lc '${installCmd}'`], {
+        encoding: 'utf8',
+        timeout: 120000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      try {
+        execFileSync('ssh', [...sshBase, `bash -lc 'groove stop'`], {
+          encoding: 'utf8',
+          timeout: 10000,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      } catch { /* ignore */ }
+
+      await new Promise(r => setTimeout(r, 1000));
+
+      try {
+        execFileSync('ssh', [...sshBase, `bash -lc 'groove start -d'`], {
+          encoding: 'utf8',
+          timeout: 30000,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      } catch { /* ignore */ }
+
+      await new Promise(r => setTimeout(r, 5000));
+
+      for (let i = 0; i < 3; i++) {
+        try {
+          const check = await fetch(`http://localhost:${localPort}/api/health`, {
+            signal: AbortSignal.timeout(3000),
+          });
+          if (check.ok) return;
+        } catch { /* ignore */ }
+        await new Promise(r => setTimeout(r, 2000));
+      }
+
+      this.daemon.audit.log('tunnel.upgrade-slow', { id, from: remoteVersion, to: localVer });
+    } catch { /* non-fatal — tunnel is still usable at old version */ }
+  }
+
   async _remoteUpgrade(id, config) {
     const target = `${config.user}@${config.host}`;
     const keyArgs = config.sshKeyPath ? ['-i', config.sshKeyPath] : [];
     const sshBase = [...keyArgs, '-p', String(config.port || 22), '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes', target];
-    const installCmd = config.user === 'root' ? 'npm i -g groove-dev' : 'sudo npm i -g groove-dev';
+    const localVer = getLocalVersion();
+    const pkg = localVer !== '0.0.0' ? `groove-dev@${localVer}` : 'groove-dev';
+    const installCmd = config.user === 'root' ? `npm i -g ${pkg}` : `sudo npm i -g ${pkg}`;
 
     try {
       execFileSync('ssh', [...sshBase, `bash -lc '${installCmd}'`], {
@@ -480,9 +545,11 @@ export class TunnelManager {
     }
 
     // Step 2: Install groove-dev globally (use sudo if not root)
+    const localVer = getLocalVersion();
+    const pkg = localVer !== '0.0.0' ? `groove-dev@${localVer}` : 'groove-dev';
     const installCmd = config.user === 'root'
-      ? 'npm i -g groove-dev'
-      : 'sudo npm i -g groove-dev';
+      ? `npm i -g ${pkg}`
+      : `sudo npm i -g ${pkg}`;
 
     try {
       execFileSync('ssh', [

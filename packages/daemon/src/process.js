@@ -315,7 +315,7 @@ function sanitizeFilename(name) {
 
 export function wrapWithRoleReminder(role, message) {
   if (role === 'planner' && !message.startsWith('ROLE REMINDER:')) {
-    return 'ROLE REMINDER: You are a PLANNING ONLY agent. Do NOT write code, edit files, or use Edit/Write/Bash tools. Route this task to your team by writing .groove/recommended-team.json.\n\nUser message: ' + message;
+    return 'ROLE REMINDER: You are a PLANNING ONLY agent. Do NOT write code, edit source files, or run build commands. Your ONLY file write should be .groove/recommended-team.json.\n\nUser message: ' + message;
   }
   return message;
 }
@@ -1336,7 +1336,23 @@ For normal file edits within your scope, proceed without review.
       if (existsSync(targetPath)) return;
 
       const log = readFileSync(logPath, 'utf8');
-      const match = log.match(/\{[\s\S]*?"agents"\s*:\s*\[[\s\S]*?\]\s*\}/);
+
+      // Extract text from JSON log events (Codex agent_message, Claude content blocks)
+      const textParts = [];
+      for (const line of log.split('\n')) {
+        try {
+          const evt = JSON.parse(line.trim());
+          if (evt.item?.type === 'agent_message' && evt.item?.text) textParts.push(evt.item.text);
+          if (evt.type === 'assistant' && evt.message?.content) {
+            for (const block of evt.message.content) {
+              if (block.type === 'text') textParts.push(block.text);
+            }
+          }
+        } catch { textParts.push(line); }
+      }
+      const fullText = textParts.join('\n');
+
+      const match = fullText.match(/\{[\s\S]*?"agents"\s*:\s*\[[\s\S]*?\]\s*\}/);
       if (!match) return;
 
       let parsed;

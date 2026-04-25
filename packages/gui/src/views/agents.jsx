@@ -1027,8 +1027,15 @@ function TeamBuilder() {
         <div className="border-t border-border-subtle px-6 py-4">
           <div className="flex gap-4">
             {/* Task */}
-            <div className="flex-1 space-y-2">
-              <p className="text-xs text-text-3 font-sans italic">Planner will design agent prompts automatically</p>
+            <div className="flex-1 space-y-1.5">
+              <textarea
+                value={task}
+                onChange={(e) => setTask(e.target.value)}
+                placeholder="Describe what you want to build... (optional)"
+                rows={3}
+                className="w-full px-3 py-2 text-sm bg-surface-3 border border-border-subtle rounded-md text-text-0 font-sans placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent resize-none"
+              />
+              <p className="text-2xs text-text-4 font-sans italic">Leave empty to spawn agents awaiting instructions</p>
             </div>
 
             {/* Team Settings + Launch */}
@@ -1067,7 +1074,7 @@ function TeamBuilder() {
                 className="w-full gap-2 mt-1"
               >
                 <Zap size={14} />
-                {launching ? 'Launching...' : `Launch Team (${roles.length})`}
+                {launching ? 'Launching...' : `Plan & Launch (${roles.length})`}
               </Button>
             </div>
           </div>

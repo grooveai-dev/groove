@@ -147,11 +147,8 @@ export class GeminiProvider extends Provider {
     }
 
     switch (event.type) {
-      case 'agent_start':
-        return { type: 'activity', subtype: 'assistant', sessionId: event.streamId, data: [{ type: 'text', text: '' }] };
-
-      case 'session_update':
-        return null;
+      case 'init':
+        return { type: 'activity', subtype: 'assistant', sessionId: event.session_id, data: [{ type: 'text', text: '' }] };
 
       case 'message': {
         if (event.role === 'user') return null;
@@ -165,38 +162,39 @@ export class GeminiProvider extends Provider {
         return { type: 'activity', subtype: 'assistant', data: blocks };
       }
 
-      case 'tool_request': {
-        const toolName = (event.name || '').includes('shell') || (event.name || '').includes('exec')
-          ? 'Bash' : event.name || 'Tool';
-        const input = event.name === 'Bash' || (event.name || '').includes('shell')
-          ? { command: typeof event.args === 'string' ? event.args : JSON.stringify(event.args || {}) }
-          : (event.args || {});
+      case 'tool_use': {
+        const name = event.tool_name || '';
+        const toolName = name.includes('shell') || name.includes('exec')
+          ? 'Bash' : name || 'Tool';
+        const input = toolName === 'Bash'
+          ? { command: event.parameters?.command || (typeof event.parameters === 'string' ? event.parameters : JSON.stringify(event.parameters || {})) }
+          : (event.parameters || {});
         return {
           type: 'activity', subtype: 'assistant',
-          data: [{ type: 'tool_use', id: event.requestId || 'tool', name: toolName, input }],
+          data: [{ type: 'tool_use', id: event.tool_id || 'tool', name: toolName, input }],
         };
       }
 
-      case 'tool_response': {
-        const rawContent = event.content;
-        const contentParts = Array.isArray(rawContent) ? rawContent : (typeof rawContent === 'string' ? [{ text: rawContent }] : rawContent ? [rawContent] : []);
-        const content = contentParts.map((p) => p.text || '').join('').slice(0, 2000);
-        const toolName = (event.name || '').includes('shell') || (event.name || '').includes('exec')
-          ? 'Bash' : event.name || 'Tool';
+      case 'tool_result': {
+        const content = typeof event.output === 'string' ? event.output.slice(0, 2000) : '';
+        const toolId = event.tool_id || '';
+        const isShell = toolId.includes('shell') || toolId.includes('exec');
+        const toolName = isShell ? 'Bash' : 'Tool';
         return {
           type: 'activity', subtype: 'assistant',
           data: [
-            { type: 'tool_use', id: event.requestId || 'tool', name: toolName, input: {} },
+            { type: 'tool_use', id: toolId || 'tool', name: toolName, input: {} },
             ...(content ? [{ type: 'text', text: content }] : []),
           ],
         };
       }
 
-      case 'usage': {
-        const inputTokens = event.inputTokens || 0;
-        const outputTokens = event.outputTokens || 0;
-        const cachedTokens = event.cachedTokens || 0;
-        const totalTokens = inputTokens + outputTokens;
+      case 'result': {
+        const stats = event.stats || {};
+        const inputTokens = stats.input_tokens || 0;
+        const outputTokens = stats.output_tokens || 0;
+        const cachedTokens = stats.cached || 0;
+        const totalTokens = stats.total_tokens || (inputTokens + outputTokens);
 
         const model = GeminiProvider.models.find((m) => m.id === this._currentModel);
         const pricing = model?.pricing;
@@ -211,7 +209,8 @@ export class GeminiProvider extends Provider {
         }
 
         return {
-          type: 'activity', subtype: 'assistant',
+          type: 'result',
+          subtype: 'assistant',
           data: [{ type: 'text', text: '' }],
           tokensUsed: totalTokens,
           inputTokens,
@@ -220,11 +219,11 @@ export class GeminiProvider extends Provider {
           contextUsage: inputTokens / maxContext,
           estimatedCostUsd,
           costSource: pricing ? 'calculated' : 'estimated',
+          cost: estimatedCostUsd,
+          duration: stats.duration_ms,
+          turns: stats.tool_calls || 0,
         };
       }
-
-      case 'agent_end':
-        return { type: 'activity', subtype: 'assistant', data: [{ type: 'text', text: '' }] };
 
       case 'error':
         return { type: 'activity', subtype: 'assistant', data: [{ type: 'text', text: `Error: ${event.message || 'unknown'}` }] };

@@ -3694,18 +3694,26 @@ Keep responses concise. Help them think, don't lecture them about the system the
       const baseDir = daemon.config?.defaultWorkingDir || daemon.projectDir;
 
       if (mode === 'plan-first') {
-        // Spawn a headless planner to generate per-agent prompts, then auto-launch
+        const rolesList = roles.map(r => r.role || r.name || r).join(', ');
+        const providerNote = teamProvider ? ` (provider: ${teamProvider})` : '';
+        let plannerPrompt;
+        if (task) {
+          plannerPrompt = `The user wants these agents: ${rolesList}${providerNote}. Task: ${task}`;
+        } else {
+          plannerPrompt = '';
+        }
         const plannerConfig = validateAgentConfig({
           role: 'planner',
-          prompt: task || 'Analyze the codebase and create a plan for the team.',
+          prompt: plannerPrompt,
           provider: teamProvider,
           model: teamModel,
           workingDir: baseDir,
         });
         plannerConfig.teamId = defaultTeamId;
+        plannerConfig.teamBuilderRoles = roles.map(r => ({ role: r.role || r, provider: r.provider || null }));
         const planner = await daemon.processes.spawn(plannerConfig);
         daemon.audit.log('team-builder.plan-first', { plannerId: planner.id, roles: roles.length });
-        return res.status(202).json({ mode: 'plan-first', plannerId: planner.id, message: 'Planner spawned — team will launch when plan is ready' });
+        return res.status(202).json({ mode: 'plan-first', plannerId: planner.id, message: 'Planner spawned — waiting for user instructions' });
       }
 
       const spawned = [];

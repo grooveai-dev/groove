@@ -48,6 +48,17 @@ export class Introducer {
       }
     }
 
+    if (newAgent.teamBuilderRoles && newAgent.teamBuilderRoles.length > 0) {
+      lines.push('');
+      lines.push('## Team Builder Pre-Selection');
+      lines.push('');
+      const roleDescs = newAgent.teamBuilderRoles.map(r => {
+        return r.provider ? `${r.role} (provider: ${r.provider})` : r.role;
+      });
+      lines.push(`The user selected these roles in the Team Builder UI: ${roleDescs.join(', ')}.`);
+      lines.push('When the user gives you a task, create a plan using EXACTLY these roles. Do not redesign the team composition.');
+    }
+
     lines.push('');
 
     if (others.length === 0) {
@@ -199,12 +210,16 @@ export class Introducer {
     // CLAUDE.md parity — non-Claude providers don't read CLAUDE.md natively,
     // so inject its project content (minus the GROOVE section) into introContext
     if (newAgent.provider && newAgent.provider !== 'claude-code') {
-      const claudeMdContent = this._loadClaudeMd(newAgent.workingDir);
-      if (claudeMdContent) {
-        lines.push('');
-        lines.push('## Project Context (from CLAUDE.md)');
-        lines.push('');
-        lines.push(claudeMdContent);
+      if (newAgent.role === 'planner') {
+        // Planners don't need full project context — codebase structure is injected separately
+      } else {
+        const claudeMdContent = this._loadClaudeMd(newAgent.workingDir);
+        if (claudeMdContent) {
+          lines.push('');
+          lines.push('## Project Context (from CLAUDE.md)');
+          lines.push('');
+          lines.push(claudeMdContent);
+        }
       }
     }
 

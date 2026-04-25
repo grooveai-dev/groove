@@ -1523,7 +1523,14 @@ export const useGrooveStore = create((set, get) => ({
           if (get()._delegatingTeamIds.has(teamId)) return;
           set((s) => ({ recommendedTeam: null, _delegatingTeamIds: new Set([...s._delegatingTeamIds, teamId]) }));
           try {
-            const result = await api.post('/recommended-team/launch', { teamId });
+            const tlc = get().teamLaunchConfig;
+            const result = await api.post('/recommended-team/launch', {
+              teamId,
+              ...(tlc?.provider && { teamProvider: tlc.provider }),
+              ...(tlc?.model && { teamModel: tlc.model }),
+              ...(tlc?.reasoningEffort != null && { teamReasoningEffort: tlc.reasoningEffort }),
+              ...(tlc?.temperature != null && { teamTemperature: tlc.temperature }),
+            });
             const agents = result.agents || [];
             const failures = result.failed || [];
             const names = agents.map((a) => a.name).join(', ') || '';
@@ -1694,6 +1701,12 @@ export const useGrooveStore = create((set, get) => ({
   async launchTeamBuilder() {
     const { teamBuilderRoles, teamBuilderSettings, teamBuilderTask, activeTeamId } = get();
     if (teamBuilderRoles.length === 0) return;
+    set({ teamLaunchConfig: {
+      provider: teamBuilderSettings.provider || null,
+      model: teamBuilderSettings.model || null,
+      reasoningEffort: teamBuilderSettings.reasoningEffort,
+      temperature: teamBuilderSettings.temperature,
+    }});
     get().closeTeamBuilder();
     try {
       const body = {

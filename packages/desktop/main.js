@@ -229,6 +229,7 @@ class WorkspaceManager {
       '<p>The remote Groove daemon is running but its GUI files are missing. This usually means the remote version needs to be updated.</p>',
       '<p class="hint">Try disconnecting and reconnecting — Groove will automatically update the remote.</p>',
       `<button onclick="location.href='${remoteUrl.replace(/'/g, "\\'")}'">Retry</button>`,
+      '<p class="hint" style="margin-top:12px">If retry doesn\'t work, close this window and click the server again in the welcome screen to reconnect.</p>',
       '</body></html>',
     ].join(''));
 
@@ -514,11 +515,12 @@ class WorkspaceManager {
     proc.unref();
 
     const sshExec = (cmd, timeout = 60000) => {
+      const escaped = cmd.replace(/'/g, "'\\''");
       return execFileSync('ssh', [
         ...keyArgs, '-p', String(conn.port || 22),
         '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes',
         '-o', `UserKnownHostsFile=${knownHostsPath}`,
-        `${conn.user}@${conn.host}`, cmd,
+        `${conn.user}@${conn.host}`, `bash -lc '${escaped}'`,
       ], { timeout, stdio: 'pipe', shell: process.platform === 'win32' }).toString().trim();
     };
 
@@ -555,8 +557,13 @@ class WorkspaceManager {
         try {
           sshExec(`npm i -g groove-dev@${app.getVersion()}`, 120000);
         } catch (e) {
-          proc.kill();
-          throw new Error(`Failed to install Groove on remote server: ${e.message || 'npm install failed'}`);
+          emitProgress('Pinned version failed — trying latest...');
+          try {
+            sshExec('npm i -g groove-dev', 120000);
+          } catch (e2) {
+            proc.kill();
+            throw new Error(`Failed to install Groove on remote server: ${e2.message || 'npm install failed'}`);
+          }
         }
       }
 
@@ -584,6 +591,13 @@ class WorkspaceManager {
             sshExec(`npm i -g groove-dev@${localVersion}`, 120000);
           } catch (e) {
             console.error('[ssh] Remote upgrade failed:', e.message);
+            emitProgress('Pinned upgrade failed — trying latest...');
+            try {
+              sshExec('npm i -g groove-dev', 120000);
+            } catch (e2) {
+              console.error('[ssh] Unpinned upgrade also failed:', e2.message);
+              emitProgress('Remote upgrade failed — running older version');
+            }
           }
           try { sshExec('groove stop', 10000); } catch {}
           await new Promise(r => setTimeout(r, 1000));
@@ -1907,7 +1921,6 @@ ipcMain.handle('home-remove-ssh', (_event, id) => {
 ipcMain.handle('home-connect-ssh', async (_event, id) => {
   if (!workspaces || !id) throw new Error('Invalid id');
   const { localPort, name } = await workspaces.connectSSH(id);
-  workspaces.openRemote(localPort, name);
   return { ok: true, localPort, name };
 });
 

@@ -703,6 +703,7 @@ For normal file edits within your scope, proceed without review.
 
     // ─── Agent Loop path (local models with built-in agentic runtime) ───
     if (provider.constructor.useAgentLoop) {
+      provider.normalizeConfig(spawnConfig);
       const loopConfig = provider.getLoopConfig(spawnConfig);
       logStream.write(`[${new Date().toISOString()}] GROOVE agent-loop: model=${loopConfig.model} api=${loopConfig.apiBase}\n`);
 
@@ -815,6 +816,7 @@ For normal file edits within your scope, proceed without review.
       integrationEnv = this.daemon.integrations.getSpawnEnv(config.integrations);
     }
 
+    provider.normalizeConfig(spawnConfig);
     const spawnCmd = provider.buildSpawnCommand(spawnConfig);
     const { command: rawCommand, args, env, stdin: stdinData, cwd: providerCwd } = spawnCmd;
     const command = resolveProviderCommand(agent.provider || config.provider) || rawCommand;

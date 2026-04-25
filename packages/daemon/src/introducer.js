@@ -196,6 +196,18 @@ export class Introducer {
       lines.push(`GROOVE_PROJECT_MAP.md contains a structural overview of this project. This is BACKGROUND INFORMATION ONLY — it is NOT your task. Do not treat existing files or previous work as something you should continue or improve unless the user explicitly asks you to.`);
     }
 
+    // CLAUDE.md parity — non-Claude providers don't read CLAUDE.md natively,
+    // so inject its project content (minus the GROOVE section) into introContext
+    if (newAgent.provider && newAgent.provider !== 'claude-code') {
+      const claudeMdContent = this._loadClaudeMd(newAgent.workingDir);
+      if (claudeMdContent) {
+        lines.push('');
+        lines.push('## Project Context (from CLAUDE.md)');
+        lines.push('');
+        lines.push(claudeMdContent);
+      }
+    }
+
     // Codebase structure injection — give agents instant orientation
     const structureSummary = this.daemon.indexer?.getStructureSummary();
     if (structureSummary) {
@@ -380,6 +392,35 @@ export class Introducer {
     }
 
     return lines.join('\n') + memorySection;
+  }
+
+  _loadClaudeMd(workingDir) {
+    // Walk up from agent workingDir to find CLAUDE.md
+    let dir = workingDir || this.daemon.projectDir;
+    let claudePath = null;
+    for (let i = 0; i < 5; i++) {
+      const candidate = resolve(dir, 'CLAUDE.md');
+      if (existsSync(candidate)) { claudePath = candidate; break; }
+      const parent = resolve(dir, '..');
+      if (parent === dir) break;
+      dir = parent;
+    }
+    if (!claudePath) return null;
+    try {
+      let content = readFileSync(claudePath, 'utf8').trim();
+      // Strip the GROOVE:START to GROOVE:END section to avoid duplicating coordination data
+      const startIdx = content.indexOf(GROOVE_SECTION_START);
+      const endIdx = content.indexOf(GROOVE_SECTION_END);
+      if (startIdx !== -1 && endIdx !== -1) {
+        content = (content.slice(0, startIdx) + content.slice(endIdx + GROOVE_SECTION_END.length)).trim();
+      }
+      if (content.length > 8000) {
+        content = content.slice(0, 8000) + '\n\n*(truncated — read full file for details)*';
+      }
+      return content || null;
+    } catch {
+      return null;
+    }
   }
 
   loadArchitectureDoc() {

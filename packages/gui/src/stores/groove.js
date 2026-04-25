@@ -62,6 +62,17 @@ export const useGrooveStore = create((set, get) => ({
   previewChat: [],
   previewIterating: false,
 
+  // ── Team Launch Config (set during planner spawn, cascades to team) ──
+  teamLaunchConfig: null, // { provider, model, reasoningEffort, temperature, verbosity }
+
+  // ── Team Builder ──────────────────────────────────────────
+  teamBuilderOpen: false,
+  teamBuilderRoles: [],
+  teamBuilderSettings: { provider: null, model: null, reasoningEffort: 50, temperature: 0.5 },
+  teamBuilderTask: '',
+  teamBuilderLaunchMode: 'plan',
+  teamTemplates: { builtIn: [], custom: [] },
+
   // ── Navigation ────────────────────────────────────────────
   activeView: 'agents',           // 'agents' | 'editor' | 'dashboard' | 'marketplace' | 'teams' | 'settings' | 'preview'
   detailPanel: null,              // null | { type: 'agent', agentId } | { type: 'spawn' } | { type: 'journalist' }
@@ -1550,9 +1561,18 @@ export const useGrooveStore = create((set, get) => ({
   async launchRecommendedTeam(modifiedAgents) {
     try {
       const teamId = get().recommendedTeam?.teamId || null;
+      const tlc = get().teamLaunchConfig;
       set({ recommendedTeam: null }); // Dismiss modal immediately
       get().addToast('info', 'Launching team...');
-      const body = { ...(modifiedAgents && { agents: modifiedAgents }), ...(teamId && { teamId }) };
+      const body = {
+        ...(modifiedAgents && { agents: modifiedAgents }),
+        ...(teamId && { teamId }),
+        ...(tlc?.provider && { teamProvider: tlc.provider }),
+        ...(tlc?.model && { teamModel: tlc.model }),
+        ...(tlc?.reasoningEffort != null && { teamReasoningEffort: tlc.reasoningEffort }),
+        ...(tlc?.temperature != null && { teamTemperature: tlc.temperature }),
+        ...(tlc?.verbosity != null && { teamVerbosity: tlc.verbosity }),
+      };
       const result = await api.post('/recommended-team/launch', body);
       const totalOk = (result.launched || 0) + (result.reused || 0);
       const failures = result.failed || [];
@@ -1586,6 +1606,104 @@ export const useGrooveStore = create((set, get) => ({
       return result;
     } catch (err) {
       get().addToast('error', 'Launch failed', err.message);
+      throw err;
+    }
+  },
+
+  // ── Team Builder ──────────────────────────────────────────
+
+  openTeamBuilder() { set({ teamBuilderOpen: true }); },
+  closeTeamBuilder() {
+    set({
+      teamBuilderOpen: false,
+      teamBuilderRoles: [],
+      teamBuilderSettings: { provider: null, model: null, reasoningEffort: 50, temperature: 0.5 },
+      teamBuilderTask: '',
+      teamBuilderLaunchMode: 'plan',
+    });
+  },
+  addTeamBuilderRole(role) {
+    set((s) => ({
+      teamBuilderRoles: [...s.teamBuilderRoles, {
+        role, name: '', provider: null, model: null,
+        reasoningEffort: null, temperature: null, prompt: '',
+      }],
+    }));
+  },
+  removeTeamBuilderRole(index) {
+    set((s) => ({ teamBuilderRoles: s.teamBuilderRoles.filter((_, i) => i !== index) }));
+  },
+  updateTeamBuilderRole(index, updates) {
+    set((s) => ({
+      teamBuilderRoles: s.teamBuilderRoles.map((r, i) => i === index ? { ...r, ...updates } : r),
+    }));
+  },
+  applyTemplate(template) {
+    set({
+      teamBuilderRoles: (template.roles || []).map((r) => ({
+        role: typeof r === 'string' ? r : r.role,
+        name: '', provider: null, model: null,
+        reasoningEffort: null, temperature: null, prompt: '',
+      })),
+    });
+  },
+  setTeamBuilderSettings(settings) {
+    set((s) => ({ teamBuilderSettings: { ...s.teamBuilderSettings, ...settings } }));
+  },
+  setTeamBuilderTask(task) { set({ teamBuilderTask: task }); },
+  setTeamBuilderLaunchMode(mode) { set({ teamBuilderLaunchMode: mode }); },
+
+  async fetchTeamTemplates() {
+    try {
+      const data = await api.get('/team-templates');
+      set({ teamTemplates: data });
+    } catch { /* endpoint may not exist yet */ }
+  },
+
+  async saveTeamTemplate(name) {
+    try {
+      const { teamBuilderRoles, teamBuilderSettings } = get();
+      await api.post('/team-templates', {
+        name,
+        roles: teamBuilderRoles.map((r) => r.role),
+        settings: teamBuilderSettings,
+      });
+      get().addToast('success', `Template "${name}" saved`);
+      get().fetchTeamTemplates();
+    } catch (err) {
+      get().addToast('error', 'Failed to save template', err.message);
+    }
+  },
+
+  async deleteTeamTemplate(name) {
+    try {
+      await api.delete(`/team-templates/${encodeURIComponent(name)}`);
+      get().addToast('info', `Template "${name}" deleted`);
+      get().fetchTeamTemplates();
+    } catch (err) {
+      get().addToast('error', 'Failed to delete template', err.message);
+    }
+  },
+
+  async launchTeamBuilder() {
+    const { teamBuilderRoles, teamBuilderSettings, teamBuilderTask, teamBuilderLaunchMode, activeTeamId } = get();
+    if (teamBuilderRoles.length === 0) return;
+    try {
+      get().addToast('info', 'Launching team...');
+      const body = {
+        task: teamBuilderTask,
+        roles: teamBuilderRoles,
+        settings: teamBuilderSettings,
+        launchMode: teamBuilderLaunchMode,
+        teamId: activeTeamId,
+      };
+      const result = await api.post('/team-builder/launch', body);
+      const count = result.launched || result.agents?.length || 0;
+      get().addToast('success', `Launched ${count} agent${count !== 1 ? 's' : ''}`);
+      get().closeTeamBuilder();
+      return result;
+    } catch (err) {
+      get().addToast('error', 'Team launch failed', err.message);
       throw err;
     }
   },
@@ -2379,19 +2497,21 @@ export const useGrooveStore = create((set, get) => ({
   setWorkspaceMode(on) {
     set({ workspaceMode: on });
     localStorage.setItem('groove:workspaceMode', String(on));
-    if (on) {
-      get().closeDetail();
-    }
     if (on && !get().workspaceAgentId) {
       const teamAgents = get().agents.filter((a) => a.teamId === get().activeTeamId);
       const selected = get().detailPanel?.type === 'agent' ? get().detailPanel.agentId : null;
       const running = teamAgents.find((a) => a.status === 'running');
       set({ workspaceAgentId: selected || running?.id || teamAgents[0]?.id || null });
     }
+    if (on) {
+      const agentId = get().workspaceAgentId;
+      if (agentId) get().selectAgent(agentId);
+    }
   },
 
   setWorkspaceAgent(id) {
     set({ workspaceAgentId: id });
+    if (id) get().selectAgent(id);
   },
 
   captureSnapshot(path, content) {

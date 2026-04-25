@@ -127,6 +127,13 @@ export class LocalProvider extends Provider {
    * Get configuration for the agent loop runtime.
    * Called by ProcessManager when useAgentLoop is true.
    */
+  normalizeConfig(config) {
+    if (typeof config.temperature !== 'number' && typeof config.reasoningEffort === 'number') {
+      config.temperature = 0.1 + (100 - config.reasoningEffort) * 0.008;
+    }
+    return config;
+  }
+
   getLoopConfig(agent) {
     const model = agent.model || 'qwen2.5-coder:7b';
     const contextWindow = this.getContextWindow(model);
@@ -143,7 +150,7 @@ export class LocalProvider extends Provider {
       apiBase,
       model,
       contextWindow,
-      temperature: 0.1,
+      temperature: typeof agent.temperature === 'number' ? agent.temperature : 0.1,
       maxResponseTokens: 4096,
       stream: true,
       headers: {},

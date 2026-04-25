@@ -93,6 +93,25 @@ export function validateAgentConfig(config) {
   const reasoningEffort = config.reasoning_effort !== undefined && config.reasoning_effort !== null
     ? validateReasoningEffort(config.reasoning_effort) : undefined;
 
+  // Numeric tuning params (0-100 for effort/verbosity, 0.0-1.0 for temperature)
+  let numericReasoningEffort = undefined;
+  if (config.reasoningEffort !== undefined && config.reasoningEffort !== null) {
+    const n = Number(config.reasoningEffort);
+    if (!isNaN(n) && n >= 0 && n <= 100) numericReasoningEffort = Math.round(n);
+  }
+
+  let temperature = undefined;
+  if (config.temperature !== undefined && config.temperature !== null) {
+    const t = Number(config.temperature);
+    if (!isNaN(t) && t >= 0 && t <= 1) temperature = t;
+  }
+
+  let verbosity = undefined;
+  if (config.verbosity !== undefined && config.verbosity !== null) {
+    const v = Number(config.verbosity);
+    if (!isNaN(v) && v >= 0 && v <= 100) verbosity = Math.round(v);
+  }
+
   // Return sanitized config (only known fields)
   return {
     role: config.role,
@@ -109,7 +128,9 @@ export function validateAgentConfig(config) {
     integrationApproval,
     repos,
     personality,
-    reasoningEffort,
+    reasoningEffort: numericReasoningEffort ?? reasoningEffort,
+    temperature,
+    verbosity,
   };
 }
 

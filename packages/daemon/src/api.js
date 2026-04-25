@@ -3332,7 +3332,14 @@ Keep responses concise. Help them think, don't lecture them about the system the
       let agentConfigs;
       let projectDir = null;
       let previewBlock = null;
-      if (Array.isArray(raw)) {
+
+      // Frontend Team Builder override — if body.agents is provided, use it
+      // instead of the planner's recommended-team.json
+      if (Array.isArray(req.body?.agents) && req.body.agents.length > 0) {
+        agentConfigs = req.body.agents;
+        projectDir = raw.projectDir || null;
+        previewBlock = raw.preview || null;
+      } else if (Array.isArray(raw)) {
         agentConfigs = raw;
       } else if (raw && Array.isArray(raw.agents)) {
         agentConfigs = raw.agents;
@@ -3381,6 +3388,23 @@ Keep responses concise. Help them think, don't lecture them about the system the
           }
           return p;
         });
+      }
+
+      // Team-level overrides from the pre-planner config panel
+      const teamProvider = req.body?.teamProvider || undefined;
+      const teamModel = req.body?.teamModel || undefined;
+      const teamReasoningEffort = req.body?.teamReasoningEffort != null ? Number(req.body.teamReasoningEffort) : undefined;
+      const teamTemperature = req.body?.teamTemperature != null ? Number(req.body.teamTemperature) : undefined;
+      const teamVerbosity = req.body?.teamVerbosity != null ? Number(req.body.teamVerbosity) : undefined;
+
+      if (teamProvider || teamModel) {
+        for (const c of agentConfigs) {
+          if (teamProvider) c.provider = teamProvider;
+          if (teamModel) c.model = teamModel;
+          if (teamReasoningEffort !== undefined) c.reasoningEffort = teamReasoningEffort;
+          if (teamTemperature !== undefined) c.temperature = teamTemperature;
+          if (teamVerbosity !== undefined) c.verbosity = teamVerbosity;
+        }
       }
 
       // Separate phase 1 (builders) and phase 2 (QC/finisher)
@@ -3450,6 +3474,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
               workingDir: existing.workingDir || projectWorkingDir,
               name: existing.name,
               integrationApproval: config.integrationApproval || existing.integrationApproval || undefined,
+              reasoningEffort: config.reasoningEffort,
+              temperature: config.temperature,
+              verbosity: config.verbosity,
             });
             validated.teamId = defaultTeamId;
             const newAgent = await daemon.processes.spawn(validated);
@@ -3466,12 +3493,15 @@ Keep responses concise. Help them think, don't lecture them about the system the
               role: config.role,
               scope: normalizeScope(config.scope || [], config.workingDir || projectWorkingDir),
               prompt,
-              provider: config.provider || undefined,
+              provider: config.provider || daemon.config?.defaultProvider || undefined,
               model: config.model || daemon.config?.defaultModel || 'auto',
               permission: config.permission || 'auto',
               workingDir: config.workingDir || projectWorkingDir,
               name: config.name || undefined,
               integrationApproval: config.integrationApproval || undefined,
+              reasoningEffort: config.reasoningEffort,
+              temperature: config.temperature,
+              verbosity: config.verbosity,
             });
             validated.teamId = defaultTeamId;
             const agent = await daemon.processes.spawn(validated);
@@ -3506,8 +3536,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
             waitFor: phase1Ids,
             agents: phase2.map((c) => ({
               role: c.role, scope: c.scope || [], prompt: c.prompt || '',
-              provider: c.provider || undefined, model: c.model || 'auto',
+              provider: c.provider || daemon.config?.defaultProvider || undefined, model: c.model || daemon.config?.defaultModel || 'auto',
               permission: c.permission || 'auto',
+              reasoningEffort: c.reasoningEffort, temperature: c.temperature, verbosity: c.verbosity,
               workingDir: c.workingDir || projectWorkingDir,
               name: c.name || undefined,
               teamId: defaultTeamId,
@@ -3535,6 +3566,200 @@ Keep responses concise. Help them think, don't lecture them about the system the
         agents: [...spawned, ...reused].map((a) => a.role), projectDir: projectDir || null, preview: !!previewBlock,
       });
       res.json({ launched: spawned.length, reused: reused.length, phase2Pending: phase2.length, agents: [...spawned, ...reused], failed, projectDir: projectDir || null, preview: previewBlock ? previewBlock.kind : null });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- Team Templates ---
+
+  const BUILT_IN_TEMPLATES = {
+    'dev-team': {
+      name: 'Dev Team', description: 'Frontend + Backend + QC', icon: 'code',
+      roles: [{ role: 'frontend' }, { role: 'backend' }, { role: 'fullstack', phase: 2 }],
+    },
+    'full-stack': {
+      name: 'Full Stack', description: 'Frontend, Backend, DevOps, Testing + QC', icon: 'layers',
+      roles: [{ role: 'frontend' }, { role: 'backend' }, { role: 'devops' }, { role: 'testing' }, { role: 'fullstack', phase: 2 }],
+    },
+    'marketing': {
+      name: 'Marketing', description: 'CMO, Creative, Analyst', icon: 'megaphone',
+      roles: [{ role: 'cmo' }, { role: 'creative' }, { role: 'analyst' }],
+    },
+    'business': {
+      name: 'Business', description: 'CFO, CMO, Analyst', icon: 'briefcase',
+      roles: [{ role: 'cfo' }, { role: 'cmo' }, { role: 'analyst' }],
+    },
+    'security-audit': {
+      name: 'Security Audit', description: 'Security, Backend + QC', icon: 'shield',
+      roles: [{ role: 'security' }, { role: 'backend' }, { role: 'fullstack', phase: 2 }],
+    },
+    'docs': {
+      name: 'Documentation', description: 'Docs + Frontend', icon: 'file-text',
+      roles: [{ role: 'docs' }, { role: 'frontend' }],
+    },
+  };
+
+  function getCustomTemplatesDir() {
+    return resolve(homedir(), '.groove', 'team-templates');
+  }
+
+  function loadCustomTemplates() {
+    const dir = getCustomTemplatesDir();
+    if (!existsSync(dir)) return {};
+    const templates = {};
+    try {
+      for (const file of readdirSync(dir).filter(f => f.endsWith('.json'))) {
+        try {
+          const data = JSON.parse(readFileSync(resolve(dir, file), 'utf8'));
+          const key = file.replace(/\.json$/, '');
+          templates[key] = { ...data, custom: true };
+        } catch { /* skip malformed */ }
+      }
+    } catch { /* dir read failed */ }
+    return templates;
+  }
+
+  app.get('/api/team-templates', (req, res) => {
+    const custom = loadCustomTemplates();
+    const all = {};
+    for (const [k, v] of Object.entries(BUILT_IN_TEMPLATES)) {
+      all[k] = { ...v, builtIn: true };
+    }
+    for (const [k, v] of Object.entries(custom)) {
+      all[k] = v;
+    }
+    res.json(all);
+  });
+
+  app.post('/api/team-templates', (req, res) => {
+    const { name, description, icon, roles, settings } = req.body || {};
+    if (!name || typeof name !== 'string' || name.length > 64) {
+      return res.status(400).json({ error: 'name is required (max 64 chars)' });
+    }
+    if (!Array.isArray(roles) || roles.length === 0) {
+      return res.status(400).json({ error: 'roles array is required' });
+    }
+    const key = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64);
+    if (!key) return res.status(400).json({ error: 'Invalid template name' });
+    if (BUILT_IN_TEMPLATES[key]) {
+      return res.status(409).json({ error: 'Cannot overwrite built-in template' });
+    }
+    const dir = getCustomTemplatesDir();
+    mkdirSync(dir, { recursive: true });
+    const template = { name, description: description || '', icon: icon || 'users', roles, settings: settings || {} };
+    writeFileSync(resolve(dir, `${key}.json`), JSON.stringify(template, null, 2));
+    daemon.audit.log('team-template.save', { key, roles: roles.length });
+    res.status(201).json({ key, ...template, custom: true });
+  });
+
+  app.delete('/api/team-templates/:name', (req, res) => {
+    const key = req.params.name;
+    if (BUILT_IN_TEMPLATES[key]) {
+      return res.status(403).json({ error: 'Cannot delete built-in template' });
+    }
+    const file = resolve(getCustomTemplatesDir(), `${key}.json`);
+    if (!existsSync(file)) return res.status(404).json({ error: 'Template not found' });
+    try {
+      unlinkSync(file);
+      daemon.audit.log('team-template.delete', { key });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- Team Builder Launch ---
+
+  app.post('/api/team-builder/launch', async (req, res) => {
+    try {
+      const { task, roles, settings, launchMode } = req.body || {};
+      if (!Array.isArray(roles) || roles.length === 0) {
+        return res.status(400).json({ error: 'roles array is required' });
+      }
+      const mode = launchMode || 'direct';
+      const teamSettings = settings || {};
+      const teamProvider = teamSettings.provider || daemon.config?.defaultProvider || undefined;
+      const teamModel = teamSettings.model || daemon.config?.defaultModel || undefined;
+
+      const defaultTeamId = req.body.teamId || daemon.teams.getDefault()?.id || null;
+      const baseDir = daemon.config?.defaultWorkingDir || daemon.projectDir;
+
+      if (mode === 'plan-first') {
+        // Spawn a headless planner to generate per-agent prompts, then auto-launch
+        const plannerConfig = validateAgentConfig({
+          role: 'planner',
+          prompt: task || 'Analyze the codebase and create a plan for the team.',
+          provider: teamProvider,
+          model: teamModel,
+          workingDir: baseDir,
+        });
+        plannerConfig.teamId = defaultTeamId;
+        const planner = await daemon.processes.spawn(plannerConfig);
+        daemon.audit.log('team-builder.plan-first', { plannerId: planner.id, roles: roles.length });
+        return res.status(202).json({ mode: 'plan-first', plannerId: planner.id, message: 'Planner spawned — team will launch when plan is ready' });
+      }
+
+      const spawned = [];
+      const failed = [];
+      const phase1Agents = roles.filter(r => !r.phase || r.phase === 1);
+      const phase2Agents = roles.filter(r => r.phase === 2);
+      const phase1Ids = [];
+
+      for (const roleDef of phase1Agents) {
+        try {
+          let prompt = roleDef.prompt || '';
+          if (task && mode === 'direct') {
+            prompt = task + (prompt ? '\n\n' + prompt : '');
+          }
+
+          const agentConfig = validateAgentConfig({
+            role: roleDef.role,
+            name: roleDef.name || undefined,
+            scope: roleDef.scope || [],
+            prompt: mode === 'await' ? '' : prompt,
+            provider: roleDef.provider || teamProvider,
+            model: roleDef.model || teamModel,
+            reasoningEffort: roleDef.reasoningEffort ?? teamSettings.reasoningEffort,
+            temperature: roleDef.temperature ?? teamSettings.temperature,
+            verbosity: roleDef.verbosity ?? teamSettings.verbosity,
+            workingDir: baseDir,
+          });
+          agentConfig.teamId = defaultTeamId;
+          const agent = await daemon.processes.spawn(agentConfig);
+          spawned.push({ id: agent.id, name: agent.name, role: agent.role });
+          phase1Ids.push(agent.id);
+        } catch (err) {
+          failed.push({ role: roleDef.role, error: err.message });
+        }
+      }
+
+      if (phase2Agents.length > 0 && phase1Ids.length > 0) {
+        daemon._pendingPhase2 = daemon._pendingPhase2 || [];
+        daemon._pendingPhase2.push({
+          waitFor: phase1Ids,
+          agents: phase2Agents.map(r => ({
+            role: r.role, scope: r.scope || [], prompt: r.prompt || '',
+            provider: r.provider || teamProvider || daemon.config?.defaultProvider || undefined,
+            model: r.model || teamModel || daemon.config?.defaultModel || 'auto',
+            reasoningEffort: r.reasoningEffort ?? teamSettings.reasoningEffort,
+            temperature: r.temperature ?? teamSettings.temperature,
+            verbosity: r.verbosity ?? teamSettings.verbosity,
+            workingDir: baseDir,
+            name: r.name || undefined,
+            teamId: defaultTeamId,
+          })),
+        });
+      }
+
+      daemon.audit.log('team-builder.launch', {
+        mode, phase1: spawned.length, phase2Pending: phase2Agents.length,
+        failed: failed.length, task: task ? task.slice(0, 100) : null,
+      });
+      res.json({
+        mode, launched: spawned.length, phase2Pending: phase2Agents.length,
+        agents: spawned, failed,
+      });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

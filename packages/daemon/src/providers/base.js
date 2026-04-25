@@ -29,6 +29,10 @@ export class Provider {
     return false; // Default: no hot-swap, needs rotation
   }
 
+  normalizeConfig(config) {
+    return config;
+  }
+
   parseOutput(line) {
     return null;
   }

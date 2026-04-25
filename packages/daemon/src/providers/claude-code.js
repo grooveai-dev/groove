@@ -70,6 +70,14 @@ export class ClaudeCodeProvider extends Provider {
     return 'npm i -g @anthropic-ai/claude-code';
   }
 
+  normalizeConfig(config) {
+    if (typeof config.reasoningEffort === 'number') {
+      const e = config.reasoningEffort;
+      config.effort = e <= 20 ? 'none' : e <= 40 ? 'low' : e <= 60 ? 'medium' : e <= 80 ? 'high' : 'xhigh';
+    }
+    return config;
+  }
+
   buildSpawnCommand(agent) {
     // Claude Code interactive mode:
     //   claude [options] [prompt]

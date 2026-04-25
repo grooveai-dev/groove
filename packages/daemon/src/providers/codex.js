@@ -107,26 +107,52 @@ export class CodexProvider extends Provider {
     }
   }
 
+  normalizeConfig(config) {
+    if (typeof config.reasoningEffort === 'number') {
+      config.reasoningEffort = config.reasoningEffort <= 33 ? 'low' : config.reasoningEffort <= 66 ? 'medium' : 'high';
+    }
+    if (typeof config.verbosity === 'number') {
+      config.verbosity = config.verbosity <= 33 ? 'low' : config.verbosity <= 66 ? 'medium' : 'high';
+    }
+    return config;
+  }
+
   buildSpawnCommand(agent) {
     const args = ['exec'];
 
     if (agent.model) args.push('--model', agent.model);
+    if (agent.reasoningEffort) args.push('--reasoning-effort', agent.reasoningEffort);
 
     args.push('--json');
     args.push('--dangerously-bypass-approvals-and-sandbox');
 
     if (agent.workingDir) args.push('-C', agent.workingDir);
 
-    if (agent.prompt) args.push(agent.prompt);
+    const fullPrompt = this.buildFullPrompt(agent);
 
     this._currentModel = agent.model;
     this._sessionInputTokens = 0;
 
+    // Pipe prompt via stdin to avoid ARG_MAX with large introContext
     return {
       command: 'codex',
       args,
       env: agent.apiKey ? { OPENAI_API_KEY: agent.apiKey } : {},
+      stdin: fullPrompt || undefined,
     };
+  }
+
+  buildFullPrompt(agent) {
+    const parts = [];
+    if (agent.introContext) parts.push(agent.introContext);
+    if (agent.prompt) parts.push(`## Your Task\n\n${agent.prompt}`);
+    if (agent.scope && agent.scope.length > 0) {
+      parts.push(
+        `## Scope Rules\n\nYou MUST only modify files matching these patterns: ${agent.scope.join(', ')}. ` +
+        `Do not touch files outside your scope — other agents own them.`
+      );
+    }
+    return parts.join('\n\n');
   }
 
   buildHeadlessCommand(prompt, model) {
@@ -244,7 +270,7 @@ export class CodexProvider extends Provider {
     try {
       event = JSON.parse(trimmed);
     } catch {
-      return { type: 'activity', data: trimmed };
+      return null;
     }
 
     switch (event.type) {
@@ -345,8 +371,11 @@ export class CodexProvider extends Provider {
         const outputTokens = usage.output_tokens || 0;
         const cachedTokens = usage.cached_input_tokens || 0;
         const reasoningTokens = usage.output_tokens_details?.reasoning_tokens || 0;
-        const totalTokens = inputTokens + outputTokens;
-        const cacheCreationTokens = cachedTokens > 0 ? Math.max(0, inputTokens - cachedTokens) : 0;
+        // OpenAI includes cached tokens IN input_tokens; Anthropic does not.
+        // Subtract cached to get new-processing-only count, matching Claude's convention.
+        const newInputTokens = Math.max(0, inputTokens - cachedTokens);
+        const totalTokens = newInputTokens + outputTokens;
+        const cacheCreationTokens = cachedTokens > 0 ? newInputTokens : 0;
 
         const model = CodexProvider.models.find((m) => m.id === this._currentModel);
         const pricing = model?.pricing;

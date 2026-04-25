@@ -10,10 +10,15 @@ import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Radio, Eye } from 'lucide-react';
+import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Radio, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Play, Clock, ListChecks, Layers } from 'lucide-react';
 import { PreviewWorkspace } from '../components/preview/preview-workspace';
 import { WorkspaceMode } from '../components/agents/workspace-mode';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../components/ui/context-menu';
+import { Dialog, DialogContent } from '../components/ui/dialog';
+import { Select, SelectTrigger, SelectContent, SelectItem } from '../components/ui/select';
+import { ScrollArea } from '../components/ui/scroll-area';
+import { Tooltip } from '../components/ui/tooltip';
+import { TuningSlider } from '../components/ui/slider';
 
 const NODE_TYPES = { agentNode: AgentNode, rootNode: RootNode };
 const NODE_W = 220;
@@ -582,9 +587,579 @@ function AgentTreeInner() {
   );
 }
 
+/* ── Provider Config Helpers ──────────────────────────────── */
+
+const PROVIDER_TEMP_SUPPORT = new Set(['codex', 'grok', 'local']);
+const PROVIDER_VERBOSITY_SUPPORT = new Set(['codex']);
+
+/* ── Planner Config Dialog ───────────────────────────────── */
+
+function PlannerConfigDialog({ open, onOpenChange, onLaunch }) {
+  const fetchProviders = useGrooveStore((s) => s.fetchProviders);
+  const [providers, setProviders] = useState([]);
+  const [provider, setProvider] = useState('');
+  const [model, setModel] = useState('');
+  const [reasoningEffort, setReasoningEffort] = useState(50);
+  const [temperature, setTemperature] = useState(0.5);
+  const [verbosity, setVerbosity] = useState(50);
+
+  useEffect(() => {
+    if (!open) return;
+    fetchProviders().then((list) => {
+      if (!Array.isArray(list)) return;
+      const installed = list.filter((p) => p.installed);
+      setProviders(installed);
+      if (!provider && installed.length > 0) {
+        const def = installed.find((p) => p.isDefault) || installed[0];
+        setProvider(def.id);
+        const models = def.models?.filter((m) => m.type !== 'image') || [];
+        if (models.length > 0) setModel(models[0].id);
+      }
+    }).catch(() => {});
+  }, [open]);
+
+  const selectedProvider = providers.find((p) => p.id === provider);
+  const models = (selectedProvider?.models || []).filter((m) => m.type !== 'image' && !m.disabled);
+  const showTemp = PROVIDER_TEMP_SUPPORT.has(provider);
+  const showVerbosity = PROVIDER_VERBOSITY_SUPPORT.has(provider);
+
+  function handleProviderChange(id) {
+    setProvider(id);
+    const p = providers.find((x) => x.id === id);
+    const pModels = (p?.models || []).filter((m) => m.type !== 'image' && !m.disabled);
+    setModel(pModels[0]?.id || '');
+  }
+
+  function handleLaunch() {
+    const config = {
+      provider, model, reasoningEffort,
+      ...(showTemp && { temperature }),
+      ...(showVerbosity && { verbosity }),
+    };
+    useGrooveStore.setState({ teamLaunchConfig: config });
+    onLaunch(config);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent title="Configure Planner" description="Set provider, model, and tuning before launching the planner">
+        <div className="px-5 py-4 space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-text-2 font-sans">Provider</label>
+            <Select value={provider} onValueChange={handleProviderChange}>
+              <SelectTrigger placeholder="Select provider" className="bg-surface-3" />
+              <SelectContent>
+                {providers.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.displayName || p.name || p.id}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-text-2 font-sans">Model</label>
+            <Select value={model} onValueChange={setModel}>
+              <SelectTrigger placeholder="Select model" className="bg-surface-3" />
+              <SelectContent>
+                <SelectItem value="auto">Auto</SelectItem>
+                {models.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>{m.name || m.id}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1 pt-1">
+            <TuningSlider
+              label="Reasoning Effort"
+              value={reasoningEffort}
+              onChange={setReasoningEffort}
+              min={0} max={100} step={1}
+            />
+            {showTemp && (
+              <TuningSlider
+                label="Temperature"
+                value={temperature}
+                onChange={setTemperature}
+                min={0} max={1} step={0.01}
+                formatValue={(v) => v.toFixed(2)}
+              />
+            )}
+            {showVerbosity && (
+              <TuningSlider
+                label="Verbosity"
+                value={verbosity}
+                onChange={setVerbosity}
+                min={0} max={100} step={1}
+              />
+            )}
+          </div>
+        </div>
+
+        <div className="px-5 py-4 border-t border-border-subtle">
+          <Button variant="primary" size="md" onClick={handleLaunch} className="w-full gap-2">
+            <Zap size={14} />
+            Launch Planner
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ── Team Builder ────────────────────────────────────────────── */
+
+const TB_ROLE_ICONS = {
+  chat: MessageCircle, planner: Rocket, backend: Server, frontend: Monitor,
+  fullstack: Code2, testing: TestTube, devops: Cloud, docs: FileText,
+  security: Shield, database: Database, cmo: Megaphone, cfo: Calculator,
+  ea: UserCheck, support: Headphones, analyst: BarChart3, creative: Pen,
+  slides: Presentation, ambassador: Globe,
+};
+
+const TB_ROLES = [
+  { id: 'planner', label: 'Planner', desc: 'Analyzes tasks and designs team plans' },
+  { id: 'frontend', label: 'Frontend', desc: 'React, UI components, views, styling' },
+  { id: 'backend', label: 'Backend', desc: 'APIs, server logic, database, services' },
+  { id: 'fullstack', label: 'Fullstack', desc: 'Cross-stack work, QC, integration testing' },
+  { id: 'testing', label: 'Testing', desc: 'Test suites, coverage, quality assurance' },
+  { id: 'devops', label: 'DevOps', desc: 'CI/CD, deployment, infrastructure' },
+  { id: 'security', label: 'Security', desc: 'Security audits, vulnerability analysis' },
+  { id: 'database', label: 'Database', desc: 'Schema design, queries, migrations' },
+  { id: 'docs', label: 'Docs', desc: 'Documentation, guides, API docs' },
+  { id: 'cmo', label: 'CMO', desc: 'Marketing strategy, campaigns, content' },
+  { id: 'cfo', label: 'CFO', desc: 'Financial analysis, budgeting, forecasting' },
+  { id: 'ea', label: 'EA', desc: 'Executive assistance, coordination, briefings' },
+  { id: 'support', label: 'Support', desc: 'Customer support, issue triage' },
+  { id: 'analyst', label: 'Analyst', desc: 'Data analysis, research, reporting' },
+  { id: 'creative', label: 'Writer', desc: 'Design, copywriting, visual assets' },
+  { id: 'slides', label: 'Slides', desc: 'Presentations, decks, pitch materials' },
+];
+
+const BUILT_IN_TEMPLATES = [
+  { name: 'Dev Team', icon: Code2, roles: ['frontend', 'backend', 'testing'], desc: '3 agents' },
+  { name: 'Full Stack', icon: Layers, roles: ['frontend', 'backend', 'fullstack', 'testing', 'devops'], desc: '5 agents' },
+  { name: 'Marketing', icon: Megaphone, roles: ['cmo', 'creative', 'analyst'], desc: '3 agents' },
+  { name: 'Business', icon: BarChart3, roles: ['cfo', 'analyst', 'ea'], desc: '3 agents' },
+  { name: 'Security Audit', icon: Shield, roles: ['security', 'testing', 'devops'], desc: '3 agents' },
+  { name: 'Docs', icon: FileText, roles: ['docs', 'frontend', 'analyst'], desc: '3 agents' },
+];
+
+function TeamBuilder() {
+  const open = useGrooveStore((s) => s.teamBuilderOpen);
+  const roles = useGrooveStore((s) => s.teamBuilderRoles);
+  const settings = useGrooveStore((s) => s.teamBuilderSettings);
+  const task = useGrooveStore((s) => s.teamBuilderTask);
+  const launchMode = useGrooveStore((s) => s.teamBuilderLaunchMode);
+  const templates = useGrooveStore((s) => s.teamTemplates);
+  const closeTeamBuilder = useGrooveStore((s) => s.closeTeamBuilder);
+  const addRole = useGrooveStore((s) => s.addTeamBuilderRole);
+  const removeRole = useGrooveStore((s) => s.removeTeamBuilderRole);
+  const updateRole = useGrooveStore((s) => s.updateTeamBuilderRole);
+  const applyTemplate = useGrooveStore((s) => s.applyTemplate);
+  const setSettings = useGrooveStore((s) => s.setTeamBuilderSettings);
+  const setTask = useGrooveStore((s) => s.setTeamBuilderTask);
+  const setLaunchMode = useGrooveStore((s) => s.setTeamBuilderLaunchMode);
+  const launchTeamBuilder = useGrooveStore((s) => s.launchTeamBuilder);
+  const saveTeamTemplate = useGrooveStore((s) => s.saveTeamTemplate);
+  const fetchTeamTemplates = useGrooveStore((s) => s.fetchTeamTemplates);
+  const fetchProviders = useGrooveStore((s) => s.fetchProviders);
+
+  const [providers, setProviders] = useState([]);
+  const [search, setSearch] = useState('');
+  const [expandedIdx, setExpandedIdx] = useState(null);
+  const [launching, setLaunching] = useState(false);
+  const [activeTemplate, setActiveTemplate] = useState(null);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    fetchProviders().then((list) => {
+      if (Array.isArray(list)) setProviders(list.filter((p) => p.installed));
+    }).catch(() => {});
+    fetchTeamTemplates();
+  }, [open]);
+
+  if (!open) return null;
+
+  const filteredRoles = search
+    ? TB_ROLES.filter((r) => r.label.toLowerCase().includes(search.toLowerCase()) || r.desc.toLowerCase().includes(search.toLowerCase()))
+    : TB_ROLES;
+
+  const selectedProvider = providers.find((p) => p.id === settings.provider);
+  const settingsModels = (selectedProvider?.models || []).filter((m) => m.type !== 'image' && !m.disabled);
+  const showTemp = PROVIDER_TEMP_SUPPORT.has(settings.provider);
+
+  function handleSettingsProviderChange(id) {
+    setSettings({ provider: id });
+    const p = providers.find((x) => x.id === id);
+    const pModels = (p?.models || []).filter((m) => m.type !== 'image' && !m.disabled);
+    setSettings({ provider: id, model: pModels[0]?.id || '' });
+  }
+
+  function handleApplyTemplate(tmpl) {
+    applyTemplate(tmpl);
+    setActiveTemplate(tmpl.name);
+  }
+
+  async function handleLaunch() {
+    setLaunching(true);
+    try {
+      await launchTeamBuilder();
+    } catch { /* toast handles */ }
+    setLaunching(false);
+  }
+
+  function handleSaveTemplate() {
+    const name = templateName.trim();
+    if (!name) return;
+    saveTeamTemplate(name);
+    setSaveDialogOpen(false);
+    setTemplateName('');
+  }
+
+  const allTemplates = [...BUILT_IN_TEMPLATES, ...(templates.custom || []).map((t) => ({
+    ...t, icon: Layers, desc: `${t.roles?.length || 0} agents`, custom: true,
+  }))];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="w-full max-w-5xl max-h-[90vh] bg-surface-1 border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden">
+        {/* Top Bar */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-purple/15 flex items-center justify-center">
+              <Users size={16} className="text-purple" />
+            </div>
+            <h2 className="text-lg font-bold text-text-0 font-sans">Team Builder</h2>
+          </div>
+          <button onClick={closeTeamBuilder} className="p-2 rounded-md text-text-3 hover:text-text-0 hover:bg-surface-3 transition-colors cursor-pointer">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Templates Row */}
+        <div className="px-6 py-3 border-b border-border-subtle">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+            {allTemplates.map((tmpl) => {
+              const TIcon = tmpl.icon || Layers;
+              const isActive = activeTemplate === tmpl.name;
+              return (
+                <button
+                  key={tmpl.name}
+                  onClick={() => handleApplyTemplate(tmpl)}
+                  className={cn(
+                    'flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-lg border text-center transition-all cursor-pointer flex-shrink-0 min-w-[100px]',
+                    isActive
+                      ? 'border-accent bg-accent/5'
+                      : 'border-border-subtle bg-surface-3 hover:border-accent/30 hover:bg-surface-4',
+                  )}
+                >
+                  <TIcon size={16} className={isActive ? 'text-accent' : 'text-text-2'} />
+                  <span className="text-2xs font-semibold text-text-0 font-sans">{tmpl.name}</span>
+                  <span className="text-2xs text-text-4 font-sans">{tmpl.desc}</span>
+                </button>
+              );
+            })}
+            <Tooltip content="Save current roster as template">
+              <button
+                onClick={() => { setSaveDialogOpen(true); setTemplateName(''); }}
+                disabled={roles.length === 0}
+                className="flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-lg border border-dashed border-border-subtle bg-surface-2 hover:border-accent/30 transition-all cursor-pointer flex-shrink-0 min-w-[100px] disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <Save size={16} className="text-text-3" />
+                <span className="text-2xs font-semibold text-text-2 font-sans">Save</span>
+                <span className="text-2xs text-text-4 font-sans">Template</span>
+              </button>
+            </Tooltip>
+          </div>
+        </div>
+
+        {/* Main Area */}
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          {/* Left: Available Roles */}
+          <div className="w-[40%] border-r border-border-subtle flex flex-col">
+            <div className="px-4 py-3 border-b border-border-subtle">
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-4" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Filter roles..."
+                  className="w-full h-8 pl-8 pr-3 text-xs bg-surface-3 border border-border-subtle rounded-md text-text-0 placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent font-sans"
+                />
+              </div>
+            </div>
+            <ScrollArea className="flex-1">
+              <div className="p-3 grid grid-cols-2 gap-2">
+                {filteredRoles.map((r) => {
+                  const RIcon = TB_ROLE_ICONS[r.id] || Code2;
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => addRole(r.id)}
+                      className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border-subtle bg-surface-2 hover:border-accent/30 hover:bg-surface-3 transition-all cursor-pointer text-left group"
+                    >
+                      <div className="w-7 h-7 rounded-md bg-surface-4 flex items-center justify-center flex-shrink-0 group-hover:bg-accent/15 transition-colors">
+                        <RIcon size={14} className="text-text-2 group-hover:text-accent transition-colors" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-text-0 font-sans">{r.label}</span>
+                          <Plus size={12} className="text-text-4 group-hover:text-accent transition-colors flex-shrink-0" />
+                        </div>
+                        <p className="text-2xs text-text-3 font-sans leading-tight mt-0.5">{r.desc}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          </div>
+
+          {/* Right: Your Team */}
+          <div className="flex-1 flex flex-col">
+            <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between">
+              <span className="text-xs font-semibold text-text-1 font-sans uppercase tracking-wider">Your Team ({roles.length})</span>
+            </div>
+            <ScrollArea className="flex-1">
+              <div className="p-3 space-y-1.5">
+                {roles.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <Users size={32} className="text-text-4 mb-3" />
+                    <p className="text-sm text-text-2 font-sans">Add roles from the left or pick a template above</p>
+                  </div>
+                ) : roles.map((r, i) => {
+                  const RIcon = TB_ROLE_ICONS[r.role] || Code2;
+                  const expanded = expandedIdx === i;
+                  const roleProvider = r.provider ? providers.find((p) => p.id === r.provider) : null;
+                  const roleModels = (roleProvider?.models || []).filter((m) => m.type !== 'image' && !m.disabled);
+                  return (
+                    <div key={i} className="rounded-lg border border-border-subtle bg-surface-2 overflow-hidden">
+                      <div className="flex items-center gap-2 px-3 py-2">
+                        <GripVertical size={12} className="text-text-4 flex-shrink-0 cursor-grab" />
+                        <div className="w-6 h-6 rounded-md bg-surface-4 flex items-center justify-center flex-shrink-0">
+                          <RIcon size={12} className="text-text-1" />
+                        </div>
+                        <span className="text-xs font-semibold text-text-0 font-sans flex-1">{TB_ROLES.find((x) => x.id === r.role)?.label || r.role}</span>
+                        <button
+                          onClick={() => setExpandedIdx(expanded ? null : i)}
+                          className="p-1 rounded text-text-4 hover:text-text-1 cursor-pointer"
+                        >
+                          <ChevronDown size={12} className={cn('transition-transform duration-200', expanded && 'rotate-180')} />
+                        </button>
+                        <button
+                          onClick={() => { removeRole(i); if (expandedIdx === i) setExpandedIdx(null); else if (expandedIdx > i) setExpandedIdx(expandedIdx - 1); }}
+                          className="p-1 rounded text-text-4 hover:text-danger cursor-pointer"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                      {expanded && (
+                        <div className="px-3 pb-3 pt-1 space-y-3 border-t border-border-subtle bg-surface-1">
+                          <div className="space-y-1">
+                            <label className="text-2xs text-text-3 font-sans">Name Override</label>
+                            <input
+                              type="text"
+                              value={r.name}
+                              onChange={(e) => updateRole(i, { name: sanitizeName(e.target.value) })}
+                              placeholder={r.role}
+                              className="w-full h-7 px-2.5 text-xs bg-surface-3 border border-border-subtle rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+                              maxLength={64}
+                              spellCheck={false}
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <div className="flex-1 space-y-1">
+                              <label className="text-2xs text-text-3 font-sans">Provider</label>
+                              <Select value={r.provider || ''} onValueChange={(v) => {
+                                updateRole(i, { provider: v || null });
+                                const p = providers.find((x) => x.id === v);
+                                const pModels = (p?.models || []).filter((m) => m.type !== 'image' && !m.disabled);
+                                updateRole(i, { provider: v || null, model: pModels[0]?.id || null });
+                              }}>
+                                <SelectTrigger placeholder="Team Default" className="bg-surface-3 h-7 text-xs" />
+                                <SelectContent>
+                                  <SelectItem value="">Team Default</SelectItem>
+                                  {providers.map((p) => (
+                                    <SelectItem key={p.id} value={p.id}>{p.displayName || p.name || p.id}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="flex-1 space-y-1">
+                              <label className="text-2xs text-text-3 font-sans">Model</label>
+                              <Select value={r.model || ''} onValueChange={(v) => updateRole(i, { model: v || null })}>
+                                <SelectTrigger placeholder="Default" className="bg-surface-3 h-7 text-xs" />
+                                <SelectContent>
+                                  <SelectItem value="">Default</SelectItem>
+                                  {roleModels.map((m) => (
+                                    <SelectItem key={m.id} value={m.id}>{m.name || m.id}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          <TuningSlider
+                            label="Reasoning"
+                            value={r.reasoningEffort ?? settings.reasoningEffort}
+                            onChange={(v) => updateRole(i, { reasoningEffort: v })}
+                            min={0} max={100} step={1}
+                          />
+                          {PROVIDER_TEMP_SUPPORT.has(r.provider || settings.provider) && (
+                            <TuningSlider
+                              label="Temperature"
+                              value={r.temperature ?? settings.temperature}
+                              onChange={(v) => updateRole(i, { temperature: v })}
+                              min={0} max={1} step={0.01}
+                              formatValue={(v) => v.toFixed(2)}
+                            />
+                          )}
+                          <div className="space-y-1">
+                            <label className="text-2xs text-text-3 font-sans">Custom Prompt</label>
+                            <textarea
+                              value={r.prompt || ''}
+                              onChange={(e) => updateRole(i, { prompt: e.target.value })}
+                              placeholder="Optional instructions for this agent..."
+                              rows={2}
+                              className="w-full px-2.5 py-1.5 text-xs bg-surface-3 border border-border-subtle rounded-md text-text-0 font-sans placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent resize-none"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          </div>
+        </div>
+
+        {/* Bottom Bar */}
+        <div className="border-t border-border-subtle px-6 py-4">
+          <div className="flex gap-4">
+            {/* Task + Launch Mode */}
+            <div className="flex-1 space-y-3">
+              <textarea
+                value={task}
+                onChange={(e) => setTask(e.target.value)}
+                placeholder="Describe what this team should work on..."
+                rows={2}
+                className="w-full px-3 py-2 text-sm bg-surface-3 border border-border-subtle rounded-lg text-text-0 font-sans placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent resize-none"
+              />
+              <div className="flex items-center gap-2">
+                <span className="text-2xs text-text-3 font-sans mr-1">Launch Mode:</span>
+                {[
+                  { id: 'direct', label: 'Direct', icon: Play, tip: 'Agents start working immediately' },
+                  { id: 'plan', label: 'Plan First', icon: ListChecks, tip: 'Planner designs prompts, then team launches' },
+                  { id: 'await', label: 'Await', icon: Clock, tip: 'Agents spawn idle, await instructions' },
+                ].map((m) => (
+                  <Tooltip key={m.id} content={m.tip}>
+                    <button
+                      onClick={() => setLaunchMode(m.id)}
+                      className={cn(
+                        'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-2xs font-semibold font-sans transition-colors cursor-pointer',
+                        launchMode === m.id
+                          ? 'bg-accent/15 text-accent border border-accent/30'
+                          : 'bg-surface-3 text-text-3 border border-border-subtle hover:text-text-1 hover:border-border',
+                      )}
+                    >
+                      <m.icon size={11} />
+                      {m.label}
+                    </button>
+                  </Tooltip>
+                ))}
+              </div>
+            </div>
+
+            {/* Team Settings + Launch */}
+            <div className="w-64 flex flex-col gap-2">
+              <div className="flex gap-2">
+                <div className="flex-1 space-y-0.5">
+                  <label className="text-2xs text-text-3 font-sans">Provider</label>
+                  <Select value={settings.provider || ''} onValueChange={handleSettingsProviderChange}>
+                    <SelectTrigger placeholder="Default" className="bg-surface-3 h-7 text-xs" />
+                    <SelectContent>
+                      <SelectItem value="">Default</SelectItem>
+                      {providers.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.displayName || p.name || p.id}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex-1 space-y-0.5">
+                  <label className="text-2xs text-text-3 font-sans">Model</label>
+                  <Select value={settings.model || ''} onValueChange={(v) => setSettings({ model: v })}>
+                    <SelectTrigger placeholder="Auto" className="bg-surface-3 h-7 text-xs" />
+                    <SelectContent>
+                      <SelectItem value="">Auto</SelectItem>
+                      {settingsModels.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>{m.name || m.id}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <TuningSlider
+                label="Reasoning"
+                value={settings.reasoningEffort}
+                onChange={(v) => setSettings({ reasoningEffort: v })}
+                min={0} max={100} step={1}
+              />
+              {showTemp && (
+                <TuningSlider
+                  label="Temperature"
+                  value={settings.temperature}
+                  onChange={(v) => setSettings({ temperature: v })}
+                  min={0} max={1} step={0.01}
+                  formatValue={(v) => v.toFixed(2)}
+                />
+              )}
+              <Button
+                variant="primary"
+                size="md"
+                onClick={handleLaunch}
+                disabled={launching || roles.length === 0}
+                className="w-full gap-2 mt-1"
+              >
+                <Zap size={14} />
+                {launching ? 'Launching...' : `Launch Team (${roles.length})`}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Save Template Dialog */}
+      {saveDialogOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-sm bg-surface-2 border border-border rounded-lg shadow-2xl p-5 space-y-4">
+            <h3 className="text-sm font-semibold text-text-0 font-sans">Save as Template</h3>
+            <input
+              type="text"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              placeholder="Template name..."
+              className="w-full h-8 px-3 text-sm bg-surface-3 border border-border-subtle rounded-md text-text-0 font-sans placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveTemplate(); if (e.key === 'Escape') setSaveDialogOpen(false); }}
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
+              <Button variant="primary" size="sm" onClick={handleSaveTemplate} disabled={!templateName.trim()}>Save</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Empty State ───────────────────────────────────────────── */
 
-function EmptyState({ onPlanner, onSpawn }) {
+function EmptyState({ onPlanner, onSpawn, onTeamBuilder }) {
   return (
     <div className="w-full h-full flex items-center justify-center">
       <div className="max-w-2xl w-full text-center space-y-10 px-8">
@@ -616,6 +1191,19 @@ function EmptyState({ onPlanner, onSpawn }) {
             </div>
             <div className="text-accent text-xs font-semibold font-sans flex-shrink-0 opacity-60 group-hover:opacity-100 transition-opacity">
               Recommended
+            </div>
+          </button>
+
+          <button
+            onClick={onTeamBuilder}
+            className="w-full flex items-center gap-3 p-4 rounded-lg border border-purple/25 bg-gradient-to-r from-purple/6 to-purple/2 hover:from-purple/12 hover:to-purple/5 hover:border-purple/35 transition-all cursor-pointer group text-left"
+          >
+            <div className="w-10 h-10 rounded-lg bg-purple/15 flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
+              <UserPlus size={20} className="text-purple" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-text-0 font-sans">Build a Team</div>
+              <div className="text-xs text-text-3 font-sans mt-0.5">Pick your roles, configure settings, and launch</div>
             </div>
           </button>
 
@@ -687,8 +1275,24 @@ function sanitizeName(raw) {
 function RecommendedTeamCard() {
   const recommendedTeam = useGrooveStore((s) => s.recommendedTeam);
   const launchRecommendedTeam = useGrooveStore((s) => s.launchRecommendedTeam);
+  const teamLaunchConfig = useGrooveStore((s) => s.teamLaunchConfig);
+  const fetchProviders = useGrooveStore((s) => s.fetchProviders);
   const [launching, setLaunching] = useState(false);
   const [editedAgents, setEditedAgents] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [providers, setProviders] = useState([]);
+
+  // Team settings — pre-populated from planner spawn config or defaults
+  const [tsProvider, setTsProvider] = useState(teamLaunchConfig?.provider || '');
+  const [tsModel, setTsModel] = useState(teamLaunchConfig?.model || '');
+  const [tsReasoning, setTsReasoning] = useState(teamLaunchConfig?.reasoningEffort ?? 50);
+  const [tsTemp, setTsTemp] = useState(teamLaunchConfig?.temperature ?? 0.5);
+
+  useEffect(() => {
+    fetchProviders().then((list) => {
+      if (Array.isArray(list)) setProviders(list.filter((p) => p.installed));
+    }).catch(() => {});
+  }, []);
 
   if (!recommendedTeam?.agents?.length) return null;
 
@@ -696,22 +1300,38 @@ function RecommendedTeamCard() {
   const phase1 = agents.filter((a) => !a.phase || a.phase === 1);
   const phase2 = agents.filter((a) => a.phase === 2);
 
-  // Initialize edits lazily so we get fresh data if recommendedTeam changes
   const agentEdits = editedAgents ?? phase1.map((a) => ({ ...a, name: a.name || '' }));
+
+  const selectedProvider = providers.find((p) => p.id === tsProvider);
+  const tsModels = (selectedProvider?.models || []).filter((m) => m.type !== 'image' && !m.disabled);
+  const showTemp = PROVIDER_TEMP_SUPPORT.has(tsProvider);
 
   function handleNameChange(i, raw) {
     const next = agentEdits.map((a, idx) => idx === i ? { ...a, name: sanitizeName(raw) } : a);
     setEditedAgents(next);
   }
 
+  function handleTsProviderChange(id) {
+    setTsProvider(id);
+    const p = providers.find((x) => x.id === id);
+    const pModels = (p?.models || []).filter((m) => m.type !== 'image' && !m.disabled);
+    setTsModel(pModels[0]?.id || '');
+  }
+
   async function handleLaunch() {
     setLaunching(true);
+    // Save overrides to store so launchRecommendedTeam sends them
+    if (tsProvider) {
+      useGrooveStore.setState({
+        teamLaunchConfig: {
+          provider: tsProvider, model: tsModel,
+          reasoningEffort: tsReasoning,
+          ...(showTemp && { temperature: tsTemp }),
+        },
+      });
+    }
     try {
-      // Merge edited phase1 names back with phase2 agents
-      const modified = [
-        ...agentEdits,
-        ...phase2,
-      ];
+      const modified = [...agentEdits, ...phase2];
       await launchRecommendedTeam(modified);
     } catch { /* toast handles */ }
     setLaunching(false);
@@ -730,8 +1350,66 @@ function RecommendedTeamCard() {
           <button onClick={handleDismiss} className="text-text-4 hover:text-text-1 cursor-pointer"><X size={14} /></button>
         </div>
 
+        {/* Collapsible Team Settings */}
+        <div className="border-b border-border-subtle">
+          <button
+            onClick={() => setSettingsOpen(!settingsOpen)}
+            className="w-full flex items-center gap-2 px-4 py-2 text-left cursor-pointer hover:bg-surface-3/50 transition-colors"
+          >
+            <ChevronDown size={12} className={cn('text-text-4 transition-transform duration-200', !settingsOpen && '-rotate-90')} />
+            <Settings2 size={12} className="text-text-3" />
+            <span className="text-2xs font-semibold text-text-2 font-sans uppercase tracking-wider">Team Settings</span>
+            {tsProvider && (
+              <span className="ml-auto text-2xs text-accent font-mono">{tsProvider}{tsModel ? ` / ${tsModel}` : ''}</span>
+            )}
+          </button>
+          {settingsOpen && (
+            <div className="px-4 pb-3 space-y-3">
+              <div className="flex gap-3">
+                <div className="flex-1 space-y-1">
+                  <label className="text-2xs text-text-3 font-sans">Provider</label>
+                  <Select value={tsProvider} onValueChange={handleTsProviderChange}>
+                    <SelectTrigger placeholder="Default" className="bg-surface-4 h-7 text-xs" />
+                    <SelectContent>
+                      {providers.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.displayName || p.name || p.id}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex-1 space-y-1">
+                  <label className="text-2xs text-text-3 font-sans">Model</label>
+                  <Select value={tsModel} onValueChange={setTsModel}>
+                    <SelectTrigger placeholder="Auto" className="bg-surface-4 h-7 text-xs" />
+                    <SelectContent>
+                      <SelectItem value="auto">Auto</SelectItem>
+                      {tsModels.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>{m.name || m.id}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <TuningSlider
+                label="Reasoning"
+                value={tsReasoning}
+                onChange={setTsReasoning}
+                min={0} max={100} step={1}
+              />
+              {showTemp && (
+                <TuningSlider
+                  label="Temperature"
+                  value={tsTemp}
+                  onChange={setTsTemp}
+                  min={0} max={1} step={0.01}
+                  formatValue={(v) => v.toFixed(2)}
+                />
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="px-4 py-3 space-y-1.5">
-          {/* Phase 1 agents — editable rows */}
           {agentEdits.map((a, i) => {
             const Icon = ROLE_ICONS[a.role] || Code2;
             const nameValid = !a.name || NAME_RE.test(a.name);
@@ -759,7 +1437,6 @@ function RecommendedTeamCard() {
             );
           })}
 
-          {/* Project dir indicator */}
           {recommendedTeam.projectDir && (
             <div className="flex items-center gap-1.5 text-2xs text-text-2 font-mono pt-0.5">
               <span className="text-text-4">Project:</span>
@@ -767,7 +1444,6 @@ function RecommendedTeamCard() {
             </div>
           )}
 
-          {/* Phase 2 indicator */}
           {phase2.length > 0 && (
             <div className="flex items-center gap-1.5 text-2xs text-text-3 font-sans">
               <Shield size={10} />
@@ -802,6 +1478,9 @@ export default function AgentsView() {
   const togglePreviewInAgents = useGrooveStore((s) => s.togglePreviewInAgents);
   const workspaceMode = useGrooveStore((s) => s.workspaceMode);
   const setWorkspaceMode = useGrooveStore((s) => s.setWorkspaceMode);
+  const openTeamBuilder = useGrooveStore((s) => s.openTeamBuilder);
+
+  const [plannerConfigOpen, setPlannerConfigOpen] = useState(false);
 
   // Poll for recommended team while a planner is running
   useEffect(() => {
@@ -811,9 +1490,21 @@ export default function AgentsView() {
     return () => clearInterval(interval);
   }, [allAgents, checkRecommendedTeam]);
 
-  async function launchPlanner() {
+  function openPlannerConfig() {
+    setPlannerConfigOpen(true);
+  }
+
+  async function handlePlannerLaunch(config) {
+    setPlannerConfigOpen(false);
     try {
-      const agent = await spawnAgent({ role: 'planner' });
+      const agent = await spawnAgent({
+        role: 'planner',
+        provider: config.provider,
+        model: config.model,
+        reasoningEffort: config.reasoningEffort,
+        temperature: config.temperature,
+        verbosity: config.verbosity,
+      });
       if (agent?.id) {
         selectAgent(agent.id);
       }
@@ -851,7 +1542,7 @@ export default function AgentsView() {
             <p className="text-xs text-text-3 font-sans mt-1">Syncing with daemon...</p>
           </div>
         ) : teamAgents.length === 0 ? (
-          <EmptyState onPlanner={launchPlanner} onSpawn={() => openDetail({ type: 'spawn' })} />
+          <EmptyState onPlanner={openPlannerConfig} onSpawn={() => openDetail({ type: 'spawn' })} onTeamBuilder={openTeamBuilder} />
         ) : workspaceMode ? (
           <WorkspaceMode />
         ) : showPreviewInAgents && previewState.url && previewState.teamId === activeTeamId ? (
@@ -892,6 +1583,8 @@ export default function AgentsView() {
           {showPreviewInAgents ? <><Users size={14} /> Team</> : <><Eye size={14} /> Preview</>}
         </button>
       )}
+      <PlannerConfigDialog open={plannerConfigOpen} onOpenChange={setPlannerConfigOpen} onLaunch={handlePlannerLaunch} />
+      <TeamBuilder />
     </div>
   );
 }

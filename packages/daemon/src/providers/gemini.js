@@ -67,8 +67,21 @@ export class GeminiProvider extends Provider {
       command: 'gemini',
       args,
       env: agent.apiKey ? { GEMINI_API_KEY: agent.apiKey } : {},
-      stdin: agent.prompt || undefined,
+      stdin: this.buildFullPrompt(agent) || undefined,
     };
+  }
+
+  buildFullPrompt(agent) {
+    const parts = [];
+    if (agent.introContext) parts.push(agent.introContext);
+    if (agent.prompt) parts.push(`## Your Task\n\n${agent.prompt}`);
+    if (agent.scope && agent.scope.length > 0) {
+      parts.push(
+        `## Scope Rules\n\nYou MUST only modify files matching these patterns: ${agent.scope.join(', ')}. ` +
+        `Do not touch files outside your scope — other agents own them.`
+      );
+    }
+    return parts.join('\n\n');
   }
 
   buildHeadlessCommand(prompt, model) {

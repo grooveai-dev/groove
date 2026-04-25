@@ -55,12 +55,19 @@ export class GrokProvider extends Provider {
     return null; // No CLI
   }
 
+  normalizeConfig(config) {
+    if (typeof config.temperature !== 'number' && typeof config.reasoningEffort === 'number') {
+      config.temperature = 0.1 + (100 - config.reasoningEffort) * 0.008;
+    }
+    return config;
+  }
+
   getLoopConfig(agent) {
     return {
       apiBase: 'https://api.x.ai/v1',
       model: agent.model,
       contextWindow: 131072,
-      temperature: 0.1,
+      temperature: typeof agent.temperature === 'number' ? agent.temperature : 0.1,
       maxResponseTokens: 16384,
       stream: true,
       apiKey: agent.apiKey,

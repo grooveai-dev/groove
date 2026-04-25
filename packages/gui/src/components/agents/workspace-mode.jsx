@@ -3,33 +3,20 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { AgentFileTree } from './agent-file-tree';
-import { AgentChat } from './agent-chat';
-import { AgentFeed } from './agent-feed';
 import { DiffViewer } from './diff-viewer';
 import { CodeReview } from './code-review';
 import { CodeEditor } from '../editor/code-editor';
-import { Badge } from '../ui/badge';
 import { Tooltip } from '../ui/tooltip';
-import { ScrollArea } from '../ui/scroll-area';
 import { roleColor } from '../../lib/status';
-import { fmtNum } from '../../lib/format';
 import { MediaViewer, isMediaFile } from '../editor/media-viewer';
 import {
-  X, Code2, MessageSquare, Activity, FileCode, GitCompareArrows,
-  ClipboardCheck, AlertTriangle, RefreshCw, Users,
+  X, Code2, FileCode, GitCompareArrows,
+  ClipboardCheck, Users,
 } from 'lucide-react';
-
-const STATUS_VARIANT = {
-  running: 'success', starting: 'warning', stopped: 'default',
-  crashed: 'danger', completed: 'accent', killed: 'default', rotating: 'purple',
-};
 
 const TREE_DEFAULT = 220;
 const TREE_MIN = 140;
 const TREE_MAX = 360;
-const RIGHT_DEFAULT = 340;
-const RIGHT_MIN = 260;
-const RIGHT_MAX = 520;
 
 function AgentRail({ agents, activeId, onSelect }) {
   return (
@@ -70,7 +57,7 @@ function AgentRail({ agents, activeId, onSelect }) {
   );
 }
 
-function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggleDiff, workspaceSnapshots }) {
+function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggleDiff, workspaceSnapshots, onBackToTeam, onToggleReview, reviewMode }) {
   const hasSnapshot = activeFile && workspaceSnapshots[activeFile];
 
   return (
@@ -106,28 +93,53 @@ function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggle
           );
         })}
       </div>
-      {hasSnapshot && (
-        <div className="flex items-center gap-0.5 px-2 border-l border-border-subtle flex-shrink-0">
+      <div className="flex items-center gap-0.5 px-2 border-l border-border-subtle flex-shrink-0">
+        {hasSnapshot && (
+          <>
+            <button
+              onClick={() => onToggleDiff(false)}
+              className={cn(
+                'flex items-center gap-1 px-2 py-1 text-xs font-sans rounded cursor-pointer transition-colors',
+                !diffMode ? 'bg-surface-4 text-text-0 font-medium' : 'text-text-3 hover:text-text-1',
+              )}
+            >
+              <FileCode size={11} /> Code
+            </button>
+            <button
+              onClick={() => onToggleDiff(true)}
+              className={cn(
+                'flex items-center gap-1 px-2 py-1 text-xs font-sans rounded cursor-pointer transition-colors',
+                diffMode ? 'bg-surface-4 text-text-0 font-medium' : 'text-text-3 hover:text-text-1',
+              )}
+            >
+              <GitCompareArrows size={11} /> Diff
+            </button>
+            <div className="w-px h-4 bg-border-subtle mx-1" />
+          </>
+        )}
+        <Tooltip content="Review Changes" side="bottom">
           <button
-            onClick={() => onToggleDiff(false)}
+            onClick={onToggleReview}
             className={cn(
               'flex items-center gap-1 px-2 py-1 text-xs font-sans rounded cursor-pointer transition-colors',
-              !diffMode ? 'bg-surface-4 text-text-0 font-medium' : 'text-text-3 hover:text-text-1',
+              reviewMode
+                ? 'bg-accent/15 text-accent'
+                : 'text-text-3 hover:text-text-1 hover:bg-surface-3',
             )}
           >
-            <FileCode size={11} /> Code
+            <ClipboardCheck size={12} />
           </button>
+        </Tooltip>
+        <Tooltip content="Back to Team View" side="bottom">
           <button
-            onClick={() => onToggleDiff(true)}
-            className={cn(
-              'flex items-center gap-1 px-2 py-1 text-xs font-sans rounded cursor-pointer transition-colors',
-              diffMode ? 'bg-surface-4 text-text-0 font-medium' : 'text-text-3 hover:text-text-1',
-            )}
+            onClick={onBackToTeam}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-sans rounded cursor-pointer transition-colors text-text-3 hover:text-text-1 hover:bg-surface-3"
           >
-            <GitCompareArrows size={11} /> Diff
+            <Users size={12} />
+            <span className="text-2xs">Team</span>
           </button>
-        </div>
-      )}
+        </Tooltip>
+      </div>
     </div>
   );
 }
@@ -157,12 +169,9 @@ export function WorkspaceMode() {
   const agent = teamAgents.find((a) => a.id === workspaceAgentId) || teamAgents[0];
 
   const [treeWidth, setTreeWidth] = useState(TREE_DEFAULT);
-  const [rightWidth, setRightWidth] = useState(RIGHT_DEFAULT);
   const [diffMode, setDiffMode] = useState(false);
-  const [rightTab, setRightTab] = useState('chat');
 
   const treeDragging = useRef(false);
-  const rightDragging = useRef(false);
   const startX = useRef(0);
   const startW = useRef(0);
 
@@ -188,24 +197,6 @@ export function WorkspaceMode() {
     document.addEventListener('mouseup', onUp);
   }, [treeWidth]);
 
-  const onRightMouseDown = useCallback((e) => {
-    e.preventDefault();
-    rightDragging.current = true;
-    startX.current = e.clientX;
-    startW.current = rightWidth;
-    function onMove(e) {
-      if (!rightDragging.current) return;
-      setRightWidth(Math.min(Math.max(startW.current - (e.clientX - startX.current), RIGHT_MIN), RIGHT_MAX));
-    }
-    function onUp() {
-      rightDragging.current = false;
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    }
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }, [rightWidth]);
-
   if (!agent) {
     return (
       <div className="flex items-center justify-center h-full text-text-4 text-xs font-sans">
@@ -214,8 +205,6 @@ export function WorkspaceMode() {
     );
   }
 
-  const isAlive = agent.status === 'running' || agent.status === 'starting';
-  const ctxPct = Math.round((agent.contextUsage || 0) * 100);
   const file = editorActiveFile ? editorFiles[editorActiveFile] : null;
   const hasExternalChange = editorActiveFile && editorChangedFiles[editorActiveFile];
   const isMedia = editorActiveFile && isMediaFile(editorActiveFile);
@@ -252,6 +241,9 @@ export function WorkspaceMode() {
                 diffMode={diffMode}
                 onToggleDiff={setDiffMode}
                 workspaceSnapshots={workspaceSnapshots}
+                onBackToTeam={() => setWorkspaceMode(false)}
+                onToggleReview={toggleReviewMode}
+                reviewMode={workspaceReviewMode}
               />
 
               <div className="flex-1 relative min-h-0">
@@ -302,87 +294,6 @@ export function WorkspaceMode() {
               </div>
             </>
           )}
-        </div>
-      </div>
-
-      {/* Right Panel — Chat + Activity */}
-      <div className="flex flex-col bg-surface-1 border-l border-border relative" style={{ width: rightWidth }}>
-        {/* Resize handle */}
-        <div
-          className="absolute top-0 left-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/30 transition-colors z-10"
-          onMouseDown={onRightMouseDown}
-          onDoubleClick={() => setRightWidth(RIGHT_DEFAULT)}
-        />
-
-        {/* Header */}
-        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border flex-shrink-0">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-text-0 font-sans truncate">{agent.name}</span>
-              <Badge variant={STATUS_VARIANT[agent.status]} dot={isAlive ? 'pulse' : undefined}>
-                {agent.status}
-              </Badge>
-            </div>
-            <div className="flex items-center gap-3 mt-0.5">
-              <span className="text-2xs text-text-3 font-sans">
-                {fmtNum(agent.tokensUsed || 0)} tokens
-              </span>
-              <span className="text-2xs text-text-3 font-sans">
-                ctx {ctxPct}%
-              </span>
-            </div>
-          </div>
-          <button
-            onClick={toggleReviewMode}
-            className={cn(
-              'flex items-center gap-1 px-2 py-1 text-xs font-sans rounded cursor-pointer transition-colors',
-              workspaceReviewMode
-                ? 'bg-accent/15 text-accent'
-                : 'text-text-3 hover:text-text-1 hover:bg-surface-3',
-            )}
-            title="Review Changes"
-          >
-            <ClipboardCheck size={13} />
-          </button>
-          <button
-            onClick={() => setWorkspaceMode(false)}
-            className="flex items-center gap-1 px-2 py-1 text-xs font-sans rounded cursor-pointer transition-colors text-text-3 hover:text-text-1 hover:bg-surface-3"
-            title="Back to agent tree"
-          >
-            <Users size={13} />
-          </button>
-        </div>
-
-        {/* Tab switcher */}
-        <div className="flex items-center gap-0 border-b border-border-subtle flex-shrink-0">
-          <button
-            onClick={() => setRightTab('chat')}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-2 text-xs font-sans cursor-pointer transition-colors',
-              rightTab === 'chat'
-                ? 'text-text-0 border-b border-b-accent font-medium'
-                : 'text-text-3 hover:text-text-1',
-            )}
-          >
-            <MessageSquare size={12} /> Chat
-          </button>
-          <button
-            onClick={() => setRightTab('activity')}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-2 text-xs font-sans cursor-pointer transition-colors',
-              rightTab === 'activity'
-                ? 'text-text-0 border-b border-b-accent font-medium'
-                : 'text-text-3 hover:text-text-1',
-            )}
-          >
-            <Activity size={12} /> Activity
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 min-h-0">
-          {rightTab === 'chat' && <AgentChat agent={agent} />}
-          {rightTab === 'activity' && <AgentFeed agent={agent} />}
         </div>
       </div>
     </div>

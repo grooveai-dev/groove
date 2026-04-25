@@ -45,12 +45,20 @@ export function ChatView() {
   const conversationRoles = useGrooveStore((s) => s.conversationRoles);
   const setConversationRole = useGrooveStore((s) => s.setConversationRole);
 
+  const conversationReasoningEffort = useGrooveStore((s) => s.conversationReasoningEffort);
+  const setConversationReasoningEffort = useGrooveStore((s) => s.setConversationReasoningEffort);
+  const conversationVerbosity = useGrooveStore((s) => s.conversationVerbosity);
+  const setConversationVerbosity = useGrooveStore((s) => s.setConversationVerbosity);
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [replyContext, setReplyContext] = useState(null);
 
   const activeRole = activeConversationId ? (conversationRoles?.[activeConversationId] || null) : null;
+  const activeReasoningEffort = activeConversationId ? (conversationReasoningEffort?.[activeConversationId] || 'medium') : 'medium';
+  const activeVerbosity = activeConversationId ? (conversationVerbosity?.[activeConversationId] || 'medium') : 'medium';
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId) || null;
+  const isCodexProvider = activeConversation?.provider === 'codex';
   const messages = activeConversationId ? (conversationMessages[activeConversationId] || []) : [];
   const isStreaming = streamingConversationId === activeConversationId && sendingMessage;
   const currentModelIsImage = activeConversation ? isImageModel(activeConversation.model) : false;
@@ -108,6 +116,16 @@ export function ChatView() {
     setReplyContext(msg);
   }, []);
 
+  const handleReasoningEffortChange = useCallback((effort) => {
+    if (!activeConversationId) return;
+    setConversationReasoningEffort(activeConversationId, effort);
+  }, [activeConversationId, setConversationReasoningEffort]);
+
+  const handleVerbosityChange = useCallback((verbosity) => {
+    if (!activeConversationId) return;
+    setConversationVerbosity(activeConversationId, verbosity);
+  }, [activeConversationId, setConversationVerbosity]);
+
   const currentModel = activeConversation
     ? { provider: activeConversation.provider, model: activeConversation.model }
     : null;
@@ -146,6 +164,11 @@ export function ChatView() {
               replyContext={replyContext}
               onClearReply={() => setReplyContext(null)}
               role={activeRole}
+              isCodex={isCodexProvider}
+              reasoningEffort={activeReasoningEffort}
+              onReasoningEffortChange={handleReasoningEffortChange}
+              verbosity={activeVerbosity}
+              onVerbosityChange={handleVerbosityChange}
             />
           </>
         ) : (

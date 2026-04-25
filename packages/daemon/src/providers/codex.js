@@ -153,22 +153,31 @@ export class CodexProvider extends Provider {
     return (inputTokens / 1000) * model.pricing.input + (outputTokens / 1000) * model.pricing.output;
   }
 
-  streamChat(messages, model, apiKey, onChunk, onDone, onError) {
+  streamChat(messages, model, apiKey, onChunk, onDone, onError, { reasoningEffort, verbosity, previousResponseId } = {}) {
     if (!apiKey) return null;
     const controller = new AbortController();
     let finished = false;
-    const finish = () => { if (!finished) { finished = true; onDone(); } };
-    fetch('https://api.openai.com/v1/chat/completions', {
+    let responseId = null;
+    const finish = () => { if (!finished) { finished = true; onDone({ responseId }); } };
+
+    const effort = reasoningEffort || 'medium';
+    const verb = verbosity || 'medium';
+    const body = {
+      model: model || 'gpt-5.5',
+      input: previousResponseId ? [messages[messages.length - 1]] : messages,
+      stream: true,
+      reasoning: { effort },
+      text: { format: { type: 'text' }, verbosity: verb },
+    };
+    if (previousResponseId) body.previous_response_id = previousResponseId;
+
+    fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: model || 'gpt-5.4-mini',
-        messages,
-        stream: true,
-      }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     }).then((res) => {
       if (!res.ok) {
@@ -176,8 +185,11 @@ export class CodexProvider extends Provider {
       }
       return parseSSEStream(res, (event) => {
         if (event.done) { finish(); return; }
-        const content = event.choices?.[0]?.delta?.content;
-        if (content) onChunk(content);
+        if (event.type === 'response.output_text.delta') {
+          if (event.delta) onChunk(event.delta);
+        } else if (event.type === 'response.completed') {
+          responseId = event.response?.id || null;
+        }
       });
     }).then(() => {
       finish();
@@ -313,6 +325,10 @@ export class CodexProvider extends Provider {
           };
         }
 
+        if (result && item.phase !== undefined) {
+          result.phase = item.phase;
+        }
+
         // Attach intermediate context estimate so all 7 layers see Codex progress
         if (result && this._sessionInputTokens > 0) {
           result.contextUsage = this._sessionInputTokens / this._getMaxContext();
@@ -328,6 +344,7 @@ export class CodexProvider extends Provider {
         const inputTokens = usage.input_tokens || 0;
         const outputTokens = usage.output_tokens || 0;
         const cachedTokens = usage.cached_input_tokens || 0;
+        const reasoningTokens = usage.output_tokens_details?.reasoning_tokens || 0;
         const totalTokens = inputTokens + outputTokens;
         const cacheCreationTokens = cachedTokens > 0 ? Math.max(0, inputTokens - cachedTokens) : 0;
 
@@ -352,6 +369,7 @@ export class CodexProvider extends Provider {
           tokensUsed: totalTokens,
           inputTokens,
           outputTokens,
+          reasoningTokens,
           cacheReadTokens: cachedTokens,
           cacheCreationTokens,
           contextUsage: inputTokens / maxContext,

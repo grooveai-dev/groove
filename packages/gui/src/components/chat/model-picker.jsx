@@ -23,6 +23,10 @@ const TIER_CONFIG = {
 
 function getTier(model) {
   const name = (model || '').toLowerCase();
+  if (name.includes('gpt-5.5') || name.includes('gpt-5.4-pro')) return 'frontier';
+  if (name.includes('gpt-5.4-mini') || name.includes('gpt-5-mini')) return 'mid';
+  if (name.includes('gpt-5.4-nano') || name.includes('gpt-5-nano')) return 'fast';
+  if (name.includes('gpt-5.4')) return 'frontier';
   if (name.includes('opus') || name.includes('pro') || name.includes('o3') || name.includes('gpt-4o')) return 'frontier';
   if (name.includes('sonnet') || name.includes('flash') || name.includes('o4-mini')) return 'mid';
   return 'fast';
@@ -30,6 +34,7 @@ function getTier(model) {
 
 function getContextSize(model) {
   const name = (model || '').toLowerCase();
+  if (name.startsWith('gpt-5')) return '200k';
   if (name.includes('opus') || name.includes('sonnet')) return '200k';
   if (name.includes('haiku')) return '200k';
   if (name.includes('pro')) return '1M';

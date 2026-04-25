@@ -55,7 +55,7 @@ export class ConversationManager {
     return null;
   }
 
-  async create(provider, model, title, mode = 'api') {
+  async create(provider, model, title, mode = 'api', options = {}) {
     if (!provider && this.daemon.config?.defaultChatProvider) {
       provider = this.daemon.config.defaultChatProvider;
     }
@@ -90,6 +90,9 @@ export class ConversationManager {
       provider,
       model: model || null,
       mode: mode === 'agent' ? 'agent' : 'api',
+      reasoningEffort: options.reasoningEffort || null,
+      verbosity: options.verbosity || null,
+      previousResponseId: null,
       createdAt: now,
       updatedAt: now,
       pinned: false,
@@ -218,6 +221,17 @@ export class ConversationManager {
     return conv;
   }
 
+  updateReasoningSettings(id, reasoningEffort, verbosity) {
+    const conv = this.conversations.get(id);
+    if (!conv) throw new Error('Conversation not found');
+    if (reasoningEffort !== undefined) conv.reasoningEffort = reasoningEffort || null;
+    if (verbosity !== undefined) conv.verbosity = verbosity || null;
+    conv.updatedAt = new Date().toISOString();
+    this._save();
+    this.daemon.broadcast({ type: 'conversation:updated', data: conv });
+    return conv;
+  }
+
   async setMode(id, mode) {
     const conv = this.conversations.get(id);
     if (!conv) throw new Error('Conversation not found');
@@ -302,7 +316,7 @@ export class ConversationManager {
     } catch { return null; }
   }
 
-  async sendMessage(id, message, history) {
+  async sendMessage(id, message, history, { reasoningEffort, verbosity } = {}) {
     const conv = this.conversations.get(id);
     if (!conv) throw new Error('Conversation not found');
     if (conv.mode !== 'api') throw new Error('sendMessage only works in API mode');
@@ -331,6 +345,9 @@ export class ConversationManager {
 
     const apiKey = this._getApiKey(providerName);
 
+    const effectiveReasoningEffort = reasoningEffort || conv.reasoningEffort || null;
+    const effectiveVerbosity = verbosity || conv.verbosity || null;
+
     // Try direct API streaming first (sub-second latency)
     const controller = provider.streamChat(
       messages, modelId, apiKey,
@@ -340,7 +357,11 @@ export class ConversationManager {
           data: { conversationId: id, text },
         });
       },
-      () => {
+      (result) => {
+        if (result?.responseId) {
+          conv.previousResponseId = result.responseId;
+          this._save();
+        }
         this._getStreamingProcesses().delete(id);
         this.daemon.broadcast({
           type: 'conversation:complete',
@@ -353,6 +374,11 @@ export class ConversationManager {
           type: 'conversation:error',
           data: { conversationId: id, error: err.message },
         });
+      },
+      {
+        reasoningEffort: effectiveReasoningEffort,
+        verbosity: effectiveVerbosity,
+        previousResponseId: conv.previousResponseId,
       },
     );
 

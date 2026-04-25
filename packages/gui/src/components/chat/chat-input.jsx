@@ -4,7 +4,20 @@ import { Send, Loader2, Square, Paperclip, Image as ImageIcon } from 'lucide-rea
 import { cn } from '../../lib/cn';
 import { formatModelName } from './model-picker';
 
-export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImageModel, currentModel, replyContext, onClearReply, role }) {
+const EFFORT_OPTIONS = [
+  { value: 'none', label: 'None' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Med' },
+  { value: 'high', label: 'High' },
+  { value: 'xhigh', label: 'XHigh' },
+];
+
+const VERBOSITY_OPTIONS = [
+  { value: 'low', label: 'Concise' },
+  { value: 'medium', label: 'Normal' },
+];
+
+export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImageModel, currentModel, replyContext, onClearReply, role, isCodex, reasoningEffort, onReasoningEffortChange, verbosity, onVerbosityChange }) {
   const [input, setInput] = useState('');
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -73,7 +86,7 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
       )}
 
       {currentModel && (
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
           <div className={cn(
             'flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-mono border',
             isImageModel
@@ -83,6 +96,46 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
             {isImageModel && <ImageIcon size={9} />}
             <span className="max-w-[80px] truncate">{formatModelName(currentModel)}</span>
           </div>
+
+          {isCodex && (
+            <>
+              <div className="flex items-center h-6 rounded-md bg-surface-3 border border-border-subtle p-0.5">
+                {EFFORT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => onReasoningEffortChange?.(opt.value)}
+                    className={cn(
+                      'h-5 px-1.5 rounded text-2xs font-semibold font-sans transition-colors cursor-pointer',
+                      reasoningEffort === opt.value
+                        ? 'bg-accent/15 text-accent'
+                        : 'text-text-4 hover:text-text-1',
+                    )}
+                    title={`Reasoning: ${opt.label}`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center h-6 rounded-md bg-surface-3 border border-border-subtle p-0.5">
+                {VERBOSITY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => onVerbosityChange?.(opt.value)}
+                    className={cn(
+                      'h-5 px-1.5 rounded text-2xs font-semibold font-sans transition-colors cursor-pointer',
+                      verbosity === opt.value
+                        ? 'bg-accent/15 text-accent'
+                        : 'text-text-4 hover:text-text-1',
+                    )}
+                    title={`Verbosity: ${opt.label}`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
 

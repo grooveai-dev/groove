@@ -90,6 +90,9 @@ export function validateAgentConfig(config) {
 
   const personality = (typeof config.personality === 'string' && config.personality.length > 0 && config.personality.length <= 64 && NAME_PATTERN.test(config.personality)) ? config.personality : undefined;
 
+  const reasoningEffort = config.reasoning_effort !== undefined && config.reasoning_effort !== null
+    ? validateReasoningEffort(config.reasoning_effort) : undefined;
+
   // Return sanitized config (only known fields)
   return {
     role: config.role,
@@ -106,6 +109,7 @@ export function validateAgentConfig(config) {
     integrationApproval,
     repos,
     personality,
+    reasoningEffort,
   };
 }
 
@@ -193,6 +197,25 @@ export function validateGatewayConfig(config) {
     notifications: config.notifications || { preset: 'critical' },
     commandPermission: config.commandPermission || 'full',
   };
+}
+
+const VALID_REASONING_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh'];
+const VALID_VERBOSITIES = ['low', 'medium'];
+
+export function validateReasoningEffort(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string' || !VALID_REASONING_EFFORTS.includes(value)) {
+    throw new Error(`Invalid reasoning_effort: must be one of ${VALID_REASONING_EFFORTS.join(', ')}`);
+  }
+  return value;
+}
+
+export function validateVerbosity(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string' || !VALID_VERBOSITIES.includes(value)) {
+    throw new Error(`Invalid verbosity: must be one of ${VALID_VERBOSITIES.join(', ')}`);
+  }
+  return value;
 }
 
 export function escapeMd(text) {

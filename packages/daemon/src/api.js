@@ -16,7 +16,7 @@ import { OllamaProvider } from './providers/ollama.js';
 import { ClaudeCodeProvider } from './providers/claude-code.js';
 import { supportsSignalFlag, compareSemver, parseSemver } from './providers/groove-network.js';
 import { ConsentManager } from '../../../moe-training/client/index.js';
-import { validateAgentConfig } from './validate.js';
+import { validateAgentConfig, validateReasoningEffort, validateVerbosity } from './validate.js';
 import { ROLE_INTEGRATIONS, wrapWithRoleReminder } from './process.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -71,6 +71,9 @@ async function _executeApprovalRetry(daemon, approval) {
     }
   }
 }
+
+const FILE_READ_TOOLS = new Set(['Read', 'read_file']);
+const FILE_WRITE_TOOLS = new Set(['Write', 'Edit', 'write_file', 'edit_file', 'create_file']);
 
 export function createApi(app, daemon) {
   _daemon = daemon;
@@ -322,6 +325,14 @@ export function createApi(app, daemon) {
             reason: `GROOVE PM: ${target} is owned by another agent (pattern ${conflict.pattern}). Use the handoff protocol (write .groove/handoffs/<role>.md) or request approval instead of editing it directly.`,
           });
         }
+      }
+    }
+
+    // Track file operations for the files-touched API
+    if (targets.length > 0) {
+      const op = FILE_WRITE_TOOLS.has(toolName) ? 'write' : FILE_READ_TOOLS.has(toolName) ? 'read' : null;
+      if (op) {
+        for (const t of targets) daemon.registry.trackFileOp(agentId, t, op);
       }
     }
 
@@ -1100,14 +1111,19 @@ export function createApi(app, daemon) {
 
   app.post('/api/conversations', async (req, res) => {
     try {
-      const { provider, model, title, mode } = req.body;
+      const { provider, model, title, mode, reasoning_effort, verbosity } = req.body;
       if (!provider || typeof provider !== 'string') {
         return res.status(400).json({ error: 'provider is required' });
       }
       if (mode && mode !== 'api' && mode !== 'agent') {
         return res.status(400).json({ error: 'mode must be "api" or "agent"' });
       }
-      const conversation = await daemon.conversations.create(provider, model, title, mode || 'api');
+      const validatedEffort = validateReasoningEffort(reasoning_effort);
+      const validatedVerbosity = validateVerbosity(verbosity);
+      const conversation = await daemon.conversations.create(provider, model, title, mode || 'api', {
+        reasoningEffort: validatedEffort,
+        verbosity: validatedVerbosity,
+      });
       daemon.audit.log('conversation.create', { id: conversation.id, provider, model, mode: conversation.mode });
       res.status(201).json(conversation);
     } catch (err) {
@@ -1139,6 +1155,11 @@ export function createApi(app, daemon) {
         }
         await daemon.conversations.setMode(req.params.id, req.body.mode);
       }
+      if (req.body.reasoning_effort !== undefined || req.body.verbosity !== undefined) {
+        const validatedEffort = req.body.reasoning_effort !== undefined ? validateReasoningEffort(req.body.reasoning_effort) : undefined;
+        const validatedVerbosity = req.body.verbosity !== undefined ? validateVerbosity(req.body.verbosity) : undefined;
+        daemon.conversations.updateReasoningSettings(req.params.id, validatedEffort, validatedVerbosity);
+      }
       daemon.audit.log('conversation.update', { id: req.params.id, provider: req.body.provider, model: req.body.model, mode: req.body.mode });
       res.json(daemon.conversations.get(req.params.id));
     } catch (err) {
@@ -1160,10 +1181,13 @@ export function createApi(app, daemon) {
 
   app.post('/api/conversations/:id/message', async (req, res) => {
     try {
-      const { message, history } = req.body;
+      const { message, history, reasoning_effort, verbosity } = req.body;
       if (!message || typeof message !== 'string' || !message.trim()) {
         return res.status(400).json({ error: 'message is required' });
       }
+      const validatedEffort = validateReasoningEffort(reasoning_effort);
+      const validatedVerbosity = validateVerbosity(verbosity);
+
       const conv = daemon.conversations.get(req.params.id);
       if (!conv) return res.status(404).json({ error: 'Conversation not found' });
 
@@ -1172,7 +1196,10 @@ export function createApi(app, daemon) {
 
       // API mode — lightweight headless streaming, no agent spawned
       if (conv.mode === 'api' || !conv.agentId) {
-        await daemon.conversations.sendMessage(req.params.id, message.trim(), history || []);
+        await daemon.conversations.sendMessage(req.params.id, message.trim(), history || [], {
+          reasoningEffort: validatedEffort,
+          verbosity: validatedVerbosity,
+        });
         daemon.audit.log('conversation.message', { id: req.params.id, mode: 'api' });
         return res.json({ status: 'streaming', mode: 'api' });
       }
@@ -3063,6 +3090,87 @@ Keep responses concise. Help them think, don't lecture them about the system the
       res.json({ branch: stdout.trim() });
     });
   });
+
+  // Files touched by an agent during its session
+  app.get('/api/agents/:id/files-touched', (req, res) => {
+    const agent = daemon.registry.get(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    const files = daemon.registry.getFilesTouched(req.params.id);
+    res.json({ files, total: files.length });
+  });
+
+  // Git diff — structured diff for a file, an agent's touched files, or all uncommitted changes
+  app.get('/api/files/git-diff', (req, res) => {
+    const rootDir = getEditorRoot();
+    if (!rootDir) return res.status(400).json({ error: 'Editor root not set' });
+
+    let paths = [];
+
+    if (req.query.path) {
+      const result = validateFilePath(req.query.path, rootDir);
+      if (result.error) return res.status(400).json({ error: result.error });
+      paths = [req.query.path];
+    } else if (req.query.agentId) {
+      const agent = daemon.registry.get(req.query.agentId);
+      if (!agent) return res.status(404).json({ error: 'Agent not found' });
+      paths = daemon.registry.getFilesTouched(req.query.agentId).map(f => f.path);
+      if (paths.length === 0) return res.json({ diffs: [] });
+      // Validate each path
+      for (const p of paths) {
+        if (p.startsWith('/') || p.includes('..') || p.includes('\0')) {
+          return res.status(400).json({ error: 'Invalid path in agent files' });
+        }
+      }
+    }
+
+    const args = ['diff'];
+    const cachedArgs = ['diff', '--cached'];
+    if (paths.length > 0) {
+      args.push('--', ...paths);
+      cachedArgs.push('--', ...paths);
+    }
+
+    try {
+      const unstaged = execFileSync('git', args, { cwd: rootDir, timeout: 15000, maxBuffer: 10 * 1024 * 1024 }).toString();
+      const staged = execFileSync('git', cachedArgs, { cwd: rootDir, timeout: 15000, maxBuffer: 10 * 1024 * 1024 }).toString();
+      const combined = (staged + '\n' + unstaged).trim();
+      const diffs = parseDiffOutput(combined);
+      res.json({ diffs });
+    } catch (err) {
+      if (err.status !== undefined) {
+        return res.json({ diffs: [] });
+      }
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  function parseDiffOutput(raw) {
+    if (!raw) return [];
+    const fileDiffs = raw.split(/^diff --git /m).filter(Boolean);
+    return fileDiffs.map(chunk => {
+      const lines = chunk.split('\n');
+      const headerMatch = lines[0]?.match(/a\/(.+?) b\/(.+)/);
+      const filePath = headerMatch ? headerMatch[2] : 'unknown';
+      let status = 'modified';
+      if (lines.some(l => l.startsWith('new file'))) status = 'added';
+      else if (lines.some(l => l.startsWith('deleted file'))) status = 'deleted';
+      let additions = 0, deletions = 0;
+      const hunks = [];
+      let currentHunk = null;
+      for (const line of lines) {
+        if (line.startsWith('@@')) {
+          if (currentHunk) hunks.push(currentHunk);
+          currentHunk = { header: line, lines: [] };
+        } else if (currentHunk) {
+          currentHunk.lines.push(line);
+          if (line.startsWith('+') && !line.startsWith('+++')) additions++;
+          else if (line.startsWith('-') && !line.startsWith('---')) deletions++;
+        }
+      }
+      if (currentHunk) hunks.push(currentHunk);
+      return { path: filePath, status, hunks, additions, deletions, content: 'diff --git ' + chunk };
+    });
+  }
 
   // File search — fuzzy filename matching for quick-open (Ctrl+P)
   app.get('/api/files/search', (req, res) => {

@@ -92,6 +92,8 @@ export const useGrooveStore = create((set, get) => ({
   sendingMessage: false,
   streamingConversationId: null,
   conversationRoles: loadJSON('groove:conversationRoles'),
+  conversationReasoningEffort: loadJSON('groove:conversationReasoningEffort'),
+  conversationVerbosity: loadJSON('groove:conversationVerbosity'),
 
   // ── Approvals ─────────────────────────────────────────────
   pendingApprovals: [],
@@ -172,6 +174,13 @@ export const useGrooveStore = create((set, get) => ({
   editorChangedFiles: {},
   editorRecentSaves: {},
   editorSidebarWidth: Number(localStorage.getItem('groove:editorSidebarWidth')) || 240,
+
+  // ── Workspace Mode ────────────────────────────────────────
+  workspaceMode: localStorage.getItem('groove:workspaceMode') === 'true',
+  workspaceAgentId: null,
+  workspaceSnapshots: {},
+  workspaceReviewMode: false,
+  workspaceReviewFiles: [],
 
   // ── Onboarding ────────────────────────────────────────────
   onboardingComplete: localStorage.getItem('groove:onboardingComplete') === 'true',
@@ -567,6 +576,13 @@ export const useGrooveStore = create((set, get) => ({
           const savedAt = get().editorRecentSaves[msg.path];
           if (savedAt && Date.now() - savedAt < 2000) break;
           set((s) => ({ editorChangedFiles: { ...s.editorChangedFiles, [msg.path]: msg.timestamp } }));
+          // Auto-capture workspace snapshot for diff viewer
+          if (get().workspaceMode && msg.path && !get().workspaceSnapshots[msg.path]) {
+            const existing = get().editorFiles[msg.path];
+            if (existing?.content) {
+              get().captureSnapshot(msg.path, existing.content);
+            }
+          }
           break;
         }
 
@@ -2050,7 +2066,13 @@ export const useGrooveStore = create((set, get) => ({
         const conversationRoles = { ...s.conversationRoles };
         delete conversationRoles[id];
         persistJSON('groove:conversationRoles', conversationRoles);
-        return { conversations, conversationMessages, conversationRoles, activeConversationId };
+        const conversationReasoningEffort = { ...s.conversationReasoningEffort };
+        delete conversationReasoningEffort[id];
+        persistJSON('groove:conversationReasoningEffort', conversationReasoningEffort);
+        const conversationVerbosity = { ...s.conversationVerbosity };
+        delete conversationVerbosity[id];
+        persistJSON('groove:conversationVerbosity', conversationVerbosity);
+        return { conversations, conversationMessages, conversationRoles, conversationReasoningEffort, conversationVerbosity, activeConversationId };
       });
     } catch (err) {
       get().addToast('error', 'Delete failed', err.message);
@@ -2093,6 +2115,24 @@ export const useGrooveStore = create((set, get) => ({
     });
   },
 
+  setConversationReasoningEffort(id, effort) {
+    set((s) => {
+      const map = { ...s.conversationReasoningEffort };
+      map[id] = effort || 'medium';
+      persistJSON('groove:conversationReasoningEffort', map);
+      return { conversationReasoningEffort: map };
+    });
+  },
+
+  setConversationVerbosity(id, verbosity) {
+    set((s) => {
+      const map = { ...s.conversationVerbosity };
+      map[id] = verbosity || 'medium';
+      persistJSON('groove:conversationVerbosity', map);
+      return { conversationVerbosity: map };
+    });
+  },
+
   async sendChatMessage(conversationId, message) {
     const conv = get().conversations.find((c) => c.id === conversationId);
     if (!conv) return;
@@ -2121,6 +2161,12 @@ export const useGrooveStore = create((set, get) => ({
           { from: 'assistant', text: 'Understood.' },
           ...body.history,
         ];
+      }
+      const effort = get().conversationReasoningEffort?.[conversationId] || 'medium';
+      const verbosity = get().conversationVerbosity?.[conversationId] || 'medium';
+      if (conv.provider === 'codex') {
+        body.reasoning_effort = effort;
+        body.verbosity = verbosity;
       }
       await api.post(`/conversations/${encodeURIComponent(conversationId)}/message`, body);
     } catch (err) {
@@ -2301,6 +2347,77 @@ export const useGrooveStore = create((set, get) => ({
       get().addToast('error', 'Delete failed', err.message);
       return false;
     }
+  },
+
+  // ── Workspace Mode ────────────────────────────────────────
+
+  setWorkspaceMode(on) {
+    set({ workspaceMode: on });
+    localStorage.setItem('groove:workspaceMode', String(on));
+    if (on && !get().workspaceAgentId) {
+      const teamAgents = get().agents.filter((a) => a.teamId === get().activeTeamId);
+      const selected = get().detailPanel?.type === 'agent' ? get().detailPanel.agentId : null;
+      const running = teamAgents.find((a) => a.status === 'running');
+      set({ workspaceAgentId: selected || running?.id || teamAgents[0]?.id || null });
+    }
+  },
+
+  setWorkspaceAgent(id) {
+    set({ workspaceAgentId: id });
+  },
+
+  captureSnapshot(path, content) {
+    set((s) => {
+      if (s.workspaceSnapshots[path]) return s;
+      return { workspaceSnapshots: { ...s.workspaceSnapshots, [path]: content } };
+    });
+  },
+
+  toggleReviewMode() {
+    const st = get();
+    if (st.workspaceReviewMode) {
+      set({ workspaceReviewMode: false, workspaceReviewFiles: [] });
+      return;
+    }
+    const agentId = st.workspaceAgentId;
+    const log = st.activityLog[agentId] || [];
+    const seen = new Set();
+    const files = [];
+    for (const entry of log) {
+      const t = (entry.text || '').toLowerCase();
+      if (!(t.includes('writ') || t.includes('edit') || t.includes('creat'))) continue;
+      const match = entry.text.match(/(?:Write|Edit|Create|wrote|editing|writing)\S*\s+(\S+)/i);
+      if (!match) continue;
+      const path = match[1];
+      if (seen.has(path)) continue;
+      seen.add(path);
+      files.push({ path, status: 'pending', comment: '' });
+    }
+    set({ workspaceReviewMode: true, workspaceReviewFiles: files });
+  },
+
+  approveFile(path) {
+    set((s) => ({
+      workspaceReviewFiles: s.workspaceReviewFiles.map((f) =>
+        f.path === path ? { ...f, status: 'approved' } : f,
+      ),
+    }));
+  },
+
+  rejectFile(path) {
+    set((s) => ({
+      workspaceReviewFiles: s.workspaceReviewFiles.map((f) =>
+        f.path === path ? { ...f, status: 'rejected' } : f,
+      ),
+    }));
+  },
+
+  commentFile(path, comment) {
+    set((s) => ({
+      workspaceReviewFiles: s.workspaceReviewFiles.map((f) =>
+        f.path === path ? { ...f, comment } : f,
+      ),
+    }));
   },
 
   // ── Federation ────────────────────────────────────────────

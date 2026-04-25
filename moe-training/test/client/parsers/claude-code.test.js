@@ -17,7 +17,7 @@ describe('ClaudeCodeParser', () => {
     const result = parser.parseEvent(event);
     assert.equal(result.type, 'thought');
     assert.equal(result.content, 'I need to fix the bug');
-    assert.equal(result.token_count, 50);
+    assert.equal(result.token_count, undefined);
   });
 
   it('parses tool_use block as action', () => {
@@ -79,7 +79,7 @@ describe('ClaudeCodeParser', () => {
     const result = parser.parseEvent(event);
     assert.equal(result.type, 'resolution');
     assert.equal(result.content, 'Task completed successfully');
-    assert.equal(result.token_count, 500);
+    assert.equal(result.token_count, undefined);
   });
 
   it('extracts tokens from assistant event', () => {

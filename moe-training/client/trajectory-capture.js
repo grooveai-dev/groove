@@ -172,6 +172,12 @@ export class TrajectoryCapture {
       ev.arguments = this._scrubObject(ev.arguments);
     }
 
+    if (!ev.token_count || ev.token_count < 2) {
+      const text = ev.content || '';
+      const argsLen = ev.arguments ? JSON.stringify(ev.arguments).length : 0;
+      ev.token_count = Math.max(1, Math.ceil((text.length + argsLen) / 4));
+    }
+
     const step = {
       step: ++ctx.stepCount,
       type: ev.type,

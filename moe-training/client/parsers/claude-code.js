@@ -30,7 +30,6 @@ export class ClaudeCodeParser {
           results.push({
             type: 'thought',
             content: block.text || '',
-            token_count: jsonEvent.message?.usage?.output_tokens || 0,
           });
         } else if (block.type === 'tool_use') {
           this._pendingToolUse.set(block.id, block);
@@ -67,7 +66,6 @@ export class ClaudeCodeParser {
       return {
         type: 'resolution',
         content: typeof jsonEvent.result === 'string' ? jsonEvent.result : JSON.stringify(jsonEvent.result),
-        token_count: jsonEvent.total_tokens_used || 0,
       };
     }
 

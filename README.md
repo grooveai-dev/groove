@@ -1,4 +1,4 @@
-# Groove OS 🌀
+# Groove OS
 
 **Orchestrate your AI coding agents over localhost.**
 

@@ -211,9 +211,63 @@ class WorkspaceManager {
       return isLocal;
     });
 
+    const remoteUrl = `http://localhost:${localPort}?instance=${encodeURIComponent(name)}`;
+
+    const guiErrorHtml = 'data:text/html,' + encodeURIComponent([
+      '<!DOCTYPE html><html><head><style>',
+      '*{margin:0;padding:0;box-sizing:border-box}',
+      'body{background:#0f1115;color:#e6e6e6;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:16px}',
+      '.icon{width:64px;height:64px;border-radius:50%;background:rgba(251,191,36,0.1);display:flex;align-items:center;justify-content:center;margin-bottom:8px}',
+      'h2{font-size:18px;font-weight:600}',
+      'p{font-size:13px;color:#6e7681;max-width:400px;text-align:center;line-height:1.5}',
+      '.hint{font-size:12px;color:#505862}',
+      'button{margin-top:8px;padding:10px 24px;border-radius:8px;border:1px solid rgba(51,175,188,0.4);background:rgba(51,175,188,0.1);color:#33afbc;font-size:13px;font-weight:500;cursor:pointer}',
+      'button:hover{background:rgba(51,175,188,0.2)}',
+      '</style></head><body>',
+      '<div class="icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>',
+      '<h2>Remote GUI Not Available</h2>',
+      '<p>The remote Groove daemon is running but its GUI files are missing. This usually means the remote version needs to be updated.</p>',
+      '<p class="hint">Try disconnecting and reconnecting — Groove will automatically update the remote.</p>',
+      `<button onclick="location.href='${remoteUrl.replace(/'/g, "\\'")}'">Retry</button>`,
+      '</body></html>',
+    ].join(''));
+
+    win.webContents.on('did-finish-load', () => {
+      const loadedUrl = win.webContents.getURL();
+      if (loadedUrl.startsWith('data:')) return;
+      win.webContents.executeJavaScript('(function(){ var el = document.querySelector("pre"); return el ? el.textContent : null; })()')
+        .then(text => {
+          if (!text) return;
+          try {
+            const json = JSON.parse(text);
+            if (json.error) win.webContents.loadURL(guiErrorHtml);
+          } catch {}
+        })
+        .catch(() => {});
+    });
+
+    win.webContents.on('did-fail-load', (_e, code, desc) => {
+      if (code === -3) return;
+      const failHtml = 'data:text/html,' + encodeURIComponent([
+        '<!DOCTYPE html><html><head><style>',
+        '*{margin:0;padding:0;box-sizing:border-box}',
+        'body{background:#0f1115;color:#e6e6e6;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:16px}',
+        'h2{font-size:18px;font-weight:600}',
+        'p{font-size:13px;color:#6e7681;max-width:400px;text-align:center;line-height:1.5}',
+        'button{margin-top:8px;padding:10px 24px;border-radius:8px;border:1px solid rgba(51,175,188,0.4);background:rgba(51,175,188,0.1);color:#33afbc;font-size:13px;font-weight:500;cursor:pointer}',
+        'button:hover{background:rgba(51,175,188,0.2)}',
+        '</style></head><body>',
+        '<h2>Connection Failed</h2>',
+        `<p>${(desc || 'Could not reach the remote Groove daemon.').replace(/[<>"&]/g, '')}</p>`,
+        `<button onclick="location.href='${remoteUrl.replace(/'/g, "\\'")}'">Retry</button>`,
+        '</body></html>',
+      ].join(''));
+      win.webContents.loadURL(failHtml);
+    });
+
     // Clear HTTP cache before loading remote GUI — prevents stale bundles after npm update
     win.webContents.session.clearCache().then(() => {
-      win.loadURL(`http://localhost:${localPort}?instance=${encodeURIComponent(name)}`);
+      win.loadURL(remoteUrl);
     });
     win.once('ready-to-show', () => win.show());
 
@@ -499,7 +553,7 @@ class WorkspaceManager {
       if (!grooveInstalled) {
         emitProgress('Installing Groove on remote server...');
         try {
-          sshExec('npm i -g groove-dev', 120000);
+          sshExec(`npm i -g groove-dev@${app.getVersion()}`, 120000);
         } catch (e) {
           proc.kill();
           throw new Error(`Failed to install Groove on remote server: ${e.message || 'npm install failed'}`);
@@ -528,8 +582,10 @@ class WorkspaceManager {
           emitProgress(`Updating remote Groove ${remoteVersion} → ${localVersion}...`);
           try {
             sshExec(`npm i -g groove-dev@${localVersion}`, 120000);
-            sshExec('groove stop', 10000);
-          } catch {}
+          } catch (e) {
+            console.error('[ssh] Remote upgrade failed:', e.message);
+          }
+          try { sshExec('groove stop', 10000); } catch {}
           await new Promise(r => setTimeout(r, 1000));
           try { sshExec('groove start -d', 30000); } catch {}
           await new Promise(r => setTimeout(r, 5000));

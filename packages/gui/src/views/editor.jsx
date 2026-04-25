@@ -8,7 +8,7 @@ import { MediaViewer, isMediaFile } from '../components/editor/media-viewer';
 import { EditorStatusBar } from '../components/editor/editor-status-bar';
 import { GotoLine } from '../components/editor/goto-line';
 import { Breadcrumbs } from '../components/editor/breadcrumbs';
-import { Code2, AlertTriangle, RefreshCw, X, Eye, FileCode } from 'lucide-react';
+import { Code2, AlertTriangle, RefreshCw, X, Eye, FileCode, PanelLeftOpen } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
@@ -39,6 +39,7 @@ export default function EditorView() {
   const [previewKey, setPreviewKey] = useState(0);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
   const [showGotoLine, setShowGotoLine] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const editorViewRef = useRef(null);
   const dragging = useRef(false);
@@ -108,8 +109,11 @@ export default function EditorView() {
   return (
     <div className="flex h-full">
       {/* File tree sidebar */}
-      <div className="flex-shrink-0 border-r border-border relative" style={{ width: sidebarWidth }}>
-        <FileTree rootDir={rootDir} />
+      <div className={cn(
+        'relative flex-shrink-0 border-r border-border transition-all duration-200 overflow-hidden',
+        sidebarCollapsed && 'w-0 border-r-0',
+      )} style={sidebarCollapsed ? undefined : { width: sidebarWidth }}>
+        <FileTree rootDir={rootDir} onCollapse={() => setSidebarCollapsed(true)} />
         {/* Drag handle */}
         <div
           className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/30 transition-colors z-10"
@@ -119,7 +123,17 @@ export default function EditorView() {
       </div>
 
       {/* Editor area */}
-      <div className="flex-1 flex flex-col min-w-0 bg-surface-0">
+      <div className="flex-1 flex flex-col min-w-0 bg-surface-1">
+        {sidebarCollapsed && (
+          <button
+            onClick={() => setSidebarCollapsed(false)}
+            className="absolute top-2 left-2 z-10 w-7 h-7 flex items-center justify-center rounded-md text-text-3 hover:text-text-0 hover:bg-surface-3 transition-colors cursor-pointer"
+            title="Show sidebar"
+          >
+            <PanelLeftOpen size={15} />
+          </button>
+        )}
+
         {/* Tab bar */}
         <EditorTabs />
 

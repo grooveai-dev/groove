@@ -81,6 +81,13 @@ export class GeminiProvider extends Provider {
         `Do not touch files outside your scope — other agents own them.`
       );
     }
+    if (agent.role !== 'planner') {
+      parts.push(
+        `## Non-Interactive Commands\n\n` +
+        `Always use non-interactive flags when running package manager commands to prevent timeout hangs: ` +
+        `\`npx --yes\`, \`npm create --yes\`, \`npm init --yes\`. Never run these commands without the \`--yes\` flag.`
+      );
+    }
     return parts.join('\n\n');
   }
 
@@ -148,7 +155,7 @@ export class GeminiProvider extends Provider {
 
     switch (event.type) {
       case 'init':
-        return { type: 'activity', subtype: 'assistant', sessionId: event.session_id, data: [{ type: 'text', text: '' }] };
+        return { type: 'activity', subtype: 'assistant', sessionId: event.session_id, model: event.model, data: [{ type: 'text', text: '' }] };
 
       case 'message': {
         if (event.role === 'user') return null;
@@ -196,7 +203,9 @@ export class GeminiProvider extends Provider {
         const cachedTokens = stats.cached || 0;
         const totalTokens = stats.total_tokens || (inputTokens + outputTokens);
 
-        const model = GeminiProvider.models.find((m) => m.id === this._currentModel);
+        const modelKeys = Object.keys(stats.models || {});
+        const modelId = modelKeys[0] || this._currentModel;
+        const model = GeminiProvider.models.find((m) => m.id === modelId);
         const pricing = model?.pricing;
         const maxContext = model?.maxContext || 1000000;
 
@@ -222,6 +231,7 @@ export class GeminiProvider extends Provider {
           cost: estimatedCostUsd,
           duration: stats.duration_ms,
           turns: stats.tool_calls || 0,
+          model: modelId,
         };
       }
 

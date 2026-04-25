@@ -45,6 +45,7 @@
     "packages/cli",
     "packages/gui",
     "packages/desktop",
+    "packages/launch-page",
     "moe-training"
   ],
   "engines": {

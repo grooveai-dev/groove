@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 import {
   ChevronRight, ChevronDown, File, Folder, FolderOpen,
   Plus, FolderPlus, Search, RefreshCw, Trash2, Pencil, FilePlus,
+  ChevronsDownUp, PanelLeftClose,
 } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
 
@@ -115,6 +116,7 @@ function TreeNode({ entry, depth = 0, activePath, onFileClick, onDirToggle, expa
   return (
     <button
       onClick={() => isDir ? onDirToggle(entry.path) : onFileClick(entry.path)}
+      onDoubleClick={handleContextMenu}
       onContextMenu={handleContextMenu}
       className={cn(
         'w-full flex items-center gap-1.5 py-1 text-xs font-sans cursor-pointer',
@@ -205,7 +207,7 @@ function TreeDir({ dirPath, depth, activePath, onFileClick, expanded, onDirToggl
 
 // ── Main FileTree ────────────────────────────────────────────
 
-export function FileTree({ rootDir }) {
+export function FileTree({ rootDir, onCollapse }) {
   const treeCache = useGrooveStore((s) => s.editorTreeCache);
   const activeFile = useGrooveStore((s) => s.editorActiveFile);
   const openFile = useGrooveStore((s) => s.openFile);
@@ -228,6 +230,10 @@ export function FileTree({ rootDir }) {
       else next.add(path);
       return next;
     });
+  }
+
+  function handleCollapseAll() {
+    setExpanded(new Set(['']));
   }
 
   function handleContextMenu(e, entry) {
@@ -379,6 +385,22 @@ export function FileTree({ rootDir }) {
         >
           <RefreshCw size={12} />
         </button>
+        <button
+          onClick={handleCollapseAll}
+          className="p-1 text-text-4 hover:text-text-1 transition-colors cursor-pointer"
+          title="Collapse all"
+        >
+          <ChevronsDownUp size={12} />
+        </button>
+        {onCollapse && (
+          <button
+            onClick={onCollapse}
+            className="p-1 text-text-4 hover:text-text-1 transition-colors cursor-pointer"
+            title="Collapse sidebar"
+          >
+            <PanelLeftClose size={12} />
+          </button>
+        )}
       </div>
 
       {/* Tree */}

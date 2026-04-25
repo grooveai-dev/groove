@@ -3476,7 +3476,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
               role: existing.role,
               scope: normalizeScope(config.scope || existing.scope || [], existing.workingDir || projectWorkingDir),
               prompt,
-              provider: config.provider || existing.provider || undefined,
+              provider: config.provider || daemon.config?.defaultProvider || existing.provider || undefined,
               model: config.model || existing.model || daemon.config?.defaultModel || 'auto',
               permission: config.permission || existing.permission || 'auto',
               workingDir: existing.workingDir || projectWorkingDir,

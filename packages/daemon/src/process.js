@@ -429,6 +429,9 @@ export class ProcessManager {
 
     // Resolve provider — auto-detect best installed if not specified
     let providerName = config.provider;
+    if (!providerName && this.daemon.config?.defaultProvider) {
+      providerName = this.daemon.config.defaultProvider;
+    }
     if (!providerName) {
       const installed = getInstalledProviders();
       if (installed.length === 0) {

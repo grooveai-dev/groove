@@ -223,6 +223,9 @@ export class Introducer {
       }
     }
 
+    // Non-Claude planners only need codebase structure + team info — skip heavy context
+    const isLightPlanner = newAgent.role === 'planner' && newAgent.provider && newAgent.provider !== 'claude-code';
+
     // Codebase structure injection — give agents instant orientation
     const structureSummary = this.daemon.indexer?.getStructureSummary();
     if (structureSummary) {
@@ -232,81 +235,83 @@ export class Introducer {
       lines.push(structureSummary);
     }
 
-    // Architecture injection — auto-detect architecture docs and inject
-    // so every agent understands the big picture without spending tokens exploring
-    const archContent = this.loadArchitectureDoc();
-    if (archContent) {
-      lines.push('');
-      lines.push(`## Architecture (auto-injected)`);
-      lines.push('');
-      lines.push(archContent);
-    }
+    if (!isLightPlanner) {
+      // Architecture injection — auto-detect architecture docs and inject
+      // so every agent understands the big picture without spending tokens exploring
+      const archContent = this.loadArchitectureDoc();
+      if (archContent) {
+        lines.push('');
+        lines.push(`## Architecture (auto-injected)`);
+        lines.push('');
+        lines.push(archContent);
+      }
 
-    // Skills injection — load attached skill content and inject into context
-    if (newAgent.skills && newAgent.skills.length > 0 && this.daemon.skills) {
-      const skillSections = [];
-      for (const skillId of newAgent.skills) {
-        const content = this.daemon.skills.getContent(skillId);
-        if (content) {
-          // Strip YAML frontmatter, keep the instruction body
-          const body = content.replace(/^---[\s\S]*?---\n*/, '').trim();
-          if (body) {
-            // Find the skill name from registry or frontmatter
-            const regEntry = this.daemon.skills.registry.find((s) => s.id === skillId);
-            const name = regEntry?.name || skillId;
-            skillSections.push(`### ${name}\n\n${body}`);
+      // Skills injection — load attached skill content and inject into context
+      if (newAgent.skills && newAgent.skills.length > 0 && this.daemon.skills) {
+        const skillSections = [];
+        for (const skillId of newAgent.skills) {
+          const content = this.daemon.skills.getContent(skillId);
+          if (content) {
+            // Strip YAML frontmatter, keep the instruction body
+            const body = content.replace(/^---[\s\S]*?---\n*/, '').trim();
+            if (body) {
+              // Find the skill name from registry or frontmatter
+              const regEntry = this.daemon.skills.registry.find((s) => s.id === skillId);
+              const name = regEntry?.name || skillId;
+              skillSections.push(`### ${name}\n\n${body}`);
+            }
           }
         }
-      }
-      if (skillSections.length > 0) {
-        lines.push('');
-        lines.push(`## Skills (${skillSections.length} attached)`);
-        lines.push('');
-        lines.push(`The following skills have been attached to this agent. Follow their instructions:`);
-        lines.push('');
-        lines.push(skillSections.join('\n\n---\n\n'));
-      }
-    }
-
-    // Integration context — inject playbooks for GROOVE exec API
-    if (newAgent.integrations && newAgent.integrations.length > 0 && this.daemon.integrations) {
-      const integrationSections = [];
-      for (const integrationId of newAgent.integrations) {
-        const entry = this.daemon.integrations.registry.find((s) => s.id === integrationId);
-        if (entry) {
-          const configured = this.daemon.integrations._isConfigured(entry);
-          if (!configured) {
-            integrationSections.push(`- **${entry.name}** — NOT CONFIGURED (credentials missing)`);
-          } else if (entry.agentInstructions) {
-            integrationSections.push(entry.agentInstructions);
-          } else {
-            integrationSections.push(`- **${entry.name}**: ${entry.description}\n  Exec: \`POST http://localhost:31415/api/integrations/${entry.id}/exec\` with \`{"tool": "...", "params": {...}}\``);
-          }
+        if (skillSections.length > 0) {
+          lines.push('');
+          lines.push(`## Skills (${skillSections.length} attached)`);
+          lines.push('');
+          lines.push(`The following skills have been attached to this agent. Follow their instructions:`);
+          lines.push('');
+          lines.push(skillSections.join('\n\n---\n\n'));
         }
       }
-      if (integrationSections.length > 0) {
-        lines.push('');
-        lines.push(`## Integrations (${integrationSections.length} connected)`);
-        lines.push('');
-        lines.push('These integrations are ALREADY INSTALLED, AUTHENTICATED, AND READY TO USE. You do NOT need to:');
-        lines.push('- Ask the user for any API keys, OAuth tokens, or credentials for these services');
-        lines.push('- Set up authentication or run any auth flows');
-        lines.push('- Direct the user to any external auth pages');
-        lines.push('The user has already configured everything. Just use the tools.');
-        lines.push('');
-        lines.push('To use them, make HTTP POST requests:');
-        lines.push('```');
-        lines.push('POST http://localhost:31415/api/integrations/{id}/exec');
-        lines.push('Body: {"tool": "tool_name", "params": {...}}');
-        lines.push('```');
-        lines.push('To discover available tools: `GET http://localhost:31415/api/integrations/{id}/tools`');
-        lines.push('');
-        lines.push('**Approval gates:** Some tools require human approval (e.g., sending emails, creating charges).');
-        lines.push('If you get a `requiresApproval: true` response, the action has been queued for user approval.');
-        lines.push('GROOVE will show the user an approval modal and auto-execute the action once approved.');
-        lines.push('Do NOT tell the user to approve anything. Do NOT retry the request yourself. Just wait — you will receive a message confirming the result once the action is approved and executed.');
-        lines.push('');
-        lines.push(integrationSections.join('\n\n'));
+
+      // Integration context — inject playbooks for GROOVE exec API
+      if (newAgent.integrations && newAgent.integrations.length > 0 && this.daemon.integrations) {
+        const integrationSections = [];
+        for (const integrationId of newAgent.integrations) {
+          const entry = this.daemon.integrations.registry.find((s) => s.id === integrationId);
+          if (entry) {
+            const configured = this.daemon.integrations._isConfigured(entry);
+            if (!configured) {
+              integrationSections.push(`- **${entry.name}** — NOT CONFIGURED (credentials missing)`);
+            } else if (entry.agentInstructions) {
+              integrationSections.push(entry.agentInstructions);
+            } else {
+              integrationSections.push(`- **${entry.name}**: ${entry.description}\n  Exec: \`POST http://localhost:31415/api/integrations/${entry.id}/exec\` with \`{"tool": "...", "params": {...}}\``);
+            }
+          }
+        }
+        if (integrationSections.length > 0) {
+          lines.push('');
+          lines.push(`## Integrations (${integrationSections.length} connected)`);
+          lines.push('');
+          lines.push('These integrations are ALREADY INSTALLED, AUTHENTICATED, AND READY TO USE. You do NOT need to:');
+          lines.push('- Ask the user for any API keys, OAuth tokens, or credentials for these services');
+          lines.push('- Set up authentication or run any auth flows');
+          lines.push('- Direct the user to any external auth pages');
+          lines.push('The user has already configured everything. Just use the tools.');
+          lines.push('');
+          lines.push('To use them, make HTTP POST requests:');
+          lines.push('```');
+          lines.push('POST http://localhost:31415/api/integrations/{id}/exec');
+          lines.push('Body: {"tool": "tool_name", "params": {...}}');
+          lines.push('```');
+          lines.push('To discover available tools: `GET http://localhost:31415/api/integrations/{id}/tools`');
+          lines.push('');
+          lines.push('**Approval gates:** Some tools require human approval (e.g., sending emails, creating charges).');
+          lines.push('If you get a `requiresApproval: true` response, the action has been queued for user approval.');
+          lines.push('GROOVE will show the user an approval modal and auto-execute the action once approved.');
+          lines.push('Do NOT tell the user to approve anything. Do NOT retry the request yourself. Just wait — you will receive a message confirming the result once the action is approved and executed.');
+          lines.push('');
+          lines.push(integrationSections.join('\n\n'));
+        }
       }
     }
 
@@ -371,17 +376,18 @@ export class Introducer {
     } catch { /* credentials not available */ }
 
     // --- Layer 7: Project Memory (injected at end, bounded) ---
+    // Light planners only get constraints — skip discoveries/handoffs to keep context small
     let memorySection = '';
     try {
       if (this.daemon.memory) {
         const parts = [];
 
-        const constraints = this.daemon.memory.getConstraintsMarkdown(2000);
+        const constraints = this.daemon.memory.getConstraintsMarkdown(isLightPlanner ? 500 : 2000);
         if (constraints) {
           parts.push(`### Constraints (read carefully)\n${constraints}`);
         }
 
-        if (hasTask || isRotation) {
+        if (!isLightPlanner && (hasTask || isRotation)) {
           const discoveries = this.daemon.memory.getDiscoveriesMarkdown(newAgent.role, 8, 600, newAgent.scope);
           if (discoveries) {
             parts.push(`### Known Fixes for ${newAgent.role} Role\n${discoveries}`);
@@ -395,9 +401,10 @@ export class Introducer {
 
         if (parts.length > 0) {
           memorySection = `\n## Project Memory (auto-generated)\n\n${parts.join('\n\n')}\n`;
-          // Hard budget: 3K chars total
-          if (memorySection.length > 3000) {
-            memorySection = memorySection.slice(0, 2997) + '...';
+          // Hard budget: 3K chars total (1K for light planners)
+          const budget = isLightPlanner ? 1000 : 3000;
+          if (memorySection.length > budget) {
+            memorySection = memorySection.slice(0, budget - 3) + '...';
           }
         }
       }

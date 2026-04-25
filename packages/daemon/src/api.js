@@ -3140,7 +3140,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       if (err.status !== undefined) {
         return res.json({ diffs: [] });
       }
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: 'Failed to compute diff' });
     }
   });
 

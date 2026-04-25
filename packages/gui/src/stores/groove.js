@@ -460,6 +460,15 @@ export const useGrooveStore = create((set, get) => ({
           if (msg.error && msg.agentId) {
             get().addChatMessage(msg.agentId, 'system', `Crashed: ${msg.error}`);
           }
+          // Clear workspace if the exiting agent was the workspace target
+          if (get().workspaceAgentId === msg.agentId) {
+            const teamAgents = get().agents.filter(
+              (a) => a.id !== msg.agentId && a.teamId === get().activeTeamId,
+            );
+            const next = teamAgents.find((a) => a.status === 'running') || teamAgents[0];
+            set({ workspaceAgentId: next?.id || null });
+          }
+
           // Check for recommended team when planner completes
           if (agent?.role === 'planner' && msg.status === 'completed') {
             setTimeout(() => get().checkRecommendedTeam(), 1000);
@@ -2369,7 +2378,12 @@ export const useGrooveStore = create((set, get) => ({
   captureSnapshot(path, content) {
     set((s) => {
       if (s.workspaceSnapshots[path]) return s;
-      return { workspaceSnapshots: { ...s.workspaceSnapshots, [path]: content } };
+      const next = { ...s.workspaceSnapshots, [path]: content };
+      const keys = Object.keys(next);
+      if (keys.length > 200) {
+        delete next[keys[0]];
+      }
+      return { workspaceSnapshots: next };
     });
   },
 

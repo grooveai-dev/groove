@@ -1,0 +1,254 @@
+// FSL-1.1-Apache-2.0 — see LICENSE
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useGrooveStore } from '../../stores/groove';
+import { cn } from '../../lib/cn';
+import { api } from '../../lib/api';
+import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Clock } from 'lucide-react';
+import { ScrollArea } from '../ui/scroll-area';
+
+const FILE_COLORS = {
+  js: 'text-warning', jsx: 'text-warning', ts: 'text-info', tsx: 'text-info',
+  css: 'text-info', html: 'text-orange', json: 'text-warning',
+  md: 'text-text-2', py: 'text-success', rs: 'text-orange',
+  go: 'text-accent', sh: 'text-success', yaml: 'text-danger', yml: 'text-danger',
+  sql: 'text-purple', xml: 'text-orange', svg: 'text-warning',
+};
+
+function getFileColor(name) {
+  const ext = name.split('.').pop()?.toLowerCase();
+  return FILE_COLORS[ext] || 'text-text-3';
+}
+
+function matchesScope(filePath, scopePatterns) {
+  if (!scopePatterns || scopePatterns.length === 0) return true;
+  for (const pattern of scopePatterns) {
+    const escaped = pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*\*/g, '<<GLOBSTAR>>')
+      .replace(/\*/g, '[^/]*')
+      .replace(/<<GLOBSTAR>>/g, '.*');
+    if (new RegExp(`^${escaped}$`).test(filePath) || new RegExp(`^${escaped}`).test(filePath)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function TreeEntry({ entry, depth, onOpen, expandedDirs, onToggleDir }) {
+  const isDir = entry.type === 'directory';
+  const isExpanded = expandedDirs.has(entry.path);
+  const fileColor = isDir ? 'text-accent' : getFileColor(entry.name);
+
+  return (
+    <>
+      <button
+        onClick={() => isDir ? onToggleDir(entry.path) : onOpen(entry.path)}
+        className={cn(
+          'w-full flex items-center gap-1.5 py-1 text-xs font-sans cursor-pointer',
+          'hover:bg-surface-4/50 transition-colors text-left',
+        )}
+        style={{ paddingLeft: depth * 14 + 8 }}
+      >
+        {isDir ? (
+          <>
+            {isExpanded ? <ChevronDown size={12} className="text-text-4 flex-shrink-0" /> : <ChevronRight size={12} className="text-text-4 flex-shrink-0" />}
+            {isExpanded ? <FolderOpen size={13} className={cn(fileColor, 'flex-shrink-0')} /> : <Folder size={13} className={cn(fileColor, 'flex-shrink-0')} />}
+          </>
+        ) : (
+          <>
+            <span className="w-3 flex-shrink-0" />
+            <File size={13} className={cn(fileColor, 'flex-shrink-0')} />
+          </>
+        )}
+        <span className="truncate text-text-1">{entry.name}</span>
+      </button>
+      {isDir && isExpanded && entry.children?.map((child) => (
+        <TreeEntry
+          key={child.path}
+          entry={child}
+          depth={depth + 1}
+          onOpen={onOpen}
+          expandedDirs={expandedDirs}
+          onToggleDir={onToggleDir}
+        />
+      ))}
+    </>
+  );
+}
+
+export function AgentFileTree({ agentId }) {
+  const agents = useGrooveStore((s) => s.agents);
+  const activityLog = useGrooveStore((s) => s.activityLog);
+  const openFile = useGrooveStore((s) => s.openFile);
+  const editorActiveFile = useGrooveStore((s) => s.editorActiveFile);
+
+  const agent = agents.find((a) => a.id === agentId);
+  const scope = agent?.scope || [];
+  const log = activityLog[agentId] || [];
+
+  const [treeData, setTreeData] = useState([]);
+  const [expandedDirs, setExpandedDirs] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const fetchedRef = useRef(new Set());
+
+  const recentFiles = (() => {
+    const seen = new Set();
+    const files = [];
+    for (let i = log.length - 1; i >= 0; i--) {
+      const t = (log[i].text || '').toLowerCase();
+      if (!(t.includes('writ') || t.includes('edit') || t.includes('creat') || t.includes('read'))) continue;
+      const match = log[i].text.match(/(?:Write|Edit|Create|Read|wrote|editing|writing|reading)\S*\s+(\S+)/i);
+      if (!match) continue;
+      const path = match[1];
+      if (seen.has(path) || path.startsWith('.') || path.includes('node_modules')) continue;
+      seen.add(path);
+      files.push(path);
+      if (files.length >= 10) break;
+    }
+    return files;
+  })();
+
+  const fetchDir = useCallback(async (dirPath) => {
+    if (fetchedRef.current.has(dirPath)) return;
+    fetchedRef.current.add(dirPath);
+    try {
+      const data = await api.get(`/files/tree?path=${encodeURIComponent(dirPath)}`);
+      return data.entries || [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadTree() {
+      setLoading(true);
+      fetchedRef.current = new Set();
+
+      if (scope.length === 0) {
+        const entries = await fetchDir('');
+        if (!cancelled) setTreeData(entries);
+        setLoading(false);
+        return;
+      }
+
+      const dirs = new Set();
+      for (const pattern of scope) {
+        const parts = pattern.split('/');
+        let dir = '';
+        for (let i = 0; i < parts.length; i++) {
+          if (parts[i].includes('*')) break;
+          dir = dir ? `${dir}/${parts[i]}` : parts[i];
+        }
+        if (dir) dirs.add(dir);
+      }
+
+      if (dirs.size === 0) {
+        const entries = await fetchDir('');
+        if (!cancelled) setTreeData(entries);
+        setLoading(false);
+        return;
+      }
+
+      const results = [];
+      for (const dir of dirs) {
+        const entries = await fetchDir(dir);
+        if (entries.length > 0) {
+          results.push({ name: dir.split('/').pop(), path: dir, type: 'directory', children: entries });
+        }
+      }
+      if (!cancelled) setTreeData(results);
+      setLoading(false);
+    }
+    loadTree();
+    return () => { cancelled = true; };
+  }, [agentId, scope.join(','), fetchDir]);
+
+  async function handleToggleDir(path) {
+    const next = new Set(expandedDirs);
+    if (next.has(path)) {
+      next.delete(path);
+    } else {
+      next.add(path);
+      const entries = await fetchDir(path);
+      setTreeData((prev) => updateTreeChildren(prev, path, entries));
+    }
+    setExpandedDirs(next);
+  }
+
+  function handleOpen(path) {
+    openFile(path);
+  }
+
+  return (
+    <ScrollArea className="h-full">
+      <div className="py-2">
+        {recentFiles.length > 0 && (
+          <div className="mb-3">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 text-2xs font-semibold text-text-3 uppercase tracking-wider">
+              <Clock size={10} />
+              Recently Touched
+            </div>
+            {recentFiles.map((path) => {
+              const name = path.split('/').pop();
+              return (
+                <button
+                  key={path}
+                  onClick={() => openFile(path)}
+                  className={cn(
+                    'w-full flex items-center gap-1.5 px-3 py-1 text-xs font-sans cursor-pointer',
+                    'hover:bg-surface-4/50 transition-colors text-left',
+                    editorActiveFile === path && 'bg-accent/8 text-accent',
+                  )}
+                >
+                  <File size={12} className={cn(getFileColor(name), 'flex-shrink-0')} />
+                  <span className="truncate text-text-1">{name}</span>
+                </button>
+              );
+            })}
+            <div className="h-px bg-border-subtle mx-3 mt-2" />
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex items-center justify-center py-8 text-text-4 text-xs font-sans">
+            Loading...
+          </div>
+        ) : treeData.length === 0 ? (
+          <div className="flex items-center justify-center py-8 text-text-4 text-xs font-sans">
+            No files in scope
+          </div>
+        ) : (
+          <div className="px-1">
+            <div className="flex items-center gap-1.5 px-2 py-1.5 text-2xs font-semibold text-text-3 uppercase tracking-wider">
+              <Folder size={10} />
+              Scope
+            </div>
+            {treeData.map((entry) => (
+              <TreeEntry
+                key={entry.path}
+                entry={entry}
+                depth={0}
+                onOpen={handleOpen}
+                expandedDirs={expandedDirs}
+                onToggleDir={handleToggleDir}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </ScrollArea>
+  );
+}
+
+function updateTreeChildren(tree, targetPath, children) {
+  return tree.map((entry) => {
+    if (entry.path === targetPath) {
+      return { ...entry, children };
+    }
+    if (entry.children) {
+      return { ...entry, children: updateTreeChildren(entry.children, targetPath, children) };
+    }
+    return entry;
+  });
+}

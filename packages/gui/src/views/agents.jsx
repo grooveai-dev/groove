@@ -12,6 +12,7 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Plus, Users, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Radio, Eye } from 'lucide-react';
 import { PreviewWorkspace } from '../components/preview/preview-workspace';
+import { WorkspaceMode } from '../components/agents/workspace-mode';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../components/ui/context-menu';
 
 const NODE_TYPES = { agentNode: AgentNode, rootNode: RootNode };
@@ -799,6 +800,8 @@ export default function AgentsView() {
   const showPreviewInAgents = useGrooveStore((s) => s.showPreviewInAgents);
   const previewState = useGrooveStore((s) => s.previewState);
   const togglePreviewInAgents = useGrooveStore((s) => s.togglePreviewInAgents);
+  const workspaceMode = useGrooveStore((s) => s.workspaceMode);
+  const setWorkspaceMode = useGrooveStore((s) => s.setWorkspaceMode);
 
   // Poll for recommended team while a planner is running
   useEffect(() => {
@@ -849,6 +852,8 @@ export default function AgentsView() {
           </div>
         ) : teamAgents.length === 0 ? (
           <EmptyState onPlanner={launchPlanner} onSpawn={() => openDetail({ type: 'spawn' })} />
+        ) : workspaceMode ? (
+          <WorkspaceMode />
         ) : showPreviewInAgents && previewState.url ? (
           <PreviewWorkspace embedded />
         ) : (
@@ -857,8 +862,8 @@ export default function AgentsView() {
           </ReactFlowProvider>
         )}
       </div>
-      <RecommendedTeamCard />
-      {!isLoading && teamAgents.length > 0 && (
+      {!workspaceMode && <RecommendedTeamCard />}
+      {!isLoading && teamAgents.length > 0 && !workspaceMode && (
         <button
           onClick={() => openDetail({ type: 'spawn' })}
           className="absolute bottom-4 left-4 z-40 flex items-center gap-1.5 h-8 px-4 rounded-md bg-accent/15 text-accent text-xs font-semibold font-sans hover:bg-accent/25 transition-colors cursor-pointer select-none shadow-lg shadow-black/10"
@@ -867,7 +872,21 @@ export default function AgentsView() {
           Spawn
         </button>
       )}
-      {!isLoading && teamAgents.length > 0 && previewState.url && (
+      {!isLoading && teamAgents.length > 0 && (
+        <button
+          onClick={() => setWorkspaceMode(!workspaceMode)}
+          className={cn(
+            'absolute bottom-4 z-40 flex items-center gap-1.5 h-8 px-4 rounded-md text-xs font-semibold font-sans transition-colors cursor-pointer select-none shadow-lg shadow-black/10',
+            previewState.url && !workspaceMode ? 'right-32' : 'right-4',
+            workspaceMode
+              ? 'bg-accent/15 text-accent hover:bg-accent/25'
+              : 'bg-purple/15 text-purple hover:bg-purple/25',
+          )}
+        >
+          {workspaceMode ? <><Users size={14} /> Tree</> : <><Code2 size={14} /> Workspace</>}
+        </button>
+      )}
+      {!isLoading && teamAgents.length > 0 && !workspaceMode && previewState.url && (
         <button
           onClick={togglePreviewInAgents}
           className="absolute bottom-4 right-4 z-40 flex items-center gap-1.5 h-8 px-4 rounded-md bg-info/15 text-info text-xs font-semibold font-sans hover:bg-info/25 transition-colors cursor-pointer select-none shadow-lg shadow-black/10"

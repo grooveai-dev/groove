@@ -43,6 +43,7 @@ export class Registry extends EventEmitter {
       lastActivity: null,
       tokensUsed: 0,
       contextUsage: 0,
+      filesTouched: {},
     };
 
     this.agents.set(agent.id, agent);
@@ -92,6 +93,35 @@ export class Registry extends EventEmitter {
 
   findByTeam(teamId) {
     return this.getAll().filter((a) => a.teamId === teamId);
+  }
+
+  trackFileOp(id, filePath, op) {
+    const agent = this.agents.get(id);
+    if (!agent) return;
+    if (!agent.filesTouched) agent.filesTouched = {};
+    const entry = agent.filesTouched[filePath] || { reads: 0, writes: 0, lastOp: null };
+    if (op === 'read') entry.reads++;
+    else entry.writes++;
+    entry.lastOp = new Date().toISOString();
+    agent.filesTouched[filePath] = entry;
+
+    const keys = Object.keys(agent.filesTouched);
+    if (keys.length > 5000) {
+      const sorted = keys
+        .map((k) => ({ k, t: agent.filesTouched[k].lastOp || '' }))
+        .sort((a, b) => a.t.localeCompare(b.t));
+      for (let i = 0; i < keys.length - 5000; i++) {
+        delete agent.filesTouched[sorted[i].k];
+      }
+    }
+  }
+
+  getFilesTouched(id) {
+    const agent = this.agents.get(id);
+    if (!agent || !agent.filesTouched) return [];
+    return Object.entries(agent.filesTouched)
+      .map(([path, info]) => ({ path, reads: info.reads, writes: info.writes, lastOp: info.lastOp }))
+      .sort((a, b) => (b.lastOp || '').localeCompare(a.lastOp || ''));
   }
 
   restore(agents) {

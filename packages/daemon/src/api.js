@@ -146,7 +146,10 @@ export function createApi(app, daemon) {
         const team = daemon.teams.get(config.teamId);
         if (team?.workingDir) config.workingDir = team.workingDir;
       }
-      // Inherit configured default model if the request didn't pick one
+      // Inherit configured defaults if the request didn't pick them
+      if (!config.provider && daemon.config?.defaultProvider) {
+        config.provider = daemon.config.defaultProvider;
+      }
       if (!config.model && daemon.config?.defaultModel) {
         config.model = daemon.config.defaultModel;
       }

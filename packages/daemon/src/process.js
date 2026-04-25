@@ -1343,6 +1343,8 @@ For normal file edits within your scope, proceed without review.
       try { parsed = JSON.parse(match[0]); } catch { return; }
       if (!parsed || !Array.isArray(parsed.agents) || parsed.agents.length === 0) return;
 
+      parsed._meta = { teamId: agent.teamId || null, agentId: agent.id || null };
+
       if (!existsSync(grooveDir)) mkdirSync(grooveDir, { recursive: true });
       writeFileSync(targetPath, JSON.stringify(parsed, null, 2));
     } catch { /* best effort */ }

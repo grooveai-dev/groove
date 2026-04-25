@@ -80,11 +80,13 @@ function InlineName({ agent }) {
 export function AgentPanel() {
   const detailPanel = useGrooveStore((s) => s.detailPanel);
   const agents = useGrooveStore((s) => s.agents);
+  const activeTeamId = useGrooveStore((s) => s.activeTeamId);
   const [activeTab, setActiveTab] = useState('command');
 
   if (detailPanel?.type !== 'agent') return null;
   const agent = agents.find((a) => a.id === detailPanel.agentId);
   if (!agent) return null;
+  if (activeTeamId && agent.teamId && agent.teamId !== activeTeamId) return null;
 
   const isAlive = agent.status === 'running' || agent.status === 'starting';
   const ctxPct = Math.round((agent.contextUsage || 0) * 100);

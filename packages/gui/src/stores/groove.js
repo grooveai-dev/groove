@@ -70,7 +70,6 @@ export const useGrooveStore = create((set, get) => ({
   teamBuilderRoles: [],
   teamBuilderSettings: { provider: null, model: null, reasoningEffort: 50, temperature: 0.5 },
   teamBuilderTask: '',
-  teamBuilderLaunchMode: 'plan',
   teamTemplates: { builtIn: [], custom: [] },
 
   // ── Navigation ────────────────────────────────────────────
@@ -1201,6 +1200,8 @@ export const useGrooveStore = create((set, get) => ({
   },
   selectAgent(id) {
     const tid = get().activeTeamId;
+    const match = get().agents.find((a) => a.id === id);
+    if (tid && match && match.teamId && match.teamId !== tid) return;
     const panel = { type: 'agent', agentId: id };
     set((s) => ({ detailPanel: panel, teamDetailPanels: { ...s.teamDetailPanels, [tid]: panel } }));
   },
@@ -1619,7 +1620,6 @@ export const useGrooveStore = create((set, get) => ({
       teamBuilderRoles: [],
       teamBuilderSettings: { provider: null, model: null, reasoningEffort: 50, temperature: 0.5 },
       teamBuilderTask: '',
-      teamBuilderLaunchMode: 'plan',
     });
   },
   addTeamBuilderRole(role) {
@@ -1651,12 +1651,18 @@ export const useGrooveStore = create((set, get) => ({
     set((s) => ({ teamBuilderSettings: { ...s.teamBuilderSettings, ...settings } }));
   },
   setTeamBuilderTask(task) { set({ teamBuilderTask: task }); },
-  setTeamBuilderLaunchMode(mode) { set({ teamBuilderLaunchMode: mode }); },
 
   async fetchTeamTemplates() {
     try {
       const data = await api.get('/team-templates');
-      set({ teamTemplates: data });
+      const builtIn = [];
+      const custom = [];
+      for (const [key, tmpl] of Object.entries(data || {})) {
+        const entry = { ...tmpl, name: key };
+        if (tmpl.builtIn) builtIn.push(entry);
+        else custom.push(entry);
+      }
+      set({ teamTemplates: { builtIn, custom } });
     } catch { /* endpoint may not exist yet */ }
   },
 
@@ -1686,21 +1692,19 @@ export const useGrooveStore = create((set, get) => ({
   },
 
   async launchTeamBuilder() {
-    const { teamBuilderRoles, teamBuilderSettings, teamBuilderTask, teamBuilderLaunchMode, activeTeamId } = get();
+    const { teamBuilderRoles, teamBuilderSettings, teamBuilderTask, activeTeamId } = get();
     if (teamBuilderRoles.length === 0) return;
+    get().closeTeamBuilder();
     try {
-      get().addToast('info', 'Launching team...');
       const body = {
         task: teamBuilderTask,
         roles: teamBuilderRoles,
         settings: teamBuilderSettings,
-        launchMode: teamBuilderLaunchMode,
+        launchMode: 'plan-first',
         teamId: activeTeamId,
       };
       const result = await api.post('/team-builder/launch', body);
-      const count = result.launched || result.agents?.length || 0;
-      get().addToast('success', `Launched ${count} agent${count !== 1 ? 's' : ''}`);
-      get().closeTeamBuilder();
+      get().addToast('success', 'Planner spawned — team will build automatically');
       return result;
     } catch (err) {
       get().addToast('error', 'Team launch failed', err.message);

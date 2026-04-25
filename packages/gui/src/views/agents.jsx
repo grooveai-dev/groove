@@ -10,7 +10,7 @@ import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Play, Clock, ListChecks, Layers } from 'lucide-react';
+import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Layers } from 'lucide-react';
 import { PreviewWorkspace } from '../components/preview/preview-workspace';
 import { WorkspaceMode } from '../components/agents/workspace-mode';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../components/ui/context-menu';
@@ -750,7 +750,6 @@ function TeamBuilder() {
   const roles = useGrooveStore((s) => s.teamBuilderRoles);
   const settings = useGrooveStore((s) => s.teamBuilderSettings);
   const task = useGrooveStore((s) => s.teamBuilderTask);
-  const launchMode = useGrooveStore((s) => s.teamBuilderLaunchMode);
   const templates = useGrooveStore((s) => s.teamTemplates);
   const closeTeamBuilder = useGrooveStore((s) => s.closeTeamBuilder);
   const addRole = useGrooveStore((s) => s.addTeamBuilderRole);
@@ -759,7 +758,6 @@ function TeamBuilder() {
   const applyTemplate = useGrooveStore((s) => s.applyTemplate);
   const setSettings = useGrooveStore((s) => s.setTeamBuilderSettings);
   const setTask = useGrooveStore((s) => s.setTeamBuilderTask);
-  const setLaunchMode = useGrooveStore((s) => s.setTeamBuilderLaunchMode);
   const launchTeamBuilder = useGrooveStore((s) => s.launchTeamBuilder);
   const saveTeamTemplate = useGrooveStore((s) => s.saveTeamTemplate);
   const fetchTeamTemplates = useGrooveStore((s) => s.fetchTeamTemplates);
@@ -789,8 +787,6 @@ function TeamBuilder() {
 
   const selectedProvider = providers.find((p) => p.id === settings.provider);
   const settingsModels = (selectedProvider?.models || []).filter((m) => m.type !== 'image' && !m.disabled);
-  const showTemp = PROVIDER_TEMP_SUPPORT.has(settings.provider);
-
   function handleSettingsProviderChange(id) {
     setSettings({ provider: id });
     const p = providers.find((x) => x.id === id);
@@ -829,8 +825,8 @@ function TeamBuilder() {
         {/* Top Bar */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-purple/15 flex items-center justify-center">
-              <Users size={16} className="text-purple" />
+            <div className="w-8 h-8 rounded-lg bg-info/15 flex items-center justify-center">
+              <Users size={16} className="text-info" />
             </div>
             <h2 className="text-lg font-bold text-text-0 font-sans">Team Builder</h2>
           </div>
@@ -1017,16 +1013,6 @@ function TeamBuilder() {
                               formatValue={(v) => v.toFixed(2)}
                             />
                           )}
-                          <div className="space-y-1">
-                            <label className="text-2xs text-text-3 font-sans">Custom Prompt</label>
-                            <textarea
-                              value={r.prompt || ''}
-                              onChange={(e) => updateRole(i, { prompt: e.target.value })}
-                              placeholder="Optional instructions for this agent..."
-                              rows={2}
-                              className="w-full px-2.5 py-1.5 text-xs bg-surface-3 border border-border-subtle rounded-md text-text-0 font-sans placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent resize-none"
-                            />
-                          </div>
                         </div>
                       )}
                     </div>
@@ -1040,38 +1026,9 @@ function TeamBuilder() {
         {/* Bottom Bar */}
         <div className="border-t border-border-subtle px-6 py-4">
           <div className="flex gap-4">
-            {/* Task + Launch Mode */}
-            <div className="flex-1 space-y-3">
-              <textarea
-                value={task}
-                onChange={(e) => setTask(e.target.value)}
-                placeholder="Describe what this team should work on..."
-                rows={2}
-                className="w-full px-3 py-2 text-sm bg-surface-3 border border-border-subtle rounded-lg text-text-0 font-sans placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent resize-none"
-              />
-              <div className="flex items-center gap-2">
-                <span className="text-2xs text-text-3 font-sans mr-1">Launch Mode:</span>
-                {[
-                  { id: 'direct', label: 'Direct', icon: Play, tip: 'Agents start working immediately' },
-                  { id: 'plan', label: 'Plan First', icon: ListChecks, tip: 'Planner designs prompts, then team launches' },
-                  { id: 'await', label: 'Await', icon: Clock, tip: 'Agents spawn idle, await instructions' },
-                ].map((m) => (
-                  <Tooltip key={m.id} content={m.tip}>
-                    <button
-                      onClick={() => setLaunchMode(m.id)}
-                      className={cn(
-                        'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-2xs font-semibold font-sans transition-colors cursor-pointer',
-                        launchMode === m.id
-                          ? 'bg-accent/15 text-accent border border-accent/30'
-                          : 'bg-surface-3 text-text-3 border border-border-subtle hover:text-text-1 hover:border-border',
-                      )}
-                    >
-                      <m.icon size={11} />
-                      {m.label}
-                    </button>
-                  </Tooltip>
-                ))}
-              </div>
+            {/* Task */}
+            <div className="flex-1 space-y-2">
+              <p className="text-xs text-text-3 font-sans italic">Planner will design agent prompts automatically</p>
             </div>
 
             {/* Team Settings + Launch */}
@@ -1102,21 +1059,6 @@ function TeamBuilder() {
                   </Select>
                 </div>
               </div>
-              <TuningSlider
-                label="Reasoning"
-                value={settings.reasoningEffort}
-                onChange={(v) => setSettings({ reasoningEffort: v })}
-                min={0} max={100} step={1}
-              />
-              {showTemp && (
-                <TuningSlider
-                  label="Temperature"
-                  value={settings.temperature}
-                  onChange={(v) => setSettings({ temperature: v })}
-                  min={0} max={1} step={0.01}
-                  formatValue={(v) => v.toFixed(2)}
-                />
-              )}
               <Button
                 variant="primary"
                 size="md"
@@ -1197,10 +1139,10 @@ function EmptyState({ onPlanner, onSpawn, onTeamBuilder }) {
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={onTeamBuilder}
-              className="flex items-center gap-3 p-4 rounded-lg border border-purple/25 bg-gradient-to-r from-purple/6 to-purple/2 hover:from-purple/12 hover:to-purple/5 hover:border-purple/35 transition-all cursor-pointer group text-left"
+              className="flex items-center gap-3 p-4 rounded-lg border border-info/25 bg-gradient-to-r from-info/6 to-info/2 hover:from-info/12 hover:to-info/5 hover:border-info/35 transition-all cursor-pointer group text-left"
             >
-              <div className="w-10 h-10 rounded-lg bg-purple/15 flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
-                <UserPlus size={20} className="text-purple" />
+              <div className="w-10 h-10 rounded-lg bg-info/15 flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
+                <UserPlus size={20} className="text-info" />
               </div>
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-text-0 font-sans">Build a Team</div>
@@ -1558,7 +1500,7 @@ export default function AgentsView() {
           className={cn(
             'absolute bottom-4 z-40 flex items-center gap-1.5 h-8 px-4 rounded-md text-xs font-semibold font-sans transition-colors cursor-pointer select-none shadow-lg shadow-black/10',
             previewState.url && previewState.teamId === activeTeamId ? 'right-32' : 'right-4',
-            'bg-purple/15 text-purple hover:bg-purple/25',
+            'bg-accent/15 text-accent hover:bg-accent/25',
           )}
         >
           <Code2 size={14} /> Workspace

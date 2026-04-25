@@ -3277,20 +3277,26 @@ Keep responses concise. Help them think, don't lecture them about the system the
       .filter((a) => a.role === 'planner' && a.workingDir)
       .sort((a, b) => (b.lastActivity || b.spawnedAt || '').localeCompare(a.lastActivity || a.spawnedAt || ''));
 
-    // Check planner workingDirs first — most recently active planner wins
+    const candidates = [];
     for (const planner of planners) {
       const p = resolve(planner.workingDir, '.groove', 'recommended-team.json');
-      if (existsSync(p)) return { path: p, teamId: planner.teamId || null, agentId: planner.id || null };
+      if (existsSync(p)) candidates.push({ path: p, teamId: planner.teamId || null, agentId: planner.id || null });
     }
+    const fallback = resolve(daemon.grooveDir, 'recommended-team.json');
+    if (existsSync(fallback) && !candidates.some(c => c.path === fallback)) {
+      candidates.push({ path: fallback, teamId: planners[0]?.teamId || null, agentId: planners[0]?.id || null });
+    }
+    if (candidates.length === 0) return null;
 
-    // Fallback to daemon's .groove dir — try to attribute to most recent planner
-    const p = resolve(daemon.grooveDir, 'recommended-team.json');
-    if (existsSync(p)) {
-      const fallbackTeamId = planners[0]?.teamId || null;
-      const fallbackAgentId = planners[0]?.id || null;
-      return { path: p, teamId: fallbackTeamId, agentId: fallbackAgentId };
+    for (const c of candidates) {
+      try {
+        const data = JSON.parse(readFileSync(c.path, 'utf8'));
+        if (data._meta?.teamId) {
+          return { path: c.path, teamId: data._meta.teamId, agentId: data._meta.agentId || c.agentId };
+        }
+      } catch {}
     }
-    return null;
+    return candidates[0];
   }
 
   app.get('/api/recommended-team', (req, res) => {
@@ -3300,6 +3306,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
     try {
       const raw = JSON.parse(readFileSync(found.path, 'utf8'));
+      delete raw._meta;
       // Support both old format (bare array) and new format ({ projectDir, agents })
       if (Array.isArray(raw)) {
         res.json({ exists: true, agents: raw, teamId: found.teamId });
@@ -3322,6 +3329,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     const planContents = readFileSync(planPath, 'utf8');
     try {
       const raw = JSON.parse(planContents);
+      delete raw._meta;
 
       // Delete immediately after reading to prevent duplicate launches from poll races.
       // If every spawn below fails, we'll restore the plan from planContents so the

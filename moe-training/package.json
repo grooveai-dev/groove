@@ -1,5 +1,6 @@
 {
-  "name": "@groove-dev/moe-training",
+  "name": "moe-training",
+  "private": true,
   "version": "0.1.0",
   "type": "module",
   "description": "MoE TrajectoryCapture client — captures agent session data into structured Trajectory Envelopes",

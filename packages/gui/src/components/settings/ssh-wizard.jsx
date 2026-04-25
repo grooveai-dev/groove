@@ -207,7 +207,11 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
       setCompletedSteps((prev) => [...new Set([...prev, 2])]);
       setStep(3);
     } catch (err) {
-      setTestResult({ error: err?.body?.error || err?.message || 'Connection failed' });
+      let msg = err?.body?.error || err?.message || 'Connection failed';
+      if (msg.toLowerCase().includes('port forward')) {
+        msg += ' — Check that the remote server is reachable and SSH port forwarding is allowed.';
+      }
+      setTestResult({ error: msg });
     }
     setConnecting(false);
   }

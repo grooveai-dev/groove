@@ -27,7 +27,11 @@ export function QuickConnect() {
       await useGrooveStore.getState().connectTunnel(id);
       toggle();
     } catch (err) {
-      addToast('error', 'Connection failed', err?.message || 'Unknown error');
+      let detail = err?.message || 'Unknown error';
+      if (detail.toLowerCase().includes('port forward')) {
+        detail += ' — Try testing the connection first, or check your SSH key configuration.';
+      }
+      addToast('error', 'Connection failed', detail);
     }
     setConnectingId(null);
   }

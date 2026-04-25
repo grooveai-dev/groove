@@ -293,6 +293,7 @@ export class TunnelManager {
       '-o', 'ServerAliveCountMax=3',
       '-o', 'ExitOnForwardFailure=yes',
       '-o', 'StrictHostKeyChecking=accept-new',
+      '-o', 'GSSAPIAuthentication=no',
       ...keyArgs,
       target,
     ];
@@ -306,7 +307,8 @@ export class TunnelManager {
     tunnel.stderr.on('data', (chunk) => { stderrBuf += chunk.toString(); });
 
     let tunnelUp = false;
-    for (let elapsed = 0; elapsed < 8000; elapsed += 500) {
+    this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'forwarding' } });
+    for (let elapsed = 0; elapsed < 20000; elapsed += 500) {
       await new Promise((r) => setTimeout(r, 500));
       if (tunnel.exitCode !== null) {
         throw new Error(`Tunnel failed to start: ${stderrBuf.trim() || 'unknown error'}`);
@@ -317,7 +319,7 @@ export class TunnelManager {
 
     if (!tunnelUp) {
       try { process.kill(tunnel.pid); } catch { /* ignore */ }
-      throw new Error('Tunnel started but port forward not active');
+      throw new Error(`SSH tunnel started but port forward not active${stderrBuf.trim() ? ': ' + stderrBuf.trim() : ''}`);
     }
 
     tunnel.unref();

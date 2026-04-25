@@ -371,6 +371,7 @@ class WorkspaceManager {
         ...keyArgs,
         '-p', String(conn.port || 22),
         '-o', 'StrictHostKeyChecking=accept-new',
+        '-o', 'GSSAPIAuthentication=no',
         '-o', `UserKnownHostsFile=${knownHostsPath}`,
         '-o', 'ConnectTimeout=15',
         '-o', 'ServerAliveInterval=30',
@@ -408,7 +409,7 @@ class WorkspaceManager {
     });
 
     const waitForTunnel = async (state) => {
-      for (let elapsed = 0; elapsed < 8000; elapsed += 500) {
+      for (let elapsed = 0; elapsed < 20000; elapsed += 500) {
         await new Promise(r => setTimeout(r, 500));
         if (state.exited) return false;
         if (await isPortInUse(localPort)) return true;
@@ -441,7 +442,7 @@ class WorkspaceManager {
               throw new Error(`SSH tunnel failed after clearing stale host key: ${enhancePermissionError(retryErr)}`);
             }
             try { process.kill(tunnel.proc.pid); } catch {}
-            throw new Error('SSH tunnel started but port forward not active');
+            throw new Error(`SSH tunnel started but port forward not active${tunnel.stderr.trim() ? ': ' + tunnel.stderr.trim() : ''}`);
           }
         } else {
           throw new Error(`SSH host key verification failed and could not clear stale entry: ${errText}`);
@@ -452,7 +453,7 @@ class WorkspaceManager {
       }
     } else if (!tunnelUp) {
       try { process.kill(tunnel.proc.pid); } catch {}
-      throw new Error('SSH tunnel started but port forward not active');
+      throw new Error(`SSH tunnel started but port forward not active${tunnel.stderr.trim() ? ': ' + tunnel.stderr.trim() : ''}`);
     }
 
     const proc = tunnel.proc;

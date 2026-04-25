@@ -13,9 +13,10 @@ import { Tooltip } from '../ui/tooltip';
 import { ScrollArea } from '../ui/scroll-area';
 import { roleColor } from '../../lib/status';
 import { fmtNum } from '../../lib/format';
+import { MediaViewer, isMediaFile } from '../editor/media-viewer';
 import {
   X, Code2, MessageSquare, Activity, FileCode, GitCompareArrows,
-  ClipboardCheck, AlertTriangle, RefreshCw,
+  ClipboardCheck, AlertTriangle, RefreshCw, Users,
 } from 'lucide-react';
 
 const STATUS_VARIANT = {
@@ -73,7 +74,7 @@ function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggle
   const hasSnapshot = activeFile && workspaceSnapshots[activeFile];
 
   return (
-    <div className="flex items-stretch h-9 bg-surface-3 border-b border-border-subtle flex-shrink-0">
+    <div className="flex items-stretch h-8 bg-surface-2 border-b border-border-subtle flex-shrink-0">
       <div className="flex items-stretch flex-1 min-w-0 overflow-x-auto scrollbar-none">
         {tabs.map((path) => {
           const isActive = path === activeFile;
@@ -85,11 +86,11 @@ function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggle
             <div
               key={path}
               className={cn(
-                'flex items-center gap-1.5 px-3 text-xs font-sans cursor-pointer select-none',
+                'flex items-center gap-1.5 px-3 text-2xs font-sans cursor-pointer select-none',
                 'border-r border-white/5 transition-colors duration-75 flex-shrink-0',
                 isActive
-                  ? 'bg-surface-0 text-text-0 border-b border-b-accent'
-                  : 'bg-surface-3 text-text-4 hover:text-text-1 hover:bg-surface-4 border-b border-b-transparent',
+                  ? 'bg-surface-0 text-text-1 border-b border-b-accent'
+                  : 'text-text-4 hover:text-text-2 hover:bg-surface-3 border-b border-b-transparent',
               )}
               onClick={() => onSelect(path)}
             >
@@ -99,7 +100,7 @@ function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggle
                 onClick={(e) => { e.stopPropagation(); onClose(path); }}
                 className="p-0.5 rounded hover:bg-surface-5 text-text-4 hover:text-text-1 transition-colors cursor-pointer ml-0.5"
               >
-                <X size={12} />
+                <X size={10} />
               </button>
             </div>
           );
@@ -139,6 +140,7 @@ export function WorkspaceMode() {
   const workspaceReviewMode = useGrooveStore((s) => s.workspaceReviewMode);
   const toggleReviewMode = useGrooveStore((s) => s.toggleReviewMode);
   const workspaceSnapshots = useGrooveStore((s) => s.workspaceSnapshots);
+  const setWorkspaceMode = useGrooveStore((s) => s.setWorkspaceMode);
 
   const editorFiles = useGrooveStore((s) => s.editorFiles);
   const editorActiveFile = useGrooveStore((s) => s.editorActiveFile);
@@ -216,6 +218,7 @@ export function WorkspaceMode() {
   const ctxPct = Math.round((agent.contextUsage || 0) * 100);
   const file = editorActiveFile ? editorFiles[editorActiveFile] : null;
   const hasExternalChange = editorActiveFile && editorChangedFiles[editorActiveFile];
+  const isMedia = editorActiveFile && isMediaFile(editorActiveFile);
 
   return (
     <div className="flex h-full bg-surface-0">
@@ -235,7 +238,7 @@ export function WorkspaceMode() {
         </div>
 
         {/* Editor Area */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 bg-[#1a1e25]">
           {workspaceReviewMode ? (
             <CodeReview agentId={agent.id} />
           ) : (
@@ -272,7 +275,7 @@ export function WorkspaceMode() {
                 )}
 
                 {!editorActiveFile && (
-                  <div className="w-full h-full flex items-center justify-center text-text-4 font-sans">
+                  <div className="w-full h-full flex items-center justify-center text-text-4 font-sans bg-[#1a1e25]">
                     <div className="text-center space-y-2">
                       <Code2 size={32} className="mx-auto" />
                       <p className="text-sm">Open a file from the tree</p>
@@ -281,11 +284,15 @@ export function WorkspaceMode() {
                   </div>
                 )}
 
-                {editorActiveFile && diffMode && (
+                {editorActiveFile && isMedia && (
+                  <MediaViewer path={editorActiveFile} />
+                )}
+
+                {editorActiveFile && diffMode && !isMedia && (
                   <DiffViewer filePath={editorActiveFile} />
                 )}
 
-                {editorActiveFile && !diffMode && file && (
+                {editorActiveFile && !diffMode && !isMedia && file && (
                   <CodeEditor
                     content={file.content}
                     language={file.language}
@@ -337,6 +344,13 @@ export function WorkspaceMode() {
             title="Review Changes"
           >
             <ClipboardCheck size={13} />
+          </button>
+          <button
+            onClick={() => setWorkspaceMode(false)}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-sans rounded cursor-pointer transition-colors text-text-3 hover:text-text-1 hover:bg-surface-3"
+            title="Back to agent tree"
+          >
+            <Users size={13} />
           </button>
         </div>
 

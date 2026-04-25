@@ -31,7 +31,7 @@ function groupByDate(conversations) {
 function GroupLabel({ label }) {
   return (
     <div className="px-3 pt-4 pb-1.5">
-      <span className="text-2xs font-semibold text-white/60 uppercase tracking-wider font-sans">{label}</span>
+      <span className="text-2xs font-semibold text-text-4 uppercase tracking-wider font-sans">{label}</span>
     </div>
   );
 }
@@ -45,23 +45,23 @@ function ConversationItem({ conv, isActive, onSelect, onRename, onPin, onDelete 
           className={cn(
             'w-full flex items-center gap-2 px-3 py-2 text-left rounded-md transition-colors cursor-pointer group',
             isActive
-              ? 'bg-white/15 text-white'
-              : 'text-white/80 hover:bg-white/10 hover:text-white',
+              ? 'bg-accent/10 text-text-0'
+              : 'text-text-2 hover:bg-surface-4 hover:text-text-1',
           )}
         >
-          <MessageCircle size={13} className={cn('flex-shrink-0', isActive ? 'text-white' : 'text-white/50 group-hover:text-white/70')} />
+          <MessageCircle size={13} className={cn('flex-shrink-0', isActive ? 'text-accent' : 'text-text-4 group-hover:text-text-3')} />
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-medium font-sans truncate text-white">{conv.title || 'New Chat'}</div>
+            <div className="text-xs font-medium font-sans truncate">{conv.title || 'New Chat'}</div>
             <div className="flex items-center gap-1.5 mt-0.5">
               {conv.mode === 'agent'
-                ? <Bot size={9} className="text-white/70 flex-shrink-0" />
-                : <Zap size={9} className="text-white/70 flex-shrink-0" />
+                ? <Bot size={9} className="text-purple flex-shrink-0" />
+                : <Zap size={9} className="text-accent flex-shrink-0" />
               }
               {conv.model && <Badge variant="default" className="text-[8px] px-1 py-0">{formatModelName(conv.model)}</Badge>}
-              <span className="text-2xs text-white/50 font-sans">{timeAgo(conv.updatedAt || conv.createdAt)}</span>
+              <span className="text-2xs text-text-4 font-sans">{timeAgo(conv.updatedAt || conv.createdAt)}</span>
             </div>
           </div>
-          {conv.pinned && <Pin size={10} className="text-white flex-shrink-0" />}
+          {conv.pinned && <Pin size={10} className="text-accent flex-shrink-0" />}
         </button>
       </ContextMenuTrigger>
       <ContextMenuContent>
@@ -125,9 +125,9 @@ export function ConversationList({ onNewChat }) {
       <div className="flex-1 overflow-y-auto px-1.5 pt-3 pb-3 space-y-0.5">
         {conversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center px-4">
-            <MessageCircle size={24} className="text-white/50 mb-3" />
-            <p className="text-xs text-white/80 font-sans">No conversations yet</p>
-            <p className="text-2xs text-white/60 font-sans mt-1">Start a new chat to begin</p>
+            <MessageCircle size={24} className="text-text-4 mb-3" />
+            <p className="text-xs text-text-3 font-sans">No conversations yet</p>
+            <p className="text-2xs text-text-4 font-sans mt-1">Start a new chat to begin</p>
           </div>
         ) : (
           <>
@@ -140,10 +140,10 @@ export function ConversationList({ onNewChat }) {
         )}
       </div>
 
-      <div className="p-3 border-t border-white/15">
+      <div className="p-3 border-t border-border-subtle">
         <button
           onClick={onNewChat}
-          className="w-full flex items-center justify-center gap-2 h-9 rounded-lg bg-white/15 text-white text-xs font-semibold font-sans hover:bg-white/25 transition-colors cursor-pointer border border-white/20"
+          className="w-full flex items-center justify-center gap-2 h-9 rounded-lg bg-accent/15 text-accent text-xs font-semibold font-sans hover:bg-accent/25 transition-colors cursor-pointer border border-accent/20"
         >
           <Plus size={14} />
           New Chat

@@ -2363,6 +2363,9 @@ export const useGrooveStore = create((set, get) => ({
   setWorkspaceMode(on) {
     set({ workspaceMode: on });
     localStorage.setItem('groove:workspaceMode', String(on));
+    if (on) {
+      get().closeDetail();
+    }
     if (on && !get().workspaceAgentId) {
       const teamAgents = get().agents.filter((a) => a.teamId === get().activeTeamId);
       const selected = get().detailPanel?.type === 'agent' ? get().detailPanel.agentId : null;

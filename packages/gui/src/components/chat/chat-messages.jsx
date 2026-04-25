@@ -259,13 +259,15 @@ function UserMessage({ msg }) {
 
 function AssistantMessage({ msg, model, role }) {
   const cleanText = stripEmojis(msg.text);
-  const displayName = role
-    ? `${model || 'Assistant'} ${role.charAt(0).toUpperCase() + role.slice(1)}`
-    : (model || 'Assistant');
+  const modelName = model || 'Assistant';
+  const roleLabel = role ? role.charAt(0).toUpperCase() + role.slice(1) : null;
   return (
     <div className="max-w-[85%]">
-      <div className="text-2xs text-text-3 font-sans mb-1 font-medium">{displayName}</div>
-      <div className="border-l-2 border-accent/40 pl-3.5 py-1">
+      <div className="text-2xs font-sans mb-1 font-medium">
+        <span className="text-text-1">{modelName}</span>
+        {roleLabel && <span className="text-text-3 ml-1">{roleLabel}</span>}
+      </div>
+      <div className="border-l-2 border-accent pl-3.5 py-1">
         <div className="text-sm text-text-1 font-sans whitespace-pre-wrap break-words leading-relaxed">
           <RenderedMarkdown text={cleanText} />
         </div>

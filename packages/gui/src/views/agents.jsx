@@ -872,18 +872,16 @@ export default function AgentsView() {
           Spawn
         </button>
       )}
-      {!isLoading && teamAgents.length > 0 && (
+      {!isLoading && teamAgents.length > 0 && !workspaceMode && (
         <button
-          onClick={() => setWorkspaceMode(!workspaceMode)}
+          onClick={() => setWorkspaceMode(true)}
           className={cn(
             'absolute bottom-4 z-40 flex items-center gap-1.5 h-8 px-4 rounded-md text-xs font-semibold font-sans transition-colors cursor-pointer select-none shadow-lg shadow-black/10',
-            previewState.url && previewState.teamId === activeTeamId && !workspaceMode ? 'right-32' : 'right-4',
-            workspaceMode
-              ? 'bg-accent/15 text-accent hover:bg-accent/25'
-              : 'bg-purple/15 text-purple hover:bg-purple/25',
+            previewState.url && previewState.teamId === activeTeamId ? 'right-32' : 'right-4',
+            'bg-purple/15 text-purple hover:bg-purple/25',
           )}
         >
-          {workspaceMode ? <><Users size={14} /> Tree</> : <><Code2 size={14} /> Workspace</>}
+          <Code2 size={14} /> Workspace
         </button>
       )}
       {!isLoading && teamAgents.length > 0 && !workspaceMode && previewState.url && previewState.teamId === activeTeamId && (

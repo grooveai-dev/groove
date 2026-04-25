@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { api } from '../../lib/api';
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Clock } from 'lucide-react';
+import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Clock, FilePlus, FolderPlus, RefreshCw, ChevronsDownUp } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
 
 const FILE_COLORS = {
@@ -81,6 +81,8 @@ export function AgentFileTree({ agentId }) {
   const activityLog = useGrooveStore((s) => s.activityLog);
   const openFile = useGrooveStore((s) => s.openFile);
   const editorActiveFile = useGrooveStore((s) => s.editorActiveFile);
+  const createFile = useGrooveStore((s) => s.createFile);
+  const addToast = useGrooveStore((s) => s.addToast);
 
   const agent = agents.find((a) => a.id === agentId);
   const scope = agent?.scope || [];
@@ -97,7 +99,7 @@ export function AgentFileTree({ agentId }) {
     for (let i = log.length - 1; i >= 0; i--) {
       const t = (log[i].text || '').toLowerCase();
       if (!(t.includes('writ') || t.includes('edit') || t.includes('creat') || t.includes('read'))) continue;
-      const match = log[i].text.match(/(?:Write|Edit|Create|Read|wrote|editing|writing|reading)\S*\s+(\S+)/i);
+      const match = log[i].text.match(/(?:Write|Edit|Create|Read|wrote|editing|writing|reading)\S*\s+([\w./-]+\.[\w]+)/i);
       if (!match) continue;
       const path = match[1];
       if (seen.has(path) || path.startsWith('.') || path.includes('node_modules')) continue;
@@ -180,8 +182,53 @@ export function AgentFileTree({ agentId }) {
     openFile(path);
   }
 
+  async function handleNewFile() {
+    const name = prompt('File name:');
+    if (!name?.trim()) return;
+    await createFile?.(name.trim());
+  }
+
+  async function handleNewFolder() {
+    const name = prompt('Folder name:');
+    if (!name?.trim()) return;
+    try {
+      await api.post('/files/mkdir', { path: name.trim() });
+      addToast('success', `Created ${name.trim()}/`);
+      handleRefresh();
+    } catch (err) {
+      addToast('error', 'Create folder failed', err.message);
+    }
+  }
+
+  function handleRefresh() {
+    fetchedRef.current = new Set();
+    setExpandedDirs(new Set());
+    setLoading(true);
+    fetchDir('').then((entries) => { setTreeData(entries || []); setLoading(false); });
+  }
+
+  function handleCollapseAll() {
+    setExpandedDirs(new Set());
+  }
+
   return (
-    <ScrollArea className="h-full">
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-border-subtle flex-shrink-0">
+        <span className="flex-1 text-2xs font-semibold text-text-3 uppercase tracking-wider px-1">Files</span>
+        <button onClick={handleNewFile} className="p-1 text-text-4 hover:text-text-1 transition-colors cursor-pointer" title="New file">
+          <FilePlus size={12} />
+        </button>
+        <button onClick={handleNewFolder} className="p-1 text-text-4 hover:text-text-1 transition-colors cursor-pointer" title="New folder">
+          <FolderPlus size={12} />
+        </button>
+        <button onClick={handleRefresh} className="p-1 text-text-4 hover:text-text-1 transition-colors cursor-pointer" title="Refresh">
+          <RefreshCw size={12} />
+        </button>
+        <button onClick={handleCollapseAll} className="p-1 text-text-4 hover:text-text-1 transition-colors cursor-pointer" title="Collapse all">
+          <ChevronsDownUp size={12} />
+        </button>
+      </div>
+      <ScrollArea className="flex-1 min-h-0">
       <div className="py-2">
         {recentFiles.length > 0 && (
           <div className="mb-3">
@@ -238,6 +285,7 @@ export function AgentFileTree({ agentId }) {
         )}
       </div>
     </ScrollArea>
+    </div>
   );
 }
 

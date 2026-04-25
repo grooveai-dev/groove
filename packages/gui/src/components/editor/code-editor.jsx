@@ -26,37 +26,43 @@ const LANGS = {
 
 // Custom theme overrides to match our design tokens
 const grooveTheme = EditorView.theme({
-  '&': { backgroundColor: '#1a1e25', color: '#bcc2cd', fontFamily: 'var(--font-mono)', fontSize: '13px', height: '100%' },
-  '.cm-scroller': { overflow: 'auto' },
-  '.cm-content': { caretColor: '#33afbc' },
-  '.cm-cursor': { borderLeftColor: '#33afbc' },
-  '.cm-gutters': { backgroundColor: '#1a1e25', borderRight: '1px solid #22272e', color: '#505862' },
-  '.cm-activeLineGutter': { backgroundColor: '#22272e' },
-  '.cm-activeLine': { backgroundColor: 'rgba(34, 39, 46, 0.5)' },
+  '&': { backgroundColor: '#13161b', color: '#d4d8e0', fontFamily: 'var(--font-mono)', fontSize: '12px', height: '100%', lineHeight: '1.6' },
+  '.cm-scroller': { overflow: 'auto', padding: '4px 0' },
+  '.cm-content': { caretColor: '#33afbc', fontWeight: '400' },
+  '.cm-cursor': { borderLeftColor: '#33afbc', borderLeftWidth: '1.5px' },
+  '.cm-gutters': { backgroundColor: '#13161b', borderRight: '1px solid #1e2229', color: '#404852', minWidth: '40px' },
+  '.cm-activeLineGutter': { backgroundColor: '#1a1e25' },
+  '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.03)' },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'rgba(51, 175, 188, 0.15)' },
+  '.cm-line': { fontWeight: '400' },
+  // Markdown heading overrides — prevent bold/large rendering
+  '.cm-header-1, .cm-header-2, .cm-header-3, .cm-header-4, .cm-header-5, .cm-header-6': { fontWeight: '400', fontSize: '12px' },
+  '.ͼ1 .cm-line .tok-heading': { fontWeight: '400', fontSize: '12px' },
+  '.tok-heading': { fontWeight: '400' },
+  '.tok-heading1, .tok-heading2, .tok-heading3': { fontWeight: '400', fontSize: '12px' },
   // Search panel styling
-  '.cm-panels': { backgroundColor: '#1a1e25', borderBottom: '1px solid #3e4451' },
-  '.cm-panels.cm-panels-top': { borderBottom: '1px solid #3e4451' },
-  '.cm-panels.cm-panels-bottom': { borderTop: '1px solid #3e4451' },
-  '.cm-search': { padding: '6px 8px', gap: '4px', fontFamily: 'var(--font-sans)', fontSize: '12px', display: 'flex', flexWrap: 'wrap', alignItems: 'center' },
-  '.cm-search label': { display: 'flex', alignItems: 'center', gap: '4px', color: '#8b929e', fontSize: '11px' },
+  '.cm-panels': { backgroundColor: '#13161b', borderBottom: '1px solid #1e2229' },
+  '.cm-panels.cm-panels-top': { borderBottom: '1px solid #1e2229' },
+  '.cm-panels.cm-panels-bottom': { borderTop: '1px solid #1e2229' },
+  '.cm-search': { padding: '6px 8px', gap: '4px', fontFamily: 'var(--font-sans)', fontSize: '11px', display: 'flex', flexWrap: 'wrap', alignItems: 'center' },
+  '.cm-search label': { display: 'flex', alignItems: 'center', gap: '4px', color: '#6e7681', fontSize: '10px' },
   '.cm-search input, .cm-search .cm-textfield': {
-    backgroundColor: '#1a1e25', border: '1px solid #2c313a', borderRadius: '4px', color: '#e6e6e6',
-    padding: '2px 6px', fontSize: '12px', fontFamily: 'var(--font-mono)', outline: 'none',
+    backgroundColor: '#1a1e25', border: '1px solid #2c313a', borderRadius: '4px', color: '#d4d8e0',
+    padding: '2px 6px', fontSize: '11px', fontFamily: 'var(--font-mono)', outline: 'none',
   },
   '.cm-search input:focus, .cm-search .cm-textfield:focus': { borderColor: '#33afbc' },
   '.cm-search .cm-button, .cm-button': {
-    backgroundColor: '#2c313a', border: '1px solid #3e4451', borderRadius: '4px', color: '#bcc2cd',
-    padding: '2px 8px', fontSize: '11px', fontFamily: 'var(--font-sans)', cursor: 'pointer',
+    backgroundColor: '#1e2229', border: '1px solid #2c313a', borderRadius: '4px', color: '#a0a8b4',
+    padding: '2px 8px', fontSize: '10px', fontFamily: 'var(--font-sans)', cursor: 'pointer',
     backgroundImage: 'none',
   },
-  '.cm-search .cm-button:hover, .cm-button:hover': { backgroundColor: '#333842', color: '#e6e6e6' },
-  '.cm-search .cm-button:active': { backgroundColor: '#3a3f4b' },
+  '.cm-search .cm-button:hover, .cm-button:hover': { backgroundColor: '#2c313a', color: '#d4d8e0' },
+  '.cm-search .cm-button:active': { backgroundColor: '#333842' },
   '.cm-search br': { display: 'none' },
-  '.cm-panel.cm-search [name=close]': { color: '#6e7681', cursor: 'pointer', padding: '0 4px' },
-  '.cm-panel.cm-search [name=close]:hover': { color: '#e6e6e6' },
-  '.cm-searchMatch': { backgroundColor: 'rgba(51, 175, 188, 0.2)', outline: '1px solid rgba(51, 175, 188, 0.4)' },
-  '.cm-searchMatch-selected': { backgroundColor: 'rgba(51, 175, 188, 0.35)' },
+  '.cm-panel.cm-search [name=close]': { color: '#505862', cursor: 'pointer', padding: '0 4px' },
+  '.cm-panel.cm-search [name=close]:hover': { color: '#d4d8e0' },
+  '.cm-searchMatch': { backgroundColor: 'rgba(51, 175, 188, 0.15)', outline: '1px solid rgba(51, 175, 188, 0.3)' },
+  '.cm-searchMatch-selected': { backgroundColor: 'rgba(51, 175, 188, 0.3)' },
 }, { dark: true });
 
 export function CodeEditor({ content, language, onChange, onSave, onCursorChange, viewRef: externalViewRef }) {
@@ -135,5 +141,5 @@ export function CodeEditor({ content, language, onChange, onSave, onCursorChange
     view.dispatch({ effects: langCompartment.current.reconfigure(langExt()) });
   }, [language]);
 
-  return <div ref={containerRef} className="w-full h-full overflow-hidden" />;
+  return <div ref={containerRef} className="w-full h-full overflow-hidden bg-[#13161b]" />;
 }

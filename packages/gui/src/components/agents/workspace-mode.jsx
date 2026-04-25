@@ -74,7 +74,7 @@ function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggle
   const hasSnapshot = activeFile && workspaceSnapshots[activeFile];
 
   return (
-    <div className="flex items-stretch h-8 bg-surface-2 border-b border-border-subtle flex-shrink-0">
+    <div className="flex items-stretch h-8 bg-[#1a1e25] border-b border-[#1e2229] flex-shrink-0">
       <div className="flex items-stretch flex-1 min-w-0 overflow-x-auto scrollbar-none">
         {tabs.map((path) => {
           const isActive = path === activeFile;
@@ -238,7 +238,7 @@ export function WorkspaceMode() {
         </div>
 
         {/* Editor Area */}
-        <div className="flex-1 flex flex-col min-w-0 bg-[#1a1e25]">
+        <div className="flex-1 flex flex-col min-w-0 bg-[#13161b]">
           {workspaceReviewMode ? (
             <CodeReview agentId={agent.id} />
           ) : (
@@ -256,26 +256,25 @@ export function WorkspaceMode() {
 
               <div className="flex-1 relative min-h-0">
                 {hasExternalChange && (
-                  <div className="absolute top-0 left-0 right-0 z-10 flex items-center gap-2 px-4 py-2 bg-warning/10 border-b border-warning/20">
-                    <AlertTriangle size={14} className="text-warning" />
-                    <span className="text-xs text-warning font-sans flex-1">File modified externally</span>
+                  <div className="absolute top-1 right-3 z-10 flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-2/90 border border-border-subtle backdrop-blur-sm">
+                    <span className="text-2xs text-text-3 font-sans">Modified</span>
                     <button
                       onClick={() => reloadFile(editorActiveFile)}
-                      className="flex items-center gap-1 px-2 py-1 text-xs text-text-1 hover:bg-surface-4 rounded cursor-pointer"
+                      className="text-2xs text-accent hover:text-accent/80 font-sans cursor-pointer"
                     >
-                      <RefreshCw size={12} /> Reload
+                      Reload
                     </button>
                     <button
                       onClick={() => dismissFileChange(editorActiveFile)}
-                      className="flex items-center gap-1 px-2 py-1 text-xs text-text-3 hover:bg-surface-4 rounded cursor-pointer"
+                      className="p-0.5 text-text-4 hover:text-text-1 cursor-pointer"
                     >
-                      <X size={12} /> Dismiss
+                      <X size={10} />
                     </button>
                   </div>
                 )}
 
                 {!editorActiveFile && (
-                  <div className="w-full h-full flex items-center justify-center text-text-4 font-sans bg-[#1a1e25]">
+                  <div className="w-full h-full flex items-center justify-center text-text-4 font-sans bg-[#13161b]">
                     <div className="text-center space-y-2">
                       <Code2 size={32} className="mx-auto" />
                       <p className="text-sm">Open a file from the tree</p>

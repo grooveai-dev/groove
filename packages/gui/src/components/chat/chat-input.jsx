@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Loader2, Square, Paperclip, Image as ImageIcon } from 'lucide-react';
+import { Send, Loader2, Square, Paperclip, Image as ImageIcon, Zap, Bot } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { formatModelName } from './model-picker';
 
@@ -17,7 +17,7 @@ const VERBOSITY_OPTIONS = [
   { value: 'medium', label: 'Normal' },
 ];
 
-export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImageModel, currentModel, replyContext, onClearReply, role, isCodex, reasoningEffort, onReasoningEffortChange, verbosity, onVerbosityChange }) {
+export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImageModel, currentModel, replyContext, onClearReply, role, isCodex, reasoningEffort, onReasoningEffortChange, verbosity, onVerbosityChange, mode, onModeChange }) {
   const [input, setInput] = useState('');
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -26,7 +26,7 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+    el.style.height = Math.min(el.scrollHeight, 400) + 'px';
   }, []);
 
   useEffect(() => {
@@ -64,6 +64,7 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
 
   const isActive = streaming || sending;
   const canSend = input.trim() && !sending && !disabled;
+  const currentMode = mode || 'api';
 
   const placeholder = disabled
     ? 'Select a model to start chatting...'
@@ -85,61 +86,26 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
         </div>
       )}
 
-      {currentModel && (
-        <div className="flex items-center gap-2 mb-2 flex-wrap">
-          <div className={cn(
-            'flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-mono border',
-            isImageModel
-              ? 'bg-purple/8 border-purple/20 text-purple'
-              : 'bg-surface-3 border-border-subtle text-text-3',
-          )}>
-            {isImageModel && <ImageIcon size={9} />}
-            <span className="max-w-[80px] truncate">{formatModelName(currentModel)}</span>
-          </div>
+      <textarea
+        ref={textareaRef}
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={onKeyDown}
+        placeholder={placeholder}
+        disabled={disabled}
+        rows={1}
+        className={cn(
+          'w-full resize-y rounded-xl px-4 py-2.5 text-sm',
+          'bg-surface-0 border text-text-0 font-sans',
+          'placeholder:text-text-4',
+          'focus:outline-none focus:ring-1',
+          'min-h-[40px]',
+          'border-border focus:ring-accent/40',
+          'disabled:opacity-50 disabled:cursor-not-allowed',
+        )}
+      />
 
-          {isCodex && (
-            <>
-              <div className="flex items-center h-6 rounded-md bg-surface-3 border border-border-subtle p-0.5">
-                {EFFORT_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => onReasoningEffortChange?.(opt.value)}
-                    className={cn(
-                      'h-5 px-1.5 rounded text-2xs font-semibold font-sans transition-colors cursor-pointer',
-                      reasoningEffort === opt.value
-                        ? 'bg-accent/15 text-accent'
-                        : 'text-text-4 hover:text-text-1',
-                    )}
-                    title={`Reasoning: ${opt.label}`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex items-center h-6 rounded-md bg-surface-3 border border-border-subtle p-0.5">
-                {VERBOSITY_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => onVerbosityChange?.(opt.value)}
-                    className={cn(
-                      'h-5 px-1.5 rounded text-2xs font-semibold font-sans transition-colors cursor-pointer',
-                      verbosity === opt.value
-                        ? 'bg-accent/15 text-accent'
-                        : 'text-text-4 hover:text-text-1',
-                    )}
-                    title={`Verbosity: ${opt.label}`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      <div className="flex items-end gap-2">
+      <div className="flex items-center gap-2 mt-2">
         <input
           ref={fileInputRef}
           type="file"
@@ -151,35 +117,93 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled}
-          className="w-10 h-10 flex items-center justify-center rounded-xl text-text-4 hover:text-text-1 hover:bg-surface-3 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0"
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-text-4 hover:text-text-1 hover:bg-surface-3 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0"
           title="Attach file"
         >
-          <Paperclip size={16} />
+          <Paperclip size={14} />
         </button>
 
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={placeholder}
-          disabled={disabled}
-          rows={1}
-          className={cn(
-            'flex-1 resize-y rounded-xl px-4 py-2.5 text-sm',
-            'bg-surface-0 border text-text-0 font-sans',
-            'placeholder:text-text-4',
-            'focus:outline-none focus:ring-1',
-            'min-h-[40px]',
-            'border-border focus:ring-accent/40',
-            'disabled:opacity-50 disabled:cursor-not-allowed',
-          )}
-        />
+        <div className="flex items-center h-7 rounded-lg bg-surface-3 border border-border-subtle p-0.5">
+          <button
+            onClick={() => onModeChange?.('api')}
+            className={cn(
+              'flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-semibold font-sans transition-colors cursor-pointer',
+              currentMode === 'api' ? 'bg-accent/15 text-accent border border-accent/25' : 'text-text-3 hover:text-text-1',
+            )}
+            title="Lightweight — fast and cheap, no tools"
+          >
+            <Zap size={11} /> Chat
+          </button>
+          <button
+            onClick={() => onModeChange?.('agent')}
+            className={cn(
+              'flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-semibold font-sans transition-colors cursor-pointer',
+              currentMode === 'agent' ? 'bg-purple/15 text-purple border border-purple/25' : 'text-text-3 hover:text-text-1',
+            )}
+            title="Full agent — tools, files, session resume"
+          >
+            <Bot size={11} /> Agent
+          </button>
+        </div>
+
+        {currentModel && (
+          <div className={cn(
+            'flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-mono border',
+            isImageModel
+              ? 'bg-purple/8 border-purple/20 text-purple'
+              : 'bg-surface-3 border-border-subtle text-text-3',
+          )}>
+            {isImageModel && <ImageIcon size={9} />}
+            <span className="max-w-[80px] truncate">{formatModelName(currentModel)}</span>
+          </div>
+        )}
+
+        {isCodex && (
+          <>
+            <div className="flex items-center h-6 rounded-md bg-surface-3 border border-border-subtle p-0.5">
+              {EFFORT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => onReasoningEffortChange?.(opt.value)}
+                  className={cn(
+                    'h-5 px-1.5 rounded text-2xs font-semibold font-sans transition-colors cursor-pointer',
+                    reasoningEffort === opt.value
+                      ? 'bg-accent/15 text-accent'
+                      : 'text-text-4 hover:text-text-1',
+                  )}
+                  title={`Reasoning: ${opt.label}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center h-6 rounded-md bg-surface-3 border border-border-subtle p-0.5">
+              {VERBOSITY_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => onVerbosityChange?.(opt.value)}
+                  className={cn(
+                    'h-5 px-1.5 rounded text-2xs font-semibold font-sans transition-colors cursor-pointer',
+                    verbosity === opt.value
+                      ? 'bg-accent/15 text-accent'
+                      : 'text-text-4 hover:text-text-1',
+                  )}
+                  title={`Verbosity: ${opt.label}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div className="flex-1" />
 
         {isActive ? (
           <button
             onClick={onStop}
-            className="w-10 h-10 flex items-center justify-center rounded-xl bg-danger/80 text-white hover:bg-danger transition-all cursor-pointer shadow-lg shadow-danger/20 flex-shrink-0"
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-danger/80 text-white hover:bg-danger transition-all cursor-pointer shadow-lg shadow-danger/20 flex-shrink-0"
             title="Stop generation"
           >
             <Square size={14} fill="currentColor" />
@@ -189,14 +213,14 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
             onClick={handleSend}
             disabled={!canSend}
             className={cn(
-              'w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer flex-shrink-0',
+              'w-8 h-8 flex items-center justify-center rounded-lg transition-all cursor-pointer flex-shrink-0',
               'disabled:opacity-20 disabled:cursor-not-allowed',
               canSend
                 ? 'bg-accent/15 text-accent hover:bg-accent/25 border border-accent/25'
                 : 'bg-surface-4 text-text-4',
             )}
           >
-            {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
           </button>
         )}
       </div>

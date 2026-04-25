@@ -269,7 +269,7 @@ Audit-driven release. Multi-agent orchestration system with 7 coordination layer
 Active agents: 1
 | Name | Role | Scope |
 |------|------|-------|
-| backend-9 | backend | packages/cli/src/commands/connect.js, packages/cli/src/commands/disconnect.js, packages/cli/src/commands/remotes.js, packages/cli/bin/groove.js |
+| fullstack-19 | fullstack | - |
 See AGENTS_REGISTRY.md for full agent state.
 **Memory policy:** GROOVE manages project memory automatically. Do not read or write MEMORY.md or .groove/memory/ files directly.
 <!-- GROOVE:END -->

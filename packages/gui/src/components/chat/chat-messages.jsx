@@ -3,7 +3,6 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { Copy, Check, ArrowRight, Download, Maximize2, X, Image as ImageIcon, RefreshCw } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
-import { Avatar } from '../ui/avatar';
 import { ThinkingIndicator } from '../ui/thinking-indicator';
 
 const API_STATUS_MESSAGES = [
@@ -249,7 +248,7 @@ function UserMessage({ msg }) {
   return (
     <div className="flex justify-end">
       <div className="max-w-[85%]">
-        <div className="px-3.5 py-2.5 rounded-2xl rounded-br-md bg-accent/10 border border-accent/15">
+        <div className="px-3.5 py-2.5 rounded-2xl rounded-br-md bg-info/10 border border-info/15">
           <p className="text-sm text-text-0 font-sans whitespace-pre-wrap break-words leading-relaxed">{msg.text}</p>
         </div>
         <div className="text-2xs text-text-4 font-sans mt-1 text-right">{timeAgo(msg.timestamp)}</div>
@@ -260,20 +259,18 @@ function UserMessage({ msg }) {
 
 function AssistantMessage({ msg, model, role }) {
   const cleanText = stripEmojis(msg.text);
-  const displayName = model || 'Assistant';
-  const avatarRole = role || 'chat';
+  const displayName = role
+    ? `${model || 'Assistant'} ${role.charAt(0).toUpperCase() + role.slice(1)}`
+    : (model || 'Assistant');
   return (
-    <div className="flex gap-2.5">
-      <Avatar name={displayName} role={avatarRole} size="sm" className="mt-1 flex-shrink-0" />
-      <div className="max-w-[85%]">
-        <div className="text-2xs text-text-3 font-sans mb-1 font-medium">{displayName}</div>
-        <div className="border-l-2 border-accent/40 pl-3.5 py-1">
-          <div className="text-sm text-text-1 font-sans whitespace-pre-wrap break-words leading-relaxed">
-            <RenderedMarkdown text={cleanText} />
-          </div>
+    <div className="max-w-[85%]">
+      <div className="text-2xs text-text-3 font-sans mb-1 font-medium">{displayName}</div>
+      <div className="border-l-2 border-accent/40 pl-3.5 py-1">
+        <div className="text-sm text-text-1 font-sans whitespace-pre-wrap break-words leading-relaxed">
+          <RenderedMarkdown text={cleanText} />
         </div>
-        <div className="text-2xs text-text-4 font-sans mt-1">{timeAgo(msg.timestamp)}</div>
       </div>
+      <div className="text-2xs text-text-4 font-sans mt-1">{timeAgo(msg.timestamp)}</div>
     </div>
   );
 }

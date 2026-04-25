@@ -134,7 +134,7 @@ export function ChatView() {
     <div className="flex h-full bg-surface-0">
       {/* Conversation sidebar */}
       <div className={cn(
-        'flex-shrink-0 border-r border-accent/12 bg-surface-1 transition-all duration-200 overflow-hidden',
+        'flex-shrink-0 border-r border-accent/12 bg-accent transition-all duration-200 overflow-hidden',
         sidebarCollapsed ? 'w-0' : 'w-64',
       )}>
         <ConversationList onNewChat={() => handleNewChat()} />
@@ -169,6 +169,8 @@ export function ChatView() {
               onReasoningEffortChange={handleReasoningEffortChange}
               verbosity={activeVerbosity}
               onVerbosityChange={handleVerbosityChange}
+              mode={activeConversation?.mode || 'api'}
+              onModeChange={handleModeChange}
             />
           </>
         ) : (

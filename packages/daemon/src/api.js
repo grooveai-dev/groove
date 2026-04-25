@@ -4165,17 +4165,17 @@ Keep responses concise. Help them think, don't lecture them about the system the
   // --- Federation ---
 
   // Federation status (v1 — includes whitelist, connections, ambassadors)
-  app.get('/api/federation', proOnly, (req, res) => {
+  app.get('/api/federation', (req, res) => {
     res.json(daemon.federation.getStatus());
   });
 
   // List peers
-  app.get('/api/federation/peers', proOnly, (req, res) => {
+  app.get('/api/federation/peers', (req, res) => {
     res.json(daemon.federation.getPeers());
   });
 
   // Unpair a peer
-  app.delete('/api/federation/peers/:id', proOnly, (req, res) => {
+  app.delete('/api/federation/peers/:id', (req, res) => {
     try {
       daemon.federation.unpair(req.params.id);
       res.json({ ok: true });
@@ -4185,7 +4185,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
   });
 
   // Initiate pairing with a remote daemon
-  app.post('/api/federation/initiate', proOnly, async (req, res) => {
+  app.post('/api/federation/initiate', async (req, res) => {
     try {
       const { remoteUrl } = req.body;
       if (!remoteUrl || typeof remoteUrl !== 'string') {
@@ -4200,11 +4200,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   // --- Federation v1: Whitelist ---
 
-  app.get('/api/federation/whitelist', proOnly, (req, res) => {
+  app.get('/api/federation/whitelist', (req, res) => {
     res.json(daemon.federation.whitelist?.list() || []);
   });
 
-  app.post('/api/federation/whitelist', proOnly, (req, res) => {
+  app.post('/api/federation/whitelist', (req, res) => {
     try {
       const { ip, port, name } = req.body;
       if (!ip || typeof ip !== 'string') {
@@ -4218,7 +4218,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
-  app.delete('/api/federation/whitelist/:ip', proOnly, (req, res) => {
+  app.delete('/api/federation/whitelist/:ip', (req, res) => {
     try {
       daemon.federation.whitelist.remove(req.params.ip);
       daemon.broadcast({ type: 'federation:whitelist', data: daemon.federation.whitelist.list() });
@@ -4256,7 +4256,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   // --- Federation v1: Connections ---
 
-  app.get('/api/federation/connections', proOnly, (req, res) => {
+  app.get('/api/federation/connections', (req, res) => {
     res.json(daemon.federation.connections?.getStatus() || []);
   });
 
@@ -4279,13 +4279,13 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
-  app.get('/api/federation/pouch/log', proOnly, (req, res) => {
+  app.get('/api/federation/pouch/log', (req, res) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
     res.json(daemon.federation.ambassadors?.getPouchLog(limit) || []);
   });
 
   // Send a pouch message to a peer (local agents/GUI call this)
-  app.post('/api/federation/pouch/send', proOnly, async (req, res) => {
+  app.post('/api/federation/pouch/send', async (req, res) => {
     try {
       const { peerId, contract } = req.body;
       if (!peerId || !contract) {
@@ -4331,7 +4331,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
-  app.post('/api/federation/contract/send', proOnly, async (req, res) => {
+  app.post('/api/federation/contract/send', async (req, res) => {
     try {
       const { peerId, contract } = req.body;
       if (!peerId || !contract) {

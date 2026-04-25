@@ -227,7 +227,7 @@ export function WorkspaceMode() {
         </div>
 
         {/* Editor Area */}
-        <div className="flex-1 flex flex-col min-w-0 bg-[#13161b]">
+        <div className="flex-1 flex flex-col min-w-0 bg-surface-0">
           {workspaceReviewMode ? (
             <CodeReview agentId={agent.id} />
           ) : (
@@ -266,7 +266,7 @@ export function WorkspaceMode() {
                 )}
 
                 {!editorActiveFile && (
-                  <div className="w-full h-full flex items-center justify-center text-text-4 font-sans bg-[#13161b]">
+                  <div className="w-full h-full flex items-center justify-center text-text-4 font-sans bg-surface-0">
                     <div className="text-center space-y-2">
                       <Code2 size={32} className="mx-auto" />
                       <p className="text-sm">Open a file from the tree</p>

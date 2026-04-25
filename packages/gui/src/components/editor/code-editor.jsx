@@ -141,5 +141,5 @@ export function CodeEditor({ content, language, onChange, onSave, onCursorChange
     view.dispatch({ effects: langCompartment.current.reconfigure(langExt()) });
   }, [language]);
 
-  return <div ref={containerRef} className="w-full h-full overflow-hidden bg-[#13161b]" />;
+  return <div ref={containerRef} className="w-full h-full overflow-hidden bg-surface-0" />;
 }

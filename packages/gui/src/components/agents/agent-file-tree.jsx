@@ -34,8 +34,41 @@ function matchesScope(filePath, scopePatterns) {
   return false;
 }
 
+// ── Inline Input (for new file/folder) ─────────────────
+function InlineInput({ defaultValue = '', placeholder, onSubmit, onCancel, depth = 0 }) {
+  const [value, setValue] = useState(defaultValue);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    if (defaultValue) inputRef.current?.select();
+  }, [defaultValue]);
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter') {
+      const name = value.trim();
+      if (name) onSubmit(name);
+    }
+    if (e.key === 'Escape') onCancel();
+  }
+
+  return (
+    <div className="flex items-center py-0.5" style={{ paddingLeft: depth * 16 + 8 }}>
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={onCancel}
+        placeholder={placeholder}
+        className="w-full h-5 px-1.5 text-xs bg-surface-0 border border-accent rounded text-text-0 font-sans focus:outline-none"
+      />
+    </div>
+  );
+}
+
 function TreeEntry({ entry, depth, onOpen, expandedDirs, onToggleDir }) {
-  const isDir = entry.type === 'directory';
+  const isDir = entry.type === 'dir';
   const isExpanded = expandedDirs.has(entry.path);
   const fileColor = isDir ? 'text-accent' : getFileColor(entry.name);
 
@@ -91,6 +124,7 @@ export function AgentFileTree({ agentId }) {
   const [expandedDirs, setExpandedDirs] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [touchedFiles, setTouchedFiles] = useState([]);
+  const [inlineInput, setInlineInput] = useState(null);
   const fetchedRef = useRef(new Set());
 
   useEffect(() => {
@@ -152,7 +186,7 @@ export function AgentFileTree({ agentId }) {
       for (const dir of dirs) {
         const entries = await fetchDir(dir);
         if (entries.length > 0) {
-          results.push({ name: dir.split('/').pop(), path: dir, type: 'directory', children: entries });
+          results.push({ name: dir.split('/').pop(), path: dir, type: 'dir', children: entries });
         }
       }
       if (!cancelled) setTreeData(results);
@@ -178,22 +212,32 @@ export function AgentFileTree({ agentId }) {
     openFile(path);
   }
 
-  async function handleNewFile() {
-    const name = prompt('File name:');
-    if (!name?.trim()) return;
-    await createFile?.(name.trim());
+  function handleNewFile() {
+    setInlineInput({
+      type: 'file',
+      onSubmit: async (name) => {
+        setInlineInput(null);
+        await createFile?.(name);
+      },
+      onCancel: () => setInlineInput(null)
+    });
   }
 
-  async function handleNewFolder() {
-    const name = prompt('Folder name:');
-    if (!name?.trim()) return;
-    try {
-      await api.post('/files/mkdir', { path: name.trim() });
-      addToast('success', `Created ${name.trim()}/`);
-      handleRefresh();
-    } catch (err) {
-      addToast('error', 'Create folder failed', err.message);
-    }
+  function handleNewFolder() {
+    setInlineInput({
+      type: 'folder',
+      onSubmit: async (name) => {
+        setInlineInput(null);
+        try {
+          await api.post('/files/mkdir', { path: name });
+          addToast('success', `Created ${name}/`);
+          handleRefresh();
+        } catch (err) {
+          addToast('error', 'Create folder failed', err.message);
+        }
+      },
+      onCancel: () => setInlineInput(null)
+    });
   }
 
   function handleRefresh() {
@@ -226,6 +270,14 @@ export function AgentFileTree({ agentId }) {
       </div>
       <ScrollArea className="flex-1 min-h-0">
       <div className="py-2">
+        {inlineInput && (
+          <InlineInput
+            placeholder={inlineInput.type === 'file' ? 'filename.ext' : 'folder-name'}
+            onSubmit={inlineInput.onSubmit}
+            onCancel={inlineInput.onCancel}
+            depth={0}
+          />
+        )}
         {touchedFiles.length > 0 && (
           <div className="mb-3">
             <div className="flex items-center gap-1.5 px-3 py-1.5 text-2xs font-semibold text-text-3 uppercase tracking-wider">

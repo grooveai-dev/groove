@@ -1,8 +1,8 @@
-# groove
+# Groove OS 🌀
 
-**Orchestrate your AI coding agents. Stop losing context.**
+**Orchestrate your AI coding agents over localhost.**
 
-The open-source orchestration layer for AI coding tools. Spawn teams of agents, coordinate their work, and never lose context — with a full GUI dashboard.
+The open-source desktop OS for AI coding tools. Spawn multi-agent teams, eliminate cold-starts via our "Journalist" state-tracker, and manage complex workflows with a beautiful GUI dashboard. Your code never touches a centralized server.
 
 [![npm](https://img.shields.io/npm/v/groove-dev)](https://www.npmjs.com/package/groove-dev)
 [![License](https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue)](LICENSE)
@@ -18,6 +18,8 @@ No terminal needed. Download, install, open a project folder.
 - [**Linux** (.AppImage)](https://github.com/grooveai-dev/groove/releases/latest) — x64 and ARM
 
 Everything is bundled — daemon, GUI, auto-updates. No Node.js required.
+
+**Zero Dependencies:** The Groove Desktop App is completely self-contained. You do not need to install Node.js, Python, or manage terminal dependencies. Just download, open, and spawn a team.
 
 ### Developer Install
 
@@ -91,8 +93,6 @@ groove auto-detects monorepo workspaces (npm, pnpm, lerna) and lets you spawn ea
 
 ## Remote Access
 
-*Included with Groove Pro.*
-
 Run groove on a VPS and manage your agents from anywhere. No ports exposed to the internet. No tokens. No custom auth code. Zero attack surface.
 
 ### How It Works
@@ -154,8 +154,6 @@ This is by design. Direct exposure requires custom auth, rate limiting, TLS mana
 
 ### Federation
 
-*Included with Groove Pro.*
-
 Pair groove daemons across machines with Ed25519 key exchange. The security layer is built — cross-server agent coordination (typed contracts, federated registry) is coming soon.
 
 ```bash
@@ -185,7 +183,7 @@ groove audit           # view recent entries
 groove audit -n 50     # last 50 entries
 ```
 
-```
+```log
 2:14:32 PM  agent.spawn          id=a1 role=backend provider=claude-code
 2:14:35 PM  agent.spawn          id=a2 role=frontend provider=claude-code
 2:33:12 PM  agent.rotate         oldId=a1 newId=a3 role=backend
@@ -217,9 +215,11 @@ Append-only, `0600` permissions, auto-rotates at 5MB. When team auth is added, e
 | Provider | Auth | Models |
 |----------|------|--------|
 | **Claude Code** | Subscription | Opus 4.6, Sonnet 4.6, Haiku 4.5 |
-| **Codex** | API Key | o3, o4-mini, GPT-4.1, GPT-4.1 Mini, GPT-4.1 Nano |
-| **Gemini CLI** | API Key | 3.1 Pro, 3 Flash, 3.1 Flash Lite, 2.5 Pro, 2.5 Flash |
-| **Ollama** | Local | Any |
+| **Codex** | API Key | GPT-5.5, o3, o4-mini |
+| **Gemini CLI** | API Key | 3.1 Pro, 3 Flash, 2.5 Pro, 2.5 Flash |
+| **Grok** | API Key | Grok 4, 4.1 Fast, Code Fast |
+| **Local Models** | Local | Qwen, DeepSeek, Llama, Mistral, Phi, Codestral |
+| **Groove Network** | P2P | Federated inference |
 
 groove is a process manager — it spawns actual AI tool binaries. It never proxies API calls, never touches OAuth tokens, never impersonates any client. Your AI tools talk directly to their servers.
 
@@ -229,46 +229,19 @@ Works in any terminal, any IDE, any OS. Technical and non-technical users alike.
 
 Open the dashboard after starting the daemon (local or remote):
 
-- **Agent Tree** — visual node graph with Bezier spline connections, role badges, live status
-- **File Editor** — CodeMirror 6 with syntax highlighting, file tree, tabs, media viewer, and embedded terminal
-- **Chat** — instruct agents, query without disrupting, continue completed agents, streaming text
-- **Command Center** — gauge charts, live telemetry, token savings, model routing, adaptive thresholds
-- **Quick Launch** — planner recommends team, one-click to spawn all
-- **Skills Store** — app-store marketplace for agent skills with ratings and verification
-- **PM Review Log** — full audit trail of AI Project Manager decisions
-- **Team Management** — save, load, export, import agent configurations
+- **Agent Tree** — React Flow with slim 200px nodes, animated Bezier edges, minimap, welcome onboarding
+- **File Editor** — CodeMirror 6, 7 language modes, file tree, tabs, media viewer, embedded terminal
+- **Chat** — bubble UI with mode pills, streaming text, markdown rendering, continue completed agents
+- **Dashboard** — KPI strip with sparklines, token/cost charts, fleet panel, savings breakdown, per-team burn
+- **Quick Launch** — planner recommends team, one-click spawn all agents
+- **Skills Marketplace** — NFT-style skill cards, category bar, search, ratings, integrations tab
+- **Team Management** — create, rename, delete teams, inherited defaults
+- **Terminal** — xterm.js embedded terminal with resize/fullscreen
+- **Command Palette** — Cmd+K fuzzy search with dynamic agent commands
 
-## Plans
+## Pricing
 
-groove's core orchestration is free. Unlimited agents, teams, context rotation, Layer 7 memory, model routing, dashboard, all providers, skills marketplace, and scheduling all ship in the free tier. No agent caps.
-
-Pro and Team add the infrastructure for users who outgrow a single machine — remote access, federation, and multi-device sync.
-
-| Feature | Free | Pro | Team |
-|---------|:----:|:---:|:----:|
-| Unlimited agents | ✓ | ✓ | ✓ |
-| Unlimited teams | ✓ | ✓ | ✓ |
-| Context rotation (adaptive) | ✓ | ✓ | ✓ |
-| Layer 7 memory | ✓ | ✓ | ✓ |
-| Journalist (zero cold-start) | ✓ | ✓ | ✓ |
-| AI Project Manager | ✓ | ✓ | ✓ |
-| Adaptive model routing | ✓ | ✓ | ✓ |
-| Dashboard + telemetry | ✓ | ✓ | ✓ |
-| All providers (Claude, Codex, Gemini, Ollama) | ✓ | ✓ | ✓ |
-| Skills marketplace | ✓ | ✓ | ✓ |
-| Quick Launch | ✓ | ✓ | ✓ |
-| Workspaces | ✓ | ✓ | ✓ |
-| Scheduling | ✓ | ✓ | ✓ |
-| Gateways | ✓ | ✓ | ✓ |
-| Remote tunnels (SSH / Tailscale) | — | ✓ | ✓ |
-| Federation (daemon-to-daemon) | — | ✓ | ✓ |
-| Cloud team management | — | — | ✓ |
-| Centralized config | — | — | ✓ |
-| Seat management | — | — | ✓ |
-
-- **Free** — one machine, one person, everything works.
-- **Pro** — multiple machines, one person, everything connects.
-- **Team** — multiple machines, multiple people, everything is managed.
+Everything is free and open source. Unlimited agents, teams, context rotation, Layer 7 memory, model routing, dashboard, all providers, federation, remote access, skills marketplace, and scheduling. No tiers, no upgrades, no gates.
 
 ## Adaptive Model Routing
 
@@ -294,7 +267,7 @@ groove routes tasks to the cheapest model that can handle them. Planners get Opu
     └──────────────────────┬───────────────────────┘
                            │
     ┌──────────────────────▼───────────────────────┐
-    │   Claude Code · Codex · Gemini CLI · Ollama  │
+    │  Claude · Codex · Gemini · Grok · Local · P2P│
     └──────────────────────────────────────────────┘
 ```
 

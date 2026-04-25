@@ -2546,27 +2546,24 @@ export const useGrooveStore = create((set, get) => ({
     });
   },
 
-  toggleReviewMode() {
+  async toggleReviewMode() {
     const st = get();
     if (st.workspaceReviewMode) {
       set({ workspaceReviewMode: false, workspaceReviewFiles: [] });
       return;
     }
     const agentId = st.workspaceAgentId;
-    const log = st.activityLog[agentId] || [];
-    const seen = new Set();
-    const files = [];
-    for (const entry of log) {
-      const t = (entry.text || '').toLowerCase();
-      if (!(t.includes('writ') || t.includes('edit') || t.includes('creat'))) continue;
-      const match = entry.text.match(/(?:Write|Edit|Create|wrote|editing|writing)\S*\s+(\S+)/i);
-      if (!match) continue;
-      const path = match[1];
-      if (seen.has(path)) continue;
-      seen.add(path);
-      files.push({ path, status: 'pending', comment: '' });
+    if (!agentId) return;
+    try {
+      const res = await api.get(`/agents/${agentId}/files-touched`);
+      const touched = res.data || [];
+      const files = touched
+        .filter((f) => f.writes > 0)
+        .map((f) => ({ path: f.path, status: 'pending', comment: '' }));
+      set({ workspaceReviewMode: true, workspaceReviewFiles: files });
+    } catch (err) {
+      console.error('Failed to fetch touched files for review:', err);
     }
-    set({ workspaceReviewMode: true, workspaceReviewFiles: files });
   },
 
   approveFile(path) {

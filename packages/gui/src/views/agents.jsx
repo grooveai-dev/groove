@@ -854,7 +854,7 @@ export default function AgentsView() {
           <EmptyState onPlanner={launchPlanner} onSpawn={() => openDetail({ type: 'spawn' })} />
         ) : workspaceMode ? (
           <WorkspaceMode />
-        ) : showPreviewInAgents && previewState.url ? (
+        ) : showPreviewInAgents && previewState.url && previewState.teamId === activeTeamId ? (
           <PreviewWorkspace embedded />
         ) : (
           <ReactFlowProvider key={activeTeamId}>
@@ -877,7 +877,7 @@ export default function AgentsView() {
           onClick={() => setWorkspaceMode(!workspaceMode)}
           className={cn(
             'absolute bottom-4 z-40 flex items-center gap-1.5 h-8 px-4 rounded-md text-xs font-semibold font-sans transition-colors cursor-pointer select-none shadow-lg shadow-black/10',
-            previewState.url && !workspaceMode ? 'right-32' : 'right-4',
+            previewState.url && previewState.teamId === activeTeamId && !workspaceMode ? 'right-32' : 'right-4',
             workspaceMode
               ? 'bg-accent/15 text-accent hover:bg-accent/25'
               : 'bg-purple/15 text-purple hover:bg-purple/25',
@@ -886,7 +886,7 @@ export default function AgentsView() {
           {workspaceMode ? <><Users size={14} /> Tree</> : <><Code2 size={14} /> Workspace</>}
         </button>
       )}
-      {!isLoading && teamAgents.length > 0 && !workspaceMode && previewState.url && (
+      {!isLoading && teamAgents.length > 0 && !workspaceMode && previewState.url && previewState.teamId === activeTeamId && (
         <button
           onClick={togglePreviewInAgents}
           className="absolute bottom-4 right-4 z-40 flex items-center gap-1.5 h-8 px-4 rounded-md bg-info/15 text-info text-xs font-semibold font-sans hover:bg-info/25 transition-colors cursor-pointer select-none shadow-lg shadow-black/10"

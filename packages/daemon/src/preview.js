@@ -191,7 +191,7 @@ export class PreviewService {
     // expansion, and shell builtins work as the planner wrote them.
     const proc = cpSpawn('bash', ['-lc', command], {
       cwd: baseDir,
-      env: { ...process.env, FORCE_COLOR: '0', CI: '' },
+      env: { ...process.env, FORCE_COLOR: '0', CI: '', BROWSER: 'none' },
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
     });

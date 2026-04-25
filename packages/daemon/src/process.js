@@ -1282,6 +1282,10 @@ For normal file edits within your scope, proceed without review.
       }
     }
 
+    // Phase 2 spawns are async — _checkPhase2 may have consumed the pending
+    // entry but the spawn() calls haven't resolved yet. Wait for them.
+    if (this._phase2Spawning?.has(teamId)) return;
+
     const teamAgents = this.daemon.registry.getAll().filter((a) => a.teamId === teamId && a.role !== 'planner');
     if (teamAgents.length === 0) return;
     const terminal = new Set(['completed', 'crashed', 'stopped', 'killed']);
@@ -1367,6 +1371,12 @@ For normal file edits within your scope, proceed without review.
           return files.length === 0;
         });
 
+        // Track that phase 2 spawns are in-flight for this team so
+        // _checkPreviewReady doesn't race ahead of the async spawn calls.
+        const groupTeamId = group.agents[0]?.teamId || this.daemon.teams.getDefault()?.id || null;
+        if (!this._phase2Spawning) this._phase2Spawning = new Map();
+        const spawnPromises = [];
+
         // Auto-spawn phase 2 agents — if phase 1 was idle, clear the prompt
         // so QC also waits for instructions instead of auditing nothing
         for (const config of group.agents) {
@@ -1406,7 +1416,7 @@ For normal file edits within your scope, proceed without review.
           try {
             const validated = validateAgentConfig(config);
             if (!validated.teamId) validated.teamId = this.daemon.teams.getDefault()?.id || null;
-            this.spawn(validated).then((agent) => {
+            const p = this.spawn(validated).then((agent) => {
               this.daemon.broadcast({
                 type: 'phase2:spawned',
                 agentId: agent.id,
@@ -1422,6 +1432,7 @@ For normal file edits within your scope, proceed without review.
                 error: err.message,
               });
             });
+            spawnPromises.push(p);
           } catch (err) {
             console.error(`[Groove] Phase 2 config invalid for ${config.role}: ${err.message}`);
             this.daemon.broadcast({
@@ -1430,6 +1441,17 @@ For normal file edits within your scope, proceed without review.
               error: err.message,
             });
           }
+        }
+
+        // Mark this team as having phase 2 spawns in-flight. Cleared once
+        // all spawn promises settle so _checkPreviewReady won't race ahead.
+        if (spawnPromises.length > 0 && groupTeamId) {
+          this._phase2Spawning.set(groupTeamId, (this._phase2Spawning.get(groupTeamId) || 0) + spawnPromises.length);
+          Promise.allSettled(spawnPromises).then(() => {
+            const remaining = (this._phase2Spawning.get(groupTeamId) || 0) - spawnPromises.length;
+            if (remaining <= 0) this._phase2Spawning.delete(groupTeamId);
+            else this._phase2Spawning.set(groupTeamId, remaining);
+          });
         }
       }
     }

@@ -1,10 +1,9 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useRef, useEffect } from 'react';
-import { Pencil, Pin, PinOff, Trash2, Hash, MoreHorizontal, Zap, Bot, ChevronDown, X } from 'lucide-react';
+import { Pencil, Pin, PinOff, Trash2, Hash, MoreHorizontal, ChevronDown, X } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { fmtNum } from '../../lib/format';
 import { ModelPicker, formatModelName } from './model-picker';
-import { Tooltip } from '../ui/tooltip';
 import { cn } from '../../lib/cn';
 import { roleColor } from '../../lib/status';
 
@@ -25,7 +24,7 @@ const CHAT_ROLES = [
   { id: 'support', label: 'Support', desc: 'Customer support, FAQs' },
 ];
 
-export function ChatHeader({ conversation, model, onModelChange, onModeChange, role, onRoleChange }) {
+export function ChatHeader({ conversation, model, onModelChange, role, onRoleChange, sidebarCollapsed }) {
   const renameConversation = useGrooveStore((s) => s.renameConversation);
   const pinConversation = useGrooveStore((s) => s.pinConversation);
   const deleteConversation = useGrooveStore((s) => s.deleteConversation);
@@ -77,10 +76,9 @@ export function ChatHeader({ conversation, model, onModelChange, onModeChange, r
 
   const agent = useGrooveStore((s) => s.agents.find((a) => a.id === conversation.agentId));
   const tokens = agent?.tokensUsed || 0;
-  const mode = conversation.mode || 'api';
 
   return (
-    <div className="h-12 flex items-center gap-3 px-4 border-b border-border-subtle bg-surface-0/80 flex-shrink-0">
+    <div className={cn("h-12 flex items-center gap-3 border-b border-border-subtle bg-surface-0/80 flex-shrink-0", sidebarCollapsed ? 'pl-10 pr-4' : 'px-4')}>
       <Hash size={14} className="text-text-4 flex-shrink-0" />
 
       {editing ? (
@@ -105,31 +103,6 @@ export function ChatHeader({ conversation, model, onModelChange, onModeChange, r
       <div className="w-px h-5 bg-border-subtle" />
 
       <div className="flex items-center gap-2 flex-shrink-0">
-        <div className="flex items-center h-7 rounded-lg bg-surface-3 border border-border-subtle p-0.5">
-          <Tooltip content="Lightweight — fast and cheap, no tools" side="bottom">
-            <button
-              onClick={() => onModeChange?.('api')}
-              className={cn(
-                'flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-semibold font-sans transition-colors cursor-pointer',
-                mode === 'api' ? 'bg-accent/15 text-accent border border-accent/25' : 'text-text-3 hover:text-text-1',
-              )}
-            >
-              <Zap size={11} /> Chat
-            </button>
-          </Tooltip>
-          <Tooltip content="Full agent — tools, files, session resume" side="bottom">
-            <button
-              onClick={() => onModeChange?.('agent')}
-              className={cn(
-                'flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-semibold font-sans transition-colors cursor-pointer',
-                mode === 'agent' ? 'bg-purple/15 text-purple border border-purple/25' : 'text-text-3 hover:text-text-1',
-              )}
-            >
-              <Bot size={11} /> Agent
-            </button>
-          </Tooltip>
-        </div>
-
         <div ref={roleMenuRef} className="relative">
           <button
             onClick={() => setRoleMenuOpen(!roleMenuOpen)}

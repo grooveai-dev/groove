@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useCallback } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, PanelLeftOpen } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { ConversationList } from './conversation-list';
@@ -132,17 +132,27 @@ export function ChatView() {
     <div className="flex h-full bg-surface-0">
       {/* Conversation sidebar */}
       <div className={cn(
-        'flex-shrink-0 border-r border-accent/12 bg-surface-1 transition-all duration-200 overflow-hidden',
-        sidebarCollapsed ? 'w-0' : 'w-64',
+        'relative flex-shrink-0 border-r border-accent/12 bg-surface-1 transition-all duration-200 overflow-hidden',
+        sidebarCollapsed ? 'w-0 border-r-0' : 'w-64',
       )}>
-        <ConversationList onNewChat={() => handleNewChat()} />
+        <ConversationList onNewChat={() => handleNewChat()} onCollapse={() => setSidebarCollapsed(true)} />
       </div>
 
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0">
+        {sidebarCollapsed && (
+          <button
+            onClick={() => setSidebarCollapsed(false)}
+            className="absolute top-3 left-2 z-10 w-7 h-7 flex items-center justify-center rounded-md text-text-3 hover:text-text-0 hover:bg-surface-3 transition-colors cursor-pointer"
+            title="Show sidebar"
+          >
+            <PanelLeftOpen size={15} />
+          </button>
+        )}
+
         {activeConversation ? (
           <>
-            <ChatHeader conversation={activeConversation} model={currentModel} onModelChange={handleModelChange} onModeChange={handleModeChange} role={activeRole} onRoleChange={handleRoleChange} />
+            <ChatHeader conversation={activeConversation} model={currentModel} onModelChange={handleModelChange} role={activeRole} onRoleChange={handleRoleChange} sidebarCollapsed={sidebarCollapsed} />
             <ChatMessages
               messages={messages}
               isStreaming={isStreaming}

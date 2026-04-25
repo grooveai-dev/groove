@@ -3,10 +3,10 @@ import { useRef, useEffect } from 'react';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view';
 import { EditorState, Compartment } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-import { bracketMatching } from '@codemirror/language';
+import { bracketMatching, syntaxHighlighting } from '@codemirror/language';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion } from '@codemirror/autocomplete';
-import { oneDark } from '@codemirror/theme-one-dark';
+import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark';
 import { javascript } from '@codemirror/lang-javascript';
 import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
@@ -98,7 +98,7 @@ export function CodeEditor({ content, language, onChange, onSave, onCursorChange
         autocompletion(),
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
         saveKeymap,
-        oneDark,
+        syntaxHighlighting(oneDarkHighlightStyle),
         grooveTheme,
         langCompartment.current.of(langExt()),
         EditorView.updateListener.of((update) => {

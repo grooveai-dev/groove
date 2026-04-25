@@ -2497,13 +2497,16 @@ export const useGrooveStore = create((set, get) => ({
   setWorkspaceMode(on) {
     set({ workspaceMode: on });
     localStorage.setItem('groove:workspaceMode', String(on));
-    if (on && !get().workspaceAgentId) {
-      const teamAgents = get().agents.filter((a) => a.teamId === get().activeTeamId);
-      const selected = get().detailPanel?.type === 'agent' ? get().detailPanel.agentId : null;
-      const running = teamAgents.find((a) => a.status === 'running');
-      set({ workspaceAgentId: selected || running?.id || teamAgents[0]?.id || null });
-    }
     if (on) {
+      const teamAgents = get().agents.filter((a) => a.teamId === get().activeTeamId);
+      const current = get().workspaceAgentId;
+      const belongsToTeam = current && teamAgents.some((a) => a.id === current);
+      if (!belongsToTeam) {
+        const selected = get().detailPanel?.type === 'agent' ? get().detailPanel.agentId : null;
+        const selectedInTeam = selected && teamAgents.some((a) => a.id === selected);
+        const running = teamAgents.find((a) => a.status === 'running');
+        set({ workspaceAgentId: (selectedInTeam ? selected : null) || running?.id || teamAgents[0]?.id || null });
+      }
       const agentId = get().workspaceAgentId;
       if (agentId) get().selectAgent(agentId);
     }

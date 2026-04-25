@@ -10,7 +10,7 @@ import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Radio, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Play, Clock, ListChecks, Layers } from 'lucide-react';
+import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Play, Clock, ListChecks, Layers } from 'lucide-react';
 import { PreviewWorkspace } from '../components/preview/preview-workspace';
 import { WorkspaceMode } from '../components/agents/workspace-mode';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../components/ui/context-menu';
@@ -974,15 +974,15 @@ function TeamBuilder() {
                           <div className="flex gap-2">
                             <div className="flex-1 space-y-1">
                               <label className="text-2xs text-text-3 font-sans">Provider</label>
-                              <Select value={r.provider || ''} onValueChange={(v) => {
-                                updateRole(i, { provider: v || null });
-                                const p = providers.find((x) => x.id === v);
+                              <Select value={r.provider || '__default__'} onValueChange={(v) => {
+                                const pv = v === '__default__' ? null : v;
+                                const p = providers.find((x) => x.id === pv);
                                 const pModels = (p?.models || []).filter((m) => m.type !== 'image' && !m.disabled);
-                                updateRole(i, { provider: v || null, model: pModels[0]?.id || null });
+                                updateRole(i, { provider: pv, model: pModels[0]?.id || null });
                               }}>
                                 <SelectTrigger placeholder="Team Default" className="bg-surface-3 h-7 text-xs" />
                                 <SelectContent>
-                                  <SelectItem value="">Team Default</SelectItem>
+                                  <SelectItem value="__default__">Team Default</SelectItem>
                                   {providers.map((p) => (
                                     <SelectItem key={p.id} value={p.id}>{p.displayName || p.name || p.id}</SelectItem>
                                   ))}
@@ -991,10 +991,10 @@ function TeamBuilder() {
                             </div>
                             <div className="flex-1 space-y-1">
                               <label className="text-2xs text-text-3 font-sans">Model</label>
-                              <Select value={r.model || ''} onValueChange={(v) => updateRole(i, { model: v || null })}>
+                              <Select value={r.model || '__default__'} onValueChange={(v) => updateRole(i, { model: v === '__default__' ? null : v })}>
                                 <SelectTrigger placeholder="Default" className="bg-surface-3 h-7 text-xs" />
                                 <SelectContent>
-                                  <SelectItem value="">Default</SelectItem>
+                                  <SelectItem value="__default__">Default</SelectItem>
                                   {roleModels.map((m) => (
                                     <SelectItem key={m.id} value={m.id}>{m.name || m.id}</SelectItem>
                                   ))}
@@ -1079,10 +1079,10 @@ function TeamBuilder() {
               <div className="flex gap-2">
                 <div className="flex-1 space-y-0.5">
                   <label className="text-2xs text-text-3 font-sans">Provider</label>
-                  <Select value={settings.provider || ''} onValueChange={handleSettingsProviderChange}>
+                  <Select value={settings.provider || '__default__'} onValueChange={(v) => handleSettingsProviderChange(v === '__default__' ? '' : v)}>
                     <SelectTrigger placeholder="Default" className="bg-surface-3 h-7 text-xs" />
                     <SelectContent>
-                      <SelectItem value="">Default</SelectItem>
+                      <SelectItem value="__default__">Default</SelectItem>
                       {providers.map((p) => (
                         <SelectItem key={p.id} value={p.id}>{p.displayName || p.name || p.id}</SelectItem>
                       ))}
@@ -1091,10 +1091,10 @@ function TeamBuilder() {
                 </div>
                 <div className="flex-1 space-y-0.5">
                   <label className="text-2xs text-text-3 font-sans">Model</label>
-                  <Select value={settings.model || ''} onValueChange={(v) => setSettings({ model: v })}>
+                  <Select value={settings.model || '__default__'} onValueChange={(v) => setSettings({ model: v === '__default__' ? '' : v })}>
                     <SelectTrigger placeholder="Auto" className="bg-surface-3 h-7 text-xs" />
                     <SelectContent>
-                      <SelectItem value="">Auto</SelectItem>
+                      <SelectItem value="__default__">Auto</SelectItem>
                       {settingsModels.map((m) => (
                         <SelectItem key={m.id} value={m.id}>{m.name || m.id}</SelectItem>
                       ))}
@@ -1194,44 +1194,33 @@ function EmptyState({ onPlanner, onSpawn, onTeamBuilder }) {
             </div>
           </button>
 
-          <button
-            onClick={onTeamBuilder}
-            className="w-full flex items-center gap-3 p-4 rounded-lg border border-purple/25 bg-gradient-to-r from-purple/6 to-purple/2 hover:from-purple/12 hover:to-purple/5 hover:border-purple/35 transition-all cursor-pointer group text-left"
-          >
-            <div className="w-10 h-10 rounded-lg bg-purple/15 flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
-              <UserPlus size={20} className="text-purple" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-text-0 font-sans">Build a Team</div>
-              <div className="text-xs text-text-3 font-sans mt-0.5">Pick your roles, configure settings, and launch</div>
-            </div>
-          </button>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={onTeamBuilder}
+              className="flex items-center gap-3 p-4 rounded-lg border border-purple/25 bg-gradient-to-r from-purple/6 to-purple/2 hover:from-purple/12 hover:to-purple/5 hover:border-purple/35 transition-all cursor-pointer group text-left"
+            >
+              <div className="w-10 h-10 rounded-lg bg-purple/15 flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
+                <UserPlus size={20} className="text-purple" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-text-0 font-sans">Build a Team</div>
+                <div className="text-xs text-text-3 font-sans mt-0.5">Pick roles and configure</div>
+              </div>
+            </button>
 
-          <button
-            onClick={onSpawn}
-            className="w-full flex items-center gap-3 p-4 rounded-lg border border-border bg-surface-1 hover:bg-surface-2 hover:border-border transition-all cursor-pointer group text-left"
-          >
-            <div className="w-10 h-10 rounded-lg bg-surface-4 flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
-              <Plus size={20} className="text-text-1" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-text-0 font-sans">Spawn Agent</div>
-              <div className="text-xs text-text-3 font-sans mt-0.5">Choose a role and configure</div>
-            </div>
-          </button>
-
-          <button
-            onClick={() => useGrooveStore.getState().toggleQuickConnect()}
-            className="w-full flex items-center gap-3 p-4 rounded-lg border border-border bg-surface-1 hover:bg-surface-2 hover:border-border transition-all cursor-pointer group text-left"
-          >
-            <div className="w-10 h-10 rounded-lg bg-surface-4 flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
-              <Radio size={20} className="text-text-1" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-text-0 font-sans">Connect to Remote Server</div>
-              <div className="text-xs text-text-3 font-sans mt-0.5">SSH tunnel to a remote machine</div>
-            </div>
-          </button>
+            <button
+              onClick={onSpawn}
+              className="flex items-center gap-3 p-4 rounded-lg border border-border bg-surface-1 hover:bg-surface-2 hover:border-border transition-all cursor-pointer group text-left"
+            >
+              <div className="w-10 h-10 rounded-lg bg-surface-4 flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
+                <Plus size={20} className="text-text-1" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-text-0 font-sans">Spawn Agent</div>
+                <div className="text-xs text-text-3 font-sans mt-0.5">Choose a role and configure</div>
+              </div>
+            </button>
+          </div>
         </div>
 
         {window.groove?.openFolder && (

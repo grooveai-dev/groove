@@ -11,7 +11,7 @@
 // kills the previous one. Previews are also killed on team delete and on
 // daemon shutdown.
 
-import { spawn as cpSpawn } from 'child_process';
+import { spawn as cpSpawn, execSync } from 'child_process';
 import { resolve, extname } from 'path';
 import { existsSync, readFileSync, statSync } from 'fs';
 import { createServer } from 'http';
@@ -101,11 +101,55 @@ export class PreviewService {
       return result;
     }
 
+    const installResult = this._ensureDependencies(teamId, baseDir);
+    if (installResult?.failed) {
+      this.daemon.audit?.log('preview.failed', { teamId, reason: installResult.reason });
+      return { launched: false, reason: installResult.reason };
+    }
+
     let result;
     if (preview.kind === 'static-html') {
-      result = await this._launchStatic(teamId, baseDir, preview);
+      if (this._needsBuild(baseDir, preview)) {
+        const buildResult = this._runBuild(teamId, baseDir);
+        if (buildResult?.failed) {
+          this.daemon.audit?.log('preview.failed', { teamId, reason: buildResult.reason });
+          return { launched: false, reason: buildResult.reason };
+        }
+        const distDir = resolve(baseDir, 'dist');
+        if (existsSync(distDir)) {
+          result = await this._launchStatic(teamId, distDir, { ...preview, openPath: preview.openPath || 'index.html' });
+        } else {
+          result = await this._launchStatic(teamId, baseDir, preview);
+        }
+      } else {
+        result = await this._launchStatic(teamId, baseDir, preview);
+      }
     } else if (preview.kind === 'dev-server') {
+      if (this._needsPreBuild(baseDir)) {
+        const preBuild = this._runBuild(teamId, baseDir);
+        if (preBuild?.failed) {
+          this.daemon.audit?.log('preview.prebuild-failed', { teamId, reason: preBuild.reason });
+        }
+      }
       result = await this._launchDevServer(teamId, baseDir, preview);
+      // Fallback: if dev-server failed, try building and serving statically
+      if (!result.launched) {
+        const pkgPath = resolve(baseDir, 'package.json');
+        if (existsSync(pkgPath)) {
+          try {
+            const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+            if (pkg.scripts?.build) {
+              const buildResult = this._runBuild(teamId, baseDir);
+              if (!buildResult?.failed) {
+                const distDir = resolve(baseDir, 'dist');
+                if (existsSync(resolve(distDir, 'index.html'))) {
+                  result = await this._launchStatic(teamId, distDir, { ...preview, openPath: 'index.html' });
+                }
+              }
+            }
+          } catch { /* fallback failed, keep original error */ }
+        }
+      }
     } else {
       result = { launched: false, reason: `unknown_kind: ${preview.kind}` };
     }
@@ -116,6 +160,99 @@ export class PreviewService {
       this.daemon.audit?.log('preview.failed', { teamId, reason: result.reason, baseDir });
     }
     return result;
+  }
+
+  _ensureDependencies(teamId, baseDir) {
+    const pkgPath = resolve(baseDir, 'package.json');
+    const nodeModules = resolve(baseDir, 'node_modules');
+    if (!existsSync(pkgPath) || existsSync(nodeModules)) return null;
+    try {
+      console.log(`[Groove:Preview] Running npm install in ${baseDir}`);
+      this.daemon.audit?.log('preview.npm-install', { teamId, baseDir });
+      execSync('npm install', { cwd: baseDir, timeout: 120_000, stdio: 'pipe' });
+      return null;
+    } catch (err) {
+      return { failed: true, reason: `npm install failed: ${err.message?.slice(0, 300)}` };
+    }
+  }
+
+  _needsBuild(baseDir, preview) {
+    const pkgPath = resolve(baseDir, 'package.json');
+    let hasBuildScript = false;
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+      hasBuildScript = !!pkg.scripts?.build;
+    } catch { /* no package.json or malformed */ }
+
+    const distDir = resolve(baseDir, 'dist');
+    const distExists = existsSync(distDir);
+
+    // Primary: build script exists and dist/ doesn't
+    if (hasBuildScript && !distExists) return true;
+
+    // Stale check: dist/ exists but package.json is newer than dist/index.html
+    if (hasBuildScript && distExists) {
+      const distIndex = resolve(distDir, 'index.html');
+      if (existsSync(distIndex) && existsSync(pkgPath)) {
+        try {
+          const distMtime = statSync(distIndex).mtimeMs;
+          const pkgMtime = statSync(pkgPath).mtimeMs;
+          if (pkgMtime > distMtime) return true;
+        } catch { /* ignore stat errors */ }
+      }
+    }
+
+    // Secondary: entry file references .tsx/.jsx sources (needs transpilation)
+    const openPath = (preview.openPath || 'index.html').replace(/^\/+/, '');
+    const entryFile = resolve(baseDir, openPath);
+    if (existsSync(entryFile)) {
+      try {
+        const html = readFileSync(entryFile, 'utf8');
+        if (/src=["'][^"']*\.(tsx?|jsx)["']/i.test(html)) return true;
+      } catch { /* ignore */ }
+    }
+
+    // Entry file missing — check if a build might create it
+    if (!existsSync(entryFile) && hasBuildScript) {
+      const frameworkConfigs = ['vite.config', 'next.config', 'webpack.config'];
+      for (const cfg of frameworkConfigs) {
+        for (const ext of ['.js', '.ts', '.mjs', '.cjs']) {
+          if (existsSync(resolve(baseDir, cfg + ext))) return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  _needsPreBuild(baseDir) {
+    const pkgPath = resolve(baseDir, 'package.json');
+    if (!existsSync(pkgPath)) return false;
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+      const startScript = pkg.scripts?.start || '';
+      if (/\bnext\s+start\b/.test(startScript)) return true;
+      if (/\bserve\b/.test(startScript) && !pkg.scripts?.dev) return true;
+      if (/\bhttp-server\b/.test(startScript)) return true;
+    } catch { /* ignore */ }
+    return false;
+  }
+
+  _runBuild(teamId, baseDir) {
+    const pkgPath = resolve(baseDir, 'package.json');
+    if (!existsSync(pkgPath)) return { failed: true, reason: 'no package.json for build' };
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+      if (!pkg.scripts?.build) return { failed: true, reason: 'no build script' };
+    } catch { return { failed: true, reason: 'malformed package.json' }; }
+    try {
+      console.log(`[Groove:Preview] Running npm run build in ${baseDir}`);
+      this.daemon.audit?.log('preview.build', { teamId, baseDir });
+      execSync('npm run build', { cwd: baseDir, timeout: 120_000, stdio: 'pipe' });
+      return null;
+    } catch (err) {
+      return { failed: true, reason: `build failed: ${err.message?.slice(0, 300)}` };
+    }
   }
 
   _launchStatic(teamId, baseDir, preview) {
@@ -130,6 +267,15 @@ export class PreviewService {
       const filePath = resolve(baseDir, rel);
       if (!filePath.startsWith(baseDir)) { res.statusCode = 403; return res.end(); }
       if (!existsSync(filePath) || !statSync(filePath).isFile()) {
+        // SPA fallback: serve index.html for HTML requests (client-side routing)
+        const acceptsHtml = (req.headers.accept || '').includes('text/html');
+        if (acceptsHtml) {
+          const fallback = resolve(baseDir, openPath);
+          if (existsSync(fallback) && statSync(fallback).isFile()) {
+            res.setHeader('Content-Type', 'text/html');
+            return res.end(readFileSync(fallback));
+          }
+        }
         res.statusCode = 404; return res.end('Not found');
       }
       res.setHeader('Content-Type', mimeLookup(extname(filePath)) || 'application/octet-stream');

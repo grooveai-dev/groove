@@ -8,6 +8,7 @@ const WS_URL = `ws://${window.location.hostname}:${window.location.port || 31415
 
 let toastCounter = 0;
 let plannerPollInterval = null;
+const _modeChangePending = new Set();
 
 function loadJSON(key, fallback = {}) {
   try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); }
@@ -342,7 +343,10 @@ export const useGrooveStore = create((set, get) => ({
             chatText = data.data;
           } else if (Array.isArray(data.data)) {
             chatText = data.data.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
-            activityText = data.data.filter((b) => b.type === 'tool_use').map((b) => `${b.name}: ${typeof b.input === 'string' ? b.input.slice(0, 80) : (b.input?.command || b.input?.path || b.input?.pattern || JSON.stringify(b.input || '').slice(0, 80))}`).join('\n');
+            activityText = data.data.filter((b) => b.type === 'tool_use').map((b) => {
+              const summary = `${b.name}: ${typeof b.input === 'string' ? b.input.slice(0, 80) : (b.input?.command || b.input?.path || b.input?.pattern || JSON.stringify(b.input || '').slice(0, 80))}`;
+              return b.result ? `${summary}\n${typeof b.result === 'string' ? b.result.slice(0, 500) : JSON.stringify(b.result).slice(0, 500)}` : summary;
+            }).join('\n');
           }
 
           // Update agent metrics in real-time (contextUsage, tokensUsed)
@@ -2187,11 +2191,15 @@ export const useGrooveStore = create((set, get) => ({
   },
 
   async setConversationMode(id, mode) {
+    if (_modeChangePending.has(id)) return;
+    _modeChangePending.add(id);
     try {
       const conv = await api.patch(`/conversations/${encodeURIComponent(id)}`, { mode });
       set((s) => ({ conversations: s.conversations.map((c) => c.id === id ? { ...c, ...conv } : c) }));
     } catch (err) {
       get().addToast('error', 'Mode change failed', err.message);
+    } finally {
+      _modeChangePending.delete(id);
     }
   },
 

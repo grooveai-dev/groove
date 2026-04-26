@@ -334,20 +334,20 @@ export class CodexProvider extends Provider {
           result = {
             type: 'activity', subtype: 'assistant',
             data: [
-              { type: 'tool_use', id: item.id || 'exec', name: 'Bash', input: { command: item.command } },
-              ...(output ? [{ type: 'text', text: output }] : []),
+              { type: 'tool_use', id: item.id || 'exec', name: 'Bash', input: { command: item.command }, ...(output && { result: output }) },
             ],
           };
         } else if (item.type === 'todo_list') {
           const steps = (item.items || []).map((s) => `${s.completed ? '✓' : '○'} ${s.text}`).join('\n');
           result = {
             type: 'activity', subtype: 'assistant',
-            data: [{ type: 'text', text: steps }],
+            data: [{ type: 'tool_use', id: item.id || 'plan', name: 'Plan', input: { steps }, result: steps }],
           };
         } else if (item.type === 'file_edit' || item.type === 'file_write' || item.type === 'file_read') {
+          const fileContent = item.type === 'file_read' ? (item.content || item.text || item.aggregated_output || '').slice(0, 2000) : undefined;
           result = {
             type: 'activity', subtype: 'assistant',
-            data: [{ type: 'tool_use', id: item.id || 'file', name: item.type === 'file_read' ? 'Read' : item.type === 'file_write' ? 'Write' : 'Edit', input: { path: item.path || item.file || '' } }],
+            data: [{ type: 'tool_use', id: item.id || 'file', name: item.type === 'file_read' ? 'Read' : item.type === 'file_write' ? 'Write' : 'Edit', input: { path: item.path || item.file || '' }, ...(fileContent && { result: fileContent }) }],
           };
         }
 

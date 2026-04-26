@@ -52,6 +52,7 @@ export function ChatView() {
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [replyContext, setReplyContext] = useState(null);
+  const [modeChanging, setModeChanging] = useState(false);
 
   const activeRole = activeConversationId ? (conversationRoles?.[activeConversationId] || null) : null;
   const activeReasoningEffort = activeConversationId ? (conversationReasoningEffort?.[activeConversationId] || 'medium') : 'medium';
@@ -69,10 +70,15 @@ export function ChatView() {
     } catch { /* toast handles */ }
   }, [createConversation]);
 
-  const handleModeChange = useCallback((mode) => {
-    if (!activeConversationId) return;
-    setConversationMode(activeConversationId, mode);
-  }, [activeConversationId, setConversationMode]);
+  const handleModeChange = useCallback(async (mode) => {
+    if (!activeConversationId || modeChanging) return;
+    setModeChanging(true);
+    try {
+      await setConversationMode(activeConversationId, mode);
+    } finally {
+      setModeChanging(false);
+    }
+  }, [activeConversationId, setConversationMode, modeChanging]);
 
   const handleRoleChange = useCallback((role) => {
     if (!activeConversationId) return;
@@ -179,6 +185,7 @@ export function ChatView() {
               onVerbosityChange={handleVerbosityChange}
               mode={activeConversation?.mode || 'api'}
               onModeChange={handleModeChange}
+              modeChanging={modeChanging}
             />
           </>
         ) : (

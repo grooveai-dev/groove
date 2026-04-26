@@ -12,6 +12,7 @@ export class ConversationManager {
     this.daemon = daemon;
     this.filePath = resolve(daemon.grooveDir, 'conversations.json');
     this.conversations = new Map();
+    this._modeChanging = new Set();
     this._load();
     this._listenForAgentExits();
   }
@@ -260,36 +261,48 @@ export class ConversationManager {
     if (mode !== 'api' && mode !== 'agent') throw new Error('Mode must be "api" or "agent"');
     if (conv.mode === mode) return conv;
 
-    if (mode === 'agent') {
-      const defaultTeam = this.daemon.teams.getDefault();
-      const workingDir = defaultTeam?.workingDir || this.daemon.projectDir;
-      const agent = await this.daemon.processes.spawn({
-        role: 'chat',
-        provider: conv.provider,
-        model: conv.model || null,
-        workingDir,
-        teamId: defaultTeam?.id || null,
-        permission: 'full',
-      });
-      conv.agentId = agent.id;
-    } else {
-      // Switching to API mode — kill the agent if running
-      this._killStreamingProcess(id);
-      if (conv.agentId) {
-        const agent = this.daemon.registry.get(conv.agentId);
-        if (agent && (agent.status === 'running' || agent.status === 'starting')) {
-          try { await this.daemon.processes.kill(conv.agentId); } catch { /* ignore */ }
-        }
-        if (agent) this.daemon.registry.remove(conv.agentId);
-        conv.agentId = null;
-      }
-    }
+    if (this._modeChanging.has(id)) return conv;
+    this._modeChanging.add(id);
 
-    conv.mode = mode;
-    conv.updatedAt = new Date().toISOString();
-    this._save();
-    this.daemon.broadcast({ type: 'conversation:updated', data: conv });
-    return conv;
+    try {
+      if (mode === 'agent') {
+        const existingAgent = conv.agentId ? this.daemon.registry.get(conv.agentId) : null;
+        const alive = existingAgent && (existingAgent.status === 'running' || existingAgent.status === 'starting');
+
+        if (!alive) {
+          const defaultTeam = this.daemon.teams.getDefault();
+          const workingDir = defaultTeam?.workingDir || this.daemon.projectDir;
+          const agent = await this.daemon.processes.spawn({
+            role: 'chat',
+            provider: conv.provider,
+            model: conv.model || null,
+            workingDir,
+            teamId: defaultTeam?.id || null,
+            permission: 'full',
+          });
+          conv.agentId = agent.id;
+        }
+      } else {
+        // Switching to API mode — kill the agent if running
+        this._killStreamingProcess(id);
+        if (conv.agentId) {
+          const agent = this.daemon.registry.get(conv.agentId);
+          if (agent && (agent.status === 'running' || agent.status === 'starting')) {
+            try { await this.daemon.processes.kill(conv.agentId); } catch { /* ignore */ }
+          }
+          if (agent) this.daemon.registry.remove(conv.agentId);
+          conv.agentId = null;
+        }
+      }
+
+      conv.mode = mode;
+      conv.updatedAt = new Date().toISOString();
+      this._save();
+      this.daemon.broadcast({ type: 'conversation:updated', data: conv });
+      return conv;
+    } finally {
+      this._modeChanging.delete(id);
+    }
   }
 
   _buildHistoryPrompt(history, newMessage) {

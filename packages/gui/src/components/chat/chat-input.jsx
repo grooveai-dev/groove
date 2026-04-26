@@ -17,7 +17,7 @@ const VERBOSITY_OPTIONS = [
   { value: 'medium', label: 'Normal' },
 ];
 
-export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImageModel, currentModel, replyContext, onClearReply, role, isCodex, reasoningEffort, onReasoningEffortChange, verbosity, onVerbosityChange, mode, onModeChange }) {
+export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImageModel, currentModel, replyContext, onClearReply, role, isCodex, reasoningEffort, onReasoningEffortChange, verbosity, onVerbosityChange, mode, onModeChange, modeChanging }) {
   const [input, setInput] = useState('');
   const [inputHeight, setInputHeight] = useState(40);
   const textareaRef = useRef(null);
@@ -135,8 +135,10 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
           <div className="flex items-center h-7 rounded-lg bg-surface-3 border border-border-subtle p-0.5">
             <button
               onClick={() => onModeChange?.('api')}
+              disabled={modeChanging}
               className={cn(
                 'flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-semibold font-sans transition-colors cursor-pointer',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
                 currentMode === 'api' ? 'bg-accent/15 text-accent border border-accent/25' : 'text-text-3 hover:text-text-1',
               )}
               title="Lightweight — fast and cheap, no tools"
@@ -145,8 +147,10 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
             </button>
             <button
               onClick={() => onModeChange?.('agent')}
+              disabled={modeChanging}
               className={cn(
                 'flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-semibold font-sans transition-colors cursor-pointer',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
                 currentMode === 'agent' ? 'bg-purple/15 text-purple border border-purple/25' : 'text-text-3 hover:text-text-1',
               )}
               title="Full agent — tools, files, session resume"

@@ -174,10 +174,10 @@ export function createApi(app, daemon) {
       const agent = daemon.registry.get(req.params.id);
       if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-      const isAlive = agent.status === 'running' || agent.status === 'starting';
-      if (isAlive) {
-        await daemon.processes.kill(req.params.id);
-      }
+      // Always attempt kill — handles race where GUI sees 'running' but daemon
+      // already marked the agent completed (common with fast non-interactive
+      // providers like Gemini). processes.kill() is a no-op when no handle exists.
+      await daemon.processes.kill(req.params.id);
 
       // Only purge from registry when explicitly requested.
       // Killed/completed agents stay visible so the user can review output.
@@ -1510,6 +1510,30 @@ export function createApi(app, daemon) {
           provider: oldConfig.provider,
           model: oldConfig.model,
           prompt: message.trim(),
+          permission: oldConfig.permission || 'full',
+          workingDir: oldConfig.workingDir,
+          name: oldConfig.name,
+          teamId: oldConfig.teamId,
+        });
+        daemon.audit.log('agent.instruct', { id: req.params.id, newId: newAgent.id, resumed: false });
+        return res.json(newAgent);
+      }
+
+      // Non-interactive CLI providers (e.g. Gemini): respawn with the new
+      // message as the prompt, preserving original introContext. These providers
+      // run one prompt per spawn and cannot resume sessions.
+      if (provider?.constructor?.nonInteractive && !daemon.processes.isRunning(req.params.id)) {
+        const oldConfig = { ...agent };
+        daemon.registry.remove(req.params.id);
+        daemon.locks.release(req.params.id);
+
+        const newAgent = await daemon.processes.spawn({
+          role: oldConfig.role,
+          scope: oldConfig.scope,
+          provider: oldConfig.provider,
+          model: oldConfig.model,
+          prompt: message.trim(),
+          introContext: oldConfig.introContext,
           permission: oldConfig.permission || 'full',
           workingDir: oldConfig.workingDir,
           name: oldConfig.name,
@@ -3364,6 +3388,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       // Resolve base directory from the planner that wrote the file, not the daemon root
       const plannerAgent = found.agentId ? daemon.registry.get(found.agentId) : null;
       const baseDir = plannerAgent?.workingDir || daemon.config?.defaultWorkingDir || daemon.projectDir;
+      const plannerProvider = plannerAgent?.provider || undefined;
 
       // Use the planner's teamId so launched agents join the correct team.
       // Priority: explicit from frontend > agent that wrote the file > most recent planner > default
@@ -3424,6 +3449,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
         phase2 = [{
           name: 'qc-agent',
           role: 'fullstack', phase: 2, scope: [],
+          provider: teamProvider || plannerProvider || daemon.config?.defaultProvider || undefined,
           prompt: 'QC Senior Dev: All builder agents have completed. Audit their changes for correctness, fix any issues, run tests, and verify the project builds cleanly (npm run build). Do NOT start long-running dev servers — just verify the build succeeds. Commit all changes. IMPORTANT: Do NOT delete files from other projects or directories outside this project.',
         }];
       }
@@ -3476,7 +3502,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
               role: existing.role,
               scope: normalizeScope(config.scope || existing.scope || [], existing.workingDir || projectWorkingDir),
               prompt,
-              provider: config.provider || daemon.config?.defaultProvider || existing.provider || undefined,
+              provider: config.provider || plannerProvider || daemon.config?.defaultProvider || existing.provider || undefined,
               model: config.model || existing.model || daemon.config?.defaultModel || 'auto',
               permission: config.permission || existing.permission || 'auto',
               workingDir: existing.workingDir || projectWorkingDir,
@@ -3501,7 +3527,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
               role: config.role,
               scope: normalizeScope(config.scope || [], config.workingDir || projectWorkingDir),
               prompt,
-              provider: config.provider || daemon.config?.defaultProvider || undefined,
+              provider: config.provider || plannerProvider || daemon.config?.defaultProvider || undefined,
               model: config.model || daemon.config?.defaultModel || 'auto',
               permission: config.permission || 'auto',
               workingDir: config.workingDir || projectWorkingDir,
@@ -3544,7 +3570,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
             waitFor: phase1Ids,
             agents: phase2.map((c) => ({
               role: c.role, scope: c.scope || [], prompt: c.prompt || '',
-              provider: c.provider || daemon.config?.defaultProvider || undefined, model: c.model || daemon.config?.defaultModel || 'auto',
+              provider: c.provider || plannerProvider || daemon.config?.defaultProvider || undefined, model: c.model || daemon.config?.defaultModel || 'auto',
               permission: c.permission || 'auto',
               reasoningEffort: c.reasoningEffort, temperature: c.temperature, verbosity: c.verbosity,
               workingDir: c.workingDir || projectWorkingDir,

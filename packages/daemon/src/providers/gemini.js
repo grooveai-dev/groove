@@ -28,6 +28,7 @@ export class GeminiProvider extends Provider {
   static name = 'gemini';
   static displayName = 'Gemini CLI';
   static command = 'gemini';
+  static nonInteractive = true;
   static authType = 'api-key';
   static envKey = 'GEMINI_API_KEY';
   static models = [
@@ -59,7 +60,7 @@ export class GeminiProvider extends Provider {
 
     args.push('--yolo');
     args.push('--output-format', 'stream-json');
-    args.push('-p', '');
+    args.push('-p');
 
     this._currentModel = agent.model;
 
@@ -84,8 +85,13 @@ export class GeminiProvider extends Provider {
     if (agent.role !== 'planner') {
       parts.push(
         `## Non-Interactive Commands\n\n` +
-        `Always use non-interactive flags when running package manager commands to prevent timeout hangs: ` +
-        `\`npx --yes\`, \`npm create --yes\`, \`npm init --yes\`. Never run these commands without the \`--yes\` flag.`
+        `Always use non-interactive flags when running package manager commands to prevent timeout hangs:\n` +
+        `- npx: always use \`npx --yes\`\n` +
+        `- create-vite: always add \`--no-interactive\` flag (e.g. \`npx --yes create-vite . --template react --no-interactive\`)\n` +
+        `- create-next-app: always add \`--yes\` flag\n` +
+        `- npm init/create: always add \`--yes\` flag\n` +
+        `- Any scaffolding tool: look for --no-interactive, --yes, or -y flags to skip prompts\n` +
+        `Never run these commands without non-interactive flags — they will hang and be auto-killed after 5 minutes.`
       );
     }
     return parts.join('\n\n');
@@ -155,7 +161,7 @@ export class GeminiProvider extends Provider {
 
     switch (event.type) {
       case 'init':
-        return { type: 'activity', subtype: 'assistant', sessionId: event.session_id, model: event.model, data: [{ type: 'text', text: '' }] };
+        return { type: 'activity', subtype: 'assistant', model: event.model, data: [{ type: 'text', text: '' }] };
 
       case 'message': {
         if (event.role === 'user') return null;

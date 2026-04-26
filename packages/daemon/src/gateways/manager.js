@@ -799,7 +799,7 @@ export class GatewayManager {
             role: config.role,
             scope: config.scope || [],
             prompt: config.prompt || '',
-            provider: config.provider || 'claude-code',
+            provider: config.provider || this.daemon.config?.defaultProvider || 'claude-code',
             model: config.model || 'auto',
             permission: config.permission || 'auto',
             workingDir: config.workingDir || defaultDir,
@@ -833,7 +833,7 @@ export class GatewayManager {
             waitFor: phase1Ids,
             agents: phase2.map((c) => ({
               role: c.role, scope: c.scope || [], prompt: c.prompt || '',
-              provider: c.provider || 'claude-code', model: c.model || 'auto',
+              provider: c.provider || this.daemon.config?.defaultProvider || 'claude-code', model: c.model || 'auto',
               permission: c.permission || 'auto',
               workingDir: c.workingDir || defaultDir,
               name: c.name || undefined,

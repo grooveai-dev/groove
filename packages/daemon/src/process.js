@@ -741,6 +741,10 @@ For normal file edits within your scope, proceed without review.
         // Clean up per-agent maps to prevent unbounded growth in long sessions
         this.peakContextUsage.delete(agent.id);
         this.pendingMessages.delete(agent.id);
+
+        // Release file-scope locks so they don't persist after agent death
+        if (this.daemon.locks) this.daemon.locks.release(agent.id);
+
         registry.update(agent.id, { status, pid: null });
 
         if (this.daemon.timeline) {
@@ -1351,6 +1355,13 @@ For normal file edits within your scope, proceed without review.
               if (block.type === 'text') textParts.push(block.text);
             }
           }
+          if (evt.type === 'message' && evt.content) {
+            const parts = Array.isArray(evt.content) ? evt.content : [evt.content];
+            for (const p of parts) {
+              if (typeof p === 'string') textParts.push(p);
+              else if (p.text) textParts.push(p.text);
+            }
+          }
         } catch { textParts.push(line); }
       }
       const fullText = textParts.join('\n');
@@ -1798,6 +1809,10 @@ For normal file edits within your scope, proceed without review.
       logStream.end();
       this.handles.delete(newAgent.id);
       this._stalledAgents.delete(newAgent.id);
+
+      // Release file-scope locks so they don't persist after agent death
+      if (this.daemon.locks) this.daemon.locks.release(newAgent.id);
+
       const finalStatus = signal === 'SIGTERM' || signal === 'SIGKILL' ? 'killed' : code === 0 ? 'completed' : 'crashed';
       registry.update(newAgent.id, { status: finalStatus, pid: null });
       this.daemon.broadcast({ type: 'agent:exit', agentId: newAgent.id, code, signal, status: finalStatus });
@@ -1929,6 +1944,10 @@ For normal file edits within your scope, proceed without review.
       this._streamThrottle.delete(newAgent.id);
       this.peakContextUsage.delete(newAgent.id);
       this.pendingMessages.delete(newAgent.id);
+
+      // Release file-scope locks so they don't persist after agent death
+      if (this.daemon.locks) this.daemon.locks.release(newAgent.id);
+
       registry.update(newAgent.id, { status, pid: null });
 
       const agentData = registry.get(newAgent.id);
@@ -2077,14 +2096,26 @@ For normal file edits within your scope, proceed without review.
 
     // CLI process path — spawn's exit handler sets status='killed' for SIGTERM
     return new Promise((resolveKill) => {
+      let resolved = false;
+      const resolve = () => { if (!resolved) { resolved = true; resolveKill(); } };
+
       const forceTimer = setTimeout(() => {
         try { proc.kill('SIGKILL'); } catch {}
       }, 5000);
 
+      // Hard timeout: resolve even if exit event never fires (prevents HTTP hang)
+      const hardTimer = setTimeout(() => {
+        clearTimeout(forceTimer);
+        this.handles.delete(agentId);
+        this.daemon.locks.release(agentId);
+        resolve();
+      }, 10000);
+
       proc.on('exit', () => {
         clearTimeout(forceTimer);
+        clearTimeout(hardTimer);
         this.daemon.locks.release(agentId);
-        resolveKill();
+        resolve();
       });
 
       try {
@@ -2092,9 +2123,10 @@ For normal file edits within your scope, proceed without review.
       } catch {
         // Already dead
         clearTimeout(forceTimer);
+        clearTimeout(hardTimer);
         this.handles.delete(agentId);
         this.daemon.locks.release(agentId);
-        resolveKill();
+        resolve();
       }
     });
   }

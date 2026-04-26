@@ -62,6 +62,41 @@ export class ClaudeCodeParser {
       return results.length === 1 ? results[0] : results.length > 1 ? results : null;
     }
 
+    if (jsonEvent.type === 'user') {
+      const contentBlocks = jsonEvent.message?.content;
+      if (!Array.isArray(contentBlocks)) return null;
+
+      const results = [];
+      for (const block of contentBlocks) {
+        if (block.type === 'tool_result') {
+          const toolUse = this._pendingToolUse.get(block.tool_use_id);
+          if (toolUse) this._pendingToolUse.delete(block.tool_use_id);
+
+          const resultContent = Array.isArray(block.content)
+            ? block.content.map((c) => c.text || '').join('\n')
+            : (typeof block.content === 'string' ? block.content : '');
+
+          if (block.is_error) {
+            results.push({
+              type: 'error',
+              content: resultContent,
+              is_error: true,
+              tool: toolUse?.name,
+            });
+          } else {
+            results.push({
+              type: 'observation',
+              content: truncateObservation(resultContent),
+              is_error: false,
+              tool: toolUse?.name,
+            });
+          }
+        }
+      }
+
+      return results.length === 1 ? results[0] : results.length > 1 ? results : null;
+    }
+
     if (jsonEvent.type === 'result') {
       return {
         type: 'resolution',

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { api } from '../../lib/api';
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen, FileEdit, Eye, FilePlus, FolderPlus, RefreshCw, ChevronsDownUp } from 'lucide-react';
+import { ChevronRight, ChevronDown, File, Folder, FolderOpen, FileEdit, Eye, FilePlus, FolderPlus, RefreshCw, ChevronsDownUp, PanelLeftClose, Pencil, Trash2 } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
 
 const FILE_COLORS = {
@@ -67,15 +67,62 @@ function InlineInput({ defaultValue = '', placeholder, onSubmit, onCancel, depth
   );
 }
 
-function TreeEntry({ entry, depth, onOpen, expandedDirs, onToggleDir }) {
+function ContextMenu({ x, y, items, onClose }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    function handleClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) onClose();
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className="fixed z-50 min-w-[160px] py-1 bg-surface-2 border border-border rounded-lg shadow-xl"
+      style={{ left: x, top: y }}
+    >
+      {items.map((item, i) =>
+        item.separator ? (
+          <div key={i} className="h-px bg-border-subtle my-1" />
+        ) : (
+          <button
+            key={i}
+            onClick={() => { item.action(); onClose(); }}
+            className={cn(
+              'w-full flex items-center gap-2.5 px-3 py-1.5 text-xs font-sans text-left cursor-pointer transition-colors',
+              item.danger
+                ? 'text-danger hover:bg-danger/10'
+                : 'text-text-1 hover:bg-surface-5',
+            )}
+          >
+            {item.icon && <item.icon size={12} className={item.danger ? 'text-danger' : 'text-text-3'} />}
+            {item.label}
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
+function TreeEntry({ entry, depth, onOpen, expandedDirs, onToggleDir, onContextMenu }) {
   const isDir = entry.type === 'dir';
   const isExpanded = expandedDirs.has(entry.path);
   const fileColor = isDir ? 'text-accent' : getFileColor(entry.name);
+
+  function handleCtxMenu(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    onContextMenu?.(e, entry);
+  }
 
   return (
     <>
       <button
         onClick={() => isDir ? onToggleDir(entry.path) : onOpen(entry.path)}
+        onDoubleClick={handleCtxMenu}
+        onContextMenu={handleCtxMenu}
         className={cn(
           'w-full flex items-center gap-1.5 py-1 text-xs font-sans cursor-pointer',
           'hover:bg-surface-4/50 transition-colors text-left',
@@ -103,21 +150,24 @@ function TreeEntry({ entry, depth, onOpen, expandedDirs, onToggleDir }) {
           onOpen={onOpen}
           expandedDirs={expandedDirs}
           onToggleDir={onToggleDir}
+          onContextMenu={onContextMenu}
         />
       ))}
     </>
   );
 }
 
-export function AgentFileTree({ agentId }) {
+export function AgentFileTree({ agentId, onCollapse }) {
   const agents = useGrooveStore((s) => s.agents);
   const openFile = useGrooveStore((s) => s.openFile);
   const editorActiveFile = useGrooveStore((s) => s.editorActiveFile);
   const createFile = useGrooveStore((s) => s.createFile);
   const addToast = useGrooveStore((s) => s.addToast);
+  const fetchTreeDir = useGrooveStore((s) => s.fetchTreeDir);
 
   const agent = agents.find((a) => a.id === agentId);
   const scope = agent?.scope || [];
+  const workingDir = agent?.workingDir || '';
   const isRunning = agent?.status === 'running' || agent?.status === 'starting';
 
   const [treeData, setTreeData] = useState([]);
@@ -125,6 +175,7 @@ export function AgentFileTree({ agentId }) {
   const [loading, setLoading] = useState(true);
   const [touchedFiles, setTouchedFiles] = useState([]);
   const [inlineInput, setInlineInput] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
   const fetchedRef = useRef(new Set());
 
   useEffect(() => {
@@ -251,6 +302,112 @@ export function AgentFileTree({ agentId }) {
     setExpandedDirs(new Set());
   }
 
+  function toRelativePath(absPath) {
+    if (!absPath || !absPath.startsWith('/')) return absPath;
+    if (workingDir && absPath.startsWith(workingDir + '/')) {
+      return absPath.slice(workingDir.length + 1);
+    }
+    return absPath;
+  }
+
+  function parentDir(path) {
+    const parts = path.split('/');
+    parts.pop();
+    return parts.join('/');
+  }
+
+  function handleContextMenu(e, entry) {
+    e.preventDefault?.();
+    setContextMenu({ x: e.clientX, y: e.clientY, entry });
+  }
+
+  function handleNewFileIn(dirPath) {
+    setExpandedDirs((prev) => new Set([...prev, dirPath]));
+    setInlineInput({
+      type: 'file',
+      parentPath: dirPath,
+      onSubmit: async (name) => {
+        const path = dirPath ? `${dirPath}/${name}` : name;
+        try {
+          await api.post('/files/create', { path, content: '' });
+          addToast('success', `Created ${name}`);
+          handleRefresh();
+          openFile(path);
+        } catch (err) {
+          addToast('error', 'Create failed', err.message);
+        }
+        setInlineInput(null);
+      },
+      onCancel: () => setInlineInput(null),
+    });
+  }
+
+  function handleNewFolderIn(dirPath) {
+    setExpandedDirs((prev) => new Set([...prev, dirPath]));
+    setInlineInput({
+      type: 'folder',
+      parentPath: dirPath,
+      onSubmit: async (name) => {
+        const path = dirPath ? `${dirPath}/${name}` : name;
+        try {
+          await api.post('/files/mkdir', { path });
+          addToast('success', `Created ${name}/`);
+          handleRefresh();
+        } catch (err) {
+          addToast('error', 'Create folder failed', err.message);
+        }
+        setInlineInput(null);
+      },
+      onCancel: () => setInlineInput(null),
+    });
+  }
+
+  function handleRename(entry) {
+    setInlineInput({
+      type: 'rename',
+      renamePath: entry.path,
+      defaultValue: entry.name,
+      onSubmit: async (newName) => {
+        const dir = parentDir(entry.path);
+        const newPath = dir ? `${dir}/${newName}` : newName;
+        try {
+          await api.post('/files/rename', { oldPath: entry.path, newPath });
+          addToast('success', `Renamed to ${newName}`);
+          handleRefresh();
+        } catch (err) {
+          addToast('error', 'Rename failed', err.message);
+        }
+        setInlineInput(null);
+      },
+      onCancel: () => setInlineInput(null),
+    });
+  }
+
+  async function handleDelete(entry) {
+    const label = entry.type === 'dir' ? `folder "${entry.name}" and all contents` : `"${entry.name}"`;
+    if (!window.confirm(`Delete ${label}?`)) return;
+    try {
+      await api.delete(`/files/delete?path=${encodeURIComponent(entry.path)}`);
+      addToast('success', `Deleted ${entry.name}`);
+      handleRefresh();
+    } catch (err) {
+      addToast('error', 'Delete failed', err.message);
+    }
+  }
+
+  function buildContextMenuItems(entry) {
+    const isDir = entry.type === 'dir';
+    const items = [];
+    if (isDir) {
+      items.push({ icon: FilePlus, label: 'New File', action: () => handleNewFileIn(entry.path) });
+      items.push({ icon: FolderPlus, label: 'New Folder', action: () => handleNewFolderIn(entry.path) });
+      items.push({ separator: true });
+    }
+    items.push({ icon: Pencil, label: 'Rename', action: () => handleRename(entry) });
+    items.push({ icon: Trash2, label: 'Delete', danger: true, action: () => handleDelete(entry) });
+    return items;
+  }
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-border-subtle flex-shrink-0">
@@ -267,6 +424,11 @@ export function AgentFileTree({ agentId }) {
         <button onClick={handleCollapseAll} className="p-1 text-text-4 hover:text-text-1 transition-colors cursor-pointer" title="Collapse all">
           <ChevronsDownUp size={12} />
         </button>
+        {onCollapse && (
+          <button onClick={onCollapse} className="p-1 text-text-4 hover:text-text-1 transition-colors cursor-pointer" title="Collapse sidebar">
+            <PanelLeftClose size={12} />
+          </button>
+        )}
       </div>
       <ScrollArea className="flex-1 min-h-0">
       <div className="py-2">
@@ -285,16 +447,19 @@ export function AgentFileTree({ agentId }) {
               Agent Files
             </div>
             {touchedFiles.slice(0, 15).map((f) => {
-              const name = f.path.split('/').pop();
+              const relPath = toRelativePath(f.path);
+              const name = relPath.split('/').pop();
               const hasWrites = f.writes > 0;
               return (
                 <button
                   key={f.path}
-                  onClick={() => openFile(f.path)}
+                  onClick={() => openFile(relPath)}
+                  onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); handleContextMenu(e, { path: relPath, name, type: 'file' }); }}
+                  onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); handleContextMenu(e, { path: relPath, name, type: 'file' }); }}
                   className={cn(
                     'w-full flex items-center gap-1.5 px-3 py-1 text-xs font-sans cursor-pointer',
                     'hover:bg-surface-4/50 transition-colors text-left',
-                    editorActiveFile === f.path && 'bg-accent/8 text-accent',
+                    (editorActiveFile === f.path || editorActiveFile === relPath) && 'bg-accent/8 text-accent',
                   )}
                 >
                   {hasWrites
@@ -325,19 +490,39 @@ export function AgentFileTree({ agentId }) {
               Scope
             </div>
             {treeData.map((entry) => (
-              <TreeEntry
-                key={entry.path}
-                entry={entry}
-                depth={0}
-                onOpen={handleOpen}
-                expandedDirs={expandedDirs}
-                onToggleDir={handleToggleDir}
-              />
+              inlineInput?.renamePath === entry.path ? (
+                <InlineInput
+                  key={entry.path}
+                  defaultValue={entry.name}
+                  onSubmit={inlineInput.onSubmit}
+                  onCancel={inlineInput.onCancel}
+                  depth={0}
+                />
+              ) : (
+                <TreeEntry
+                  key={entry.path}
+                  entry={entry}
+                  depth={0}
+                  onOpen={handleOpen}
+                  expandedDirs={expandedDirs}
+                  onToggleDir={handleToggleDir}
+                  onContextMenu={handleContextMenu}
+                />
+              )
             ))}
           </div>
         )}
       </div>
     </ScrollArea>
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={buildContextMenuItems(contextMenu.entry)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }

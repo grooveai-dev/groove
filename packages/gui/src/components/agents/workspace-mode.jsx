@@ -11,7 +11,7 @@ import { roleColor } from '../../lib/status';
 import { MediaViewer, isMediaFile } from '../editor/media-viewer';
 import {
   X, Code2, FileCode, GitCompareArrows,
-  ClipboardCheck, Users,
+  ClipboardCheck, Users, PanelLeftOpen,
 } from 'lucide-react';
 
 const TREE_DEFAULT = 220;
@@ -170,6 +170,7 @@ export function WorkspaceMode() {
 
   const [treeWidth, setTreeWidth] = useState(TREE_DEFAULT);
   const [diffMode, setDiffMode] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const treeDragging = useRef(false);
   const startX = useRef(0);
@@ -210,15 +211,18 @@ export function WorkspaceMode() {
   const isMedia = editorActiveFile && isMediaFile(editorActiveFile);
 
   return (
-    <div className="flex h-full bg-surface-0">
+    <div className="flex h-full bg-surface-1">
       {/* Left Rail — Agent Switcher */}
       <AgentRail agents={teamAgents} activeId={agent.id} onSelect={setWorkspaceAgent} />
 
       {/* Center Panel — File Tree + Editor */}
       <div className="flex flex-1 min-w-0">
         {/* File Tree Sidebar */}
-        <div className="flex-shrink-0 bg-surface-1 border-r border-border relative" style={{ width: treeWidth }}>
-          <AgentFileTree agentId={agent.id} />
+        <div className={cn(
+          'relative flex-shrink-0 bg-surface-1 border-r border-border transition-all duration-200 overflow-hidden',
+          sidebarCollapsed && 'w-0 border-r-0',
+        )} style={sidebarCollapsed ? undefined : { width: treeWidth }}>
+          <AgentFileTree agentId={agent.id} onCollapse={() => setSidebarCollapsed(true)} />
           <div
             className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/30 transition-colors z-10"
             onMouseDown={onTreeMouseDown}
@@ -227,7 +231,16 @@ export function WorkspaceMode() {
         </div>
 
         {/* Editor Area */}
-        <div className="flex-1 flex flex-col min-w-0 bg-surface-0">
+        <div className="flex-1 flex flex-col min-w-0 bg-surface-1">
+          {sidebarCollapsed && (
+            <button
+              onClick={() => setSidebarCollapsed(false)}
+              className="absolute top-2 left-14 z-10 w-7 h-7 flex items-center justify-center rounded-md text-text-3 hover:text-text-0 hover:bg-surface-3 transition-colors cursor-pointer"
+              title="Show sidebar"
+            >
+              <PanelLeftOpen size={15} />
+            </button>
+          )}
           {workspaceReviewMode ? (
             <CodeReview agentId={agent.id} />
           ) : (
@@ -266,7 +279,7 @@ export function WorkspaceMode() {
                 )}
 
                 {!editorActiveFile && (
-                  <div className="w-full h-full flex items-center justify-center text-text-4 font-sans bg-surface-0">
+                  <div className="w-full h-full flex items-center justify-center text-text-4 font-sans bg-surface-1">
                     <div className="text-center space-y-2">
                       <Code2 size={32} className="mx-auto" />
                       <p className="text-sm">Open a file from the tree</p>

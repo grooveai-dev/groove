@@ -131,6 +131,30 @@ describe('PIIScrubber', () => {
     assert.equal(scrubber.scrub(input), 'cd ~');
   });
 
+  it('does not scrub CSS pseudo-elements as IPv6', () => {
+    const input = '.hero-icon::before { content: ""; }';
+    assert.equal(scrubber.scrub(input), input);
+  });
+
+  it('still scrubs IPv6 loopback ::1', () => {
+    const input = 'listening on ::1 port 3000';
+    assert.equal(scrubber.scrub(input), 'listening on [IP] port 3000');
+  });
+
+  it('does not scrub file paths as base64 secrets', () => {
+    const input = '/home/user/project/groove/packages/gui/src/views/settings.jsx';
+    const result = scrubber.scrub(input);
+    assert.ok(!result.includes('[API_KEY]'), `expected no [API_KEY] in: ${result}`);
+  });
+
+  it('still scrubs real base64 secrets without slashes', () => {
+    const b64 = 'YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY3ODk';
+    const input = `key: ${b64} end`;
+    const result = scrubber.scrub(input);
+    assert.ok(result.includes('[API_KEY]'), `expected [API_KEY] in: ${result}`);
+    assert.ok(!result.includes(b64));
+  });
+
   it('patterns do not interfere with each other', () => {
     const input = 'user@example.com called 555-123-4567 from 192.168.1.1';
     const result = scrubber.scrub(input);

@@ -926,9 +926,9 @@ body {
   position: relative; margin-bottom: 18px;
 }
 .hero-icon::before {
-  content: ''; position: absolute; inset: 14px;
-  border-radius: 50%; border: 1px solid rgba(51,175,188,0.45);
-  box-shadow: 0 0 28px rgba(51,175,188,0.22), inset 0 0 18px rgba(51,175,188,0.14);
+  content: ''; position: absolute; inset: 6px;
+  border-radius: 50%; border: 1px solid rgba(51,175,188,0.4);
+  box-shadow: 0 0 24px rgba(51,175,188,0.18), inset 0 0 14px rgba(51,175,188,0.1);
 }
 .hero-icon svg { position: relative; color: #33afbc; }
 .hero h1 {
@@ -946,23 +946,23 @@ body {
 .error-msg.active { display: block; }
 
 .actions {
-  width: 100%; max-width: 400px;
+  width: 100%; max-width: 520px;
   display: flex; flex-direction: column; gap: 10px;
 }
 
 .action-primary {
   position: relative; display: flex; align-items: center; gap: 16px;
   padding: 18px 20px; border-radius: 12px;
-  background: linear-gradient(135deg, rgba(51,175,188,0.09) 0%, rgba(51,175,188,0.03) 100%), #1e2127;
-  border: 1px solid rgba(51,175,188,0.35);
+  background: linear-gradient(135deg, rgba(51,175,188,0.18) 0%, rgba(51,175,188,0.08) 100%), #1a2127;
+  border: 1px solid rgba(51,175,188,0.55);
   cursor: pointer; -webkit-app-region: no-drag;
   transition: transform 0.15s, background 0.15s, border-color 0.15s;
   font-family: inherit; color: inherit; text-align: left; width: 100%;
-  box-shadow: 0 0 0 1px rgba(51,175,188,0.05), 0 8px 24px rgba(0,0,0,0.25);
+  box-shadow: 0 0 0 1px rgba(51,175,188,0.08), 0 8px 24px rgba(0,0,0,0.25), 0 0 20px rgba(51,175,188,0.1);
 }
 .action-primary:hover {
-  background: linear-gradient(135deg, rgba(51,175,188,0.14) 0%, rgba(51,175,188,0.05) 100%), #24282f;
-  border-color: rgba(51,175,188,0.6);
+  background: linear-gradient(135deg, rgba(51,175,188,0.25) 0%, rgba(51,175,188,0.12) 100%), #24282f;
+  border-color: rgba(51,175,188,0.75);
   transform: translateY(-1px);
 }
 .ap-ic {
@@ -1012,7 +1012,7 @@ body {
 }
 
 .recents-area {
-  width: 100%; max-width: 400px;
+  width: 100%; max-width: 520px;
   margin-top: 24px;
   display: grid; grid-template-columns: 1fr 1fr; gap: 32px;
 }

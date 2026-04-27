@@ -28,10 +28,8 @@ export function QuickConnect() {
       const tunnel = savedTunnels.find((t) => t.id === id);
       if (tunnel?.host) {
         addToast('info', `Add ${tunnel.host} to Federation Whitelist?`, '', {
-          action: {
-            label: 'Add',
-            onClick: () => useGrooveStore.getState().addToWhitelist(tunnel.host),
-          },
+          label: 'Add',
+          onClick: () => useGrooveStore.getState().addToWhitelist(tunnel.host),
         });
       }
       toggle();

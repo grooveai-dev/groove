@@ -4673,6 +4673,15 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
+  app.post('/api/tunnels/:id/upgrade', async (req, res) => {
+    try {
+      const result = await daemon.tunnelManager.forceUpgrade(req.params.id);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/tunnels/:id/status', (req, res) => {
     const s = daemon.tunnelManager.getStatus(req.params.id);
     if (!s) return res.status(404).json({ error: 'Remote not found' });

@@ -711,6 +711,26 @@ export const useGrooveStore = create((set, get) => ({
           break;
         }
 
+        case 'tunnel.version-info': {
+          const tunnels = get().savedTunnels.map((t) =>
+            t.id === msg.data.id ? { ...t, localVersion: msg.data.localVersion, remoteVersion: msg.data.remoteVersion, versionMatch: msg.data.match } : t
+          );
+          set({ savedTunnels: tunnels });
+          break;
+        }
+        case 'tunnel.version-mismatch': {
+          const tunnels = get().savedTunnels.map((t) =>
+            t.id === msg.data.id ? { ...t, localVersion: msg.data.localVersion, remoteVersion: msg.data.remoteVersion, versionMatch: false } : t
+          );
+          set({ savedTunnels: tunnels });
+          get().addToast('warning', 'Version mismatch', `Remote v${msg.data.remoteVersion} — local v${msg.data.localVersion}. ${msg.data.message || ''}`);
+          break;
+        }
+        case 'tunnel.upgrade-failed': {
+          get().addToast('error', 'Remote upgrade failed', msg.data.error || 'Unknown error');
+          break;
+        }
+
         case 'subscription:updated': {
           const subUpdate = { subscription: msg.data };
           if (msg.data?.active === true && !get().marketplaceAuthenticated) {
@@ -1843,6 +1863,10 @@ export const useGrooveStore = create((set, get) => ({
       }
     }
     return result;
+  },
+
+  async upgradeTunnel(id) {
+    return api.post(`/tunnels/${encodeURIComponent(id)}/upgrade`);
   },
 
   async disconnectTunnel(id) {

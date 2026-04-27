@@ -4,7 +4,7 @@ import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Server, Radio, ExternalLink, Loader2, X, Plus, ArrowLeft, Unplug,
+  Server, Radio, ExternalLink, Loader2, X, Plus, ArrowLeft, Unplug, ArrowUpCircle,
 } from 'lucide-react';
 import { StatusDot } from '../ui/status-dot';
 import { Button } from '../ui/button';
@@ -160,6 +160,9 @@ export function QuickConnect() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-text-0 font-sans truncate">{server.name}</span>
                           {server.active && <StatusDot status="running" size="sm" />}
+                          {server.remoteVersion && (
+                            <span className="text-2xs font-mono text-text-4 ml-1">v{server.remoteVersion}</span>
+                          )}
                         </div>
                         <span className="text-2xs text-text-4 font-mono">{server.user}@{server.host}</span>
                       </button>
@@ -174,6 +177,22 @@ export function QuickConnect() {
                             >
                               <ExternalLink size={11} /> Open
                             </button>
+                            {server.versionMatch === false && (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await useGrooveStore.getState().upgradeTunnel(server.id);
+                                    addToast('success', 'Upgrade started');
+                                  } catch (err) {
+                                    addToast('error', 'Upgrade failed', err.message);
+                                  }
+                                }}
+                                className="flex items-center gap-1 text-2xs text-warning font-sans hover:text-warning/80 cursor-pointer transition-colors"
+                                title={`Update remote from v${server.remoteVersion} to v${server.localVersion}`}
+                              >
+                                <ArrowUpCircle size={11} /> Update
+                              </button>
+                            )}
                             <button
                               onClick={async () => {
                                 await useGrooveStore.getState().disconnectTunnel(server.id);

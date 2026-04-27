@@ -499,6 +499,15 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
                 <span className="text-text-3">Auto-connect</span>
                 <span className="text-text-1">{autoConnect ? 'On' : 'Off'}</span>
               </div>
+              {server?.remoteVersion && (
+                <div className="flex items-center justify-between">
+                  <span className="text-text-3">Version</span>
+                  <span className={cn('text-text-1 font-mono', server.versionMatch === false && 'text-warning')}>
+                    v{server.remoteVersion}
+                    {server.versionMatch === false && ' (update available)'}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>

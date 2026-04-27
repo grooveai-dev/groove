@@ -8,3 +8,4 @@ export { TransmissionQueue } from './transmission-queue.js';
 export { EnvelopeBuilder } from './envelope-builder.js';
 export { StepClassifier } from './step-classifier.js';
 export { getParser } from './parsers/index.js';
+export { DomainTagger } from './domain-tagger.js';

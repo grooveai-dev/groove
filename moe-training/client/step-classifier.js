@@ -38,7 +38,7 @@ export class StepClassifier {
 
     const content = step.content || '';
 
-    if ((step.type === 'action' || step.type === 'observation') && ERROR_SIGNAL_RE.test(content)) {
+    if ((step.type === 'action' || step.type === 'observation') && step.is_error !== false && ERROR_SIGNAL_RE.test(content)) {
       step.type = 'error';
     }
 

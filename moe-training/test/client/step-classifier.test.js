@@ -132,4 +132,46 @@ describe('StepClassifier', () => {
     assert.ok(result);
     assert.equal(result.type, 'action');
   });
+
+  it('preserves observation type when is_error is false despite error keywords', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'observation', content: 'Cannot find module foo', is_error: false };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'observation');
+  });
+
+  it('preserves observation type when is_error:false and content has TypeError', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'observation', content: 'TypeError: something failed', is_error: false };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'observation');
+  });
+
+  it('still reclassifies observation to error when is_error is true', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'observation', content: 'Command failed with exit code 1', is_error: true };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'error');
+  });
+
+  it('still reclassifies observation to error when is_error is undefined', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'observation', content: 'ENOENT: no such file or directory' };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'error');
+  });
+
+  it('preserves action type when is_error is false', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'action', content: 'Command failed with exit code 1', is_error: false };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'action');
+  });
+
+  it('still reclassifies action to error when is_error is not set', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'action', content: 'Command failed with exit code 1' };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'error');
+  });
 });

@@ -292,6 +292,101 @@ describe('TrajectoryCapture — user feedback emission', () => {
   });
 });
 
+describe('TrajectoryCapture — token counting via _processStep', () => {
+  it('accumulates token_count from every step type', () => {
+    const tc = makeTc();
+    tc._scrubber = { scrub: (s) => s };
+    const ctx = makeCtx();
+    ctx.totalTokens = 0;
+    ctx.stepCount = 0;
+    ctx.allSteps = [];
+    ctx.builder = { addStep: () => null };
+    ctx.classifier = {
+      onStep: (s) => s,
+    };
+
+    tc._processStep('agent-1', ctx, { type: 'thought', content: 'thinking about it', token_count: 50 });
+    tc._processStep('agent-1', ctx, { type: 'action', content: 'run test', token_count: 30 });
+    tc._processStep('agent-1', ctx, { type: 'observation', content: 'test passed', token_count: 100 });
+    tc._processStep('agent-1', ctx, { type: 'thought', content: 'next step', token_count: 20 });
+
+    assert.equal(ctx.totalTokens, 200);
+    assert.equal(ctx.stepCount, 4);
+  });
+
+  it('estimates token_count when not provided', () => {
+    const tc = makeTc();
+    tc._scrubber = { scrub: (s) => s };
+    const ctx = makeCtx();
+    ctx.totalTokens = 0;
+    ctx.stepCount = 0;
+    ctx.allSteps = [];
+    ctx.builder = { addStep: () => null };
+    ctx.classifier = {
+      onStep: (s) => s,
+    };
+
+    tc._processStep('agent-1', ctx, { type: 'thought', content: 'a'.repeat(100) });
+    assert.equal(ctx.totalTokens, 25);
+  });
+
+  it('does not double-count tokens from onStdoutLine', () => {
+    const tc = makeTc();
+    tc._scrubber = { scrub: (s) => s };
+    tc._enabled = true;
+
+    const ctx = makeCtx();
+    ctx.totalTokens = 0;
+    ctx.stepCount = 0;
+    ctx.allSteps = [];
+    ctx.builder = { addStep: () => null };
+    ctx.classifier = {
+      onStep: (s) => s,
+    };
+    ctx.parser = {
+      parseEvent: () => ({ type: 'thought', content: 'hello', token_count: 10 }),
+      extractModel: () => null,
+    };
+    tc._contexts.set('agent-x', ctx);
+
+    tc.onStdoutLine('agent-x', '{"type":"assistant"}');
+    assert.equal(ctx.totalTokens, 10);
+  });
+});
+
+describe('TrajectoryCapture — TIER_A with recovered errors', () => {
+  it('TIER_A when all errors are recovered', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 80, errorsEncountered: 2, errorsRecovered: 2 });
+    const result = tc._computeQualityTier(ctx, 'SUCCESS', 0);
+    assert.equal(result.tier, 'TIER_A');
+    assert.equal(result.reason, 'high_quality_errors_recovered');
+  });
+
+  it('TIER_A when errors recovered exceed errors encountered', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 75, errorsEncountered: 1, errorsRecovered: 2 });
+    const result = tc._computeQualityTier(ctx, 'SUCCESS', 0);
+    assert.equal(result.tier, 'TIER_A');
+    assert.equal(result.reason, 'high_quality_errors_recovered');
+  });
+
+  it('not TIER_A when errors exceed recoveries', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 80, errorsEncountered: 3, errorsRecovered: 1 });
+    const result = tc._computeQualityTier(ctx, 'SUCCESS', 0);
+    assert.notEqual(result.tier, 'TIER_A');
+  });
+
+  it('TIER_A with zero errors still uses original reason', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 80, errorsEncountered: 0 });
+    const result = tc._computeQualityTier(ctx, 'SUCCESS', 0);
+    assert.equal(result.tier, 'TIER_A');
+    assert.equal(result.reason, 'high_quality_no_errors');
+  });
+});
+
 describe('TrajectoryCapture — _computeQuality', () => {
   it('base score is 50', () => {
     const tc = makeTc();

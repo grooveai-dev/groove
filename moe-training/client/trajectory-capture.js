@@ -8,6 +8,7 @@ import { StepClassifier } from './step-classifier.js';
 import { EnvelopeBuilder } from './envelope-builder.js';
 import { SessionAttestation } from './session-attestation.js';
 import { TransmissionQueue } from './transmission-queue.js';
+import { DomainTagger } from './domain-tagger.js';
 import {
   CHUNK_TIMEOUT_MS,
   CENTRAL_COMMAND_URL,
@@ -33,7 +34,7 @@ export class TrajectoryCapture {
     this._contexts = new Map();
   }
 
-  init() {
+  async init() {
     if (!ConsentManager.isCaptureEnabled()) {
       this._enabled = false;
       return;
@@ -43,6 +44,8 @@ export class TrajectoryCapture {
     this._attestation = new SessionAttestation(this._centralCommandUrl);
     this._transmissionQueue = new TransmissionQueue(this._centralCommandUrl);
     this._transmissionQueue.start();
+    this._domainTagger = new DomainTagger();
+    await this._domainTagger.init();
     this._offlineRetryTimer = setInterval(() => {
       this._retryOfflineQueue();
     }, OFFLINE_RETRY_INTERVAL_MS);
@@ -126,10 +129,6 @@ export class TrajectoryCapture {
       if (resolved) ctx.metadata.model_engine = resolved;
     }
 
-    const tokens = ctx.parser.extractTokens(jsonEvent);
-    if (tokens) {
-      ctx.totalTokens += (tokens.input || 0) + (tokens.output || 0);
-    }
   }
 
   onUserMessage(agentId, text) {
@@ -198,6 +197,7 @@ export class TrajectoryCapture {
       ...ev,
     };
 
+    ctx.totalTokens += ev.token_count;
     if (ev.type === 'error') ctx.errorsEncountered++;
     ctx.allSteps.push(step);
 
@@ -254,6 +254,14 @@ export class TrajectoryCapture {
     const userInterventions = StepClassifier.countUserInterventions(ctx.allSteps);
     const durationSeconds = Math.round((Date.now() - ctx.startTime) / 1000);
 
+    if (this._domainTagger) {
+      const role = ctx.metadata.agent_role || '';
+      const firstPrompt = ctx.allSteps.find((s) => s.type === 'thought')?.content || '';
+      const thoughtSteps = ctx.allSteps.filter((s) => s.type === 'thought');
+      const routingText = DomainTagger.buildRoutingText(role, firstPrompt, thoughtSteps);
+      ctx.metadata.domain_tags = await this._domainTagger.tag(routingText);
+    }
+
     const { tier, reason: tierReason } = this._computeQualityTier(ctx, status, userInterventions);
     const { eligible, exclusionReason } = this._computeTrainingEligibility(ctx, durationSeconds);
 
@@ -296,8 +304,9 @@ export class TrajectoryCapture {
 
   _computeQualityTier(ctx, status, userInterventions) {
     const quality = ctx.metadata.session_quality;
-    if (quality >= TIER_A_MIN_QUALITY && ctx.errorsEncountered === 0 && userInterventions === 0 && status === 'SUCCESS') {
-      return { tier: 'TIER_A', reason: 'high_quality_no_errors' };
+    if (quality >= TIER_A_MIN_QUALITY && (ctx.errorsEncountered === 0 || ctx.errorsEncountered <= ctx.errorsRecovered) && userInterventions === 0 && status === 'SUCCESS') {
+      const reason = ctx.errorsEncountered > 0 ? 'high_quality_errors_recovered' : 'high_quality_no_errors';
+      return { tier: 'TIER_A', reason };
     }
     if (status !== 'SUCCESS') {
       return { tier: 'TIER_C', reason: 'non_success_status' };

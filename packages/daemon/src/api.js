@@ -758,9 +758,25 @@ export function createApi(app, daemon) {
 
           proc.on('close', (code) => {
             clearTimeout(timeout);
-            respond(code === 0
-              ? { status: 'authenticated' }
-              : { status: 'error', error: stderr.slice(-200) || `Login failed (exit ${code})` });
+            if (code === 0) {
+              let hasKey = false;
+              try {
+                const authPath = resolve(homedir(), '.codex', 'auth.json');
+                if (existsSync(authPath)) {
+                  const auth = JSON.parse(readFileSync(authPath, 'utf8'));
+                  const token = auth.OPENAI_API_KEY
+                    || (auth.auth_mode === 'chatgpt' && auth.tokens?.id_token)
+                    || null;
+                  if (token) {
+                    daemon.credentials.setKey('codex', token);
+                    hasKey = true;
+                  }
+                }
+              } catch { /* auth.json missing or malformed — login still succeeded */ }
+              respond({ status: 'authenticated', hasKey });
+            } else {
+              respond({ status: 'error', error: stderr.slice(-200) || `Login failed (exit ${code})` });
+            }
           });
 
           proc.on('error', (err) => {

@@ -454,10 +454,31 @@ function ProviderCard({ provider, onKeyChange }) {
                   <Button
                     variant="primary"
                     size="sm"
-                    onClick={() => { setLoginPending(false); if (onKeyChange) onKeyChange(); }}
+                    disabled={checking}
+                    onClick={async () => {
+                      if (provider.id === 'codex') {
+                        setChecking(true);
+                        try {
+                          const res = await api.post(`/providers/codex/verify`);
+                          if (res.authenticated) {
+                            setLoginPending(false);
+                            if (onKeyChange) onKeyChange();
+                          } else {
+                            addToast('error', 'Authentication not detected yet. Please complete sign-in in your browser and try again.');
+                          }
+                        } catch {
+                          addToast('error', 'Authentication not detected yet. Please complete sign-in in your browser and try again.');
+                        } finally {
+                          setChecking(false);
+                        }
+                      } else {
+                        setLoginPending(false);
+                        if (onKeyChange) onKeyChange();
+                      }
+                    }}
                     className="w-full h-8 text-xs gap-1.5"
                   >
-                    <Check size={12} /> I've signed in
+                    {checking ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} I've signed in
                   </Button>
                   <button
                     onClick={() => setLoginPending(false)}

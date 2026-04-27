@@ -172,6 +172,8 @@ function AuthenticateStep({ providerId, meta, onSaveKey }) {
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loginStarted, setLoginStarted] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState('');
   const [authMode, setAuthMode] = useState(meta.authType === 'subscription' ? 'subscription' : 'apikey');
 
   async function handleSaveKey() {
@@ -287,9 +289,33 @@ function AuthenticateStep({ providerId, meta, onSaveKey }) {
                 <ExternalLink size={12} className="text-accent" />
                 <span className="text-xs text-accent font-sans">Sign-in opened in your browser</span>
               </div>
-              <Button variant="primary" size="sm" onClick={onSaveKey} className="gap-1.5">
-                <Check size={11} /> I've signed in
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={verifying}
+                onClick={async () => {
+                  setVerifying(true);
+                  setVerifyError('');
+                  try {
+                    const res = await api.post(`/providers/codex/verify`);
+                    if (res.authenticated) {
+                      onSaveKey();
+                    } else {
+                      setVerifyError('Authentication not detected yet. Please complete sign-in in your browser and try again.');
+                    }
+                  } catch {
+                    setVerifyError('Authentication not detected yet. Please complete sign-in in your browser and try again.');
+                  } finally {
+                    setVerifying(false);
+                  }
+                }}
+                className="gap-1.5"
+              >
+                {verifying ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} I've signed in
               </Button>
+              {verifyError && (
+                <p className="text-2xs text-danger font-sans">{verifyError}</p>
+              )}
             </div>
           )}
         </div>

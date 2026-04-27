@@ -85,6 +85,62 @@ describe('DomainTagger', () => {
     assert.equal(result.primary.domain, 'data_science_ml');
   });
 
+  it('tags networking/SSH routing text', async () => {
+    const text = DomainTagger.buildRoutingText(
+      'Fix SSH tunnel connection',
+      'The SSH port forward to the remote server keeps dropping with a socket timeout',
+      [{ content: 'I need to check the firewall rules and proxy configuration' }]
+    );
+    const result = await tagger.tag(text);
+    assert.notEqual(result, null);
+    assert.equal(result.primary.domain, 'networking_ssh');
+    assert.ok(result.primary.confidence > 0);
+  });
+
+  it('tags Go routing text', async () => {
+    const text = DomainTagger.buildRoutingText(
+      'Fix Go concurrency bug',
+      'The goroutine is deadlocking on a channel send in the fiber handler',
+      [{ content: 'I need to check the channel buffer size and goroutine lifecycle' }]
+    );
+    const result = await tagger.tag(text);
+    assert.notEqual(result, null);
+    assert.equal(result.primary.domain, 'go');
+  });
+
+  it('tags shell/bash routing text', async () => {
+    const text = DomainTagger.buildRoutingText(
+      'Write deployment bash script',
+      'Create a shell script with shebang that runs chmod and awk transforms',
+      [{ content: 'I need to set up the crontab entry and systemd service' }]
+    );
+    const result = await tagger.tag(text);
+    assert.notEqual(result, null);
+    assert.equal(result.primary.domain, 'shell_bash');
+  });
+
+  it('tags Kubernetes routing text separately from Docker', async () => {
+    const text = DomainTagger.buildRoutingText(
+      'Scale Kubernetes deployment',
+      'The kubectl apply for the new statefulset fails on namespace configmap',
+      [{ content: 'Let me check the helm chart and kustomize overlay' }]
+    );
+    const result = await tagger.tag(text);
+    assert.notEqual(result, null);
+    assert.equal(result.primary.domain, 'kubernetes');
+  });
+
+  it('tags blockchain/web3 routing text', async () => {
+    const text = DomainTagger.buildRoutingText(
+      'Deploy Solidity smart contract',
+      'The Ethereum contract fails on hardhat test with a revert in the DeFi pool',
+      [{ content: 'I need to check the blockchain transaction and NFT mint function' }]
+    );
+    const result = await tagger.tag(text);
+    assert.notEqual(result, null);
+    assert.equal(result.primary.domain, 'blockchain_web3');
+  });
+
   it('returns all three tag levels with correct structure', async () => {
     const text = 'Build a React component with TypeScript and Tailwind CSS for the frontend';
     const result = await tagger.tag(text);
@@ -143,6 +199,57 @@ describe('DomainTagger', () => {
     const elapsed = Date.now() - start;
     assert.ok(elapsed < 10_000, `tag() took ${elapsed}ms, should not block`);
     assert.ok(result !== undefined);
+  });
+
+  it('accepts registry option and falls back to keyword mode without embedding service', async () => {
+    const registryTagger = new DomainTagger({
+      registry: [
+        { id: 'quantum_computing', domain_description: 'Quantum computing, qubits, quantum gates' },
+        { id: 'bioinformatics', domain_description: 'Biology, genomics, DNA analysis' },
+      ],
+    });
+    await registryTagger.init();
+    assert.equal(registryTagger.ready, true);
+    assert.equal(registryTagger.mode, 'keyword');
+  });
+
+  it('accepts registryUrl option and falls back to keyword mode when unavailable', async () => {
+    const registryTagger = new DomainTagger({
+      registryUrl: 'http://localhost:99999/api/leaves',
+    });
+    await registryTagger.init();
+    assert.equal(registryTagger.ready, true);
+    assert.equal(registryTagger.mode, 'keyword');
+  });
+
+  it('uses expanded taxonomy — has 40 domains by default', async () => {
+    const defaultTagger = new DomainTagger();
+    await defaultTagger.init();
+    assert.ok(defaultTagger._domains.length >= 35, `Expected 35+ domains, got ${defaultTagger._domains.length}`);
+  });
+
+  it('embed() returns null in keyword mode (no embedding service)', async () => {
+    const result = await tagger.embed('Build a Python Django app');
+    assert.equal(result, null);
+  });
+
+  it('embed() returns null for empty input', async () => {
+    const result = await tagger.embed('');
+    assert.equal(result, null);
+  });
+
+  it('embed() returns null when not initialized', async () => {
+    const uninit = new DomainTagger();
+    const result = await uninit.embed('Build a Python app');
+    assert.equal(result, null);
+  });
+
+  it('embed() truncates source_text to 512 characters', async () => {
+    const embeddingTagger = new DomainTagger({ serviceUrl: 'http://localhost:99999/v1/embeddings' });
+    await embeddingTagger.init();
+    assert.equal(embeddingTagger.mode, 'keyword');
+    const result = await embeddingTagger.embed('x'.repeat(1000));
+    assert.equal(result, null);
   });
 });
 

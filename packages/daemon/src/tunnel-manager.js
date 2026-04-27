@@ -217,7 +217,7 @@ export class TunnelManager {
         '-o', 'StrictHostKeyChecking=accept-new',
         '-o', 'BatchMode=yes',
         target,
-        `bash -lc 'STATUS=$(curl -sf http://localhost:${REMOTE_PORT}/api/status 2>/dev/null); if [ -n "$STATUS" ]; then echo "__GROOVE_RUNNING__${STATUS}__GROOVE_END__"; else which groove >/dev/null 2>&1 && echo __GROOVE_VER__$(groove --version 2>/dev/null || echo unknown)__GROOVE_STOPPED__ || echo __GROOVE_NOT_INSTALLED__; fi'`,
+        `bash -lc 'S=$(curl -sf http://localhost:${REMOTE_PORT}/api/status 2>/dev/null); if [ -n "$S" ]; then echo "__GROOVE_RUNNING__$S__GROOVE_END__"; else which groove >/dev/null 2>&1 && echo __GROOVE_VER__$(groove --version 2>/dev/null || echo unknown)__GROOVE_STOPPED__ || echo __GROOVE_NOT_INSTALLED__; fi'`,
       ], {
         encoding: 'utf8',
         timeout: 20000,

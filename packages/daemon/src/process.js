@@ -1242,39 +1242,20 @@ For normal file edits within your scope, proceed without review.
       return;
     }
 
-    // Multi-phase guard: read the team plan to detect phase 2 (QC) agents.
-    // _checkPhase2 runs before this method and consumes _pendingPhase2, so the
-    // pending-group check below may pass even though QC hasn't registered yet.
-    let maxPhase = 1;
+    // Multi-phase guard: use the stashed team plan so cleanup of the plan file
+    // cannot race preview readiness checks.
+    const maxPhase = typeof plan.maxPhase === 'number' ? plan.maxPhase : 1;
     const maxPhaseRoles = new Set();
     const expectedRoleCounts = {};
-    const searchPaths = [];
-    if (plan.workingDir) searchPaths.push(resolve(plan.workingDir, '.groove', 'recommended-team.json'));
-    const plannerAgent = this.daemon.registry.getAll().find(a => a.role === 'planner' && a.teamId === teamId);
-    if (plannerAgent?.workingDir) searchPaths.push(resolve(plannerAgent.workingDir, '.groove', 'recommended-team.json'));
-    searchPaths.push(resolve(this.daemon.grooveDir, 'recommended-team.json'));
-
-    for (const planPath of searchPaths) {
-      if (!existsSync(planPath)) continue;
-      try {
-        const raw = JSON.parse(readFileSync(planPath, 'utf8'));
-        const configs = Array.isArray(raw) ? raw : (raw?.agents || []);
-        if (configs.length === 0) continue;
-        for (const cfg of configs) {
-          const phase = typeof cfg.phase === 'number' ? cfg.phase : 1;
-          if (phase > maxPhase) maxPhase = phase;
-        }
-        if (maxPhase > 1) {
-          for (const cfg of configs) {
-            if (cfg.role === 'planner') continue;
-            const role = cfg.role || 'fullstack';
-            const phase = typeof cfg.phase === 'number' ? cfg.phase : 1;
-            expectedRoleCounts[role] = (expectedRoleCounts[role] || 0) + 1;
-            if (phase === maxPhase) maxPhaseRoles.add(role);
-          }
-        }
-        break;
-      } catch { /* malformed, try next */ }
+    const configs = Array.isArray(plan.agents) ? plan.agents : [];
+    if (maxPhase > 1) {
+      for (const cfg of configs) {
+        if (cfg.role === 'planner') continue;
+        const role = cfg.role || 'fullstack';
+        const phase = typeof cfg.phase === 'number' ? cfg.phase : 1;
+        expectedRoleCounts[role] = (expectedRoleCounts[role] || 0) + 1;
+        if (phase === maxPhase) maxPhaseRoles.add(role);
+      }
     }
 
     if (maxPhase > 1) {

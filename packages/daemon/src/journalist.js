@@ -229,7 +229,9 @@ export class Journalist {
                 : Array.isArray(block.content) ? block.content.map((c) => c.text || '').join('').slice(0, 300)
                 : '';
               if (text) toolResults.set(block.tool_use_id, text);
-              if (block.is_error) toolErrors.add(block.tool_use_id);
+              if (block.is_error || (typeof text === 'string' && text.includes('Error'))) {
+                toolErrors.add(block.tool_use_id);
+              }
             }
           }
         }
@@ -443,22 +445,19 @@ export class Journalist {
       '',
       'Analyze the session log below and produce a structured handoff brief.',
       '',
-      'Output EXACTLY these sections:',
+      'Output EXACTLY these sections, in this priority order:',
+      '',
+      '## Unresolved Errors',
+      '(What failed, what was tried, and what to avoid repeating.)',
+      '',
+      '## User Constraints',
+      '(Explicit user directives, must/never/avoid/use instructions.)',
+      '',
+      '## Last 5 Tool Calls',
+      '(Compact list of the most recent meaningful tool calls and outcomes.)',
       '',
       '## Accomplishments',
       '(What was completed. Name files, functions, and line numbers.)',
-      '',
-      '## In Progress',
-      '(What was actively being worked on when rotation happened.)',
-      '',
-      '## Key Decisions',
-      '(Architectural or implementation choices made and why.)',
-      '',
-      '## Blockers/Errors',
-      '(Unresolved errors, failed attempts, things that did not work.)',
-      '',
-      '## Next Steps',
-      '(What should be done next, in priority order.)',
       '',
       'Be specific. Name files, functions, and line numbers. Do not summarize vaguely.',
       'Keep your response under 2000 characters.',
@@ -869,6 +868,12 @@ export class Journalist {
       ? agentFeedback.map((fb) => `- "${fb.message}"`).join('\n')
       : '';
 
+    const recentTools = entries
+      .filter((e) => e.type === 'tool' || e.type === 'error')
+      .slice(-5)
+      .map((e) => `- ${e.type === 'error' ? 'ERROR ' : ''}${e.tool}: ${(e.input || e.text || '').slice(0, 80)}`)
+      .join('\n');
+
     // Try AI-synthesized session summary
     let sessionSummary = '';
     try {
@@ -900,7 +905,7 @@ export class Journalist {
         .slice(0, 20)
         .join('\n');
 
-      const recentTools = entries
+      const fallbackRecentTools = entries
         .filter((e) => e.type === 'tool' || e.type === 'error')
         .slice(-5)
         .map((e) => `- ${e.type === 'error' ? 'ERROR ' : ''}${e.tool}: ${(e.input || '').slice(0, 80)}`)
@@ -908,7 +913,7 @@ export class Journalist {
 
       const fallbackParts = [];
       if (errorSummary) fallbackParts.push(`## Unresolved Errors\n\n${errorSummary}`);
-      if (recentTools) fallbackParts.push(`## Last 5 Tool Calls\n\n${recentTools}`);
+      if (fallbackRecentTools) fallbackParts.push(`## Last 5 Tool Calls\n\n${fallbackRecentTools}`);
       if (fileChangesSummary) fallbackParts.push(`## Files Modified\n\n${fileChangesSummary}`);
       if (resultSummary) fallbackParts.push(`## Accomplishments\n\n${resultSummary}`);
       sessionSummary = fallbackParts.join('\n\n');
@@ -922,15 +927,16 @@ export class Journalist {
       `Rotation: ${options.reason || 'manual'}${options.qualityScore ? ` (quality: ${options.qualityScore}/100)` : ''} | Tokens: ${agent.tokensUsed}`,
       specLine,
       ``,
-      sessionSummary ? `## Session Summary\n\n${sessionSummary}\n` : '',
-      constraints ? `## Project Constraints (must follow)\n\n${constraints}\n` : '',
       discoveries ? `## Known Issues & Fixes\n\n${discoveries}\n` : '',
+      constraints ? `## Project Constraints (must follow)\n\n${constraints}\n` : '',
+      recentTools ? `## Last 5 Tool Calls\n\n${recentTools}\n` : '',
+      sessionSummary ? `## Session Summary\n\n${sessionSummary}\n` : '',
       conversationSummary ? `## Recent User Messages\n\n${conversationSummary}\n` : '',
       recentChain ? `## Rotation History\n\n${recentChain}\n` : '',
       agent.prompt ? `## Original Task\n\n${agent.prompt}\n` : '',
       ``,
       agent.role === 'planner' ? 'CRITICAL: You are a PLANNING ONLY agent. Do NOT implement code. Route all work to your team via .groove/recommended-team.json.\n' : '',
-      `Continue seamlessly — finish what was in progress and deliver the output. Do not announce rotation or greet the user.`,
+      `Continue seamlessly — finish the work and deliver the output.`,
     ].filter(Boolean).join('\n');
   }
 

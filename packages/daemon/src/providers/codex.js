@@ -36,13 +36,13 @@ export class CodexProvider extends Provider {
   // Auth hint — Codex uses its own auth system, not just env vars
   static authHint = 'Codex requires `codex login` — run: echo "YOUR_KEY" | codex login --with-api-key';
   static models = [
-    { id: 'gpt-5.5', name: 'GPT-5.5', tier: 'heavy', maxContext: 200000, pricing: { input: 0.03, output: 0.12 } },
-    { id: 'gpt-5.4-pro', name: 'GPT-5.4 Pro', tier: 'heavy', maxContext: 200000, pricing: { input: 0.015, output: 0.06 } },
-    { id: 'gpt-5.4', name: 'GPT-5.4', tier: 'heavy', maxContext: 200000, pricing: { input: 0.005, output: 0.02 } },
-    { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', tier: 'medium', maxContext: 200000, pricing: { input: 0.001, output: 0.004 } },
-    { id: 'gpt-5.4-nano', name: 'GPT-5.4 Nano', tier: 'light', maxContext: 200000, pricing: { input: 0.0004, output: 0.0016 } },
-    { id: 'gpt-5-mini', name: 'GPT-5 Mini', tier: 'medium', maxContext: 200000, pricing: { input: 0.0005, output: 0.002 } },
-    { id: 'gpt-5-nano', name: 'GPT-5 Nano', tier: 'light', maxContext: 200000, pricing: { input: 0.0001, output: 0.0004 } },
+    { id: 'gpt-5.5', name: 'GPT-5.5', tier: 'heavy', maxContext: 1000000, pricing: { input: 0.03, output: 0.12 } },
+    { id: 'gpt-5.4-pro', name: 'GPT-5.4 Pro', tier: 'heavy', maxContext: 1000000, pricing: { input: 0.015, output: 0.06 } },
+    { id: 'gpt-5.4', name: 'GPT-5.4', tier: 'heavy', maxContext: 1000000, pricing: { input: 0.005, output: 0.02 } },
+    { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', tier: 'medium', maxContext: 1000000, pricing: { input: 0.001, output: 0.004 } },
+    { id: 'gpt-5.4-nano', name: 'GPT-5.4 Nano', tier: 'light', maxContext: 1000000, pricing: { input: 0.0004, output: 0.0016 } },
+    { id: 'gpt-5-mini', name: 'GPT-5 Mini', tier: 'medium', maxContext: 1000000, pricing: { input: 0.0005, output: 0.002 } },
+    { id: 'gpt-5-nano', name: 'GPT-5 Nano', tier: 'light', maxContext: 1000000, pricing: { input: 0.0001, output: 0.0004 } },
     { id: 'gpt-image-2', name: 'GPT Image 2', tier: 'medium', type: 'image', pricing: { perImage: 0.07 } },
     { id: 'gpt-image-1', name: 'GPT Image 1', tier: 'medium', type: 'image', pricing: { perImage: 0.02 } },
   ];
@@ -132,6 +132,8 @@ export class CodexProvider extends Provider {
 
     this._currentModel = agent.model;
     this._sessionInputTokens = 0;
+    this._initialPromptTokens = Math.ceil((fullPrompt || '').length / 4);
+    this._accumulatedOutputTokens = 0;
 
     // Pipe prompt via stdin to avoid ARG_MAX with large introContext
     return {
@@ -323,6 +325,18 @@ export class CodexProvider extends Provider {
           this._sessionInputTokens += event.usage.input_tokens || 0;
         }
 
+        if (item.type === 'command_execution') {
+          this._accumulatedOutputTokens += Math.ceil((item.aggregated_output || '').length / 4);
+        } else if (item.type === 'agent_message') {
+          this._accumulatedOutputTokens += Math.ceil((item.text || '').length / 4);
+        } else if (item.type === 'file_read') {
+          this._accumulatedOutputTokens += Math.ceil((item.content || item.text || item.aggregated_output || '').length / 4);
+        } else if (item.type === 'file_write' || item.type === 'file_edit') {
+          this._accumulatedOutputTokens += Math.ceil((item.content || '').length / 4);
+        } else if (item.type === 'reasoning') {
+          this._accumulatedOutputTokens += Math.ceil((item.text || '').length / 4);
+        }
+
         let result = null;
         if (item.type === 'agent_message') {
           result = {
@@ -356,8 +370,13 @@ export class CodexProvider extends Provider {
         }
 
         // Attach intermediate context estimate so all 7 layers see Codex progress
-        if (result && this._sessionInputTokens > 0) {
-          result.contextUsage = this._sessionInputTokens / this._getMaxContext();
+        if (result) {
+          const estimatedContext = this._sessionInputTokens > 0
+            ? this._sessionInputTokens
+            : this._initialPromptTokens + this._accumulatedOutputTokens * 2;
+          if (estimatedContext > 0) {
+            result.contextUsage = estimatedContext / this._getMaxContext();
+          }
         }
 
         return result;

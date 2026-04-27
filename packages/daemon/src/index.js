@@ -227,7 +227,7 @@ export class Daemon {
         const entry = this.preview.get(match[1]);
         if (!entry?.url) { socket.destroy(); return; }
         let targetUrl;
-        try { targetUrl = new URL(entry.url); } catch { socket.destroy(); return; }
+        try { targetUrl = new URL(entry.devUrl || entry.url); } catch { socket.destroy(); return; }
         const wsPath = '/' + (match[2] || '');
         const opts = {
           hostname: targetUrl.hostname,

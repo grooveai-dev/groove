@@ -337,12 +337,12 @@ describe('Rotator', () => {
   });
 
   it('should trigger estimated_context_ceiling when contextUsage is stale', async () => {
-    // Simulates a Codex agent that never reports contextUsage updates.
-    // The agent has consumed 200K tokens (100% of maxContext) but contextUsage stayed at 0.
+    // Simulates a non-single-task provider that never reports contextUsage updates.
+    // The agent has consumed 1M tokens (100% of maxContext) but contextUsage stayed at 0.
     const agent = {
-      id: 'cx1', name: 'codex-stale', role: 'backend', status: 'running',
-      provider: 'codex', scope: [], model: 'gpt-5.4',
-      tokensUsed: 200_000, contextUsage: 0, workingDir: '/tmp',
+      id: 'gm1', name: 'gemini-stale', role: 'backend', status: 'running',
+      provider: 'gemini', scope: [], model: 'gemini-3-flash-preview',
+      tokensUsed: 1_000_000, contextUsage: 0, workingDir: '/tmp',
       lastActivity: new Date(Date.now() - 30_000).toISOString(),
       spawnedAt: new Date(Date.now() - 300_000).toISOString(),
     };
@@ -353,7 +353,7 @@ describe('Rotator', () => {
     assert.equal(rotator.getHistory().length, 0); // No rotation yet
 
     // Simulate 120+ seconds of stale contextUsage by backdating the timestamp
-    const state = rotator._lastContextState.get('cx1');
+    const state = rotator._lastContextState.get('gm1');
     state.timestamp = Date.now() - 130_000; // 130s ago
 
     // Second check — stale context + high tokens should trigger estimated_context_ceiling
@@ -366,8 +366,8 @@ describe('Rotator', () => {
 
   it('should NOT trigger estimated_context_ceiling when tokens are below HARD_CEILING', async () => {
     const agent = {
-      id: 'cx2', name: 'codex-low', role: 'backend', status: 'running',
-      provider: 'codex', scope: [], model: 'gpt-5.4',
+      id: 'gm2', name: 'gemini-low', role: 'backend', status: 'running',
+      provider: 'gemini', scope: [], model: 'gemini-3-flash-preview',
       tokensUsed: 50_000, contextUsage: 0, workingDir: '/tmp',
       lastActivity: new Date(Date.now() - 30_000).toISOString(),
       spawnedAt: new Date(Date.now() - 300_000).toISOString(),
@@ -376,10 +376,10 @@ describe('Rotator', () => {
 
     // First check to record state
     await rotator.check();
-    const state = rotator._lastContextState.get('cx2');
+    const state = rotator._lastContextState.get('gm2');
     state.timestamp = Date.now() - 130_000;
 
-    // Second check — 50K/200K = 25%, below 80% ceiling
+    // Second check — 50K/1M = 5%, below 80% ceiling
     await rotator.check();
 
     const history = rotator.getHistory();

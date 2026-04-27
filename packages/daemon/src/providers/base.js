@@ -7,6 +7,7 @@ export class Provider {
   static command = '';
   static authType = 'none'; // 'subscription' | 'api-key' | 'local' | 'none'
   static managesOwnContext = false; // true if provider compacts context internally (e.g. Claude Code)
+  static singleTask = false; // true if provider runs one task and exits; context rotation does not apply
   static models = [];
 
   static isInstalled() {

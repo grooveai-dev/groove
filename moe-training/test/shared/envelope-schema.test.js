@@ -456,6 +456,122 @@ describe('envelope-schema', () => {
     assert.ok(result.errors.some(e => e.includes('tertiary')));
   });
 
+  // --- session_embedding ---
+
+  it('accepts null session_embedding in metadata', () => {
+    const env = validEnvelope();
+    env.metadata.session_embedding = null;
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
+  });
+
+  it('accepts absent session_embedding in metadata (backward compat)', () => {
+    const env = validEnvelope();
+    assert.equal(env.metadata.session_embedding, undefined);
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
+  });
+
+  it('accepts valid session_embedding object', () => {
+    const env = validEnvelope();
+    env.metadata.session_embedding = {
+      model: 'all-MiniLM-L6-v2',
+      vector: [0.0234, -0.0891, 0.1247, 0.0562],
+      source_text: 'Write a Python decorator that caches function results',
+    };
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
+  });
+
+  it('rejects session_embedding with empty vector', () => {
+    const env = validEnvelope();
+    env.metadata.session_embedding = {
+      model: 'all-MiniLM-L6-v2',
+      vector: [],
+      source_text: 'test',
+    };
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('session_embedding.vector')));
+  });
+
+  it('rejects session_embedding with non-numeric vector values', () => {
+    const env = validEnvelope();
+    env.metadata.session_embedding = {
+      model: 'all-MiniLM-L6-v2',
+      vector: [0.1, 'bad', 0.3],
+      source_text: 'test',
+    };
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('session_embedding.vector')));
+  });
+
+  it('rejects session_embedding with missing model', () => {
+    const env = validEnvelope();
+    env.metadata.session_embedding = {
+      model: '',
+      vector: [0.1, 0.2],
+      source_text: 'test',
+    };
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('session_embedding.model')));
+  });
+
+  // --- routing ---
+
+  it('accepts null routing in metadata', () => {
+    const env = validEnvelope();
+    env.metadata.routing = null;
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
+  });
+
+  it('accepts absent routing in metadata (backward compat)', () => {
+    const env = validEnvelope();
+    assert.equal(env.metadata.routing, undefined);
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
+  });
+
+  it('accepts valid routing object', () => {
+    const env = validEnvelope();
+    env.metadata.routing = {
+      leaf_id: 'python_backend_v3',
+      leaf_lifecycle_stage: 'mature',
+      routing_confidence: 0.42,
+      fallback_used: false,
+      parent_leaf_id: 'python_v2',
+    };
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
+  });
+
+  it('rejects routing with invalid confidence', () => {
+    const env = validEnvelope();
+    env.metadata.routing = {
+      leaf_id: 'test',
+      routing_confidence: 1.5,
+      fallback_used: false,
+    };
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('routing_confidence')));
+  });
+
+  it('rejects routing with missing leaf_id', () => {
+    const env = validEnvelope();
+    env.metadata.routing = {
+      leaf_id: '',
+      routing_confidence: 0.5,
+      fallback_used: false,
+    };
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('routing.leaf_id')));
+  });
+
   // --- leaf_context ---
 
   it('accepts null leaf_context in metadata', () => {

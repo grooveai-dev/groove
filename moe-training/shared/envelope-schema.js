@@ -148,6 +148,44 @@ export function validateEnvelope(envelope) {
         }
       }
     }
+    if (m.session_embedding !== undefined && m.session_embedding !== null) {
+      if (typeof m.session_embedding !== 'object') {
+        errors.push('metadata.session_embedding must be an object or null');
+      } else {
+        if (typeof m.session_embedding.model !== 'string' || m.session_embedding.model.length === 0) {
+          errors.push('metadata.session_embedding.model must be a non-empty string');
+        }
+        if (!Array.isArray(m.session_embedding.vector) || m.session_embedding.vector.length === 0) {
+          errors.push('metadata.session_embedding.vector must be a non-empty array of numbers');
+        } else if (!m.session_embedding.vector.every(v => typeof v === 'number' && Number.isFinite(v))) {
+          errors.push('metadata.session_embedding.vector must contain only finite numbers');
+        }
+        if (typeof m.session_embedding.source_text !== 'string') {
+          errors.push('metadata.session_embedding.source_text must be a string');
+        }
+      }
+    }
+    if (m.routing !== undefined && m.routing !== null) {
+      if (typeof m.routing !== 'object') {
+        errors.push('metadata.routing must be an object or null');
+      } else {
+        if (typeof m.routing.leaf_id !== 'string' || m.routing.leaf_id.length === 0) {
+          errors.push('metadata.routing.leaf_id must be a non-empty string');
+        }
+        if (m.routing.leaf_lifecycle_stage !== undefined && typeof m.routing.leaf_lifecycle_stage !== 'string') {
+          errors.push('metadata.routing.leaf_lifecycle_stage must be a string');
+        }
+        if (typeof m.routing.routing_confidence !== 'number' || m.routing.routing_confidence < 0 || m.routing.routing_confidence > 1) {
+          errors.push('metadata.routing.routing_confidence must be a number 0-1');
+        }
+        if (typeof m.routing.fallback_used !== 'boolean') {
+          errors.push('metadata.routing.fallback_used must be a boolean');
+        }
+        if (m.routing.parent_leaf_id !== undefined && m.routing.parent_leaf_id !== null && typeof m.routing.parent_leaf_id !== 'string') {
+          errors.push('metadata.routing.parent_leaf_id must be a string or null');
+        }
+      }
+    }
     if (m.leaf_context !== undefined && m.leaf_context !== null) {
       if (typeof m.leaf_context !== 'object') {
         errors.push('metadata.leaf_context must be an object or null');

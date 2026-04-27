@@ -237,9 +237,7 @@ export function PreviewWorkspace({ embedded = false }) {
     return <EmptyPreview />;
   }
 
-  const iframeSrc = previewState.teamId
-    ? `/api/preview/${previewState.teamId}/proxy/`
-    : previewState.url;
+  const iframeSrc = previewState.url;
 
   const deviceWidth = DEVICE_WIDTHS[previewState.deviceSize] || '100%';
   const isFullWidth = previewState.deviceSize === 'desktop';

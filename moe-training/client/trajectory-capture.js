@@ -302,6 +302,7 @@ export class TrajectoryCapture {
       const thoughtSteps = ctx.allSteps.filter((s) => s.type === 'thought');
       const routingText = DomainTagger.buildRoutingText(role, firstPrompt, thoughtSteps);
       ctx.metadata.domain_tags = await this._domainTagger.tag(routingText);
+      ctx.metadata.session_embedding = await this._domainTagger.embed(routingText);
     }
 
     const { tier, reason: tierReason } = this._computeQualityTier(ctx, status, userInterventions);
@@ -309,6 +310,7 @@ export class TrajectoryCapture {
 
     ctx.builder.updateMetadata({
       domain_tags: ctx.metadata.domain_tags,
+      session_embedding: ctx.metadata.session_embedding || null,
       session_quality: ctx.metadata.session_quality,
     });
 

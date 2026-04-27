@@ -14,7 +14,8 @@
 import { spawn as cpSpawn, execSync } from 'child_process';
 import { resolve, extname } from 'path';
 import { existsSync, readFileSync, statSync } from 'fs';
-import { createServer } from 'http';
+import { createServer, request as httpRequest } from 'http';
+import { request as httpsRequest } from 'https';
 import { lookup as mimeLookup } from './mimetypes.js';
 
 const READY_TIMEOUT_MS = 120_000;  // give dev servers 2 minutes (large projects need npm install)
@@ -37,9 +38,9 @@ export class PreviewService {
    * source file immediately after read, so the daemon is the only place the
    * preview block survives.
    */
-  stashPlan(teamId, preview, workingDir) {
+  stashPlan(teamId, preview, workingDir, maxPhase = 1, agents = []) {
     if (!teamId || !preview) return;
-    this.pendingPlans.set(teamId, { preview, workingDir });
+    this.pendingPlans.set(teamId, { preview, workingDir, maxPhase, agents });
   }
 
   getPlan(teamId) {
@@ -91,7 +92,15 @@ export class PreviewService {
     // root. If that specific subdir doesn't exist, try workingDir itself.
     const root = resolve(workingDir || this.daemon.projectDir);
     const candidates = [];
-    if (preview.cwd) candidates.push(resolve(root, preview.cwd));
+    if (preview.cwd) {
+      const cwdSegment = String(preview.cwd).replace(/[\\/]+$/, '').split(/[\\/]+/).pop();
+      const rootSegment = root.split(/[\\/]+/).pop();
+      if (cwdSegment && cwdSegment === rootSegment) {
+        candidates.push(root);
+      } else {
+        candidates.push(resolve(root, preview.cwd));
+      }
+    }
     candidates.push(root);
     const baseDir = candidates.find((p) => existsSync(p));
 
@@ -342,7 +351,7 @@ export class PreviewService {
       detached: false,
     });
 
-    const entry = { proc, url: null, kind: 'dev-server', startedAt: Date.now(), command, baseDir };
+    const entry = { proc, url: null, devUrl: null, proxyServer: null, kind: 'dev-server', startedAt: Date.now(), command, baseDir };
     this.previews.set(teamId, entry);
 
     let stdoutBuf = '';
@@ -371,15 +380,23 @@ export class PreviewService {
         finish({ launched: false, reason: `timeout waiting for url in stdout; last output: ${tail}` });
       }, READY_TIMEOUT_MS);
 
+      let proxyStarting = false;
       const tryMatch = () => {
         const combined = stripAnsi(stdoutBuf + '\n' + stderrBuf);
         if (readyText && !combined.includes(readyText)) return;
         const m = combined.match(urlPattern);
-        if (!m) return;
+        if (!m || proxyStarting) return;
+        proxyStarting = true;
         let url = m[0];
         const openPath = (preview.openPath || '').replace(/^\/+/, '');
         if (openPath) url = url.replace(/\/$/, '') + '/' + openPath;
-        finish({ launched: true, url, kind: 'dev-server' });
+        this._createDevProxy(url).then(({ server, url: proxyUrl }) => {
+          entry.devUrl = url;
+          entry.proxyServer = server;
+          finish({ launched: true, url: proxyUrl, devUrl: url, kind: 'dev-server' });
+        }).catch((err) => {
+          finish({ launched: false, reason: `proxy error: ${err.message}` });
+        });
       };
 
       proc.stdout.on('data', (c) => {
@@ -394,6 +411,9 @@ export class PreviewService {
       });
 
       proc.on('exit', (code, signal) => {
+        if (entry.proxyServer) {
+          try { entry.proxyServer.close(); } catch { /* best-effort */ }
+        }
         this.previews.delete(teamId);
         if (!resolved) {
           finish({ launched: false, reason: `process exited before url detected (code=${code} signal=${signal}); stderr tail: ${stderrBuf.slice(-400)}` });
@@ -407,6 +427,89 @@ export class PreviewService {
     });
   }
 
+  _createDevProxy(devUrl) {
+    let target;
+    try {
+      target = new URL(devUrl);
+    } catch (err) {
+      return Promise.reject(new Error(`invalid dev server URL: ${err.message}`));
+    }
+
+    const requester = target.protocol === 'https:' ? httpsRequest : httpRequest;
+    const targetPort = target.port || (target.protocol === 'https:' ? 443 : 80);
+    const targetRootPath = `${target.pathname || '/'}${target.search || ''}`;
+
+    const toTargetPath = (incomingUrl = '/') => {
+      const path = incomingUrl || '/';
+      return path === '/' ? targetRootPath : path;
+    };
+
+    const server = createServer((req, res) => {
+      const headers = { ...req.headers, host: target.host };
+      const proxyReq = requester({
+        hostname: target.hostname,
+        port: targetPort,
+        path: toTargetPath(req.url),
+        method: req.method,
+        headers,
+      }, (proxyRes) => {
+        const fwdHeaders = { ...proxyRes.headers };
+        delete fwdHeaders['content-security-policy'];
+        delete fwdHeaders['x-frame-options'];
+        res.writeHead(proxyRes.statusCode || 502, fwdHeaders);
+        proxyRes.pipe(res);
+      });
+
+      proxyReq.on('error', (err) => {
+        if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/plain' });
+        res.end(`Proxy error: ${err.message}`);
+      });
+      req.pipe(proxyReq);
+    });
+
+    server.on('upgrade', (req, socket, head) => {
+      const headers = { ...req.headers, host: target.host };
+      const proxyReq = requester({
+        hostname: target.hostname,
+        port: targetPort,
+        path: toTargetPath(req.url),
+        method: 'GET',
+        headers,
+      });
+
+      proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
+        const skipHeaders = new Set(['upgrade', 'connection', 'sec-websocket-accept']);
+        const extra = Object.entries(proxyRes.headers)
+          .filter(([key]) => !skipHeaders.has(key))
+          .map(([key, value]) => `${key}: ${value}\r\n`).join('');
+        socket.write(
+          'HTTP/1.1 101 Switching Protocols\r\n' +
+          `Upgrade: ${proxyRes.headers.upgrade || 'websocket'}\r\n` +
+          'Connection: Upgrade\r\n' +
+          `Sec-WebSocket-Accept: ${proxyRes.headers['sec-websocket-accept'] || ''}\r\n` +
+          extra +
+          '\r\n'
+        );
+        if (proxyHead.length) socket.write(proxyHead);
+        if (head.length) proxySocket.write(head);
+        socket.pipe(proxySocket);
+        proxySocket.pipe(socket);
+        proxySocket.on('error', () => socket.destroy());
+        socket.on('error', () => proxySocket.destroy());
+      });
+      proxyReq.on('error', () => socket.destroy());
+      proxyReq.end();
+    });
+
+    return new Promise((resolveProxy, rejectProxy) => {
+      server.listen(0, '127.0.0.1', () => {
+        const port = server.address().port;
+        resolveProxy({ server, url: `http://127.0.0.1:${port}/` });
+      });
+      server.on('error', rejectProxy);
+    });
+  }
+
   _broadcastReady(teamId, url, kind) {
     this.daemon.audit?.log('preview.ready', { teamId, url, kind });
     this.daemon.broadcast({ type: 'preview:ready', teamId, url, kind });
@@ -415,12 +518,12 @@ export class PreviewService {
   get(teamId) {
     const entry = this.previews.get(teamId);
     if (!entry) return null;
-    return { teamId, url: entry.url, kind: entry.kind, startedAt: entry.startedAt };
+    return { teamId, url: entry.url, devUrl: entry.devUrl, kind: entry.kind, startedAt: entry.startedAt };
   }
 
   list() {
     return Array.from(this.previews.entries()).map(([teamId, e]) => ({
-      teamId, url: e.url, kind: e.kind, startedAt: e.startedAt,
+      teamId, url: e.url, devUrl: e.devUrl, kind: e.kind, startedAt: e.startedAt,
     }));
   }
 
@@ -430,6 +533,7 @@ export class PreviewService {
     this.previews.delete(teamId);
     try {
       if (entry.server) entry.server.close();
+      if (entry.proxyServer) entry.proxyServer.close();
       if (entry.proc) entry.proc.kill('SIGTERM');
     } catch { /* best-effort */ }
     this.daemon.audit?.log('preview.stopped', { teamId });

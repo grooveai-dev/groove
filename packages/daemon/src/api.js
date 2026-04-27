@@ -3401,6 +3401,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
         return res.status(400).json({ error: 'Recommended team is empty' });
       }
 
+      const maxPhase = agentConfigs.reduce((max, config) => {
+        const phase = typeof config.phase === 'number' ? config.phase : 1;
+        return Math.max(max, phase);
+      }, 1);
+
       // Resolve base directory from the planner that wrote the file, not the daemon root
       const plannerAgent = found.agentId ? daemon.registry.get(found.agentId) : null;
       const baseDir = plannerAgent?.workingDir || daemon.config?.defaultWorkingDir || daemon.projectDir;
@@ -3600,7 +3605,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       // Stash the preview block so the daemon can launch it when the team
       // finishes. The plan file gets deleted seconds after this endpoint returns.
       if (previewBlock && daemon.preview && defaultTeamId) {
-        daemon.preview.stashPlan(defaultTeamId, previewBlock, projectWorkingDir);
+        daemon.preview.stashPlan(defaultTeamId, previewBlock, projectWorkingDir, maxPhase, agentConfigs);
       }
 
       // Restore the plan if nothing actually spawned or was reused — deleting
@@ -3855,7 +3860,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     if (!entry || !entry.url) return res.status(404).json({ error: 'No active preview for this team' });
 
     let targetUrl;
-    try { targetUrl = new URL(entry.url); } catch { return res.status(500).json({ error: 'Invalid preview URL' }); }
+    try { targetUrl = new URL(entry.devUrl || entry.url); } catch { return res.status(500).json({ error: 'Invalid preview URL' }); }
 
     const proxyPath = req.params[0] || '';
     const search = req.url.includes('?') ? '?' + req.url.split('?').slice(1).join('?') : '';
@@ -3891,7 +3896,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     if (!entry || !entry.url) return res.status(404).json({ error: 'No active preview for this team' });
 
     let targetUrl;
-    try { targetUrl = new URL(entry.url); } catch { return res.status(500).json({ error: 'Invalid preview URL' }); }
+    try { targetUrl = new URL(entry.devUrl || entry.url); } catch { return res.status(500).json({ error: 'Invalid preview URL' }); }
 
     const search = req.url.includes('?') ? '?' + req.url.split('?').slice(1).join('?') : '';
 

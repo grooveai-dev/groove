@@ -2015,6 +2015,7 @@ export const useGrooveStore = create((set, get) => ({
       if (!completed) throw new Error(body.slice(0, 500) || 'Install ended without confirmation');
 
       update({ installing: false, percent: 100, message: 'Installed', error: null, done: true });
+      set({ _providerRefreshTick: Date.now() });
       get().addToast('success', `${providerId} installed`);
     } catch (err) {
       update({ installing: false, percent: 0, message: null, error: err.message, done: false });
@@ -2026,7 +2027,7 @@ export const useGrooveStore = create((set, get) => ({
   async loginProvider(providerId, body) {
     try {
       const data = await api.post(`/providers/${encodeURIComponent(providerId)}/login`, body);
-      if (data?.url) window.open(data.url, '_blank');
+      if (data?.url && !data?.browserOpened) window.open(data.url, '_blank');
       return data;
     } catch (err) {
       get().addToast('error', `Login failed`, err.message);

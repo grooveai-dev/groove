@@ -740,9 +740,10 @@ export function createApi(app, daemon) {
           };
 
           const proc = spawn('codex', ['login'], {
-            stdio: ['ignore', 'pipe', 'pipe'],
+            stdio: ['pipe', 'pipe', 'pipe'],
             shell: true,
           });
+          proc.stdin.on('error', () => {});
           let stdout = '';
           let stderr = '';
           proc.stdout.on('data', (d) => { stdout += d.toString(); });
@@ -751,8 +752,8 @@ export function createApi(app, daemon) {
           const timeout = setTimeout(() => {
             const urlMatch = (stdout + stderr).match(/https:\/\/\S+/);
             respond(urlMatch
-              ? { status: 'pending', url: urlMatch[0] }
-              : { status: 'pending', message: 'Login started — check your browser' });
+              ? { status: 'pending', url: urlMatch[0], browserOpened: true }
+              : { status: 'pending', message: 'Login started — check your browser', browserOpened: true });
           }, 5000);
 
           proc.on('close', (code) => {
@@ -4665,7 +4666,13 @@ Keep responses concise. Help them think, don't lecture them about the system the
       const hasKey = daemon.credentials.hasKey(p.id);
       let authStatus = 'not-configured';
       if (p.authType === 'subscription') {
-        authStatus = p.installed ? 'authenticated' : 'not-configured';
+        if (!p.installed) {
+          authStatus = 'not-configured';
+        } else {
+          const provObj = getProvider(p.id);
+          const authResult = provObj?.constructor?.isAuthenticated?.();
+          authStatus = authResult?.authenticated ? 'authenticated' : 'not-configured';
+        }
       } else if (p.authType === 'api-key') {
         authStatus = hasKey ? 'key-set' : 'not-configured';
         if (p.authStatus?.authenticated) authStatus = 'authenticated';

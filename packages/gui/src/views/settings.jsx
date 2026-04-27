@@ -74,7 +74,7 @@ function ProviderCard({ provider, onKeyChange }) {
   const isLocal = provider.authType === 'local';
   const isSubscription = provider.authType === 'subscription';
   const isReady = isLocal ? provider.installed
-    : isSubscription ? (provider.installed || provider.authStatus?.authenticated)
+    : isSubscription ? (provider.installed && provider.authStatus?.authenticated)
     : (provider.installed && provider.hasKey);
 
   async function handleSetKey() {
@@ -187,6 +187,7 @@ function ProviderCard({ provider, onKeyChange }) {
   }
 
   const isInstalling = installProgress?.installing;
+  const effectivelyInstalled = provider.installed || installProgress?.done;
 
   // Standard provider card (Claude, Codex, Gemini)
   return (
@@ -202,7 +203,7 @@ function ProviderCard({ provider, onKeyChange }) {
           ) : isInstalling ? (
             <Badge variant="default" className="text-2xs gap-1"><Loader2 size={8} className="animate-spin" /> Installing</Badge>
           ) : (
-            <Badge variant="default" className="text-2xs">{!provider.installed ? 'Not installed' : isSubscription ? 'Not signed in' : 'No key'}</Badge>
+            <Badge variant="default" className="text-2xs">{!effectivelyInstalled ? 'Not installed' : isSubscription ? 'Not signed in' : 'No key'}</Badge>
           )}
         </div>
 
@@ -233,7 +234,7 @@ function ProviderCard({ provider, onKeyChange }) {
           )}
 
           {/* Not installed */}
-          {!provider.installed && !isInstalling && !settingKey && (
+          {!effectivelyInstalled && !isInstalling && !settingKey && (
             <div className="flex flex-col gap-2.5 flex-1">
               {/* Install error from last attempt */}
               {installProgress?.error && (
@@ -317,7 +318,7 @@ function ProviderCard({ provider, onKeyChange }) {
           )}
 
           {/* Installed but needs auth */}
-          {provider.installed && !isReady && !settingKey && !isInstalling && (
+          {effectivelyInstalled && !isReady && !settingKey && !isInstalling && (
             <div className="flex flex-col gap-3 flex-1">
               {/* ── Claude Code auth ── */}
               {provider.id === 'claude-code' && !loginPending && (
@@ -1728,7 +1729,7 @@ export default function SettingsView() {
   const visibleProviders = providers.filter((p) => p.id !== 'groove-network');
   const connectedCount = visibleProviders.filter((p) => {
     if (p.authType === 'local') return p.installed;
-    if (p.authType === 'subscription') return p.installed;
+    if (p.authType === 'subscription') return p.installed && p.authStatus?.authenticated;
     return p.installed && p.hasKey;
   }).length;
 
@@ -1804,7 +1805,7 @@ export default function SettingsView() {
                     onChange={(e) => updateConfig('defaultProvider', e.target.value)}
                     className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
                   >
-                    {visibleProviders.filter((p) => p.installed && (p.authType === 'local' || p.authType === 'subscription' || p.hasKey)).map((p) => (
+                    {visibleProviders.filter((p) => p.installed && (p.authType === 'local' || (p.authType === 'subscription' && p.authStatus?.authenticated) || p.hasKey)).map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </select>
@@ -1862,7 +1863,7 @@ export default function SettingsView() {
                       }}
                       className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
                     >
-                      {visibleProviders.filter((p) => p.installed && (p.authType === 'local' || p.authType === 'subscription' || p.hasKey)).map((p) => (
+                      {visibleProviders.filter((p) => p.installed && (p.authType === 'local' || (p.authType === 'subscription' && p.authStatus?.authenticated) || p.hasKey)).map((p) => (
                         <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
                     </select>

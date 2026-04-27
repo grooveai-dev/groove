@@ -1042,7 +1042,6 @@ body {
   -webkit-app-region: no-drag; position: relative;
 }
 .list-row:hover .list-name { color: #e6e6e6; }
-.list-row.connecting { opacity: 0.6; pointer-events: none; }
 .list-info { flex: 1; min-width: 0; }
 .list-name {
   font-size: 13px; font-weight: 500; color: #b0b8c4;
@@ -1059,11 +1058,6 @@ body {
 }
 .list-row:hover .list-delete { opacity: 1; }
 .list-delete:hover { color: #ef4444; }
-.list-spinner {
-  width: 12px; height: 12px; border: 2px solid #3e4451;
-  border-top-color: #33afbc; border-radius: 50%;
-  animation: spin 0.8s linear infinite; flex-shrink: 0;
-}
 
 .empty-text {
   font-size: 12px; color: #505862; padding: 8px 10px;
@@ -1235,8 +1229,8 @@ body {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/></svg>
           </div>
           <div class="ac-text">
-            <div class="ac-title">Connect Remote</div>
-            <div class="ac-sub">SSH tunnel to a server</div>
+            <div class="ac-title">Add Remote Server</div>
+            <div class="ac-sub">Save SSH details for later</div>
           </div>
         </button>
         <button class="action-card" id="btn-docs">
@@ -1260,6 +1254,7 @@ body {
       <div id="ssh-section">
         <div class="section-title">SSH Connections</div>
         <div id="ssh-list"></div>
+        <div class="ssh-hint" style="font-size:11px;color:#505862;padding:4px 10px;">Open a project, then connect from Settings</div>
         <button class="add-link" id="btn-add-ssh">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
           Add Server
@@ -1297,7 +1292,7 @@ body {
     </div>
     <div class="ssh-form-actions">
       <button class="btn-cancel-ssh" id="btn-cancel-ssh">Cancel</button>
-      <button class="btn-save-ssh" id="btn-save-ssh">Save &amp; Connect</button>
+      <button class="btn-save-ssh" id="btn-save-ssh">Save</button>
     </div>
   </div>
 </div>
@@ -1487,35 +1482,13 @@ body {
       return;
     }
     sshListEl.innerHTML = sshData.slice(0, 3).map(function(c) {
-      return '<div class="list-row" data-id="' + esc(c.id) + '">' +
+      return '<div class="list-row" data-id="' + esc(c.id) + '" style="cursor:default">' +
         '<div class="list-info">' +
           '<div class="list-name">' + esc(c.name || c.host) + '</div>' +
         '</div>' +
-        '<div class="list-spinner" style="display:none"></div>' +
         '<button class="list-delete" data-del-id="' + esc(c.id) + '" title="Remove server">' + X_IC + '</button>' +
       '</div>';
     }).join('');
-    sshListEl.querySelectorAll('.list-row').forEach(function(el) {
-      el.addEventListener('click', function(e) {
-        if (e.target.closest('.list-delete')) return;
-        el.classList.add('connecting');
-        var sp = el.querySelector('.list-spinner');
-        if (sp) sp.style.display = '';
-        var delBtn = el.querySelector('.list-delete');
-        if (delBtn) delBtn.style.display = 'none';
-        window.groove.home.connectSSH(el.getAttribute('data-id')).then(function(res) {
-          if (res && res.localPort) {
-            setLoading(true, 'Opening remote session...');
-            window.groove.remote.openWindow(res.localPort, res.name || 'Remote');
-          }
-        }).catch(function(err) {
-          el.classList.remove('connecting');
-          if (sp) sp.style.display = 'none';
-          if (delBtn) delBtn.style.display = '';
-          showError(err.message || 'SSH connection failed');
-        });
-      });
-    });
     sshListEl.querySelectorAll('.list-delete').forEach(function(btn) {
       btn.addEventListener('click', function(e) {
         e.stopPropagation();

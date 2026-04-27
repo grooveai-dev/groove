@@ -4211,6 +4211,33 @@ Keep responses concise. Help them think, don't lecture them about the system the
     res.json(daemon.federation.getStatus());
   });
 
+  app.get('/api/federation/test', async (req, res) => {
+    const target = req.query.target;
+    if (!target) return res.status(400).json({ error: 'target required' });
+    const host = target.split(':')[0];
+    const privatePatterns = [
+      /^127\./, /^10\./, /^192\.168\./, /^172\.(1[6-9]|2\d|3[01])\./,
+      /^0\./, /^169\.254\./, /^localhost$/i, /^::1$/, /^\[::1\]$/,
+      /^0\.0\.0\.0$/, /^fc/i, /^fd/i, /^fe80/i,
+    ];
+    if (privatePatterns.some(p => p.test(host))) {
+      return res.status(400).json({ error: 'Private/local addresses are not allowed' });
+    }
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const resp = await fetch(`http://${target}/api/health`, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (resp.ok) {
+        const data = await resp.json();
+        return res.json({ reachable: true, version: data.version, peerId: data.daemonId, agents: data.agents });
+      }
+      res.json({ reachable: false });
+    } catch {
+      res.json({ reachable: false });
+    }
+  });
+
   // List peers
   app.get('/api/federation/peers', (req, res) => {
     res.json(daemon.federation.getPeers());

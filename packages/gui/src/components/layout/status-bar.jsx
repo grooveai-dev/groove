@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Terminal, BookOpen, Radio, Plug, Globe, ArrowUpCircle, X, Unplug } from 'lucide-react';
+import { Terminal, BookOpen, Radio, Plug, Globe, ArrowUpCircle, X, Unplug, Shield } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/status-dot';
 import { Badge } from '../ui/badge';
@@ -22,7 +22,6 @@ export function StatusBar({
   const updateReady = useGrooveStore((s) => s.updateReady);
   const updateProgress = useGrooveStore((s) => s.updateProgress);
   const setUpdateModalOpen = useGrooveStore((s) => s.setUpdateModalOpen);
-  const subscription = useGrooveStore((s) => s.subscription);
   const navigate = useGrooveStore((s) => s.setActiveView);
   const activeTunnel = savedTunnels.find((t) => t.active);
   const electron = isElectron();
@@ -72,6 +71,13 @@ export function StatusBar({
               )}
             </button>
             <button
+              onClick={() => useGrooveStore.getState().addToWhitelist(activeTunnel.host)}
+              className="p-0.5 text-text-4 hover:text-accent cursor-pointer transition-colors rounded"
+              title="Add to Federation Whitelist"
+            >
+              <Shield size={10} />
+            </button>
+            <button
               onClick={() => useGrooveStore.getState().disconnectTunnel(activeTunnel.id)}
               className="p-0.5 text-text-4 hover:text-danger cursor-pointer transition-colors rounded"
               title="Disconnect"
@@ -98,7 +104,7 @@ export function StatusBar({
             <span>Connect</span>
           </button>
         )}
-        {subscription?.active && (subscription.plan === 'pro' || subscription.plan === 'team') && (
+        {connected && (
           <button
             onClick={() => navigate('federation')}
             className="flex items-center gap-1.5 text-text-4 hover:text-text-1 cursor-pointer transition-colors"

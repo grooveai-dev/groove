@@ -998,9 +998,6 @@ body {
   letter-spacing: 0.5px; font-family: ui-monospace, 'SF Mono', Monaco, monospace;
 }
 
-.actions-row {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-}
 .action-card {
   display: flex; align-items: center; gap: 12px;
   padding: 14px 16px; border-radius: 10px;
@@ -1062,74 +1059,6 @@ body {
 .empty-text {
   font-size: 12px; color: #505862; padding: 8px 10px;
 }
-
-.add-link {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 12px; color: #33afbc; cursor: pointer;
-  padding: 6px 10px; border: none; background: none;
-  font-family: inherit; transition: opacity 0.12s;
-  -webkit-app-region: no-drag;
-}
-.add-link:hover { opacity: 0.8; }
-
-.ssh-form-wrap {
-  display: none; position: fixed; left: 0; right: 0; bottom: 48px;
-  background: #1e2127; border-top: 1px solid #3e4451;
-  padding: 20px 36px; z-index: 50;
-  -webkit-app-region: no-drag;
-}
-.ssh-form-wrap.active { display: block; }
-.ssh-form-inner { max-width: 600px; margin: 0 auto; }
-.ssh-form-head {
-  font-size: 13px; font-weight: 600; color: #e6e6e6;
-  margin-bottom: 16px; display: flex; align-items: center; gap: 10px;
-}
-.ssh-form-ic {
-  width: 28px; height: 28px; border-radius: 8px;
-  background: rgba(51,175,188,0.12); color: #33afbc;
-  display: flex; align-items: center; justify-content: center;
-}
-.ssh-form-wrap label {
-  display: block; font-size: 11px; color: #6e7681;
-  margin-bottom: 5px; margin-top: 12px; font-weight: 500;
-  letter-spacing: 0.2px;
-}
-.ssh-form-wrap label:first-of-type { margin-top: 0; }
-.ssh-input {
-  width: 100%; padding: 9px 12px; border-radius: 8px;
-  border: 1px solid #3e4451; background: #1a1e25;
-  color: #e6e6e6; font-size: 12px; font-family: inherit;
-  outline: none; transition: border-color 0.12s;
-}
-.ssh-input:focus { border-color: #33afbc; }
-.ssh-input-row { display: flex; gap: 8px; }
-.ssh-input-row .ssh-input { flex: 1; }
-.ssh-input-sm { width: 90px; flex: none !important; }
-.btn-pick-key {
-  padding: 9px 14px; border-radius: 8px;
-  border: 1px solid #3e4451; background: #24282f;
-  color: #6e7681; font-size: 11px; cursor: pointer;
-  transition: all 0.12s; font-family: inherit; white-space: nowrap;
-  -webkit-app-region: no-drag;
-}
-.btn-pick-key:hover { border-color: #33afbc; color: #e6e6e6; }
-.ssh-form-actions { display: flex; gap: 8px; margin-top: 18px; }
-.btn-save-ssh {
-  flex: 1; padding: 10px; border-radius: 8px; border: none;
-  background: #33afbc; color: #0a0a0a; font-size: 13px; font-weight: 600;
-  cursor: pointer; transition: opacity 0.12s; font-family: inherit;
-  -webkit-app-region: no-drag;
-}
-.btn-save-ssh:hover { opacity: 0.9; }
-.btn-save-ssh:disabled { opacity: 0.4; cursor: default; }
-.btn-cancel-ssh {
-  padding: 10px 16px; border-radius: 8px;
-  border: 1px solid #3e4451; background: transparent;
-  color: #6e7681; font-size: 13px; cursor: pointer;
-  transition: all 0.12s; font-family: inherit;
-  -webkit-app-region: no-drag;
-}
-.btn-cancel-ssh:hover { border-color: #33afbc; color: #e6e6e6; }
 
 .update-banner {
   display: none; position: fixed; left: 0; right: 0; bottom: 48px;
@@ -1223,26 +1152,15 @@ body {
         <div class="ap-tag" id="kbd-open">\u2318O</div>
       </button>
 
-      <div class="actions-row">
-        <button class="action-card" id="btn-connect-remote">
-          <div class="ac-ic">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/></svg>
-          </div>
-          <div class="ac-text">
-            <div class="ac-title">Add Remote Server</div>
-            <div class="ac-sub">Save SSH details for later</div>
-          </div>
-        </button>
-        <button class="action-card" id="btn-docs">
-          <div class="ac-ic">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>
-          </div>
-          <div class="ac-text">
-            <div class="ac-title">Read the Docs</div>
-            <div class="ac-sub">Learn how teams work</div>
-          </div>
-        </button>
-      </div>
+      <button class="action-card" id="btn-docs">
+        <div class="ac-ic">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>
+        </div>
+        <div class="ac-text">
+          <div class="ac-title">Read the Docs</div>
+          <div class="ac-sub">Learn how teams work</div>
+        </div>
+      </button>
     </div>
 
     <div class="recents-area">
@@ -1251,14 +1169,9 @@ body {
         <div id="recents"></div>
       </div>
 
-      <div id="ssh-section">
+      <div id="ssh-section" style="display:none">
         <div class="section-title">SSH Connections</div>
         <div id="ssh-list"></div>
-        <div class="ssh-hint" style="font-size:11px;color:#505862;padding:4px 10px;">Open a project, then connect from Settings</div>
-        <button class="add-link" id="btn-add-ssh">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-          Add Server
-        </button>
       </div>
     </div>
 
@@ -1268,34 +1181,6 @@ body {
   </div>
 </div>
 
-<div class="ssh-form-wrap" id="ssh-form">
-  <div class="ssh-form-inner">
-    <div class="ssh-form-head">
-      <div class="ssh-form-ic">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
-      </div>
-      New SSH Connection
-    </div>
-    <label>Name</label>
-    <input class="ssh-input" id="ssh-name" placeholder="My Server" autocomplete="off">
-    <label>Host</label>
-    <div class="ssh-input-row">
-      <input class="ssh-input" id="ssh-host" placeholder="192.168.1.100">
-      <input class="ssh-input ssh-input-sm" id="ssh-port" placeholder="Port" value="22">
-    </div>
-    <label>Username</label>
-    <input class="ssh-input" id="ssh-user" placeholder="ubuntu">
-    <label>SSH Key (optional)</label>
-    <div class="ssh-input-row">
-      <input class="ssh-input" id="ssh-key" placeholder="~/.ssh/id_rsa" readonly>
-      <button class="btn-pick-key" id="btn-pick-key">Browse</button>
-    </div>
-    <div class="ssh-form-actions">
-      <button class="btn-cancel-ssh" id="btn-cancel-ssh">Cancel</button>
-      <button class="btn-save-ssh" id="btn-save-ssh">Save</button>
-    </div>
-  </div>
-</div>
 
 <div class="update-banner" id="update-btn">
   <div class="update-inner">
@@ -1462,10 +1347,9 @@ body {
     showError('Failed to load recent projects: ' + err.message);
   });
 
-  // --- SSH ---
+  // --- SSH (read-only list) ---
   var sshData = [];
   var sshListEl = document.getElementById('ssh-list');
-  var sshFormEl = document.getElementById('ssh-form');
   var sshSection = document.getElementById('ssh-section');
 
   function checkEmpty() {
@@ -1477,76 +1361,23 @@ body {
   function renderSSH(connections) {
     sshData = connections || [];
     if (!sshData.length) {
+      sshSection.style.display = 'none';
       sshListEl.innerHTML = '';
       checkEmpty();
       return;
     }
-    sshListEl.innerHTML = sshData.slice(0, 3).map(function(c) {
-      return '<div class="list-row" data-id="' + esc(c.id) + '" style="cursor:default">' +
+    sshSection.style.display = '';
+    sshListEl.innerHTML = sshData.slice(0, 5).map(function(c) {
+      return '<div class="list-row" style="cursor:default">' +
         '<div class="list-info">' +
           '<div class="list-name">' + esc(c.name || c.host) + '</div>' +
         '</div>' +
-        '<button class="list-delete" data-del-id="' + esc(c.id) + '" title="Remove server">' + X_IC + '</button>' +
       '</div>';
     }).join('');
-    sshListEl.querySelectorAll('.list-delete').forEach(function(btn) {
-      btn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        var id = btn.getAttribute('data-del-id');
-        window.groove.home.removeSSH(id).then(function() {
-          window.groove.home.getSSH().then(renderSSH).catch(function() { renderSSH([]); });
-        }).catch(function() {});
-      });
-    });
     checkEmpty();
   }
 
   window.groove.home.getSSH().then(renderSSH).catch(function() { renderSSH([]); });
-
-  function openSSHForm() {
-    sshFormEl.classList.add('active');
-    setTimeout(function() {
-      document.getElementById('ssh-name').focus();
-    }, 40);
-  }
-
-  document.getElementById('btn-add-ssh').addEventListener('click', openSSHForm);
-  document.getElementById('btn-connect-remote').addEventListener('click', openSSHForm);
-
-  document.getElementById('btn-cancel-ssh').addEventListener('click', function() {
-    sshFormEl.classList.remove('active');
-  });
-  document.getElementById('btn-pick-key').addEventListener('click', function() {
-    window.groove.home.pickKeyFile().then(function(p) {
-      if (p) document.getElementById('ssh-key').value = p;
-    }).catch(function() {});
-  });
-  document.getElementById('btn-save-ssh').addEventListener('click', function() {
-    var host = document.getElementById('ssh-host').value.trim();
-    var user = document.getElementById('ssh-user').value.trim() || 'root';
-    if (!host) { showError('Host is required'); return; }
-    var config = {
-      name: document.getElementById('ssh-name').value.trim() || host,
-      host: host,
-      port: parseInt(document.getElementById('ssh-port').value) || 22,
-      user: user,
-      sshKeyPath: document.getElementById('ssh-key').value.trim() || undefined
-    };
-    document.getElementById('btn-save-ssh').disabled = true;
-    window.groove.home.addSSH(config).then(function() {
-      sshFormEl.classList.remove('active');
-      document.getElementById('ssh-name').value = '';
-      document.getElementById('ssh-host').value = '';
-      document.getElementById('ssh-port').value = '22';
-      document.getElementById('ssh-user').value = '';
-      document.getElementById('ssh-key').value = '';
-      document.getElementById('btn-save-ssh').disabled = false;
-      window.groove.home.getSSH().then(renderSSH);
-    }).catch(function(err) {
-      document.getElementById('btn-save-ssh').disabled = false;
-      showError(err.message || 'Failed to save');
-    });
-  });
 
   document.addEventListener('keydown', function(e) {
     var mod = e.metaKey || e.ctrlKey;

@@ -22,6 +22,8 @@ export function FederationPeers({ onOpenWizard }) {
   const connections = useGrooveStore((s) => s.federation.connections);
   const peers = useGrooveStore((s) => s.federation.peers);
   const sendPouch = useGrooveStore((s) => s.sendPouch);
+  const disconnectPeer = useGrooveStore((s) => s.disconnectPeer);
+  const addToast = useGrooveStore((s) => s.addToast);
   const [sendingTo, setSendingTo] = useState(null);
 
   const allPeers = peers.length > 0 ? peers : connections;
@@ -97,7 +99,12 @@ export function FederationPeers({ onOpenWizard }) {
                 </div>
 
                 <div className="flex items-center gap-1.5 mt-3 pt-2.5 border-t border-border-subtle">
-                  <Button size="sm" variant="ghost" className="h-6 text-2xs gap-1 text-text-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-2xs gap-1 text-text-2"
+                    onClick={() => addToast('info', name, `ID: ${id}\nIP: ${ip}${peer.port ? `:${peer.port}` : ''}\nLatency: ${latency != null ? `${latency}ms` : 'N/A'}\nState: ${state}`)}
+                  >
                     <Eye size={10} />
                     Details
                   </Button>
@@ -111,7 +118,12 @@ export function FederationPeers({ onOpenWizard }) {
                     <Send size={10} />
                     Send Pouch
                   </Button>
-                  <Button size="sm" variant="ghost" className="h-6 text-2xs gap-1 text-danger/70 hover:text-danger ml-auto">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-2xs gap-1 text-danger/70 hover:text-danger ml-auto"
+                    onClick={() => disconnectPeer(id)}
+                  >
                     <Unplug size={10} />
                     Disconnect
                   </Button>

@@ -25,6 +25,15 @@ export function QuickConnect() {
     setConnectingId(id);
     try {
       await useGrooveStore.getState().connectTunnel(id);
+      const tunnel = savedTunnels.find((t) => t.id === id);
+      if (tunnel?.host) {
+        addToast('info', `Add ${tunnel.host} to Federation Whitelist?`, '', {
+          action: {
+            label: 'Add',
+            onClick: () => useGrooveStore.getState().addToWhitelist(tunnel.host),
+          },
+        });
+      }
       toggle();
     } catch (err) {
       let detail = err?.message || 'Unknown error';

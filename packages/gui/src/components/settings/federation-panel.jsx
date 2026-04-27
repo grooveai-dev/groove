@@ -22,7 +22,7 @@ function statusBadge(status) {
   }
 }
 
-function WhitelistTab() {
+export function WhitelistTab() {
   const whitelist = useGrooveStore((s) => s.federation.whitelist);
   const addToWhitelist = useGrooveStore((s) => s.addToWhitelist);
   const removeFromWhitelist = useGrooveStore((s) => s.removeFromWhitelist);
@@ -198,7 +198,7 @@ function WhitelistTab() {
   );
 }
 
-function AmbassadorsTab() {
+export function AmbassadorsTab() {
   const ambassadors = useGrooveStore((s) => s.federation.ambassadors);
 
   return (

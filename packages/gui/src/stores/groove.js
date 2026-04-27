@@ -2660,6 +2660,16 @@ export const useGrooveStore = create((set, get) => ({
     }
   },
 
+  async disconnectPeer(peerId) {
+    try {
+      await api.delete(`/federation/peers/${encodeURIComponent(peerId)}`);
+      get().addToast('info', 'Peer disconnected');
+      get().fetchFederationStatus();
+    } catch (err) {
+      get().addToast('error', 'Disconnect failed', err.message);
+    }
+  },
+
   // ── Training Data ─────────────────────────────────────────
 
   async setTrainingOptIn(enabled) {

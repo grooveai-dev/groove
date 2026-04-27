@@ -62,12 +62,12 @@ async function _executeApprovalRetry(daemon, approval) {
       return;
     }
     if (rp.agentId) {
-      await daemon.processes.sendMessage(rp.agentId, `Your ${rp.type === 'integration_exec' ? 'integration action' : 'upload'} was approved and executed successfully. Result: ${resultText}`);
+      await daemon.processes.sendMessage(rp.agentId, `Your ${rp.type === 'integration_exec' ? 'integration action' : 'upload'} was approved and executed successfully. Result: ${resultText}`, 'system');
     }
   } catch (err) {
     console.log(`[Groove] Auto-retry for approval ${approval.id} failed: ${err.message}`);
     if (rp.agentId) {
-      daemon.processes.sendMessage(rp.agentId, `Your ${rp.type === 'integration_exec' ? 'integration action' : 'upload'} was approved but execution failed: ${err.message}`).catch(() => {});
+      daemon.processes.sendMessage(rp.agentId, `Your ${rp.type === 'integration_exec' ? 'integration action' : 'upload'} was approved but execution failed: ${err.message}`, 'system').catch(() => {});
     }
   }
 }

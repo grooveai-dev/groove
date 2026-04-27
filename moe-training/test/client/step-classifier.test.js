@@ -5,18 +5,54 @@ import assert from 'node:assert/strict';
 import { StepClassifier } from '../../client/step-classifier.js';
 
 describe('StepClassifier', () => {
-  it('user message before any action is not a correction', () => {
+  it('user message before any action is classified as instruction', () => {
     const classifier = new StepClassifier();
     const result = classifier.classifyUserMessage('fix the bug');
-    assert.equal(result, null);
+    assert.equal(result.type, 'instruction');
+    assert.equal(result.content, 'fix the bug');
+    assert.equal(result.source, 'user');
   });
 
-  it('user message after action is a correction', () => {
+  it('user correction after action is classified as correction', () => {
     const classifier = new StepClassifier();
     classifier.onStep({ type: 'action' });
-    const result = classifier.classifyUserMessage('no, use exponential backoff');
+    const result = classifier.classifyUserMessage('no, that\'s wrong, use exponential backoff');
     assert.equal(result.type, 'correction');
-    assert.equal(result.content, 'no, use exponential backoff');
+    assert.equal(result.content, 'no, that\'s wrong, use exponential backoff');
+    assert.equal(result.source, 'user');
+  });
+
+  it('user approval after action is classified as approval', () => {
+    const classifier = new StepClassifier();
+    classifier.onStep({ type: 'action' });
+    const result = classifier.classifyUserMessage('looks good, ship it');
+    assert.equal(result.type, 'approval');
+  });
+
+  it('user clarification after action is classified as clarification', () => {
+    const classifier = new StepClassifier();
+    classifier.onStep({ type: 'action' });
+    const result = classifier.classifyUserMessage('to clarify, I meant the sidebar component');
+    assert.equal(result.type, 'clarification');
+  });
+
+  it('new instruction after action defaults to instruction', () => {
+    const classifier = new StepClassifier();
+    classifier.onStep({ type: 'action' });
+    const result = classifier.classifyUserMessage('now add pagination to the list view');
+    assert.equal(result.type, 'instruction');
+  });
+
+  it('passes source through from caller', () => {
+    const classifier = new StepClassifier();
+    const result = classifier.classifyUserMessage('deploy the backend', 'planner');
+    assert.equal(result.source, 'planner');
+    assert.equal(result.type, 'instruction');
+  });
+
+  it('defaults source to user', () => {
+    const classifier = new StepClassifier();
+    const result = classifier.classifyUserMessage('do the thing');
     assert.equal(result.source, 'user');
   });
 
@@ -66,15 +102,25 @@ describe('StepClassifier', () => {
     assert.equal(StepClassifier.detectErrorRecovery(steps), false);
   });
 
-  it('counts user interventions', () => {
+  it('counts corrections and clarifications as interventions', () => {
     const steps = [
       { type: 'thought' },
       { type: 'correction' },
       { type: 'action' },
-      { type: 'correction' },
+      { type: 'clarification' },
       { type: 'resolution' },
     ];
     assert.equal(StepClassifier.countUserInterventions(steps), 2);
+  });
+
+  it('does not count instruction or approval as interventions', () => {
+    const steps = [
+      { type: 'instruction' },
+      { type: 'action' },
+      { type: 'approval' },
+      { type: 'resolution' },
+    ];
+    assert.equal(StepClassifier.countUserInterventions(steps), 0);
   });
 
   it('counts zero interventions when none present', () => {
@@ -114,6 +160,14 @@ describe('StepClassifier', () => {
     const step = { type: 'thought', content: 'I see the issue, let me fix it' };
     const result = classifier.onStep(step);
     assert.equal(result.type, 'thought');
+    assert.equal(result.correction_context, true);
+  });
+
+  it('marks thought after instruction as correction_context when fix signal present', () => {
+    const classifier = new StepClassifier();
+    classifier.onStep({ type: 'instruction', content: 'fix the login page' });
+    const step = { type: 'thought', content: 'I see the issue, let me fix the validation' };
+    const result = classifier.onStep(step);
     assert.equal(result.correction_context, true);
   });
 
@@ -173,5 +227,40 @@ describe('StepClassifier', () => {
     const step = { type: 'action', content: 'Command failed with exit code 1' };
     const result = classifier.onStep(step);
     assert.equal(result.type, 'error');
+  });
+});
+
+describe('StepClassifier.classifyIntent', () => {
+  it('classifies corrections', () => {
+    assert.equal(StepClassifier.classifyIntent("no, that's wrong"), 'correction');
+    assert.equal(StepClassifier.classifyIntent("that's not what I wanted"), 'correction');
+    assert.equal(StepClassifier.classifyIntent('undo that change'), 'correction');
+    assert.equal(StepClassifier.classifyIntent('revert the last edit'), 'correction');
+    assert.equal(StepClassifier.classifyIntent('you missed the edge case'), 'correction');
+  });
+
+  it('classifies approvals', () => {
+    assert.equal(StepClassifier.classifyIntent('looks good'), 'approval');
+    assert.equal(StepClassifier.classifyIntent('lgtm, ship it'), 'approval');
+    assert.equal(StepClassifier.classifyIntent("that's correct"), 'approval');
+    assert.equal(StepClassifier.classifyIntent('go ahead with that approach'), 'approval');
+  });
+
+  it('classifies clarifications', () => {
+    assert.equal(StepClassifier.classifyIntent('to clarify, I meant the sidebar'), 'clarification');
+    assert.equal(StepClassifier.classifyIntent('what I want is the mobile layout'), 'clarification');
+    assert.equal(StepClassifier.classifyIntent('let me rephrase — update the header'), 'clarification');
+  });
+
+  it('defaults to instruction for new directions', () => {
+    assert.equal(StepClassifier.classifyIntent('now add pagination to the list'), 'instruction');
+    assert.equal(StepClassifier.classifyIntent('also update the README'), 'instruction');
+    assert.equal(StepClassifier.classifyIntent('can you refactor the auth module'), 'instruction');
+  });
+
+  it('returns instruction for null/empty input', () => {
+    assert.equal(StepClassifier.classifyIntent(null), 'instruction');
+    assert.equal(StepClassifier.classifyIntent(''), 'instruction');
+    assert.equal(StepClassifier.classifyIntent(undefined), 'instruction');
   });
 });

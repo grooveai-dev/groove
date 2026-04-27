@@ -18,6 +18,7 @@ import {
   TRAINING_MIN_TOKENS,
   TRAINING_MIN_DURATION,
   TRAINING_EXCLUSION_REASONS,
+  USER_MESSAGE_MAX_CHARS,
 } from '../shared/constants.js';
 
 const OFFLINE_RETRY_INTERVAL_MS = 60_000;
@@ -131,15 +132,20 @@ export class TrajectoryCapture {
 
   }
 
-  onUserMessage(agentId, text) {
+  onUserMessage(agentId, text, source = 'user') {
     if (!this._enabled) return;
     const ctx = this._contexts.get(agentId);
     if (!ctx) return;
 
-    ctx.revisionRounds++;
+    const capped = (typeof text === 'string' && text.length > USER_MESSAGE_MAX_CHARS)
+      ? text.slice(0, USER_MESSAGE_MAX_CHARS)
+      : text;
 
-    const classified = ctx.classifier.classifyUserMessage(text);
-    if (!classified) return;
+    const classified = ctx.classifier.classifyUserMessage(capped, source);
+
+    if (classified.type === 'correction' || classified.type === 'clarification') {
+      ctx.revisionRounds++;
+    }
 
     this._processStep(agentId, ctx, classified);
   }

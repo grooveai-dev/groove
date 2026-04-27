@@ -3,21 +3,37 @@
 const ERROR_SIGNAL_RE = /\b(?:error|Error|ERROR|exception|Exception|EXCEPTION|failed|FAILED|exit code [1-9]|ENOENT|EACCES|EPERM|TypeError|ReferenceError|SyntaxError|Cannot find|Module not found|Command failed|non-zero exit)\b/;
 const FIX_SIGNAL_RE = /\b(?:fix|correcting|I see the issue|let me fix|the (?:issue|problem|bug) (?:is|was)|instead I should|my mistake)\b/i;
 
+const CORRECTION_RE = /\b(?:no[,. ](?:that|not|don't|wrong)|that'?s (?:not|wrong|incorrect)|don'?t do that|stop (?:doing|that)|instead (?:of|do)|undo|revert|go back|try (?:again|differently)|you (?:broke|missed|forgot))\b/i;
+const APPROVAL_RE = /\b(?:looks? good|lgtm|approved?|go ahead|ship it|that'?s (?:right|correct|perfect)|perfect|exactly right|nice work|well done|great job)\b/i;
+const CLARIFICATION_RE = /\b(?:what (?:about|I (?:mean|want))|I meant|to (?:be clear|clarify)|let me (?:rephrase|explain)|clarif(?:y|ication)|more specifically)\b/i;
+
 export class StepClassifier {
   constructor() {
     this.hasAgentActed = false;
     this._lastStepType = null;
   }
 
-  classifyUserMessage(text) {
+  classifyUserMessage(text, source = 'user') {
     if (!this.hasAgentActed) {
-      return null;
+      return {
+        type: 'instruction',
+        content: text,
+        source,
+      };
     }
     return {
-      type: 'correction',
+      type: StepClassifier.classifyIntent(text),
       content: text,
-      source: 'user',
+      source,
     };
+  }
+
+  static classifyIntent(text) {
+    if (!text || typeof text !== 'string') return 'instruction';
+    if (CORRECTION_RE.test(text)) return 'correction';
+    if (APPROVAL_RE.test(text)) return 'approval';
+    if (CLARIFICATION_RE.test(text)) return 'clarification';
+    return 'instruction';
   }
 
   classifyCoordinationEvent(event) {
@@ -42,7 +58,7 @@ export class StepClassifier {
       step.type = 'error';
     }
 
-    if (step.type === 'thought' && this._lastStepType === 'correction' && FIX_SIGNAL_RE.test(content)) {
+    if (step.type === 'thought' && (this._lastStepType === 'correction' || this._lastStepType === 'instruction') && FIX_SIGNAL_RE.test(content)) {
       step.correction_context = true;
     }
 
@@ -63,6 +79,6 @@ export class StepClassifier {
   }
 
   static countUserInterventions(steps) {
-    return steps.filter((s) => s.type === 'correction').length;
+    return steps.filter((s) => s.type === 'correction' || s.type === 'clarification').length;
   }
 }

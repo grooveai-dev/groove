@@ -36,4 +36,6 @@ export const TRAINING_MIN_TOKENS = 500;
 export const TRAINING_MIN_DURATION = 10;
 export const TRAINING_EXCLUSION_REASONS = ['too_few_steps', 'no_actions', 'no_observations', 'insufficient_tokens', 'too_short'];
 
+export const USER_MESSAGE_MAX_CHARS = 2000;
+
 export const CENTRAL_COMMAND_URL = process.env.GROOVE_CENTRAL_URL || 'https://api.groovedev.ai';

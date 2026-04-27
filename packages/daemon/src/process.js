@@ -1434,7 +1434,7 @@ For normal file edits within your scope, proceed without review.
           if (existing && (existing.status === 'running' || existing.status === 'starting')) {
             // Agent already active — reuse it instead of spawning a duplicate
             if (config.prompt) {
-              this.sendMessage(existing.id, config.prompt).catch((err) => {
+              this.sendMessage(existing.id, config.prompt, 'planner').catch((err) => {
                 console.error(`[Groove] Phase 2 reuse message failed for ${existing.name}: ${err.message}`);
               });
             }
@@ -1527,7 +1527,7 @@ For normal file edits within your scope, proceed without review.
     const message = `Your teammate ${completedAgent.name} (${completedAgent.role}) just finished their work.${fileList}${result ? `\n\nTheir summary:\n${result.slice(0, 2000)}` : ''}\n\nPlease audit their changes: verify correctness, check for bugs, run tests if available, and report any issues.`;
 
     // Send message to the QC agent via the instruct flow
-    this.sendMessage(qc.id, message).catch((err) => {
+    this.sendMessage(qc.id, message, 'system').catch((err) => {
       console.error(`[Groove] QC auto-trigger failed: ${err.message}`);
     });
 
@@ -1651,7 +1651,7 @@ For normal file edits within your scope, proceed without review.
       if (target.status === 'running') {
         let sent = false;
         if (this.hasAgentLoop(target.id)) {
-          this.sendMessage(target.id, message).catch(() => {});
+          this.sendMessage(target.id, message, 'agent').catch(() => {});
           sent = true;
         }
         if (!sent && this.daemon.journalist) {
@@ -2189,7 +2189,7 @@ For normal file edits within your scope, proceed without review.
    * Send a message to a running agent loop.
    * Returns true if the message was sent, false if the agent doesn't have an active loop.
    */
-  async sendMessage(agentId, message) {
+  async sendMessage(agentId, message, source = 'user') {
     const handle = this.handles.get(agentId);
     if (!handle?.loop) return false;
 
@@ -2200,7 +2200,7 @@ For normal file edits within your scope, proceed without review.
     const wrapped = agent ? wrapWithRoleReminder(agent.role, message) : message;
 
     if (this.daemon.trajectoryCapture) {
-      try { this.daemon.trajectoryCapture.onUserMessage(agentId, message); } catch (e) { /* fail silent */ }
+      try { this.daemon.trajectoryCapture.onUserMessage(agentId, message, source); } catch (e) { /* fail silent */ }
     }
 
     loop.sendMessage(wrapped).catch(() => {});

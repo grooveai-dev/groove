@@ -145,9 +145,9 @@ function InstallStep({ providerId, meta }) {
 
       {hasError && (
         <div className="space-y-3">
-          {typeof hasError === 'string' && hasError.length > 40 && (
-            <div className="p-3 bg-surface-0 border border-border-subtle rounded-md max-h-24 overflow-y-auto">
-              <p className="text-2xs font-mono text-danger/80 whitespace-pre-wrap break-all">{hasError}</p>
+          {typeof hasError === 'string' && (
+            <div className="p-3 bg-danger/5 border border-danger/20 rounded-md max-h-32 overflow-y-auto">
+              <p className="text-2xs font-mono text-danger whitespace-pre-wrap break-all">{hasError}</p>
             </div>
           )}
           <p className="text-xs text-text-2 font-sans">Check that npm is in your PATH and try again.</p>
@@ -263,9 +263,33 @@ function AuthenticateStep({ providerId, meta, onSaveKey }) {
                 <ExternalLink size={12} className="text-accent" />
                 <span className="text-xs text-accent font-sans">Sign-in opened in your browser</span>
               </div>
-              <Button variant="primary" size="sm" onClick={onSaveKey} className="gap-1.5">
-                <Check size={11} /> I've signed in
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={verifying}
+                onClick={async () => {
+                  setVerifying(true);
+                  setVerifyError('');
+                  try {
+                    const res = await api.post(`/providers/${providerId}/verify`);
+                    if (res.authenticated) {
+                      onSaveKey();
+                    } else {
+                      setVerifyError('Authentication not detected yet. Please complete sign-in in your browser and try again.');
+                    }
+                  } catch {
+                    setVerifyError('Authentication not detected yet. Please complete sign-in in your browser and try again.');
+                  } finally {
+                    setVerifying(false);
+                  }
+                }}
+                className="gap-1.5"
+              >
+                {verifying ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} I've signed in
               </Button>
+              {verifyError && (
+                <p className="text-2xs text-danger font-sans">{verifyError}</p>
+              )}
             </div>
           )}
           <p className="text-2xs text-text-4 font-sans">

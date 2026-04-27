@@ -41,7 +41,7 @@ export class GeminiProvider extends Provider {
 
   static isInstalled() {
     try {
-      const cmd = process.platform === 'win32' ? 'where gemini' : 'which gemini';
+      const cmd = process.platform === 'win32' ? 'where gemini' : 'bash -lc "which gemini"';
       execSync(cmd, { stdio: 'ignore' });
       return true;
     } catch {

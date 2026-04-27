@@ -131,7 +131,13 @@ function ProjectFolderStep({ selectedDir, onSelectDir }) {
   const remoteHomedir = useGrooveStore((s) => s.remoteHomedir);
   const [browsing, setBrowsing] = useState(false);
 
+  const isRemote = new URLSearchParams(window.location.search).has('instance');
+
   async function handleBrowse() {
+    if (isRemote) {
+      setBrowsing(true);
+      return;
+    }
     const dir = await selectFolder({
       title: 'Choose your project folder',
       defaultPath: selectedDir || undefined,

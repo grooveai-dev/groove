@@ -472,8 +472,20 @@ function ProviderCard({ provider, onKeyChange }) {
                           setChecking(false);
                         }
                       } else {
-                        setLoginPending(false);
-                        if (onKeyChange) onKeyChange();
+                        setChecking(true);
+                        try {
+                          const res = await api.post(`/providers/claude-code/verify`);
+                          if (res.authenticated) {
+                            setLoginPending(false);
+                            if (onKeyChange) onKeyChange();
+                          } else {
+                            addToast('error', 'Authentication not detected yet. Please complete sign-in in your browser and try again.');
+                          }
+                        } catch {
+                          addToast('error', 'Authentication not detected yet. Please complete sign-in in your browser and try again.');
+                        } finally {
+                          setChecking(false);
+                        }
                       }
                     }}
                     className="w-full h-8 text-xs gap-1.5"

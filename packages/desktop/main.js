@@ -553,13 +553,31 @@ class WorkspaceManager {
       } catch {}
 
       if (!grooveInstalled) {
-        emitProgress('Installing Groove on remote server...');
+        emitProgress('Checking remote environment...');
         try {
-          sshExec(`npm i -g groove-dev@${app.getVersion()}`, 120000);
+          const envCheck = sshExec('which node && which npm || echo __NO_NODE__', 20000);
+          if (envCheck.includes('__NO_NODE__')) {
+            proc.kill();
+            throw new Error('Node.js and npm are not installed on the remote server. Install Node.js 20+ first, then retry.');
+          }
+        } catch (envErr) {
+          if (envErr.message.includes('not installed on the remote')) throw envErr;
+          proc.kill();
+          throw new Error(`Failed to check remote environment: ${envErr.message}`);
+        }
+
+        emitProgress('Installing Groove on remote server...');
+        const isRoot = conn.user === 'root';
+        const localVer = app.getVersion();
+        const pinnedPkg = `groove-dev@${localVer}`;
+        const latestPkg = 'groove-dev';
+        const installCmd = (pkg) => isRoot ? `npm i -g ${pkg}` : `sudo npm i -g ${pkg}`;
+        try {
+          sshExec(installCmd(pinnedPkg), 120000);
         } catch (e) {
           emitProgress('Pinned version failed — trying latest...');
           try {
-            sshExec('npm i -g groove-dev', 120000);
+            sshExec(installCmd(latestPkg), 120000);
           } catch (e2) {
             proc.kill();
             throw new Error(`Failed to install Groove on remote server: ${e2.message || 'npm install failed'}`);
@@ -576,7 +594,7 @@ class WorkspaceManager {
 
     if (!healthy) {
       proc.kill();
-      throw new Error('Remote daemon not responding — check that Node.js and npm are installed on the server');
+      throw new Error('Remote daemon started but not responding on port 31415 — check firewall settings or try again');
     }
 
     const localVersion = app.getVersion();
@@ -587,13 +605,14 @@ class WorkspaceManager {
         const remoteVersion = status.version;
         if (remoteVersion && remoteVersion !== localVersion) {
           emitProgress(`Updating remote Groove ${remoteVersion} → ${localVersion}...`);
+          const upgradeCmd = (pkg) => conn.user === 'root' ? `npm i -g ${pkg}` : `sudo npm i -g ${pkg}`;
           try {
-            sshExec(`npm i -g groove-dev@${localVersion}`, 120000);
+            sshExec(upgradeCmd(`groove-dev@${localVersion}`), 120000);
           } catch (e) {
             console.error('[ssh] Remote upgrade failed:', e.message);
             emitProgress('Pinned upgrade failed — trying latest...');
             try {
-              sshExec('npm i -g groove-dev', 120000);
+              sshExec(upgradeCmd('groove-dev'), 120000);
             } catch (e2) {
               console.error('[ssh] Unpinned upgrade also failed:', e2.message);
               emitProgress('Remote upgrade failed — running older version');

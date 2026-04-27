@@ -46,7 +46,7 @@ export class ClaudeCodeProvider extends Provider {
 
   static isInstalled() {
     try {
-      const cmd = process.platform === 'win32' ? 'where claude' : 'which claude';
+      const cmd = process.platform === 'win32' ? 'where claude' : 'bash -lc "which claude"';
       execSync(cmd, { stdio: 'ignore' });
       return true;
     } catch {
@@ -55,14 +55,14 @@ export class ClaudeCodeProvider extends Provider {
   }
 
   static isAuthenticated() {
-    const home = homedir();
-    const settingsPath = resolve(home, '.claude', 'settings.json');
-    if (!existsSync(settingsPath)) return { authenticated: false, reason: 'Claude Code not configured' };
+    if (!ClaudeCodeProvider.isInstalled()) return { authenticated: false, reason: 'Claude Code not installed' };
     try {
-      execSync('claude --version', { stdio: 'ignore', timeout: 5000 });
-      return { authenticated: true, method: 'subscription' };
+      const out = execSync('bash -lc "claude auth status --json"', { encoding: 'utf8', timeout: 10_000, stdio: ['pipe', 'pipe', 'pipe'] });
+      const data = JSON.parse(out);
+      const method = data.authMethod || data.auth_method || 'subscription';
+      return { authenticated: true, method };
     } catch {
-      return { authenticated: false, reason: 'Claude CLI not responding' };
+      return { authenticated: false, reason: 'Not logged in. Run: claude auth login' };
     }
   }
 

@@ -49,7 +49,7 @@ export class CodexProvider extends Provider {
 
   static isInstalled() {
     try {
-      const cmd = process.platform === 'win32' ? 'where codex' : 'which codex';
+      const cmd = process.platform === 'win32' ? 'where codex' : 'bash -lc "which codex"';
       execSync(cmd, { stdio: 'ignore' });
       return true;
     } catch {

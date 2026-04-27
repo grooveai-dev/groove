@@ -631,9 +631,8 @@ export function createApi(app, daemon) {
 
     write({ status: 'installing', output: `Installing ${pkg}...`, progress: 0 });
 
-    const proc = spawn('npm', ['install', '-g', pkg], {
+    const proc = spawn('bash', ['-lc', `npm install -g ${pkg}`], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: true,
       env: { ...process.env, NODE_ENV: undefined },
     });
 
@@ -4729,9 +4728,8 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
     write({ status: 'installing', output: `Installing ${pkg}...`, progress: 0 });
 
-    const proc = spawn('npm', ['install', '-g', pkg], {
+    const proc = spawn('bash', ['-lc', `npm install -g ${pkg}`], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: true,
       env: { ...process.env, NODE_ENV: undefined },
     });
 

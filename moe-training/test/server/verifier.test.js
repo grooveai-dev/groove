@@ -225,6 +225,100 @@ describe('EnvelopeVerifier', () => {
     assert.equal(result.valid, false);
     assert.ok(result.reason.includes('HMAC'));
   });
+
+  // --- verifyFeedback ---
+
+  it('verifyFeedback accepts valid USER_FEEDBACK envelope', () => {
+    const envelope = {
+      envelope_id: 'env_fb_1',
+      session_id: sessionId,
+      type: 'USER_FEEDBACK',
+      feedback: {
+        signal: 'accepted',
+        timestamp: Date.now() / 1000,
+        context: 'completed with no interventions',
+        target_step: 10,
+        revision_rounds: 0,
+        delta_summary: null,
+      },
+    };
+
+    const forHmac = { ...envelope };
+    const envelopeBytes = JSON.stringify(forHmac);
+    const hmac = signEnvelope(sharedSecret, envelopeBytes, 0);
+    envelope.attestation = { session_hmac: hmac, sequence: 0, app_version_hash: VALID_APP_HASH };
+
+    const result = verifier.verifyFeedback(envelope);
+    assert.equal(result.valid, true);
+  });
+
+  it('verifyFeedback rejects unknown session_id', () => {
+    const envelope = {
+      envelope_id: 'env_fb_2',
+      session_id: 'sess_nonexistent',
+      type: 'USER_FEEDBACK',
+      feedback: { signal: 'accepted', timestamp: Date.now() / 1000 },
+      attestation: { session_hmac: 'a'.repeat(64), sequence: 0, app_version_hash: VALID_APP_HASH },
+    };
+    const result = verifier.verifyFeedback(envelope);
+    assert.equal(result.valid, false);
+    assert.ok(result.reason.includes('unknown session_id'));
+  });
+
+  it('verifyFeedback rejects missing attestation', () => {
+    const envelope = {
+      envelope_id: 'env_fb_3',
+      session_id: sessionId,
+      type: 'USER_FEEDBACK',
+      feedback: { signal: 'accepted', timestamp: Date.now() / 1000 },
+    };
+    const result = verifier.verifyFeedback(envelope);
+    assert.equal(result.valid, false);
+    assert.ok(result.reason.includes('attestation'));
+  });
+
+  it('verifyFeedback rejects tampered HMAC', () => {
+    const envelope = {
+      envelope_id: 'env_fb_4',
+      session_id: sessionId,
+      type: 'USER_FEEDBACK',
+      feedback: { signal: 'accepted', timestamp: Date.now() / 1000 },
+      attestation: { session_hmac: 'f'.repeat(64), sequence: 0, app_version_hash: VALID_APP_HASH },
+    };
+    const result = verifier.verifyFeedback(envelope);
+    assert.equal(result.valid, false);
+    assert.ok(result.reason.includes('HMAC'));
+  });
+
+  it('verifyFeedback rejects invalid signal via schema', () => {
+    const envelope = {
+      envelope_id: 'env_fb_5',
+      session_id: sessionId,
+      type: 'USER_FEEDBACK',
+      feedback: { signal: 'thumbs_up', timestamp: Date.now() / 1000 },
+    };
+
+    const forHmac = { ...envelope };
+    const envelopeBytes = JSON.stringify(forHmac);
+    const hmac = signEnvelope(sharedSecret, envelopeBytes, 0);
+    envelope.attestation = { session_hmac: hmac, sequence: 0, app_version_hash: VALID_APP_HASH };
+
+    const result = verifier.verifyFeedback(envelope);
+    assert.equal(result.valid, false);
+    assert.ok(result.reason.includes('schema'));
+  });
+
+  it('verifyFeedback rejects missing session_id', () => {
+    const envelope = {
+      envelope_id: 'env_fb_6',
+      type: 'USER_FEEDBACK',
+      feedback: { signal: 'accepted', timestamp: Date.now() / 1000 },
+      attestation: { session_hmac: 'a'.repeat(64), sequence: 0, app_version_hash: VALID_APP_HASH },
+    };
+    const result = verifier.verifyFeedback(envelope);
+    assert.equal(result.valid, false);
+    assert.ok(result.reason.includes('session_id'));
+  });
 });
 
 function verifyClose(verifier, envelope) {

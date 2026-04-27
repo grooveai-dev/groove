@@ -57,6 +57,8 @@ describe('GeminiParser', () => {
     });
     assert.equal(result.type, 'observation');
     assert.equal(result.content, 'Found 3 matches');
+    assert.equal(result.truncated, false);
+    assert.equal(typeof result.original_token_count, 'number');
   });
 
   it('parses error event', () => {

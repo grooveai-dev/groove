@@ -1,0 +1,345 @@
+// FSL-1.1-Apache-2.0 — see LICENSE
+
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { TrajectoryCapture } from '../../client/trajectory-capture.js';
+
+function makeTc() {
+  const tc = new TrajectoryCapture({ centralCommandUrl: 'http://localhost:9999' });
+  return tc;
+}
+
+function makeCtx(overrides = {}) {
+  return {
+    sessionId: 'sess_test_1',
+    stepCount: overrides.stepCount ?? 20,
+    totalTokens: overrides.totalTokens ?? 5000,
+    errorsEncountered: overrides.errorsEncountered ?? 0,
+    errorsRecovered: overrides.errorsRecovered ?? 0,
+    coordinationEvents: overrides.coordinationEvents ?? 0,
+    revisionRounds: overrides.revisionRounds ?? 0,
+    allSteps: overrides.allSteps ?? [
+      { step: 1, type: 'thought', content: 'thinking' },
+      { step: 2, type: 'action', tool: 'Bash', content: 'running command' },
+      { step: 3, type: 'observation', content: 'output here' },
+      { step: 4, type: 'thought', content: 'next step' },
+      { step: 5, type: 'action', tool: 'Edit', content: 'editing file' },
+    ],
+    metadata: {
+      session_quality: overrides.quality ?? 80,
+    },
+    builder: {
+      buildSessionClose: (outcome) => ({
+        envelope_id: 'env_test_close',
+        session_id: 'sess_test_1',
+        type: 'SESSION_CLOSE',
+        outcome,
+      }),
+    },
+  };
+}
+
+describe('TrajectoryCapture — quality tier', () => {
+  it('TIER_A: high quality, no errors, no interventions, SUCCESS', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 80, errorsEncountered: 0 });
+    const result = tc._computeQualityTier(ctx, 'SUCCESS', 0);
+    assert.equal(result.tier, 'TIER_A');
+    assert.equal(result.reason, 'high_quality_no_errors');
+  });
+
+  it('TIER_A requires quality >= 70', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 69, errorsEncountered: 0 });
+    const result = tc._computeQualityTier(ctx, 'SUCCESS', 0);
+    assert.notEqual(result.tier, 'TIER_A');
+  });
+
+  it('TIER_A requires zero errors', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 80, errorsEncountered: 1 });
+    const result = tc._computeQualityTier(ctx, 'SUCCESS', 0);
+    assert.notEqual(result.tier, 'TIER_A');
+  });
+
+  it('TIER_A requires zero user interventions', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 80, errorsEncountered: 0 });
+    const result = tc._computeQualityTier(ctx, 'SUCCESS', 1);
+    assert.notEqual(result.tier, 'TIER_A');
+  });
+
+  it('TIER_A requires SUCCESS status', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 80, errorsEncountered: 0 });
+    const result = tc._computeQualityTier(ctx, 'CRASH', 0);
+    assert.notEqual(result.tier, 'TIER_A');
+  });
+
+  it('TIER_B: moderate quality >= 50 with SUCCESS', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 55, errorsEncountered: 0 });
+    const result = tc._computeQualityTier(ctx, 'SUCCESS', 0);
+    assert.equal(result.tier, 'TIER_B');
+    assert.equal(result.reason, 'moderate_quality');
+  });
+
+  it('TIER_C: non-SUCCESS status overrides quality', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 55, errorsEncountered: 0 });
+    const result = tc._computeQualityTier(ctx, 'CRASH', 0);
+    assert.equal(result.tier, 'TIER_C');
+    assert.equal(result.reason, 'non_success_status');
+  });
+
+  it('TIER_B: errors fully recovered', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 40, errorsEncountered: 2, errorsRecovered: 2 });
+    const result = tc._computeQualityTier(ctx, 'SUCCESS', 0);
+    assert.equal(result.tier, 'TIER_B');
+    assert.equal(result.reason, 'errors_recovered');
+  });
+
+  it('TIER_C: low quality below 50', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 30, errorsEncountered: 0 });
+    const result = tc._computeQualityTier(ctx, 'SUCCESS', 0);
+    assert.equal(result.tier, 'TIER_C');
+    assert.equal(result.reason, 'low_quality');
+  });
+
+  it('TIER_C: unrecovered errors with low quality', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 45, errorsEncountered: 3, errorsRecovered: 1 });
+    const result = tc._computeQualityTier(ctx, 'SUCCESS', 2);
+    assert.equal(result.tier, 'TIER_C');
+  });
+
+  it('TIER_B at exactly quality=50 boundary', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 50, errorsEncountered: 0 });
+    const result = tc._computeQualityTier(ctx, 'SUCCESS', 0);
+    assert.equal(result.tier, 'TIER_B');
+  });
+
+  it('TIER_A at exactly quality=70 boundary', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ quality: 70, errorsEncountered: 0 });
+    const result = tc._computeQualityTier(ctx, 'SUCCESS', 0);
+    assert.equal(result.tier, 'TIER_A');
+  });
+});
+
+describe('TrajectoryCapture — training eligibility', () => {
+  it('eligible when all criteria met', () => {
+    const tc = makeTc();
+    const ctx = makeCtx();
+    const result = tc._computeTrainingEligibility(ctx, 60);
+    assert.equal(result.eligible, true);
+    assert.equal(result.exclusionReason, null);
+  });
+
+  it('ineligible: too_few_steps (< 5)', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ stepCount: 4 });
+    const result = tc._computeTrainingEligibility(ctx, 60);
+    assert.equal(result.eligible, false);
+    assert.equal(result.exclusionReason, 'too_few_steps');
+  });
+
+  it('ineligible: no_actions (no step with type action + tool)', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({
+      allSteps: [
+        { step: 1, type: 'thought', content: 'thinking' },
+        { step: 2, type: 'thought', content: 'more thinking' },
+        { step: 3, type: 'observation', content: 'output' },
+        { step: 4, type: 'thought', content: 'done' },
+        { step: 5, type: 'resolution', content: 'completed' },
+      ],
+    });
+    const result = tc._computeTrainingEligibility(ctx, 60);
+    assert.equal(result.eligible, false);
+    assert.equal(result.exclusionReason, 'no_actions');
+  });
+
+  it('ineligible: no_observations', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({
+      allSteps: [
+        { step: 1, type: 'thought', content: 'thinking' },
+        { step: 2, type: 'action', tool: 'Bash', content: 'run' },
+        { step: 3, type: 'thought', content: 'hmm' },
+        { step: 4, type: 'action', tool: 'Edit', content: 'edit' },
+        { step: 5, type: 'resolution', content: 'done' },
+      ],
+    });
+    const result = tc._computeTrainingEligibility(ctx, 60);
+    assert.equal(result.eligible, false);
+    assert.equal(result.exclusionReason, 'no_observations');
+  });
+
+  it('ineligible: insufficient_tokens (< 500)', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ totalTokens: 400 });
+    const result = tc._computeTrainingEligibility(ctx, 60);
+    assert.equal(result.eligible, false);
+    assert.equal(result.exclusionReason, 'insufficient_tokens');
+  });
+
+  it('ineligible: too_short (duration < 10s)', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ totalTokens: 5000 });
+    const result = tc._computeTrainingEligibility(ctx, 9);
+    assert.equal(result.eligible, false);
+    assert.equal(result.exclusionReason, 'too_short');
+  });
+
+  it('eligible at exact boundary values', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ stepCount: 5, totalTokens: 500 });
+    const result = tc._computeTrainingEligibility(ctx, 10);
+    assert.equal(result.eligible, true);
+    assert.equal(result.exclusionReason, null);
+  });
+
+  it('exclusion reasons follow priority order', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({
+      stepCount: 3,
+      totalTokens: 100,
+      allSteps: [
+        { step: 1, type: 'thought', content: 'thinking' },
+        { step: 2, type: 'thought', content: 'more' },
+        { step: 3, type: 'thought', content: 'done' },
+      ],
+    });
+    const result = tc._computeTrainingEligibility(ctx, 5);
+    assert.equal(result.exclusionReason, 'too_few_steps');
+  });
+});
+
+describe('TrajectoryCapture — user feedback emission', () => {
+  it('emits accepted signal on SUCCESS with 0 interventions and 0 revisions', () => {
+    const tc = makeTc();
+    const captured = [];
+    tc._signAndTransmit = (_sid, envelope) => { captured.push(envelope); };
+
+    const ctx = makeCtx({ revisionRounds: 0 });
+    ctx.stepCount = 10;
+    tc._emitUserFeedback(ctx, 'SUCCESS', 0);
+
+    assert.equal(captured.length, 1);
+    assert.equal(captured[0].type, 'USER_FEEDBACK');
+    assert.equal(captured[0].feedback.signal, 'accepted');
+    assert.equal(captured[0].feedback.revision_rounds, 0);
+    assert.equal(captured[0].feedback.target_step, 10);
+  });
+
+  it('emits iterated signal on SUCCESS with revision rounds > 0', () => {
+    const tc = makeTc();
+    const captured = [];
+    tc._signAndTransmit = (_sid, envelope) => { captured.push(envelope); };
+
+    const ctx = makeCtx({ revisionRounds: 3 });
+    ctx.stepCount = 25;
+    tc._emitUserFeedback(ctx, 'SUCCESS', 2);
+
+    assert.equal(captured.length, 1);
+    assert.equal(captured[0].feedback.signal, 'iterated');
+    assert.equal(captured[0].feedback.revision_rounds, 3);
+    assert.ok(captured[0].feedback.context.includes('3 revision'));
+  });
+
+  it('does not emit feedback on non-SUCCESS status', () => {
+    const tc = makeTc();
+    const captured = [];
+    tc._signAndTransmit = (_sid, envelope) => { captured.push(envelope); };
+
+    const ctx = makeCtx({ revisionRounds: 0 });
+    tc._emitUserFeedback(ctx, 'CRASH', 0);
+
+    assert.equal(captured.length, 0);
+  });
+
+  it('does not emit feedback when SHUTDOWN', () => {
+    const tc = makeTc();
+    const captured = [];
+    tc._signAndTransmit = (_sid, envelope) => { captured.push(envelope); };
+
+    const ctx = makeCtx({ revisionRounds: 0 });
+    tc._emitUserFeedback(ctx, 'SHUTDOWN', 0);
+
+    assert.equal(captured.length, 0);
+  });
+
+  it('feedback envelope has correct structure', () => {
+    const tc = makeTc();
+    const captured = [];
+    tc._signAndTransmit = (_sid, envelope) => { captured.push(envelope); };
+
+    const ctx = makeCtx({ revisionRounds: 0 });
+    ctx.stepCount = 15;
+    tc._emitUserFeedback(ctx, 'SUCCESS', 0);
+
+    const fb = captured[0];
+    assert.ok(fb.envelope_id.startsWith('env_'));
+    assert.equal(fb.session_id, 'sess_test_1');
+    assert.equal(fb.type, 'USER_FEEDBACK');
+    assert.ok(fb.attestation);
+    assert.ok(fb.feedback.timestamp > 0);
+    assert.equal(fb.feedback.delta_summary, null);
+  });
+});
+
+describe('TrajectoryCapture — _computeQuality', () => {
+  it('base score is 50', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ allSteps: [] });
+    ctx.coordinationEvents = 0;
+    ctx.errorsRecovered = 0;
+    ctx.stepCount = 0;
+    const quality = tc._computeQuality(ctx);
+    assert.equal(quality, 50);
+  });
+
+  it('correction adds 10 points', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({
+      allSteps: [{ step: 1, type: 'correction', content: 'fix' }],
+    });
+    ctx.coordinationEvents = 0;
+    ctx.errorsRecovered = 0;
+    ctx.stepCount = 1;
+    const quality = tc._computeQuality(ctx);
+    assert.ok(quality >= 60);
+  });
+
+  it('coordination adds 10 points', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({ allSteps: [] });
+    ctx.coordinationEvents = 1;
+    ctx.errorsRecovered = 0;
+    ctx.stepCount = 0;
+    const quality = tc._computeQuality(ctx);
+    assert.equal(quality, 60);
+  });
+
+  it('caps at 100', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({
+      allSteps: [
+        { step: 1, type: 'correction' },
+        { step: 2, type: 'thought' },
+        { step: 3, type: 'action' },
+        { step: 4, type: 'observation' },
+        ...Array.from({ length: 16 }, (_, i) => ({ step: i + 5, type: 'thought' })),
+      ],
+    });
+    ctx.coordinationEvents = 5;
+    ctx.errorsRecovered = 3;
+    ctx.stepCount = 20;
+    const quality = tc._computeQuality(ctx);
+    assert.equal(quality, 100);
+  });
+});

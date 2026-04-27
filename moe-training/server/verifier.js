@@ -99,4 +99,38 @@ export class EnvelopeVerifier {
     this.sessionRegistry.closeSession(sessionId);
     return { valid: true };
   }
+
+  verifyFeedback(envelope) {
+    const sessionId = envelope.session_id;
+    if (!sessionId) return { valid: false, reason: 'missing session_id' };
+
+    const session = this.sessionRegistry.getSession(sessionId);
+    if (!session) return { valid: false, reason: 'unknown session_id' };
+
+    const attestation = envelope.attestation;
+    if (!attestation) return { valid: false, reason: 'missing attestation' };
+
+    if (!attestation.session_hmac || typeof attestation.session_hmac !== 'string' || attestation.session_hmac.length === 0) {
+      return { valid: false, reason: 'empty or missing HMAC' };
+    }
+
+    const envelopeForHmac = { ...envelope };
+    delete envelopeForHmac.attestation;
+    const envelopeBytes = JSON.stringify(envelopeForHmac);
+
+    const hmacValid = verifyEnvelope(
+      session.shared_secret,
+      envelopeBytes,
+      attestation.sequence,
+      attestation.session_hmac
+    );
+    if (!hmacValid) return { valid: false, reason: 'HMAC verification failed' };
+
+    const schemaResult = validateEnvelope(envelope);
+    if (!schemaResult.valid) {
+      return { valid: false, reason: `schema validation failed: ${schemaResult.reason || schemaResult.errors?.join(', ')}` };
+    }
+
+    return { valid: true };
+  }
 }

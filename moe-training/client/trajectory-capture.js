@@ -8,7 +8,16 @@ import { StepClassifier } from './step-classifier.js';
 import { EnvelopeBuilder } from './envelope-builder.js';
 import { SessionAttestation } from './session-attestation.js';
 import { TransmissionQueue } from './transmission-queue.js';
-import { CHUNK_TIMEOUT_MS, CENTRAL_COMMAND_URL } from '../shared/constants.js';
+import {
+  CHUNK_TIMEOUT_MS,
+  CENTRAL_COMMAND_URL,
+  TIER_A_MIN_QUALITY,
+  TIER_B_MIN_QUALITY,
+  TRAINING_MIN_STEPS,
+  TRAINING_MIN_TOKENS,
+  TRAINING_MIN_DURATION,
+  TRAINING_EXCLUSION_REASONS,
+} from '../shared/constants.js';
 
 const OFFLINE_RETRY_INTERVAL_MS = 60_000;
 
@@ -56,6 +65,7 @@ export class TrajectoryCapture {
       team_size: teamSize || 1,
       session_quality: 0,
       groove_version: this._grooveVersion,
+      leaf_context: null,
     };
 
     const builder = new EnvelopeBuilder(sessionId, contributorId, metadata);
@@ -78,6 +88,7 @@ export class TrajectoryCapture {
       startTime,
       chunkTimer: null,
       allSteps: [],
+      revisionRounds: 0,
     };
 
     ctx.chunkTimer = setInterval(() => {
@@ -125,6 +136,8 @@ export class TrajectoryCapture {
     if (!this._enabled) return;
     const ctx = this._contexts.get(agentId);
     if (!ctx) return;
+
+    ctx.revisionRounds++;
 
     const classified = ctx.classifier.classifyUserMessage(text);
     if (!classified) return;
@@ -238,21 +251,33 @@ export class TrajectoryCapture {
 
     ctx.metadata.session_quality = this._computeQuality(ctx);
 
+    const userInterventions = StepClassifier.countUserInterventions(ctx.allSteps);
+    const durationSeconds = Math.round((Date.now() - ctx.startTime) / 1000);
+
+    const { tier, reason: tierReason } = this._computeQualityTier(ctx, status, userInterventions);
+    const { eligible, exclusionReason } = this._computeTrainingEligibility(ctx, durationSeconds);
+
     const closeEnvelope = ctx.builder.buildSessionClose({
       status,
       session_quality: ctx.metadata.session_quality,
-      user_interventions: StepClassifier.countUserInterventions(ctx.allSteps),
+      quality_tier: tier,
+      quality_tier_reason: tierReason,
+      user_interventions: userInterventions,
       total_steps: ctx.stepCount,
       total_chunks: ctx.chunkCount,
       total_tokens: ctx.totalTokens,
-      duration_seconds: Math.round((Date.now() - ctx.startTime) / 1000),
+      duration_seconds: durationSeconds,
       files_modified: extra?.files_modified || ctx.filesModified,
       errors_encountered: ctx.errorsEncountered,
       errors_recovered: ctx.errorsRecovered,
       coordination_events: ctx.coordinationEvents,
+      training_eligible: eligible,
+      training_exclusion_reason: exclusionReason,
     });
 
     this._signAndTransmit(ctx.sessionId, closeEnvelope);
+
+    this._emitUserFeedback(ctx, status, userInterventions);
 
     try {
       await this._transmissionQueue.waitForDrain();
@@ -267,6 +292,73 @@ export class TrajectoryCapture {
     }
 
     this._contexts.delete(agentId);
+  }
+
+  _computeQualityTier(ctx, status, userInterventions) {
+    const quality = ctx.metadata.session_quality;
+    if (quality >= TIER_A_MIN_QUALITY && ctx.errorsEncountered === 0 && userInterventions === 0 && status === 'SUCCESS') {
+      return { tier: 'TIER_A', reason: 'high_quality_no_errors' };
+    }
+    if (status !== 'SUCCESS') {
+      return { tier: 'TIER_C', reason: 'non_success_status' };
+    }
+    if (quality >= TIER_B_MIN_QUALITY || (ctx.errorsEncountered > 0 && ctx.errorsRecovered === ctx.errorsEncountered)) {
+      return { tier: 'TIER_B', reason: quality >= TIER_B_MIN_QUALITY ? 'moderate_quality' : 'errors_recovered' };
+    }
+    return { tier: 'TIER_C', reason: quality < TIER_B_MIN_QUALITY ? 'low_quality' : 'unrecovered_errors' };
+  }
+
+  _computeTrainingEligibility(ctx, durationSeconds) {
+    if (ctx.stepCount < TRAINING_MIN_STEPS) {
+      return { eligible: false, exclusionReason: 'too_few_steps' };
+    }
+    const hasAction = ctx.allSteps.some((s) => s.type === 'action' && s.tool);
+    if (!hasAction) {
+      return { eligible: false, exclusionReason: 'no_actions' };
+    }
+    const hasObservation = ctx.allSteps.some((s) => s.type === 'observation' && s.content);
+    if (!hasObservation) {
+      return { eligible: false, exclusionReason: 'no_observations' };
+    }
+    if (ctx.totalTokens < TRAINING_MIN_TOKENS) {
+      return { eligible: false, exclusionReason: 'insufficient_tokens' };
+    }
+    if (durationSeconds < TRAINING_MIN_DURATION) {
+      return { eligible: false, exclusionReason: 'too_short' };
+    }
+    return { eligible: true, exclusionReason: null };
+  }
+
+  _emitUserFeedback(ctx, status, userInterventions) {
+    let signal;
+    let context;
+
+    if (status === 'SUCCESS' && userInterventions === 0 && ctx.revisionRounds === 0) {
+      signal = 'accepted';
+      context = 'session completed successfully with no user interventions';
+    } else if (status === 'SUCCESS' && ctx.revisionRounds > 0) {
+      signal = 'iterated';
+      context = `user requested ${ctx.revisionRounds} revision(s) before completion`;
+    } else {
+      return;
+    }
+
+    const feedbackEnvelope = {
+      envelope_id: `env_${randomUUID()}`,
+      session_id: ctx.sessionId,
+      type: 'USER_FEEDBACK',
+      attestation: { session_hmac: '', sequence: 0, app_version_hash: '' },
+      feedback: {
+        signal,
+        timestamp: Date.now() / 1000,
+        context,
+        target_step: ctx.stepCount,
+        revision_rounds: ctx.revisionRounds,
+        delta_summary: null,
+      },
+    };
+
+    this._signAndTransmit(ctx.sessionId, feedbackEnvelope);
   }
 
   async _retryOfflineQueue() {

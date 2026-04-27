@@ -3,6 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateEnvelope, STEP_TYPES } from '../../shared/envelope-schema.js';
+import { TRAINING_EXCLUSION_REASONS } from '../../shared/constants.js';
 
 const VALID_HMAC = 'a'.repeat(64);
 const VALID_APP_HASH = 'b'.repeat(64);
@@ -87,6 +88,17 @@ describe('envelope-schema', () => {
       const result = validateEnvelope(env);
       assert.equal(result.valid, true, `Type "${type}" should be valid`);
     }
+  });
+
+  it('edit step type is valid', () => {
+    const env = validEnvelope();
+    env.trajectory_log = [{
+      step: 1, type: 'edit', timestamp: Date.now() / 1000,
+      file_path: 'index.html', edit_type: 'create', content: '<html></html>',
+      token_count: 5,
+    }];
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
   });
 
   // --- New security tests ---
@@ -347,5 +359,284 @@ describe('envelope-schema', () => {
     const result = validateEnvelope(env);
     assert.equal(result.valid, false);
     assert.ok(result.errors.some(e => e.includes('session_hmac')));
+  });
+
+  // --- Observation truncation fields ---
+
+  it('accepts observation step with truncated and original_token_count', () => {
+    const env = validEnvelope();
+    env.trajectory_log.push({
+      step: 3, type: 'observation', timestamp: Date.now() / 1000,
+      content: 'output', token_count: 100, truncated: false, original_token_count: 100,
+    });
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
+  });
+
+  it('accepts observation step with truncated=true', () => {
+    const env = validEnvelope();
+    env.trajectory_log.push({
+      step: 3, type: 'observation', timestamp: Date.now() / 1000,
+      content: 'output...', token_count: 4096, truncated: true, original_token_count: 9000,
+    });
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
+  });
+
+  it('rejects non-boolean truncated field', () => {
+    const env = validEnvelope();
+    env.trajectory_log[0].truncated = 'yes';
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('truncated')));
+  });
+
+  it('rejects negative original_token_count', () => {
+    const env = validEnvelope();
+    env.trajectory_log[0].original_token_count = -5;
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('original_token_count')));
+  });
+
+  it('steps without truncation fields still validate (backward compat)', () => {
+    const env = validEnvelope();
+    assert.equal(env.trajectory_log[0].truncated, undefined);
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
+  });
+
+  // --- domain_tags ---
+
+  it('accepts null domain_tags in metadata', () => {
+    const env = validEnvelope();
+    env.metadata.domain_tags = null;
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
+  });
+
+  it('accepts absent domain_tags in metadata (backward compat)', () => {
+    const env = validEnvelope();
+    assert.equal(env.metadata.domain_tags, undefined);
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
+  });
+
+  it('accepts valid domain_tags object', () => {
+    const env = validEnvelope();
+    env.metadata.domain_tags = {
+      primary: { domain: 'python', confidence: 0.42 },
+      secondary: { domain: 'data_science_ml', confidence: 0.23 },
+      tertiary: { domain: 'devops_docker', confidence: 0.11 },
+    };
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
+  });
+
+  it('rejects domain_tags with invalid confidence', () => {
+    const env = validEnvelope();
+    env.metadata.domain_tags = {
+      primary: { domain: 'python', confidence: 1.5 },
+      secondary: { domain: 'rust', confidence: 0.2 },
+      tertiary: { domain: 'react_frontend', confidence: 0.1 },
+    };
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('confidence')));
+  });
+
+  it('rejects domain_tags missing tertiary', () => {
+    const env = validEnvelope();
+    env.metadata.domain_tags = {
+      primary: { domain: 'python', confidence: 0.4 },
+      secondary: { domain: 'rust', confidence: 0.2 },
+    };
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('tertiary')));
+  });
+
+  // --- leaf_context ---
+
+  it('accepts null leaf_context in metadata', () => {
+    const env = validEnvelope();
+    env.metadata.leaf_context = null;
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
+  });
+
+  it('accepts absent leaf_context in metadata (backward compat)', () => {
+    const env = validEnvelope();
+    assert.equal(env.metadata.leaf_context, undefined);
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
+  });
+
+  it('accepts valid leaf_context object', () => {
+    const env = validEnvelope();
+    env.metadata.leaf_context = {
+      leaf_id: 'python_expert_v3', leaf_version: '1.2.0',
+      confidence_at_route: 0.42, chassis_model: 'Qwen/Qwen3-0.6B',
+    };
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, true);
+  });
+
+  it('rejects leaf_context with invalid confidence_at_route', () => {
+    const env = validEnvelope();
+    env.metadata.leaf_context = {
+      leaf_id: 'test', leaf_version: '1.0', confidence_at_route: 1.5, chassis_model: 'test',
+    };
+    const result = validateEnvelope(env);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('confidence_at_route')));
+  });
+
+  // --- Quality tier in SESSION_CLOSE ---
+
+  it('SESSION_CLOSE accepts quality_tier and training fields', () => {
+    const close = {
+      envelope_id: 'env_close-qt',
+      session_id: 'sess_test-qt',
+      type: 'SESSION_CLOSE',
+      attestation: { session_hmac: VALID_HMAC, sequence: 0, app_version_hash: VALID_APP_HASH },
+      outcome: {
+        status: 'SUCCESS', total_steps: 10, total_chunks: 1,
+        quality_tier: 'TIER_A', quality_tier_reason: 'high_quality_no_errors',
+        training_eligible: true, training_exclusion_reason: null,
+      },
+    };
+    const result = validateEnvelope(close);
+    assert.equal(result.valid, true);
+  });
+
+  it('SESSION_CLOSE rejects invalid quality_tier', () => {
+    const close = {
+      envelope_id: 'env_close-qt2',
+      session_id: 'sess_test-qt2',
+      type: 'SESSION_CLOSE',
+      attestation: { session_hmac: VALID_HMAC, sequence: 0, app_version_hash: VALID_APP_HASH },
+      outcome: {
+        status: 'SUCCESS', total_steps: 10, total_chunks: 1,
+        quality_tier: 'TIER_Z',
+      },
+    };
+    const result = validateEnvelope(close);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('quality_tier')));
+  });
+
+  it('SESSION_CLOSE rejects invalid training_exclusion_reason', () => {
+    const close = {
+      envelope_id: 'env_close-te',
+      session_id: 'sess_test-te',
+      type: 'SESSION_CLOSE',
+      attestation: { session_hmac: VALID_HMAC, sequence: 0, app_version_hash: VALID_APP_HASH },
+      outcome: {
+        status: 'SUCCESS', total_steps: 10, total_chunks: 1,
+        training_eligible: false, training_exclusion_reason: 'bad_vibes',
+      },
+    };
+    const result = validateEnvelope(close);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('training_exclusion_reason')));
+  });
+
+  it('SESSION_CLOSE rejects non-boolean training_eligible', () => {
+    const close = {
+      envelope_id: 'env_close-te2',
+      session_id: 'sess_test-te2',
+      type: 'SESSION_CLOSE',
+      attestation: { session_hmac: VALID_HMAC, sequence: 0, app_version_hash: VALID_APP_HASH },
+      outcome: {
+        status: 'SUCCESS', total_steps: 10, total_chunks: 1,
+        training_eligible: 'yes',
+      },
+    };
+    const result = validateEnvelope(close);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('training_eligible')));
+  });
+
+  it('SESSION_CLOSE without new fields still validates (backward compat)', () => {
+    const close = {
+      envelope_id: 'env_close-bc',
+      session_id: 'sess_test-bc',
+      type: 'SESSION_CLOSE',
+      attestation: { session_hmac: VALID_HMAC, sequence: 0, app_version_hash: VALID_APP_HASH },
+      outcome: { status: 'SUCCESS', total_steps: 10, total_chunks: 1 },
+    };
+    const result = validateEnvelope(close);
+    assert.equal(result.valid, true);
+  });
+
+  // --- USER_FEEDBACK validation ---
+
+  it('valid USER_FEEDBACK passes', () => {
+    const feedback = {
+      envelope_id: 'env_fb_1',
+      session_id: 'sess_fb_1',
+      type: 'USER_FEEDBACK',
+      attestation: { session_hmac: VALID_HMAC, sequence: 0, app_version_hash: VALID_APP_HASH },
+      feedback: {
+        signal: 'accepted', timestamp: Date.now() / 1000,
+        context: 'user ran code without modifications',
+        target_step: 10, revision_rounds: 0, delta_summary: null,
+      },
+    };
+    const result = validateEnvelope(feedback);
+    assert.equal(result.valid, true);
+  });
+
+  it('USER_FEEDBACK rejects invalid signal', () => {
+    const feedback = {
+      envelope_id: 'env_fb_2',
+      session_id: 'sess_fb_2',
+      type: 'USER_FEEDBACK',
+      attestation: { session_hmac: VALID_HMAC, sequence: 0, app_version_hash: VALID_APP_HASH },
+      feedback: { signal: 'thumbs_up', timestamp: Date.now() / 1000 },
+    };
+    const result = validateEnvelope(feedback);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('signal')));
+  });
+
+  it('USER_FEEDBACK rejects missing feedback object', () => {
+    const feedback = {
+      envelope_id: 'env_fb_3',
+      session_id: 'sess_fb_3',
+      type: 'USER_FEEDBACK',
+      attestation: { session_hmac: VALID_HMAC, sequence: 0, app_version_hash: VALID_APP_HASH },
+    };
+    const result = validateEnvelope(feedback);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('feedback')));
+  });
+
+  it('USER_FEEDBACK accepts all valid signal types', () => {
+    for (const signal of ['accepted', 'modified', 'rejected', 'iterated']) {
+      const feedback = {
+        envelope_id: `env_fb_${signal}`,
+        session_id: `sess_fb_${signal}`,
+        type: 'USER_FEEDBACK',
+        attestation: { session_hmac: VALID_HMAC, sequence: 0, app_version_hash: VALID_APP_HASH },
+        feedback: { signal, timestamp: Date.now() / 1000 },
+      };
+      const result = validateEnvelope(feedback);
+      assert.equal(result.valid, true, `Signal "${signal}" should be valid`);
+    }
+  });
+
+  it('USER_FEEDBACK rejects negative revision_rounds', () => {
+    const feedback = {
+      envelope_id: 'env_fb_neg',
+      session_id: 'sess_fb_neg',
+      type: 'USER_FEEDBACK',
+      attestation: { session_hmac: VALID_HMAC, sequence: 0, app_version_hash: VALID_APP_HASH },
+      feedback: { signal: 'iterated', timestamp: Date.now() / 1000, revision_rounds: -1 },
+    };
+    const result = validateEnvelope(feedback);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('revision_rounds')));
   });
 });

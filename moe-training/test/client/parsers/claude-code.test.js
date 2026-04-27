@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { ClaudeCodeParser } from '../../../client/parsers/claude-code.js';
 import { PIIScrubber } from '../../../client/scrubber.js';
-import { OBSERVATION_TRUNCATE_HEAD, OBSERVATION_TRUNCATE_TAIL } from '../../../shared/constants.js';
+import { OBSERVATION_TOKEN_LIMIT } from '../../../shared/constants.js';
 
 function makeToolUseEvent(id, name, input) {
   return {
@@ -110,6 +110,8 @@ describe('ClaudeCodeParser', () => {
       assert.equal(result.content, 'file1.js\nfile2.js');
       assert.equal(result.is_error, false);
       assert.equal(result.tool, 'Bash');
+      assert.equal(result.truncated, false);
+      assert.equal(result.original_token_count, Math.ceil('file1.js\nfile2.js'.length / 4));
     });
 
     it('emits observation for Read tool result', () => {
@@ -219,23 +221,19 @@ describe('ClaudeCodeParser', () => {
   });
 
   describe('observation truncation', () => {
-    it('truncates long observation content', () => {
+    it('truncates observation exceeding token limit', () => {
       const parser = new ClaudeCodeParser();
       parser.parseEvent(makeToolUseEvent('tu_long', 'Bash', { command: 'cat bigfile' }));
 
-      const totalLines = OBSERVATION_TRUNCATE_HEAD + OBSERVATION_TRUNCATE_TAIL + 100;
-      const lines = Array.from({ length: totalLines }, (_, i) => `line ${i + 1}`);
-      const longContent = lines.join('\n');
+      const charLimit = OBSERVATION_TOKEN_LIMIT * 4;
+      const longContent = 'x'.repeat(charLimit + 1000);
 
       const result = parser.parseEvent(makeUserToolResult('tu_long', longContent));
       assert.equal(result.type, 'observation');
-
-      const outputLines = result.content.split('\n');
-      assert.equal(outputLines[0], 'line 1');
-      assert.equal(outputLines[OBSERVATION_TRUNCATE_HEAD - 1], `line ${OBSERVATION_TRUNCATE_HEAD}`);
-      assert.match(outputLines[OBSERVATION_TRUNCATE_HEAD], /\[... 100 lines omitted ...\]/);
-      assert.equal(outputLines[outputLines.length - 1], `line ${totalLines}`);
-      assert.equal(outputLines.length, OBSERVATION_TRUNCATE_HEAD + 1 + OBSERVATION_TRUNCATE_TAIL);
+      assert.equal(result.truncated, true);
+      assert.ok(result.original_token_count > OBSERVATION_TOKEN_LIMIT);
+      assert.match(result.content, /\[TRUNCATED/);
+      assert.ok(result.content.length <= charLimit + 100);
     });
 
     it('does not truncate short observation content', () => {
@@ -245,19 +243,19 @@ describe('ClaudeCodeParser', () => {
       const shortContent = 'line 1\nline 2\nline 3';
       const result = parser.parseEvent(makeUserToolResult('tu_short', shortContent));
       assert.equal(result.content, shortContent);
+      assert.equal(result.truncated, false);
+      assert.equal(result.original_token_count, Math.ceil(shortContent.length / 4));
     });
 
     it('does not truncate errors', () => {
       const parser = new ClaudeCodeParser();
       parser.parseEvent(makeToolUseEvent('tu_err_long', 'Bash', { command: 'bad' }));
 
-      const totalLines = OBSERVATION_TRUNCATE_HEAD + OBSERVATION_TRUNCATE_TAIL + 50;
-      const lines = Array.from({ length: totalLines }, (_, i) => `error line ${i + 1}`);
-      const longError = lines.join('\n');
-
+      const longError = 'x'.repeat(20000);
       const result = parser.parseEvent(makeUserToolResult('tu_err_long', longError, true));
       assert.equal(result.type, 'error');
       assert.equal(result.content, longError);
+      assert.equal(result.truncated, undefined);
     });
   });
 

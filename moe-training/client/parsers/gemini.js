@@ -1,5 +1,23 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
+import { OBSERVATION_TOKEN_LIMIT } from '../../shared/constants.js';
+
+function estimateTokens(text) {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+
+function truncateObservation(text) {
+  if (!text || typeof text !== 'string') return { content: text || '', truncated: false, original_token_count: estimateTokens(text) };
+  const originalTokens = estimateTokens(text);
+  if (originalTokens <= OBSERVATION_TOKEN_LIMIT) {
+    return { content: text, truncated: false, original_token_count: originalTokens };
+  }
+  const charLimit = OBSERVATION_TOKEN_LIMIT * 4;
+  const truncated = text.slice(0, charLimit) + `\n[TRUNCATED — original output was ${originalTokens} tokens]`;
+  return { content: truncated, truncated: true, original_token_count: originalTokens };
+}
+
 export class GeminiParser {
   constructor() {
     this._sessionId = null;
@@ -44,8 +62,9 @@ export class GeminiParser {
       case 'tool_response': {
         const rawContent = jsonEvent.content;
         const contentParts = Array.isArray(rawContent) ? rawContent : (typeof rawContent === 'string' ? [{ text: rawContent }] : rawContent ? [rawContent] : []);
-        const content = contentParts.map((p) => p.text || '').join('').slice(0, 2000);
-        return { type: 'observation', content };
+        const rawText = contentParts.map((p) => p.text || '').join('');
+        const obs = truncateObservation(rawText);
+        return { type: 'observation', content: obs.content, truncated: obs.truncated, original_token_count: obs.original_token_count };
       }
 
       case 'error': {

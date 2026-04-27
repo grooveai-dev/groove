@@ -13,6 +13,7 @@ export const MODEL_TIERS = {
   'claude-opus-4-7': 5,
   'claude-sonnet-4-6': 3,
   'gpt-4.5': 5,
+  'gpt-5.5': 5,
   'o3': 5,
   'o4-mini': 2,
   'gemini-2.5-pro': 3,
@@ -26,5 +27,13 @@ export const QUALITY_MULTIPLIERS = {
   heavyTask: 2,
   highQuality: 1.5,
 };
+
+export const OBSERVATION_TOKEN_LIMIT = 4096;
+export const TIER_A_MIN_QUALITY = 70;
+export const TIER_B_MIN_QUALITY = 50;
+export const TRAINING_MIN_STEPS = 5;
+export const TRAINING_MIN_TOKENS = 500;
+export const TRAINING_MIN_DURATION = 10;
+export const TRAINING_EXCLUSION_REASONS = ['too_few_steps', 'no_actions', 'no_observations', 'insufficient_tokens', 'too_short'];
 
 export const CENTRAL_COMMAND_URL = process.env.GROOVE_CENTRAL_URL || 'https://api.groovedev.ai';

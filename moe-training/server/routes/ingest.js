@@ -15,6 +15,32 @@ export function createIngestRoutes(verifier, storage, stitcher, scorer, enrichme
       return res.status(400).json({ accepted: false, reason: 'malformed request: missing envelope or session_id' });
     }
 
+    if (envelope.type === 'USER_FEEDBACK') {
+      const feedbackResult = verifier.verifyFeedback(envelope);
+      if (!feedbackResult.valid) {
+        return res.json({ accepted: false, reason: feedbackResult.reason });
+      }
+
+      const envelopeId = `env_${uuidv4()}`;
+      envelope.envelope_id = envelopeId;
+
+      if (sessionRegistry.isEnvelopeProcessed(envelopeId)) {
+        return res.json({ accepted: false, reason: 'duplicate envelope' });
+      }
+
+      try {
+        storage.store(envelope);
+      } catch (err) {
+        if (err.message === 'STORAGE_QUOTA_EXCEEDED') {
+          return res.status(507).json({ accepted: false, reason: 'storage quota exceeded' });
+        }
+        throw err;
+      }
+
+      sessionRegistry.recordProcessedEnvelope(envelopeId, envelope.session_id);
+      return res.json({ accepted: true, envelope_id: envelopeId });
+    }
+
     if (envelope.type === 'SESSION_CLOSE') {
       const closeResult = verifier.verifyClose(envelope);
       if (!closeResult.valid) {

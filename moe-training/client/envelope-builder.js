@@ -7,7 +7,7 @@ export class EnvelopeBuilder {
   constructor(sessionId, contributorId, metadata) {
     this._sessionId = sessionId;
     this._contributorId = contributorId;
-    this._metadata = metadata;
+    this._metadata = { ...metadata, leaf_context: metadata.leaf_context ?? null };
     this._buffer = [];
     this._chunkSequence = 0;
   }

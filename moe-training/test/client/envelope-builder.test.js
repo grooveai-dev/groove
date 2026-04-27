@@ -89,6 +89,34 @@ describe('EnvelopeBuilder', () => {
     assert.equal(envelope.trajectory_log[0].token_count, 100_000);
   });
 
+  it('includes leaf_context in metadata defaulting to null', () => {
+    const builder = new EnvelopeBuilder('sess_1', 'user_1', metadata);
+    builder.addStep({ step: 1, type: 'thought', timestamp: 123 });
+    const envelope = builder.flush();
+    assert.equal(envelope.metadata.leaf_context, null);
+  });
+
+  it('preserves provided leaf_context', () => {
+    const metaWithLeaf = { ...metadata, leaf_context: { leaf_id: 'py_v1', leaf_version: '1.0', confidence_at_route: 0.4, chassis_model: 'Qwen' } };
+    const builder = new EnvelopeBuilder('sess_1', 'user_1', metaWithLeaf);
+    builder.addStep({ step: 1, type: 'thought', timestamp: 123 });
+    const envelope = builder.flush();
+    assert.equal(envelope.metadata.leaf_context.leaf_id, 'py_v1');
+  });
+
+  it('SESSION_CLOSE passes through quality_tier and training fields', () => {
+    const builder = new EnvelopeBuilder('sess_1', 'user_1', metadata);
+    const outcome = {
+      status: 'SUCCESS', total_steps: 10, total_chunks: 1,
+      quality_tier: 'TIER_A', quality_tier_reason: 'high_quality_no_errors',
+      training_eligible: true, training_exclusion_reason: null,
+    };
+    const close = builder.buildSessionClose(outcome);
+    assert.equal(close.outcome.quality_tier, 'TIER_A');
+    assert.equal(close.outcome.training_eligible, true);
+    assert.equal(close.outcome.training_exclusion_reason, null);
+  });
+
   it('chunk sequence increments correctly', () => {
     const builder = new EnvelopeBuilder('sess_1', 'user_1', metadata);
     let first = null;

@@ -1,15 +1,21 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { OBSERVATION_TRUNCATE_HEAD, OBSERVATION_TRUNCATE_TAIL } from '../../shared/constants.js';
+import { OBSERVATION_TOKEN_LIMIT } from '../../shared/constants.js';
+
+function estimateTokens(text) {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
 
 function truncateObservation(text) {
-  if (!text || typeof text !== 'string') return text;
-  const lines = text.split('\n');
-  if (lines.length <= OBSERVATION_TRUNCATE_HEAD + OBSERVATION_TRUNCATE_TAIL) return text;
-  const head = lines.slice(0, OBSERVATION_TRUNCATE_HEAD);
-  const tail = lines.slice(-OBSERVATION_TRUNCATE_TAIL);
-  const omitted = lines.length - OBSERVATION_TRUNCATE_HEAD - OBSERVATION_TRUNCATE_TAIL;
-  return [...head, `[... ${omitted} lines omitted ...]`, ...tail].join('\n');
+  if (!text || typeof text !== 'string') return { content: text, truncated: false, original_token_count: estimateTokens(text) };
+  const originalTokens = estimateTokens(text);
+  if (originalTokens <= OBSERVATION_TOKEN_LIMIT) {
+    return { content: text, truncated: false, original_token_count: originalTokens };
+  }
+  const charLimit = OBSERVATION_TOKEN_LIMIT * 4;
+  const truncated = text.slice(0, charLimit) + `\n[TRUNCATED — original output was ${originalTokens} tokens]`;
+  return { content: truncated, truncated: true, original_token_count: originalTokens };
 }
 
 export class ClaudeCodeParser {
@@ -50,9 +56,12 @@ export class ClaudeCodeParser {
           if (block.is_error) {
             results.push({ type: 'error', content: resultContent, is_error: true });
           } else {
+            const obs = truncateObservation(resultContent);
             results.push({
               type: 'observation',
-              content: truncateObservation(resultContent),
+              content: obs.content,
+              truncated: obs.truncated,
+              original_token_count: obs.original_token_count,
               is_error: false,
             });
           }
@@ -84,9 +93,12 @@ export class ClaudeCodeParser {
               tool: toolUse?.name,
             });
           } else {
+            const obs = truncateObservation(resultContent);
             results.push({
               type: 'observation',
-              content: truncateObservation(resultContent),
+              content: obs.content,
+              truncated: obs.truncated,
+              original_token_count: obs.original_token_count,
               is_error: false,
               tool: toolUse?.name,
             });

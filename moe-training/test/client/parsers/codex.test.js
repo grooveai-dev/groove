@@ -44,6 +44,8 @@ describe('CodexParser', () => {
     });
     assert.equal(result.type, 'observation');
     assert.equal(result.content, 'file1\nfile2');
+    assert.equal(result.truncated, false);
+    assert.equal(typeof result.original_token_count, 'number');
   });
 
   it('parses item.completed with error exit code as error', () => {

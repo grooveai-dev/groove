@@ -1,5 +1,23 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
+import { OBSERVATION_TOKEN_LIMIT } from '../../shared/constants.js';
+
+function estimateTokens(text) {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+
+function truncateObservation(text) {
+  if (!text || typeof text !== 'string') return { content: text || '', truncated: false, original_token_count: estimateTokens(text) };
+  const originalTokens = estimateTokens(text);
+  if (originalTokens <= OBSERVATION_TOKEN_LIMIT) {
+    return { content: text, truncated: false, original_token_count: originalTokens };
+  }
+  const charLimit = OBSERVATION_TOKEN_LIMIT * 4;
+  const truncated = text.slice(0, charLimit) + `\n[TRUNCATED — original output was ${originalTokens} tokens]`;
+  return { content: truncated, truncated: true, original_token_count: originalTokens };
+}
+
 export class CodexParser {
   constructor() {
     this._sessionId = null;
@@ -37,15 +55,17 @@ export class CodexParser {
           return { type: 'thought', content: item.text || '' };
         }
         if (item.type === 'command_execution') {
-          const output = (item.aggregated_output || '').slice(0, 2000);
+          const rawOutput = item.aggregated_output || '';
           if (item.exit_code !== 0) {
-            return { type: 'error', content: output || `Exit code: ${item.exit_code}` };
+            return { type: 'error', content: rawOutput.slice(0, 2000) || `Exit code: ${item.exit_code}` };
           }
-          return { type: 'observation', content: output };
+          const obs = truncateObservation(rawOutput);
+          return { type: 'observation', content: obs.content, truncated: obs.truncated, original_token_count: obs.original_token_count };
         }
         if (item.type === 'file_edit' || item.type === 'file_write' || item.type === 'file_read') {
-          const output = (item.output || item.content || '').slice(0, 2000);
-          return { type: 'observation', content: output };
+          const rawOutput = item.output || item.content || '';
+          const obs = truncateObservation(rawOutput);
+          return { type: 'observation', content: obs.content, truncated: obs.truncated, original_token_count: obs.original_token_count };
         }
         return null;
       }

@@ -4869,11 +4869,18 @@ Keep responses concise. Help them think, don't lecture them about the system the
     const { enabled } = req.body;
     if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be boolean' });
 
-    daemon.config.training_opt_in = enabled;
     const { saveConfig } = await import('./firstrun.js');
-    saveConfig(daemon.grooveDir, daemon.config);
 
     if (enabled) {
+      try {
+        await import('better-sqlite3');
+      } catch (modErr) {
+        console.error('[training/opt-in] Native module load failed:', modErr);
+        return res.status(500).json({
+          error: 'Failed to enable data sharing',
+          detail: 'Native SQLite module (better-sqlite3) is not available. On remote instances, ensure build tools are installed (gcc, g++, make, python3) and run: npm rebuild better-sqlite3',
+        });
+      }
       try {
         const userId = ConsentManager.getOrCreateUserId();
         const consent = new ConsentManager();
@@ -4882,13 +4889,19 @@ Keep responses concise. Help them think, don't lecture them about the system the
         } finally {
           consent.close();
         }
+        daemon.config.training_opt_in = true;
+        saveConfig(daemon.grooveDir, daemon.config);
         await daemon._initTrajectoryCapture();
         daemon.state.set('training_enrolled_at', new Date().toISOString());
       } catch (e) {
+        console.error('[training/opt-in] Failed to enable data sharing:', e);
         daemon.config.training_opt_in = false;
+        saveConfig(daemon.grooveDir, daemon.config);
         return res.status(500).json({ error: 'Failed to enable data sharing', detail: e.message });
       }
     } else {
+      daemon.config.training_opt_in = false;
+      saveConfig(daemon.grooveDir, daemon.config);
       if (daemon.trajectoryCapture) {
         try { await daemon.trajectoryCapture.shutdown(); } catch (e) { /* */ }
         daemon.trajectoryCapture = null;

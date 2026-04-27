@@ -8,7 +8,7 @@ describe('DomainTagger', () => {
   let tagger;
 
   beforeEach(async () => {
-    tagger = new DomainTagger();
+    tagger = new DomainTagger({ serviceUrl: null });
     await tagger.init();
   });
 
@@ -176,7 +176,7 @@ describe('DomainTagger', () => {
   });
 
   it('returns null when not initialized', async () => {
-    const uninit = new DomainTagger();
+    const uninit = new DomainTagger({ serviceUrl: null });
     const result = await uninit.tag('Build a Python Django app');
     assert.equal(result, null);
   });
@@ -203,6 +203,7 @@ describe('DomainTagger', () => {
 
   it('accepts registry option and falls back to keyword mode without embedding service', async () => {
     const registryTagger = new DomainTagger({
+      serviceUrl: null,
       registry: [
         { id: 'quantum_computing', domain_description: 'Quantum computing, qubits, quantum gates' },
         { id: 'bioinformatics', domain_description: 'Biology, genomics, DNA analysis' },
@@ -215,6 +216,7 @@ describe('DomainTagger', () => {
 
   it('accepts registryUrl option and falls back to keyword mode when unavailable', async () => {
     const registryTagger = new DomainTagger({
+      serviceUrl: null,
       registryUrl: 'http://localhost:99999/api/leaves',
     });
     await registryTagger.init();
@@ -223,7 +225,7 @@ describe('DomainTagger', () => {
   });
 
   it('uses expanded taxonomy — has 40 domains by default', async () => {
-    const defaultTagger = new DomainTagger();
+    const defaultTagger = new DomainTagger({ serviceUrl: null });
     await defaultTagger.init();
     assert.ok(defaultTagger._domains.length >= 35, `Expected 35+ domains, got ${defaultTagger._domains.length}`);
   });
@@ -239,7 +241,7 @@ describe('DomainTagger', () => {
   });
 
   it('embed() returns null when not initialized', async () => {
-    const uninit = new DomainTagger();
+    const uninit = new DomainTagger({ serviceUrl: null });
     const result = await uninit.embed('Build a Python app');
     assert.equal(result, null);
   });

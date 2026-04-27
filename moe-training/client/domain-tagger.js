@@ -1,5 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
+import { EMBEDDING_SERVICE_URL } from '../shared/constants.js';
+
 const DEFAULT_MODEL = 'sentence-transformers/all-MiniLM-L6-v2';
 const DEFAULT_TOP_K = 3;
 
@@ -171,7 +173,7 @@ const DOMAIN_TAXONOMY = {
 
 export class DomainTagger {
   constructor(options = {}) {
-    this._serviceUrl = options.serviceUrl || process.env.EMBEDDING_SERVICE_URL || null;
+    this._serviceUrl = options.serviceUrl !== undefined ? options.serviceUrl : EMBEDDING_SERVICE_URL;
     this._registryUrl = options.registryUrl || process.env.LEAF_REGISTRY_URL || null;
     this._registry = options.registry || null;
     this._model = options.model || DEFAULT_MODEL;

@@ -39,3 +39,4 @@ export const TRAINING_EXCLUSION_REASONS = ['too_few_steps', 'no_actions', 'no_ob
 export const USER_MESSAGE_MAX_CHARS = 2000;
 
 export const CENTRAL_COMMAND_URL = process.env.GROOVE_CENTRAL_URL || 'https://api.groovedev.ai';
+export const EMBEDDING_SERVICE_URL = process.env.EMBEDDING_SERVICE_URL || `${CENTRAL_COMMAND_URL}/v1/embed`;

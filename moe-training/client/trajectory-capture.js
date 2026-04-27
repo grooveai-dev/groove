@@ -298,9 +298,10 @@ export class TrajectoryCapture {
 
     if (this._domainTagger) {
       const role = ctx.metadata.agent_role || '';
-      const firstPrompt = ctx.allSteps.find((s) => s.type === 'thought')?.content || '';
       const thoughtSteps = ctx.allSteps.filter((s) => s.type === 'thought');
-      const routingText = DomainTagger.buildRoutingText(role, firstPrompt, thoughtSteps);
+      const firstPrompt = thoughtSteps[0]?.content || '';
+      const remainingThoughts = thoughtSteps.slice(1);
+      const routingText = DomainTagger.buildRoutingText(role, firstPrompt, remainingThoughts);
       ctx.metadata.domain_tags = await this._domainTagger.tag(routingText);
       ctx.metadata.session_embedding = await this._domainTagger.embed(routingText);
     }

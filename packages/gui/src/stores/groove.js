@@ -2702,7 +2702,7 @@ export const useGrooveStore = create((set, get) => ({
       set({ trainingOptIn: enabled });
       if (!enabled) set({ trainingStats: null });
     } catch (e) {
-      get().addToast('error', 'Failed to update training preference');
+      get().addToast('error', 'Failed to update training preference', e.body?.detail || e.message);
     }
   },
 

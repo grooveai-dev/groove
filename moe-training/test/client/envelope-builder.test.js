@@ -117,6 +117,38 @@ describe('EnvelopeBuilder', () => {
     assert.equal(close.outcome.training_exclusion_reason, null);
   });
 
+  it('updateMetadata syncs late-computed fields to builder', () => {
+    const builder = new EnvelopeBuilder('sess_1', 'user_1', metadata);
+    const domainTags = {
+      primary: { domain: 'react_frontend', confidence: 0.3 },
+      secondary: { domain: 'typescript_node', confidence: 0.25 },
+      tertiary: { domain: 'python', confidence: 0 },
+    };
+    builder.updateMetadata({ domain_tags: domainTags, session_quality: 85 });
+
+    builder.addStep({ step: 1, type: 'thought', timestamp: 123 });
+    const envelope = builder.flush();
+    assert.deepEqual(envelope.metadata.domain_tags, domainTags);
+    assert.equal(envelope.metadata.session_quality, 85);
+  });
+
+  it('SESSION_CLOSE includes metadata with domain_tags', () => {
+    const builder = new EnvelopeBuilder('sess_1', 'user_1', metadata);
+    const domainTags = {
+      primary: { domain: 'react_frontend', confidence: 0.3 },
+      secondary: { domain: 'typescript_node', confidence: 0.25 },
+      tertiary: { domain: 'python', confidence: 0 },
+    };
+    builder.updateMetadata({ domain_tags: domainTags });
+
+    const close = builder.buildSessionClose({
+      status: 'SUCCESS', total_steps: 10, total_chunks: 1,
+    });
+    assert.ok(close.metadata, 'SESSION_CLOSE must include metadata');
+    assert.deepEqual(close.metadata.domain_tags, domainTags);
+    assert.equal(close.metadata.agent_role, 'backend');
+  });
+
   it('chunk sequence increments correctly', () => {
     const builder = new EnvelopeBuilder('sess_1', 'user_1', metadata);
     let first = null;

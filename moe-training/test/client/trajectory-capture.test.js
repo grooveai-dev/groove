@@ -29,12 +29,17 @@ function makeCtx(overrides = {}) {
       session_quality: overrides.quality ?? 80,
     },
     builder: {
-      buildSessionClose: (outcome) => ({
-        envelope_id: 'env_test_close',
-        session_id: 'sess_test_1',
-        type: 'SESSION_CLOSE',
-        outcome,
-      }),
+      _metadata: {},
+      updateMetadata(updates) { Object.assign(this._metadata, updates); },
+      buildSessionClose: function (outcome) {
+        return {
+          envelope_id: 'env_test_close',
+          session_id: 'sess_test_1',
+          type: 'SESSION_CLOSE',
+          metadata: { ...this._metadata },
+          outcome,
+        };
+      },
     },
   };
 }
@@ -436,6 +441,48 @@ describe('TrajectoryCapture — _computeQuality', () => {
     ctx.stepCount = 20;
     const quality = tc._computeQuality(ctx);
     assert.equal(quality, 100);
+  });
+});
+
+describe('TrajectoryCapture — domain_tags in SESSION_CLOSE', () => {
+  it('domain_tags set on ctx.metadata flow into SESSION_CLOSE via updateMetadata', () => {
+    const tc = makeTc();
+    const captured = [];
+    tc._signAndTransmit = (_sid, envelope) => { captured.push(envelope); };
+
+    const ctx = makeCtx();
+    ctx.metadata.domain_tags = {
+      primary: { domain: 'react_frontend', confidence: 0.3 },
+      secondary: { domain: 'typescript_node', confidence: 0.25 },
+      tertiary: { domain: 'python', confidence: 0 },
+    };
+
+    ctx.builder.updateMetadata({
+      domain_tags: ctx.metadata.domain_tags,
+      session_quality: ctx.metadata.session_quality,
+    });
+    const close = ctx.builder.buildSessionClose({
+      status: 'SUCCESS', total_steps: 10, total_chunks: 1,
+    });
+
+    assert.ok(close.metadata, 'SESSION_CLOSE must have metadata');
+    assert.deepEqual(close.metadata.domain_tags, ctx.metadata.domain_tags);
+  });
+
+  it('SESSION_CLOSE metadata is absent domain_tags when tagger returns null', () => {
+    const ctx = makeCtx();
+    ctx.metadata.domain_tags = null;
+
+    ctx.builder.updateMetadata({
+      domain_tags: null,
+      session_quality: ctx.metadata.session_quality,
+    });
+    const close = ctx.builder.buildSessionClose({
+      status: 'SUCCESS', total_steps: 5, total_chunks: 1,
+    });
+
+    assert.ok(close.metadata, 'SESSION_CLOSE must have metadata');
+    assert.equal(close.metadata.domain_tags, null);
   });
 });
 

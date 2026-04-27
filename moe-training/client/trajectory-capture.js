@@ -301,6 +301,11 @@ export class TrajectoryCapture {
     const { tier, reason: tierReason } = this._computeQualityTier(ctx, status, userInterventions);
     const { eligible, exclusionReason } = this._computeTrainingEligibility(ctx, durationSeconds);
 
+    ctx.builder.updateMetadata({
+      domain_tags: ctx.metadata.domain_tags,
+      session_quality: ctx.metadata.session_quality,
+    });
+
     const closeEnvelope = ctx.builder.buildSessionClose({
       status,
       session_quality: ctx.metadata.session_quality,

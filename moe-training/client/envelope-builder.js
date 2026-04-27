@@ -31,12 +31,17 @@ export class EnvelopeBuilder {
     return this._buildEnvelope();
   }
 
+  updateMetadata(updates) {
+    Object.assign(this._metadata, updates);
+  }
+
   buildSessionClose(outcome) {
     return {
       envelope_id: `env_${randomUUID()}`,
       session_id: this._sessionId,
       type: 'SESSION_CLOSE',
       attestation: { session_hmac: '', sequence: 0, app_version_hash: '' },
+      metadata: { ...this._metadata },
       outcome,
     };
   }

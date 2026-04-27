@@ -136,9 +136,22 @@ describe('PIIScrubber', () => {
     assert.equal(scrubber.scrub(input), input);
   });
 
+  it('does not scrub CSS pseudo-elements with hex-like class names', () => {
+    assert.equal(scrubber.scrub('.page::before { content: ""; }'), '.page::before { content: ""; }');
+    assert.equal(scrubber.scrub('.page::-webkit-scrollbar { width: 8px; }'), '.page::-webkit-scrollbar { width: 8px; }');
+    assert.equal(scrubber.scrub('.cafe::after { display: block; }'), '.cafe::after { display: block; }');
+    assert.equal(scrubber.scrub('::placeholder { color: gray; }'), '::placeholder { color: gray; }');
+  });
+
   it('still scrubs IPv6 loopback ::1', () => {
     const input = 'listening on ::1 port 3000';
     assert.equal(scrubber.scrub(input), 'listening on [IP] port 3000');
+  });
+
+  it('scrubs compressed IPv6 addresses completely', () => {
+    assert.equal(scrubber.scrub('addr fe80::1 here'), 'addr [IP] here');
+    assert.equal(scrubber.scrub('addr fe80:: here'), 'addr [IP] here');
+    assert.equal(scrubber.scrub('addr 2001:db8::1 here'), 'addr [IP] here');
   });
 
   it('does not scrub file paths as base64 secrets', () => {

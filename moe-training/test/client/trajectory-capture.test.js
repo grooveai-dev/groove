@@ -438,3 +438,107 @@ describe('TrajectoryCapture — _computeQuality', () => {
     assert.equal(quality, 100);
   });
 });
+
+describe('TrajectoryCapture — onParsedOutput', () => {
+  function makeEnabledTc() {
+    const tc = makeTc();
+    tc._enabled = true;
+    tc._scrubber = { scrub: (s) => s };
+    const ctx = makeCtx();
+    ctx.totalTokens = 0;
+    ctx.stepCount = 0;
+    ctx.allSteps = [];
+    ctx.builder = { addStep: () => null };
+    ctx.classifier = { onStep: (s) => s };
+    tc._contexts.set('agent-loop-1', ctx);
+    return { tc, ctx };
+  }
+
+  it('converts assistant activity to thought step', () => {
+    const { tc, ctx } = makeEnabledTc();
+    tc.onParsedOutput('agent-loop-1', { type: 'activity', subtype: 'assistant', data: 'I will fix the bug' });
+    assert.equal(ctx.stepCount, 1);
+    assert.equal(ctx.allSteps[0].type, 'thought');
+    assert.equal(ctx.allSteps[0].content, 'I will fix the bug');
+  });
+
+  it('converts tool_use activity to action step', () => {
+    const { tc, ctx } = makeEnabledTc();
+    tc.onParsedOutput('agent-loop-1', {
+      type: 'activity', subtype: 'tool_use',
+      data: [{ type: 'tool_use', name: 'Edit', input: { path: 'foo.js' } }],
+    });
+    assert.equal(ctx.stepCount, 1);
+    assert.equal(ctx.allSteps[0].type, 'action');
+    assert.equal(ctx.allSteps[0].tool, 'Edit');
+  });
+
+  it('converts successful tool_result to observation step', () => {
+    const { tc, ctx } = makeEnabledTc();
+    tc.onParsedOutput('agent-loop-1', {
+      type: 'activity', subtype: 'tool_result',
+      data: [{ type: 'tool_result', name: 'Bash', success: true, output: 'tests passed' }],
+    });
+    assert.equal(ctx.stepCount, 1);
+    assert.equal(ctx.allSteps[0].type, 'observation');
+    assert.equal(ctx.allSteps[0].content, 'tests passed');
+  });
+
+  it('converts failed tool_result to error step', () => {
+    const { tc, ctx } = makeEnabledTc();
+    tc.onParsedOutput('agent-loop-1', {
+      type: 'activity', subtype: 'tool_result',
+      data: [{ type: 'tool_result', name: 'Bash', success: false, output: 'command not found' }],
+    });
+    assert.equal(ctx.stepCount, 1);
+    assert.equal(ctx.allSteps[0].type, 'error');
+    assert.equal(ctx.allSteps[0].is_error, true);
+  });
+
+  it('converts result to resolution step', () => {
+    const { tc, ctx } = makeEnabledTc();
+    tc.onParsedOutput('agent-loop-1', { type: 'result', subtype: 'assistant', data: 'Task complete' });
+    assert.equal(ctx.stepCount, 1);
+    assert.equal(ctx.allSteps[0].type, 'resolution');
+    assert.equal(ctx.allSteps[0].content, 'Task complete');
+  });
+
+  it('ignores stream activity (partial deltas)', () => {
+    const { tc, ctx } = makeEnabledTc();
+    tc.onParsedOutput('agent-loop-1', { type: 'activity', subtype: 'stream', data: 'partial' });
+    assert.equal(ctx.stepCount, 0);
+  });
+
+  it('ignores token-only activity', () => {
+    const { tc, ctx } = makeEnabledTc();
+    tc.onParsedOutput('agent-loop-1', { type: 'activity', tokensUsed: 500, inputTokens: 400, outputTokens: 100 });
+    assert.equal(ctx.stepCount, 0);
+  });
+
+  it('silently returns for unknown agent', () => {
+    const { tc } = makeEnabledTc();
+    tc.onParsedOutput('unknown-agent', { type: 'activity', subtype: 'assistant', data: 'hello' });
+  });
+
+  it('silently returns when disabled', () => {
+    const { tc, ctx } = makeEnabledTc();
+    tc._enabled = false;
+    tc.onParsedOutput('agent-loop-1', { type: 'activity', subtype: 'assistant', data: 'hello' });
+    assert.equal(ctx.stepCount, 0);
+  });
+
+  it('accumulates tokens across multiple outputs', () => {
+    const { tc, ctx } = makeEnabledTc();
+    tc.onParsedOutput('agent-loop-1', { type: 'activity', subtype: 'assistant', data: 'thinking about the problem' });
+    tc.onParsedOutput('agent-loop-1', {
+      type: 'activity', subtype: 'tool_use',
+      data: [{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } }],
+    });
+    tc.onParsedOutput('agent-loop-1', {
+      type: 'activity', subtype: 'tool_result',
+      data: [{ type: 'tool_result', name: 'Bash', success: true, output: 'file1.js\nfile2.js' }],
+    });
+    assert.equal(ctx.stepCount, 3);
+    assert.ok(ctx.totalTokens > 0);
+  });
+});

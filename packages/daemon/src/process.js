@@ -1760,6 +1760,15 @@ For normal file edits within your scope, proceed without review.
       locks.register(newAgent.id, newAgent.scope, newAgent.workingDir);
     }
 
+    if (this.daemon.trajectoryCapture) {
+      try {
+        const teamSize = registry.getAll().filter(a => a.status === 'active' || a.status === 'running' || a.status === 'starting').length;
+        this.daemon.trajectoryCapture.onAgentSpawn(
+          newAgent.id, config.provider, config.model || null, config.role, teamSize
+        ).catch(() => {});
+      } catch (e) { /* fail silent */ }
+    }
+
     // Spawn the resumed process
     const resumeCwd = [config.workingDir, this.daemon.projectDir].find(d => d && existsSync(d)) || this.daemon.projectDir;
     const proc = cpSpawn(command, args, {
@@ -1815,6 +1824,23 @@ For normal file edits within your scope, proceed without review.
 
       const finalStatus = signal === 'SIGTERM' || signal === 'SIGKILL' ? 'killed' : code === 0 ? 'completed' : 'crashed';
       registry.update(newAgent.id, { status: finalStatus, pid: null });
+
+      if (this.daemon.trajectoryCapture) {
+        try {
+          if (finalStatus === 'completed') {
+            this.daemon.trajectoryCapture.onAgentComplete(newAgent.id, {
+              status: 'SUCCESS', exit_code: code, signal,
+            });
+          } else {
+            this.daemon.trajectoryCapture.onAgentCrash(newAgent.id,
+              signal ? 'Killed by signal ' + signal : 'Exit code ' + code
+            );
+          }
+          const count = (this.daemon.state.get('training_sessions_captured') || 0) + 1;
+          this.daemon.state.set('training_sessions_captured', count);
+        } catch (e) { /* fail silent */ }
+      }
+
       this.daemon.broadcast({ type: 'agent:exit', agentId: newAgent.id, code, signal, status: finalStatus });
       if (finalStatus === 'completed' && this.daemon.journalist) {
         const a = registry.get(newAgent.id);
@@ -1930,8 +1956,20 @@ For normal file edits within your scope, proceed without review.
       });
     }
 
+    if (this.daemon.trajectoryCapture) {
+      try {
+        const teamSize = registry.getAll().filter(a => a.status === 'active' || a.status === 'running' || a.status === 'starting').length;
+        this.daemon.trajectoryCapture.onAgentSpawn(
+          newAgent.id, config.provider, loopConfig.model || config.model || null, config.role, teamSize
+        ).catch(() => {});
+      } catch (e) { /* fail silent */ }
+    }
+
     loop.on('output', (output) => {
       this._handleAgentOutput(newAgent.id, output);
+      if (this.daemon.trajectoryCapture) {
+        try { this.daemon.trajectoryCapture.onParsedOutput(newAgent.id, output); } catch (e) { /* fail silent */ }
+      }
     });
 
     loop.on('exit', ({ code, signal, status }) => {
@@ -1958,6 +1996,22 @@ For normal file edits within your scope, proceed without review.
           agentId: newAgent.id, agentName: newAgent.name, role: newAgent.role,
           finalTokens: agentData?.tokensUsed || 0, costUsd: agentData?.costUsd || 0,
         });
+      }
+
+      if (this.daemon.trajectoryCapture) {
+        try {
+          if (status === 'completed') {
+            this.daemon.trajectoryCapture.onAgentComplete(newAgent.id, {
+              status: 'SUCCESS', exit_code: code || 0, signal,
+            });
+          } else {
+            this.daemon.trajectoryCapture.onAgentCrash(newAgent.id,
+              signal ? 'Killed by signal ' + signal : 'Exit status ' + status
+            );
+          }
+          const count = (this.daemon.state.get('training_sessions_captured') || 0) + 1;
+          this.daemon.state.set('training_sessions_captured', count);
+        } catch (e) { /* fail silent */ }
       }
 
       this.daemon.broadcast({ type: 'agent:exit', agentId: newAgent.id, code: code || 0, signal, status });

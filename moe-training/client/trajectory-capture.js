@@ -154,6 +154,42 @@ export class TrajectoryCapture {
     this._processStep(agentId, ctx, classified);
   }
 
+  onParsedOutput(agentId, output) {
+    if (!this._enabled) return;
+    const ctx = this._contexts.get(agentId);
+    if (!ctx || !output || !output.type) return;
+
+    if (output.type === 'activity') {
+      if (output.subtype === 'assistant') {
+        this._processStep(agentId, ctx, { type: 'thought', content: output.data || '' });
+      } else if (output.subtype === 'tool_use' && Array.isArray(output.data)) {
+        for (const item of output.data) {
+          this._processStep(agentId, ctx, {
+            type: 'action',
+            tool: item.name || '',
+            arguments: item.input || {},
+            content: `Using ${item.name || 'tool'}`,
+          });
+        }
+      } else if (output.subtype === 'tool_result' && Array.isArray(output.data)) {
+        for (const item of output.data) {
+          const isError = item.success === false;
+          this._processStep(agentId, ctx, {
+            type: isError ? 'error' : 'observation',
+            content: item.output || '',
+            tool: item.name || '',
+            is_error: isError,
+          });
+        }
+      }
+    } else if (output.type === 'result') {
+      this._processStep(agentId, ctx, {
+        type: 'resolution',
+        content: typeof output.data === 'string' ? output.data : '',
+      });
+    }
+  }
+
   async onAgentComplete(agentId, outcome) {
     await this._closeAgent(agentId, outcome?.status || 'SUCCESS', outcome);
   }

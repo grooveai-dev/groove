@@ -3855,6 +3855,48 @@ Keep responses concise. Help them think, don't lecture them about the system the
   // --- Preview Proxy (same-origin iframe support) ---
   // Forwards HTTP requests to the dev server so the GUI can iframe the preview
   // without cross-origin issues. WebSocket upgrade for HMR is handled in index.js.
+
+  function rewriteAbsoluteUrls(body, proxyBase) {
+    let out = body;
+    // HTML attributes: src, href, action, poster
+    out = out.replace(/((?:src|href|action|poster)\s*=\s*(["']))\/(?!\/|api\/preview\/)/g, `$1${proxyBase}/`);
+    // JS imports: from '/' and import('/')
+    out = out.replace(/(from\s+(["']))\/(?!\/|api\/preview\/)/g, `$1${proxyBase}/`);
+    out = out.replace(/(import\s*\(\s*(["']))\/(?!\/|api\/preview\/)/g, `$1${proxyBase}/`);
+    // CSS url()
+    out = out.replace(/(url\s*\(\s*(["']?))\/(?!\/|api\/preview\/)/g, `$1${proxyBase}/`);
+    return out;
+  }
+
+  const REWRITABLE_TYPES = ['text/html', 'application/javascript', 'text/javascript', 'text/css'];
+
+  function handleProxyResponse(proxyRes, res, proxyBase) {
+    const fwdHeaders = { ...proxyRes.headers };
+    delete fwdHeaders['content-security-policy'];
+    delete fwdHeaders['x-frame-options'];
+
+    const ct = (fwdHeaders['content-type'] || '').toLowerCase();
+    const shouldRewrite = REWRITABLE_TYPES.some((t) => ct.includes(t));
+
+    if (!shouldRewrite) {
+      res.writeHead(proxyRes.statusCode, fwdHeaders);
+      proxyRes.pipe(res);
+      return;
+    }
+
+    const chunks = [];
+    proxyRes.on('data', (c) => chunks.push(c));
+    proxyRes.on('end', () => {
+      let body = Buffer.concat(chunks).toString('utf8');
+      body = rewriteAbsoluteUrls(body, proxyBase);
+      const buf = Buffer.from(body, 'utf8');
+      fwdHeaders['content-length'] = buf.length;
+      delete fwdHeaders['transfer-encoding'];
+      res.writeHead(proxyRes.statusCode, fwdHeaders);
+      res.end(buf);
+    });
+  }
+
   app.all('/api/preview/:teamId/proxy/*', (req, res) => {
     const entry = daemon.preview?.get(req.params.teamId);
     if (!entry || !entry.url) return res.status(404).json({ error: 'No active preview for this team' });
@@ -3865,9 +3907,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
     const proxyPath = req.params[0] || '';
     const search = req.url.includes('?') ? '?' + req.url.split('?').slice(1).join('?') : '';
     const fullPath = '/' + proxyPath + search;
+    const proxyBase = `/api/preview/${req.params.teamId}/proxy`;
 
     const headers = { ...req.headers };
     delete headers.host;
+    delete headers['accept-encoding'];
     headers.host = targetUrl.host;
 
     const proxyReq = httpRequest({
@@ -3876,13 +3920,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       path: fullPath,
       method: req.method,
       headers,
-    }, (proxyRes) => {
-      const fwdHeaders = { ...proxyRes.headers };
-      delete fwdHeaders['content-security-policy'];
-      delete fwdHeaders['x-frame-options'];
-      res.writeHead(proxyRes.statusCode, fwdHeaders);
-      proxyRes.pipe(res);
-    });
+    }, (proxyRes) => handleProxyResponse(proxyRes, res, proxyBase));
 
     proxyReq.on('error', (err) => {
       if (!res.headersSent) res.status(502).json({ error: `Proxy error: ${err.message}` });
@@ -3899,9 +3937,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
     try { targetUrl = new URL(entry.devUrl || entry.url); } catch { return res.status(500).json({ error: 'Invalid preview URL' }); }
 
     const search = req.url.includes('?') ? '?' + req.url.split('?').slice(1).join('?') : '';
+    const proxyBase = `/api/preview/${req.params.teamId}/proxy`;
 
     const headers = { ...req.headers };
     delete headers.host;
+    delete headers['accept-encoding'];
     headers.host = targetUrl.host;
 
     const proxyReq = httpRequest({
@@ -3910,13 +3950,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       path: '/' + search,
       method: req.method,
       headers,
-    }, (proxyRes) => {
-      const fwdHeaders = { ...proxyRes.headers };
-      delete fwdHeaders['content-security-policy'];
-      delete fwdHeaders['x-frame-options'];
-      res.writeHead(proxyRes.statusCode, fwdHeaders);
-      proxyRes.pipe(res);
-    });
+    }, (proxyRes) => handleProxyResponse(proxyRes, res, proxyBase));
 
     proxyReq.on('error', (err) => {
       if (!res.headersSent) res.status(502).json({ error: `Proxy error: ${err.message}` });

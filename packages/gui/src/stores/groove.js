@@ -224,6 +224,7 @@ export const useGrooveStore = create((set, get) => ({
       get().fetchBetaStatus();
       get().fetchNetworkInstallStatus();
       get().fetchTrainingStatus();
+      get().fetchActivePreviews();
       if (!get().onboardingComplete) get().fetchOnboardingStatus();
       if (window.groove?.auth?.onSubscriptionStatus) {
         window.groove.auth.onSubscriptionStatus((data) => {
@@ -1260,6 +1261,20 @@ export const useGrooveStore = create((set, get) => ({
   },
 
   // ── Preview ──────────────────────────────────────────────
+
+  async fetchActivePreviews() {
+    try {
+      const data = await api.get('/preview');
+      const previews = data.previews || [];
+      if (previews.length > 0) {
+        const p = previews.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
+        set({
+          previewState: { url: `/api/preview/${p.teamId}/proxy/`, teamId: p.teamId, kind: p.kind, deviceSize: 'desktop', screenshotMode: false },
+          showPreviewInAgents: true,
+        });
+      }
+    } catch {}
+  },
 
   openPreview(url, teamId, kind) {
     set({ previewState: { url, teamId, kind, deviceSize: 'desktop', screenshotMode: false }, previewChat: [], showPreviewInAgents: true });

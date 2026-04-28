@@ -32,7 +32,8 @@ export function QuickConnect() {
           onClick: () => useGrooveStore.getState().addToWhitelist(tunnel.host),
         });
       }
-      toggle();
+      setConnectingId(null);
+      return;
     } catch (err) {
       let detail = err?.message || 'Unknown error';
       if (detail.toLowerCase().includes('port forward')) {

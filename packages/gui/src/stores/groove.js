@@ -171,7 +171,6 @@ export const useGrooveStore = create((set, get) => ({
 
   // ── Tunnels ────────────────────────────────────────────────
   savedTunnels: [],
-  activeTunnelId: null,
 
   // ── GitHub Repo Import ────────────────────────────────────
   importedRepos: [],
@@ -695,12 +694,10 @@ export const useGrooveStore = create((set, get) => ({
           break;
 
         case 'tunnel.connected':
-          set({ activeTunnelId: msg.data?.id || null });
           get().fetchTunnels();
           break;
 
         case 'tunnel.disconnected':
-          set({ activeTunnelId: null });
           get().fetchTunnels();
           break;
 
@@ -1868,7 +1865,6 @@ export const useGrooveStore = create((set, get) => ({
 
   async connectTunnel(id) {
     const result = await api.post(`/tunnels/${encodeURIComponent(id)}/connect`);
-    set({ activeTunnelId: id });
     get().fetchTunnels();
     if (result.localPort && result.name) {
       if (window.groove?.remote?.openWindow) {
@@ -1887,7 +1883,6 @@ export const useGrooveStore = create((set, get) => ({
   async disconnectTunnel(id) {
     const tunnel = get().savedTunnels.find(t => t.id === id);
     await api.post(`/tunnels/${encodeURIComponent(id)}/disconnect`);
-    set({ activeTunnelId: null });
     get().fetchTunnels();
     if (tunnel?.localPort && window.groove?.remote?.closeByPort) {
       window.groove.remote.closeByPort(tunnel.localPort);

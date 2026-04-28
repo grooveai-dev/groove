@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Terminal, BookOpen, Radio, Plug, Globe, ArrowUpCircle, X, Unplug, Shield } from 'lucide-react';
+import { Terminal, BookOpen, Radio, Plug, Globe, ArrowUpCircle, X, Unplug } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/status-dot';
 import { Badge } from '../ui/badge';
@@ -23,7 +23,7 @@ export function StatusBar({
   const updateProgress = useGrooveStore((s) => s.updateProgress);
   const setUpdateModalOpen = useGrooveStore((s) => s.setUpdateModalOpen);
   const navigate = useGrooveStore((s) => s.setActiveView);
-  const activeTunnel = savedTunnels.find((t) => t.active);
+  const activeTunnels = savedTunnels.filter((t) => t.active);
   const electron = isElectron();
 
   return (
@@ -52,40 +52,7 @@ export function StatusBar({
         {connected && agentCount > 0 && (
           <span className="text-text-4">{runningCount}/{agentCount} agents</span>
         )}
-        {activeTunnel ? (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => {
-                const port = activeTunnel.localPort;
-                const name = encodeURIComponent(activeTunnel.name);
-                openExternal(`http://localhost:${port}?instance=${name}`);
-              }}
-              className="flex items-center gap-1.5 text-text-3 hover:text-text-1 cursor-pointer transition-colors"
-              title="Open remote GUI"
-            >
-              <Radio size={10} className="text-success" />
-              <span>{activeTunnel.name}</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-success" />
-              {activeTunnel.latencyMs != null && (
-                <span className="text-text-4">{activeTunnel.latencyMs}ms</span>
-              )}
-            </button>
-            <button
-              onClick={() => useGrooveStore.getState().addToWhitelist(activeTunnel.host)}
-              className="p-0.5 text-text-4 hover:text-accent cursor-pointer transition-colors rounded"
-              title="Add to Federation Whitelist"
-            >
-              <Shield size={10} />
-            </button>
-            <button
-              onClick={() => useGrooveStore.getState().disconnectTunnel(activeTunnel.id)}
-              className="p-0.5 text-text-4 hover:text-danger cursor-pointer transition-colors rounded"
-              title="Disconnect"
-            >
-              <X size={10} />
-            </button>
-          </div>
-        ) : tunneled ? (
+        {tunneled ? (
           <button
             onClick={() => window.groove?.remote?.close?.() || window.close()}
             className="flex items-center gap-1.5 text-text-3 hover:text-danger cursor-pointer transition-colors"
@@ -94,15 +61,46 @@ export function StatusBar({
             <Unplug size={10} />
             <span>Disconnect</span>
           </button>
-        ) : savedTunnels.length > 0 && (
-          <button
-            onClick={() => useGrooveStore.getState().toggleQuickConnect()}
-            className="flex items-center gap-1.5 text-text-4 hover:text-text-1 cursor-pointer transition-colors"
-            title="Quick Connect to remote server"
-          >
-            <Plug size={10} />
-            <span>Connect</span>
-          </button>
+        ) : (
+          <>
+            {activeTunnels.map((tunnel) => (
+              <div key={tunnel.id} className="flex items-center gap-1">
+                <button
+                  onClick={() => {
+                    const port = tunnel.localPort;
+                    const name = encodeURIComponent(tunnel.name);
+                    openExternal(`http://localhost:${port}?instance=${name}`);
+                  }}
+                  className="flex items-center gap-1.5 text-text-3 hover:text-text-1 cursor-pointer transition-colors"
+                  title="Open remote GUI"
+                >
+                  <Radio size={10} className="text-success" />
+                  <span>{tunnel.name}</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-success" />
+                  {tunnel.latencyMs != null && (
+                    <span className="text-text-4">{tunnel.latencyMs}ms</span>
+                  )}
+                </button>
+                <button
+                  onClick={() => useGrooveStore.getState().disconnectTunnel(tunnel.id)}
+                  className="p-0.5 text-text-4 hover:text-danger cursor-pointer transition-colors rounded"
+                  title="Disconnect"
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            ))}
+            {savedTunnels.length > 0 && (
+              <button
+                onClick={() => useGrooveStore.getState().toggleQuickConnect()}
+                className="flex items-center gap-1.5 text-text-4 hover:text-text-1 cursor-pointer transition-colors"
+                title="Quick Connect to remote server"
+              >
+                <Plug size={10} />
+                <span>Connect</span>
+              </button>
+            )}
+          </>
         )}
         {connected && (
           <button

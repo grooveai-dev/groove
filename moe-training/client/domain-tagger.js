@@ -169,6 +169,26 @@ const DOMAIN_TAXONOMY = {
     keywords: ['scientific', 'simulation', 'matlab', 'scipy', 'julia', 'fortran', 'numerical', 'differential equation', 'finite element', 'linear algebra'],
     description: 'Scientific computing, numerical methods, MATLAB/SciPy/Julia, simulations, optimization, statistics',
   },
+  planning_strategy: {
+    keywords: ['plan', 'strategy', 'architect', 'design doc', 'breakdown', 'scope', 'roadmap', 'milestone', 'prioritize', 'tradeoff', 'approach', 'recommend', 'team', 'coordinate', 'delegate', 'assign'],
+    description: 'Project planning, task breakdown, architecture decisions, team coordination, strategy, roadmaps, scoping, prioritization',
+  },
+  conversational_reasoning: {
+    keywords: ['explain', 'why', 'how does', 'what is', 'clarify', 'understand', 'reason', 'think through', 'analyze', 'compare', 'evaluate', 'brainstorm', 'discuss', 'opinion', 'advice'],
+    description: 'Conversational reasoning, explanation, analysis, brainstorming, Q&A, decision-making, advice, evaluation',
+  },
+  documentation_writing: {
+    keywords: ['readme', 'documentation', 'docs', 'markdown', 'api docs', 'changelog', 'tutorial', 'guide', 'specification', 'wiki', 'jsdoc', 'docstring', 'technical writing'],
+    description: 'Documentation writing, READMEs, API docs, changelogs, tutorials, guides, technical writing, specifications',
+  },
+  product_design: {
+    keywords: ['product', 'feature', 'user story', 'requirements', 'ux', 'wireframe', 'prototype', 'feedback', 'iteration', 'mvp', 'spec', 'acceptance criteria', 'stakeholder'],
+    description: 'Product design, feature planning, user stories, requirements gathering, UX, prototyping, MVPs, stakeholder communication',
+  },
+  devops_general: {
+    keywords: ['deploy', 'deployment', 'release', 'rollback', 'staging', 'production', 'environment', 'migration', 'upgrade', 'maintenance', 'incident', 'postmortem', 'runbook'],
+    description: 'DevOps operations, deployments, releases, rollbacks, environment management, incident response, runbooks',
+  },
 };
 
 export class DomainTagger {

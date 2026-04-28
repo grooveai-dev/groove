@@ -274,9 +274,11 @@ export class TunnelManager {
       throw new Error(testResult.error || 'Host unreachable');
     }
 
+    let preConnectHandled = false;
     if (!testResult.daemonRunning && !testResult.grooveInstalled) {
       this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'installing' } });
       await this.remoteInstall(id);
+      preConnectHandled = true;
     } else if (!testResult.daemonRunning && testResult.grooveInstalled) {
       const localVer = getLocalVersion();
       if (testResult.remoteVersion && testResult.remoteVersion !== localVer) {
@@ -285,6 +287,7 @@ export class TunnelManager {
       }
       this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'starting' } });
       await this.autoStart(id);
+      preConnectHandled = true;
     }
 
     this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'connecting' } });
@@ -342,7 +345,9 @@ export class TunnelManager {
       failCount: 0,
     });
 
-    await this._checkAndUpgradeRunning(id, config, localPort);
+    if (!preConnectHandled) {
+      await this._checkAndUpgradeRunning(id, config, localPort);
+    }
 
     try {
       const statusResp = await fetch(`http://localhost:${localPort}/api/status`, { signal: AbortSignal.timeout(5000) });
@@ -473,6 +478,18 @@ export class TunnelManager {
 
       this.daemon.audit.log('tunnel.upgrade', { id, from: oldVersion, to: daemonVer || installedVer });
     } catch (err) {
+      try {
+        const verify = await fetch(`http://localhost:${localPort}/api/status`, { signal: AbortSignal.timeout(5000) });
+        if (verify.ok) {
+          const verifyData = await verify.json();
+          if (verifyData.version === localVer) {
+            this.daemon.broadcast({ type: 'tunnel.version-info', data: { id, localVersion: localVer, remoteVersion: verifyData.version, match: true } });
+            return;
+          }
+          this.daemon.broadcast({ type: 'tunnel.version-mismatch', data: { id, localVersion: localVer, remoteVersion: verifyData.version, message: 'Upgrade timed out but remote is reachable' } });
+          return;
+        }
+      } catch { /* tunnel verification failed */ }
       this.daemon.broadcast({ type: 'tunnel.upgrade-failed', data: { id, error: err.message } });
     }
   }

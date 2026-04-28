@@ -33,9 +33,11 @@ export class TrajectoryCapture {
     this._transmissionQueue = null;
     this._offlineRetryTimer = null;
     this._contexts = new Map();
+    this._shutdown = false;
   }
 
   async init() {
+    if (this._shutdown) return;
     if (!ConsentManager.isCaptureEnabled()) {
       this._enabled = false;
       return;
@@ -47,12 +49,16 @@ export class TrajectoryCapture {
     this._transmissionQueue.start();
     this._domainTagger = new DomainTagger();
     await this._domainTagger.init();
+    if (this._shutdown) return;
     this._offlineRetryTimer = setInterval(() => {
       this._retryOfflineQueue();
     }, OFFLINE_RETRY_INTERVAL_MS);
+    if (typeof this._offlineRetryTimer.unref === 'function') {
+      this._offlineRetryTimer.unref();
+    }
   }
 
-  async onAgentSpawn(agentId, provider, model, role, teamSize) {
+  async onAgentSpawn(agentId, provider, model, role, teamSize, prompt) {
     if (!this._enabled) return;
 
     const parser = getParser(provider);
@@ -98,8 +104,19 @@ export class TrajectoryCapture {
     ctx.chunkTimer = setInterval(() => {
       this._flushContext(agentId);
     }, CHUNK_TIMEOUT_MS);
+    if (typeof ctx.chunkTimer.unref === 'function') {
+      ctx.chunkTimer.unref();
+    }
 
     this._contexts.set(agentId, ctx);
+
+    if (prompt && typeof prompt === 'string' && prompt.trim()) {
+      this._processStep(agentId, ctx, {
+        type: 'instruction',
+        content: prompt.slice(0, USER_MESSAGE_MAX_CHARS),
+        source: 'user',
+      });
+    }
 
     await this._attestation.openSession(sessionId, metadata);
   }
@@ -205,6 +222,7 @@ export class TrajectoryCapture {
   }
 
   async shutdown() {
+    this._shutdown = true;
     if (this._offlineRetryTimer) clearInterval(this._offlineRetryTimer);
     for (const agentId of this._contexts.keys()) {
       await this._closeAgent(agentId, 'SHUTDOWN');
@@ -368,6 +386,23 @@ export class TrajectoryCapture {
   }
 
   _computeTrainingEligibility(ctx, durationSeconds) {
+    const role = ctx.metadata.agent_role || '';
+    const isConversational = role === 'planner' || role === 'chat' || role === 'advisor';
+
+    if (ctx.totalTokens < TRAINING_MIN_TOKENS) {
+      return { eligible: false, exclusionReason: 'insufficient_tokens' };
+    }
+    if (durationSeconds < TRAINING_MIN_DURATION) {
+      return { eligible: false, exclusionReason: 'too_short' };
+    }
+
+    if (isConversational) {
+      if (ctx.stepCount < 2) {
+        return { eligible: false, exclusionReason: 'too_few_steps' };
+      }
+      return { eligible: true, exclusionReason: null };
+    }
+
     if (ctx.stepCount < TRAINING_MIN_STEPS) {
       return { eligible: false, exclusionReason: 'too_few_steps' };
     }
@@ -378,12 +413,6 @@ export class TrajectoryCapture {
     const hasObservation = ctx.allSteps.some((s) => s.type === 'observation' && s.content);
     if (!hasObservation) {
       return { eligible: false, exclusionReason: 'no_observations' };
-    }
-    if (ctx.totalTokens < TRAINING_MIN_TOKENS) {
-      return { eligible: false, exclusionReason: 'insufficient_tokens' };
-    }
-    if (durationSeconds < TRAINING_MIN_DURATION) {
-      return { eligible: false, exclusionReason: 'too_short' };
     }
     return { eligible: true, exclusionReason: null };
   }

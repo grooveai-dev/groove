@@ -208,7 +208,7 @@ describe('TrajectoryCapture — training eligibility', () => {
     assert.equal(result.exclusionReason, null);
   });
 
-  it('exclusion reasons follow priority order', () => {
+  it('exclusion reasons follow priority order: tokens before duration before steps', () => {
     const tc = makeTc();
     const ctx = makeCtx({
       stepCount: 3,
@@ -220,7 +220,188 @@ describe('TrajectoryCapture — training eligibility', () => {
       ],
     });
     const result = tc._computeTrainingEligibility(ctx, 5);
+    assert.equal(result.exclusionReason, 'insufficient_tokens');
+  });
+
+  it('duration checked before steps when tokens pass', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({
+      stepCount: 3,
+      totalTokens: 5000,
+      allSteps: [
+        { step: 1, type: 'thought', content: 'thinking' },
+        { step: 2, type: 'thought', content: 'more' },
+        { step: 3, type: 'thought', content: 'done' },
+      ],
+    });
+    const result = tc._computeTrainingEligibility(ctx, 5);
+    assert.equal(result.exclusionReason, 'too_short');
+  });
+
+  it('steps checked after tokens and duration pass', () => {
+    const tc = makeTc();
+    const ctx = makeCtx({
+      stepCount: 3,
+      totalTokens: 5000,
+      allSteps: [
+        { step: 1, type: 'thought', content: 'thinking' },
+        { step: 2, type: 'thought', content: 'more' },
+        { step: 3, type: 'thought', content: 'done' },
+      ],
+    });
+    const result = tc._computeTrainingEligibility(ctx, 60);
     assert.equal(result.exclusionReason, 'too_few_steps');
+  });
+});
+
+describe('TrajectoryCapture — planner/conversational eligibility', () => {
+  function makeConversationalCtx(role, overrides = {}) {
+    const ctx = makeCtx(overrides);
+    ctx.metadata.agent_role = role;
+    return ctx;
+  }
+
+  it('planner eligible with only thoughts (no actions/observations)', () => {
+    const tc = makeTc();
+    const ctx = makeConversationalCtx('planner', {
+      stepCount: 10,
+      totalTokens: 2000,
+      allSteps: Array.from({ length: 10 }, (_, i) => ({ step: i + 1, type: 'thought', content: 'planning' })),
+    });
+    const result = tc._computeTrainingEligibility(ctx, 60);
+    assert.equal(result.eligible, true);
+    assert.equal(result.exclusionReason, null);
+  });
+
+  it('chat role eligible with only thoughts', () => {
+    const tc = makeTc();
+    const ctx = makeConversationalCtx('chat', {
+      stepCount: 5,
+      totalTokens: 1000,
+      allSteps: [
+        { step: 1, type: 'instruction', content: 'explain React hooks' },
+        { step: 2, type: 'thought', content: 'explaining' },
+        { step: 3, type: 'thought', content: 'more detail' },
+        { step: 4, type: 'thought', content: 'examples' },
+        { step: 5, type: 'resolution', content: 'done' },
+      ],
+    });
+    const result = tc._computeTrainingEligibility(ctx, 30);
+    assert.equal(result.eligible, true);
+  });
+
+  it('advisor role eligible with only thoughts', () => {
+    const tc = makeTc();
+    const ctx = makeConversationalCtx('advisor', {
+      stepCount: 3,
+      totalTokens: 800,
+      allSteps: [
+        { step: 1, type: 'instruction', content: 'review approach' },
+        { step: 2, type: 'thought', content: 'analysis' },
+        { step: 3, type: 'resolution', content: 'recommendation' },
+      ],
+    });
+    const result = tc._computeTrainingEligibility(ctx, 20);
+    assert.equal(result.eligible, true);
+  });
+
+  it('planner still requires minimum tokens', () => {
+    const tc = makeTc();
+    const ctx = makeConversationalCtx('planner', {
+      stepCount: 10,
+      totalTokens: 100,
+      allSteps: Array.from({ length: 10 }, (_, i) => ({ step: i + 1, type: 'thought', content: 'plan' })),
+    });
+    const result = tc._computeTrainingEligibility(ctx, 60);
+    assert.equal(result.eligible, false);
+    assert.equal(result.exclusionReason, 'insufficient_tokens');
+  });
+
+  it('planner still requires minimum duration', () => {
+    const tc = makeTc();
+    const ctx = makeConversationalCtx('planner', {
+      stepCount: 10,
+      totalTokens: 2000,
+      allSteps: Array.from({ length: 10 }, (_, i) => ({ step: i + 1, type: 'thought', content: 'plan' })),
+    });
+    const result = tc._computeTrainingEligibility(ctx, 5);
+    assert.equal(result.eligible, false);
+    assert.equal(result.exclusionReason, 'too_short');
+  });
+
+  it('planner requires at least 2 steps', () => {
+    const tc = makeTc();
+    const ctx = makeConversationalCtx('planner', {
+      stepCount: 1,
+      totalTokens: 2000,
+      allSteps: [{ step: 1, type: 'thought', content: 'plan' }],
+    });
+    const result = tc._computeTrainingEligibility(ctx, 60);
+    assert.equal(result.eligible, false);
+    assert.equal(result.exclusionReason, 'too_few_steps');
+  });
+
+  it('coding role (fullstack) still requires actions and observations', () => {
+    const tc = makeTc();
+    const ctx = makeConversationalCtx('fullstack', {
+      stepCount: 10,
+      totalTokens: 2000,
+      allSteps: Array.from({ length: 10 }, (_, i) => ({ step: i + 1, type: 'thought', content: 'thinking' })),
+    });
+    const result = tc._computeTrainingEligibility(ctx, 60);
+    assert.equal(result.eligible, false);
+    assert.equal(result.exclusionReason, 'no_actions');
+  });
+});
+
+describe('TrajectoryCapture — initial prompt capture', () => {
+  function makeSpawnTc() {
+    const tc = makeTc();
+    tc._enabled = true;
+    tc._scrubber = { scrub: (s) => s };
+    tc._attestation = { openSession: async () => {}, signEnvelope: (sid, e) => e };
+    tc._transmissionQueue = { enqueue: () => {} };
+    tc._domainTagger = null;
+    return tc;
+  }
+
+  it('onAgentSpawn records prompt as instruction step', async () => {
+    const tc = makeSpawnTc();
+    await tc.onAgentSpawn('agent-p1', 'claude-code', 'opus', 'planner', 1, 'Build a React app');
+
+    const ctx = tc._contexts.get('agent-p1');
+    assert.ok(ctx);
+    assert.equal(ctx.stepCount, 1);
+    assert.equal(ctx.allSteps[0].type, 'instruction');
+    assert.ok(ctx.allSteps[0].content.includes('Build a React app'));
+    assert.equal(ctx.allSteps[0].source, 'user');
+  });
+
+  it('onAgentSpawn with no prompt creates no instruction step', async () => {
+    const tc = makeSpawnTc();
+    await tc.onAgentSpawn('agent-p2', 'claude-code', 'opus', 'fullstack', 1);
+
+    const ctx = tc._contexts.get('agent-p2');
+    assert.ok(ctx);
+    assert.equal(ctx.stepCount, 0);
+    assert.equal(ctx.allSteps.length, 0);
+  });
+
+  it('onAgentSpawn truncates long prompts', async () => {
+    const tc = makeSpawnTc();
+    const longPrompt = 'x'.repeat(50000);
+    await tc.onAgentSpawn('agent-p3', 'claude-code', 'opus', 'planner', 1, longPrompt);
+
+    const ctx = tc._contexts.get('agent-p3');
+    assert.ok(ctx.allSteps[0].content.length <= 10001);
+  });
+
+  it('onAgentSpawn ignores empty/whitespace prompts', async () => {
+    const tc = makeSpawnTc();
+    await tc.onAgentSpawn('agent-p4', 'claude-code', 'opus', 'planner', 1, '   ');
+
+    const ctx = tc._contexts.get('agent-p4');
+    assert.equal(ctx.stepCount, 0);
   });
 });
 

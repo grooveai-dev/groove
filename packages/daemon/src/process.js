@@ -330,6 +330,7 @@ export class ProcessManager {
     this._rotatingAgents = new Set(); // agentIds currently being rotated (rotator wrote handoff)
     this._stalledAgents = new Set(); // agentIds already flagged as stalled (avoids duplicate broadcasts)
     this._exitHandled = new Set();
+    this._resultReceived = new Set();
 
     this._stallWatchdog = setInterval(() => this._checkStalls(), STALL_CHECK_INTERVAL_MS);
     if (this._stallWatchdog.unref) this._stallWatchdog.unref();
@@ -389,6 +390,7 @@ export class ProcessManager {
         this._exitHandled.add(agentId);
         setTimeout(() => this._exitHandled.delete(agentId), 30_000);
         this._stalledAgents.delete(agentId);
+        this._resultReceived.delete(agentId);
         const throttle = this._streamThrottle.get(agentId);
         if (throttle?.timer) clearTimeout(throttle.timer);
         this._streamThrottle.delete(agentId);
@@ -425,11 +427,16 @@ export class ProcessManager {
 
     if (this.daemon.locks) this.daemon.locks.release(agent.id);
 
-    const finalStatus = signal === 'SIGTERM' || signal === 'SIGKILL'
-      ? 'killed'
-      : code === 0
-        ? 'completed'
-        : 'crashed';
+    const hadResult = this._resultReceived.has(agent.id);
+    this._resultReceived.delete(agent.id);
+
+    const finalStatus = hadResult
+      ? 'completed'
+      : signal === 'SIGTERM' || signal === 'SIGKILL'
+        ? 'killed'
+        : code === 0
+          ? 'completed'
+          : 'crashed';
 
     const crashError = finalStatus === 'crashed' ? stderrBuf.join('').trim().slice(-500) : null;
 
@@ -552,7 +559,10 @@ export class ProcessManager {
 
     if (this.daemon.locks) this.daemon.locks.release(agent.id);
 
-    const finalStatus = signal === 'SIGTERM' || signal === 'SIGKILL' ? 'killed' : code === 0 ? 'completed' : 'crashed';
+    const hadResult = this._resultReceived.has(agent.id);
+    this._resultReceived.delete(agent.id);
+
+    const finalStatus = hadResult ? 'completed' : signal === 'SIGTERM' || signal === 'SIGKILL' ? 'killed' : code === 0 ? 'completed' : 'crashed';
     registry.update(agent.id, { status: finalStatus, pid: null });
 
     if (this.daemon.trajectoryCapture) {
@@ -727,7 +737,7 @@ export class ProcessManager {
       try {
         const teamSize = registry.getAll().filter(a => a.status === 'active' || a.status === 'running' || a.status === 'starting').length;
         this.daemon.trajectoryCapture.onAgentSpawn(
-          agent.id, providerName, config.model || null, config.role, teamSize
+          agent.id, providerName, config.model || null, config.role, teamSize, config.prompt
         ).catch(() => {});
       } catch (e) { /* fail silent */ }
     }
@@ -970,6 +980,7 @@ For normal file edits within your scope, proceed without review.
         logStream.end();
         this.handles.delete(agent.id);
         this._stalledAgents.delete(agent.id);
+        this._resultReceived.delete(agent.id);
 
         // Clean up stream throttle so pending timers don't fire for dead agents
         const throttle = this._streamThrottle.get(agent.id);
@@ -1262,6 +1273,21 @@ For normal file edits within your scope, proceed without review.
       if (output.cost) updates.costUsd = (agent.costUsd || 0) + output.cost;
       if (output.duration) updates.durationMs = output.duration;
       if (output.turns) updates.turns = output.turns;
+
+      // Claude Code sometimes hangs after emitting the result event — the
+      // process stays alive instead of exiting.  Record that the result
+      // arrived so exit handlers know this was a successful completion even
+      // if we have to SIGTERM the process.  After a 5s grace period, force-
+      // kill any process that hasn't exited on its own.
+      this._resultReceived.add(agentId);
+      const handle = this.handles.get(agentId);
+      if (handle?.proc && typeof handle.proc.kill === 'function') {
+        setTimeout(() => {
+          if (this.handles.has(agentId) && this._resultReceived.has(agentId)) {
+            try { handle.proc.kill('SIGTERM'); } catch {}
+          }
+        }, 5_000);
+      }
     }
 
     // Context window usage (0-1 scale) — drives rotation threshold
@@ -1845,7 +1871,7 @@ For normal file edits within your scope, proceed without review.
       try {
         const teamSize = registry.getAll().filter(a => a.status === 'active' || a.status === 'running' || a.status === 'starting').length;
         this.daemon.trajectoryCapture.onAgentSpawn(
-          newAgent.id, config.provider, config.model || null, config.role, teamSize
+          newAgent.id, config.provider, config.model || null, config.role, teamSize, config.prompt
         ).catch(() => {});
       } catch (e) { /* fail silent */ }
     }
@@ -1987,7 +2013,7 @@ For normal file edits within your scope, proceed without review.
       try {
         const teamSize = registry.getAll().filter(a => a.status === 'active' || a.status === 'running' || a.status === 'starting').length;
         this.daemon.trajectoryCapture.onAgentSpawn(
-          newAgent.id, config.provider, loopConfig.model || config.model || null, config.role, teamSize
+          newAgent.id, config.provider, loopConfig.model || config.model || null, config.role, teamSize, config.prompt
         ).catch(() => {});
       } catch (e) { /* fail silent */ }
     }

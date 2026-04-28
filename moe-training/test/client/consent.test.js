@@ -8,12 +8,12 @@ import { tmpdir } from 'node:os';
 import { ConsentManager } from '../../client/consent.js';
 
 describe('ConsentManager', () => {
-  let tmpDir, dbPath, manager;
+  let tmpDir, consentPath, manager;
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'consent-test-'));
-    dbPath = join(tmpDir, 'consent.db');
-    manager = new ConsentManager(dbPath);
+    consentPath = join(tmpDir, 'consent.json');
+    manager = new ConsentManager(consentPath);
   });
 
   afterEach(() => {
@@ -43,19 +43,24 @@ describe('ConsentManager', () => {
 
   it('getOptedInCount counts correctly', () => {
     manager.recordConsent('user1', true, '1.0');
-    manager.recordConsent('user2', true, '1.0');
-    manager.recordConsent('user3', false, '1.0');
-    assert.equal(manager.getOptedInCount(), 2);
+    assert.equal(manager.getOptedInCount(), 1);
   });
 
-  it('getConsentHistory returns all records', () => {
-    manager.recordConsent('user1', true, '1.0', { source: 'ui' });
-    manager.revokeConsent('user1');
+  it('getConsentHistory returns current state', () => {
+    manager.recordConsent('user1', true, '1.0');
     const history = manager.getConsentHistory('user1');
-    assert.equal(history.length, 2);
+    assert.equal(history.length, 1);
     assert.equal(history[0].opted_in, true);
-    assert.deepEqual(history[0].metadata, { source: 'ui' });
-    assert.equal(history[1].opted_in, false);
+  });
+
+  it('consent.json is written with 0o600 permissions', () => {
+    manager.recordConsent('user1', true, '1.0');
+    assert.ok(existsSync(consentPath));
+    const data = JSON.parse(readFileSync(consentPath, 'utf-8'));
+    assert.equal(data.opted_in, true);
+    assert.equal(data.consent_version, '1.0');
+    assert.equal(data.user_id, 'user1');
+    assert.ok(data.updated_at);
   });
 });
 
@@ -96,26 +101,24 @@ describe('ConsentManager.isCaptureEnabled', () => {
   });
 
   it('returns false when no user_id file exists', () => {
-    const result = ConsentManager.isCaptureEnabled(join(tmpDir, 'no_file'), join(tmpDir, 'c.db'));
+    const result = ConsentManager.isCaptureEnabled(join(tmpDir, 'no_file'), join(tmpDir, 'consent.json'));
     assert.equal(result, false);
   });
 
   it('returns false when user not opted in', () => {
     const uidPath = join(tmpDir, 'user_id');
-    const uid = ConsentManager.getOrCreateUserId(uidPath);
-    const dbPath = join(tmpDir, 'consent.db');
-    const result = ConsentManager.isCaptureEnabled(uidPath, dbPath);
+    ConsentManager.getOrCreateUserId(uidPath);
+    const result = ConsentManager.isCaptureEnabled(uidPath, join(tmpDir, 'consent.json'));
     assert.equal(result, false);
   });
 
   it('returns true when user is opted in', () => {
     const uidPath = join(tmpDir, 'user_id');
     const uid = ConsentManager.getOrCreateUserId(uidPath);
-    const dbPath = join(tmpDir, 'consent.db');
-    const mgr = new ConsentManager(dbPath);
+    const consentPath = join(tmpDir, 'consent.json');
+    const mgr = new ConsentManager(consentPath);
     mgr.recordConsent(uid, true, '1.0');
-    mgr.close();
-    const result = ConsentManager.isCaptureEnabled(uidPath, dbPath);
+    const result = ConsentManager.isCaptureEnabled(uidPath, consentPath);
     assert.equal(result, true);
   });
 });

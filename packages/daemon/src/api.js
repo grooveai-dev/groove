@@ -4855,9 +4855,13 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   app.get('/api/training/status', (req, res) => {
     let userId = null;
-    try { userId = ConsentManager.isCaptureEnabled() ? ConsentManager.getOrCreateUserId() : null; } catch (e) { /* no db yet */ }
+    let optedIn = false;
+    try {
+      userId = ConsentManager.getOrCreateUserId();
+      optedIn = ConsentManager.isCaptureEnabled();
+    } catch (e) { /* */ }
     res.json({
-      optedIn: !!daemon.config.training_opt_in,
+      optedIn,
       userId: userId ? userId.substring(0, 8) + '...' : null,
       captureActive: !!daemon.trajectoryCapture,
       sessionsCaptured: daemon.state.get('training_sessions_captured') || 0,
@@ -4869,43 +4873,23 @@ Keep responses concise. Help them think, don't lecture them about the system the
     const { enabled } = req.body;
     if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be boolean' });
 
-    const { saveConfig } = await import('./firstrun.js');
-
-    if (enabled) {
-      try {
-        const userId = ConsentManager.getOrCreateUserId();
-        const consent = new ConsentManager();
-        try {
-          consent.recordConsent(userId, true, '1.0');
-        } finally {
-          consent.close();
-        }
-        daemon.config.training_opt_in = true;
-        saveConfig(daemon.grooveDir, daemon.config);
+    try {
+      const userId = ConsentManager.getOrCreateUserId();
+      const consent = new ConsentManager();
+      if (enabled) {
+        consent.recordConsent(userId, true, '1.0');
         await daemon._initTrajectoryCapture();
         daemon.state.set('training_enrolled_at', new Date().toISOString());
-      } catch (e) {
-        console.error('[training/opt-in] Failed to enable data sharing:', e);
-        daemon.config.training_opt_in = false;
-        saveConfig(daemon.grooveDir, daemon.config);
-        return res.status(500).json({ error: 'Failed to enable data sharing', detail: e.message });
-      }
-    } else {
-      daemon.config.training_opt_in = false;
-      saveConfig(daemon.grooveDir, daemon.config);
-      if (daemon.trajectoryCapture) {
-        try { await daemon.trajectoryCapture.shutdown(); } catch (e) { /* */ }
-        daemon.trajectoryCapture = null;
-      }
-      try {
-        const userId = ConsentManager.getOrCreateUserId();
-        const consent = new ConsentManager();
-        try {
-          consent.revokeConsent(userId);
-        } finally {
-          consent.close();
+      } else {
+        consent.revokeConsent(userId);
+        if (daemon.trajectoryCapture) {
+          try { await daemon.trajectoryCapture.shutdown(); } catch (e) { /* */ }
+          daemon.trajectoryCapture = null;
         }
-      } catch (e) { /* no user_id yet */ }
+      }
+    } catch (e) {
+      console.error('[training/opt-in] Failed to update data sharing:', e);
+      return res.status(500).json({ error: 'Failed to update data sharing', detail: e.message });
     }
 
     daemon.broadcast({ type: 'training:status', data: { optedIn: enabled, captureActive: !!daemon.trajectoryCapture } });
@@ -4915,18 +4899,13 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   app.post('/api/training/opt-in/delete', async (req, res) => {
     try {
-      daemon.config.training_opt_in = false;
-      const { saveConfig } = await import('./firstrun.js');
-      saveConfig(daemon.grooveDir, daemon.config);
+      const userId = ConsentManager.getOrCreateUserId();
+      const consent = new ConsentManager();
+      consent.revokeConsent(userId);
       if (daemon.trajectoryCapture) {
         try { await daemon.trajectoryCapture.shutdown(); } catch (e) { /* */ }
         daemon.trajectoryCapture = null;
       }
-      try {
-        const userId = ConsentManager.getOrCreateUserId();
-        const consent = new ConsentManager();
-        try { consent.revokeConsent(userId); } finally { consent.close(); }
-      } catch (e) { /* */ }
       daemon.broadcast({ type: 'training:status', data: { optedIn: false, captureActive: false } });
       if (daemon.audit) daemon.audit.log('training.delete', {});
       res.json({ ok: true, deleted: true });
@@ -4952,7 +4931,6 @@ Keep responses concise. Help them think, don't lecture them about the system the
       'port', 'journalistInterval', 'rotationThreshold', 'autoRotation',
       'qcThreshold', 'maxAgents', 'defaultProvider', 'defaultWorkingDir',
       'onboardingDismissed', 'defaultModel', 'defaultChatProvider', 'defaultChatModel',
-      'training_opt_in',
     ];
     for (const key of Object.keys(req.body)) {
       if (!ALLOWED_KEYS.includes(key)) {

@@ -1,44 +1,46 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { CURRENT_CONSENT_VERSION } from '../shared/constants.js';
 
+function ensureDir(filePath) {
+  const dir = filePath.replace(/[/\\][^/\\]+$/, '');
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+}
+
+function readJSON(filePath) {
+  if (!existsSync(filePath)) return null;
+  try { return JSON.parse(readFileSync(filePath, 'utf-8')); } catch { return null; }
+}
+
+function writeJSON(filePath, data) {
+  ensureDir(filePath);
+  writeFileSync(filePath, JSON.stringify(data, null, 2) + '\n', { mode: 0o600 });
+}
+
 export class ConsentManager {
-  constructor(dbPath) {
-    this._dbPath = dbPath || join(homedir(), '.groove', 'consent.db');
-    const dir = this._dbPath.replace(/[/\\][^/\\]+$/, '');
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    this._db = new Database(this._dbPath);
-    this._db.pragma('journal_mode = WAL');
-    this._db.exec(`
-      CREATE TABLE IF NOT EXISTS consent_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT NOT NULL,
-        opted_in INTEGER NOT NULL,
-        consent_version TEXT NOT NULL,
-        metadata TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )
-    `);
+  constructor(consentPath) {
+    this._path = consentPath || join(homedir(), '.groove', 'consent.json');
   }
 
-  recordConsent(userId, optedIn, consentVersion, metadata) {
-    this._db.prepare(
-      'INSERT INTO consent_history (user_id, opted_in, consent_version, metadata) VALUES (?, ?, ?, ?)'
-    ).run(userId, optedIn ? 1 : 0, consentVersion, metadata ? JSON.stringify(metadata) : null);
+  recordConsent(userId, optedIn, consentVersion) {
+    const data = {
+      user_id: userId,
+      opted_in: !!optedIn,
+      consent_version: consentVersion,
+      updated_at: new Date().toISOString(),
+    };
+    writeJSON(this._path, data);
   }
 
   isOptedIn(userId) {
-    const row = this._db.prepare(
-      'SELECT opted_in, consent_version FROM consent_history WHERE user_id = ? ORDER BY id DESC LIMIT 1'
-    ).get(userId);
-    if (!row) return false;
-    if (row.consent_version !== CURRENT_CONSENT_VERSION) return false;
-    return row.opted_in === 1;
+    const data = readJSON(this._path);
+    if (!data) return false;
+    if (data.consent_version !== CURRENT_CONSENT_VERSION) return false;
+    return data.opted_in === true;
   }
 
   revokeConsent(userId) {
@@ -46,34 +48,28 @@ export class ConsentManager {
   }
 
   getOptedInCount() {
-    const row = this._db.prepare(`
-      SELECT COUNT(DISTINCT user_id) as cnt FROM consent_history ch1
-      WHERE opted_in = 1
-        AND consent_version = ?
-        AND id = (SELECT MAX(id) FROM consent_history ch2 WHERE ch2.user_id = ch1.user_id)
-    `).get(CURRENT_CONSENT_VERSION);
-    return row?.cnt || 0;
+    const data = readJSON(this._path);
+    if (!data || !data.opted_in || data.consent_version !== CURRENT_CONSENT_VERSION) return 0;
+    return 1;
   }
 
   getConsentHistory(userId) {
-    const rows = this._db.prepare(
-      'SELECT * FROM consent_history WHERE user_id = ? ORDER BY id ASC'
-    ).all(userId);
-    return rows.map((r) => ({
-      ...r,
-      opted_in: r.opted_in === 1,
-      metadata: r.metadata ? JSON.parse(r.metadata) : null,
-    }));
+    const data = readJSON(this._path);
+    if (!data) return [];
+    return [{
+      user_id: data.user_id,
+      opted_in: data.opted_in,
+      consent_version: data.consent_version,
+      created_at: data.updated_at,
+      metadata: null,
+    }];
   }
 
-  close() {
-    this._db.close();
-  }
+  close() {}
 
   static getOrCreateUserId(userIdPath) {
     const filePath = userIdPath || join(homedir(), '.groove', 'user_id');
-    const dir = filePath.replace(/[/\\][^/\\]+$/, '');
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    ensureDir(filePath);
     if (existsSync(filePath)) {
       return readFileSync(filePath, 'utf-8').trim();
     }
@@ -82,15 +78,11 @@ export class ConsentManager {
     return uid;
   }
 
-  static isCaptureEnabled(userIdPath, dbPath) {
+  static isCaptureEnabled(userIdPath, consentPath) {
     const filePath = userIdPath || join(homedir(), '.groove', 'user_id');
     if (!existsSync(filePath)) return false;
+    const manager = new ConsentManager(consentPath);
     const userId = readFileSync(filePath, 'utf-8').trim();
-    const manager = new ConsentManager(dbPath);
-    try {
-      return manager.isOptedIn(userId);
-    } finally {
-      manager.close();
-    }
+    return manager.isOptedIn(userId);
   }
 }

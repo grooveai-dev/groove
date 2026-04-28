@@ -666,17 +666,15 @@ export class Daemon {
   }
 
   async _initTrajectoryCapture() {
-    if (!this.config.training_opt_in) return;
     try {
-      if (ConsentManager.isCaptureEnabled()) {
-        const pkgPath = new URL('../package.json', import.meta.url);
-        const version = JSON.parse(readFileSync(pkgPath, 'utf8')).version;
-        this.trajectoryCapture = new TrajectoryCapture({
-          centralCommandUrl: process.env.GROOVE_CENTRAL_URL || 'https://api.groovedev.ai',
-          grooveVersion: version,
-        });
-        this.trajectoryCapture.init();
-      }
+      if (!ConsentManager.isCaptureEnabled()) return;
+      const pkgPath = new URL('../package.json', import.meta.url);
+      const version = JSON.parse(readFileSync(pkgPath, 'utf8')).version;
+      this.trajectoryCapture = new TrajectoryCapture({
+        centralCommandUrl: process.env.GROOVE_CENTRAL_URL || 'https://api.groovedev.ai',
+        grooveVersion: version,
+      });
+      this.trajectoryCapture.init();
     } catch (e) {
       // Training capture is never critical
     }

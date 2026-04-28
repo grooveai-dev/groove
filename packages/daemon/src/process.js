@@ -329,6 +329,7 @@ export class ProcessManager {
     this._streamThrottle = new Map(); // agentId -> { timer, pending }
     this._rotatingAgents = new Set(); // agentIds currently being rotated (rotator wrote handoff)
     this._stalledAgents = new Set(); // agentIds already flagged as stalled (avoids duplicate broadcasts)
+    this._exitHandled = new Set();
 
     this._stallWatchdog = setInterval(() => this._checkStalls(), STALL_CHECK_INTERVAL_MS);
     if (this._stallWatchdog.unref) this._stallWatchdog.unref();
@@ -365,6 +366,242 @@ export class ProcessManager {
         lastActivity: agent.lastActivity,
       });
       console.warn(`[Groove] Agent ${agent.name} (${agentId}) silent for ${Math.round(silentMs / 1000)}s — possible stalled API stream`);
+    }
+
+    // Defense in depth: detect zombie handles where PID is no longer alive
+    const ZOMBIE_THRESHOLD_MS = 10 * 60_000;
+    for (const [agentId, handle] of this.handles.entries()) {
+      const agent = registry.get(agentId);
+      if (!agent) continue;
+      const lastActivity = agent.lastActivity ? new Date(agent.lastActivity).getTime() : now;
+      if (now - lastActivity < ZOMBIE_THRESHOLD_MS) continue;
+      const pid = handle.proc?.pid;
+      if (!pid) continue;
+      try {
+        process.kill(pid, 0);
+      } catch {
+        console.warn(`[Groove] Agent ${agent.name} (${agentId}) PID ${pid} no longer alive — force-cleaning handle`);
+        if (handle.logStream && !handle.logStream.destroyed) {
+          handle.logStream.write(`[${new Date().toISOString()}] Force-cleaned: PID ${pid} no longer alive\n`);
+          handle.logStream.end();
+        }
+        this.handles.delete(agentId);
+        this._exitHandled.add(agentId);
+        setTimeout(() => this._exitHandled.delete(agentId), 30_000);
+        this._stalledAgents.delete(agentId);
+        const throttle = this._streamThrottle.get(agentId);
+        if (throttle?.timer) clearTimeout(throttle.timer);
+        this._streamThrottle.delete(agentId);
+        this.peakContextUsage.delete(agentId);
+        this.pendingMessages.delete(agentId);
+        if (this.daemon.locks) this.daemon.locks.release(agentId);
+        registry.update(agentId, { status: 'completed', pid: null });
+        this.daemon.broadcast({ type: 'agent:exit', agentId, code: 0, signal: null, status: 'completed' });
+      }
+    }
+  }
+
+  _handleProcessExit(agent, code, signal, logStream, stderrBuf, logPath) {
+    if (this._exitHandled.has(agent.id)) return;
+    this._exitHandled.add(agent.id);
+    setTimeout(() => this._exitHandled.delete(agent.id), 30_000);
+
+    const { registry } = this.daemon;
+
+    if (!logStream.destroyed) {
+      logStream.write(`[${new Date().toISOString()}] Process exited: code=${code} signal=${signal}\n`);
+      logStream.end();
+    }
+
+    this.handles.delete(agent.id);
+
+    const throttle = this._streamThrottle.get(agent.id);
+    if (throttle?.timer) clearTimeout(throttle.timer);
+    this._streamThrottle.delete(agent.id);
+
+    this.peakContextUsage.delete(agent.id);
+    this.pendingMessages.delete(agent.id);
+    this._stalledAgents.delete(agent.id);
+
+    if (this.daemon.locks) this.daemon.locks.release(agent.id);
+
+    const finalStatus = signal === 'SIGTERM' || signal === 'SIGKILL'
+      ? 'killed'
+      : code === 0
+        ? 'completed'
+        : 'crashed';
+
+    const crashError = finalStatus === 'crashed' ? stderrBuf.join('').trim().slice(-500) : null;
+
+    registry.update(agent.id, { status: finalStatus, pid: null });
+
+    if (this.daemon.timeline) {
+      const agentData = registry.get(agent.id);
+      this.daemon.timeline.recordEvent(finalStatus === 'completed' ? 'complete' : finalStatus === 'crashed' ? 'crash' : 'kill', {
+        agentId: agent.id, agentName: agent.name, role: agent.role,
+        finalTokens: agentData?.tokensUsed || 0, costUsd: agentData?.costUsd || 0,
+        exitCode: code,
+      });
+    }
+
+    if (this.daemon.trajectoryCapture) {
+      try {
+        if (finalStatus === 'completed') {
+          this.daemon.trajectoryCapture.onAgentComplete(agent.id, {
+            status: 'SUCCESS', exit_code: code, signal,
+          });
+        } else {
+          this.daemon.trajectoryCapture.onAgentCrash(agent.id,
+            signal ? 'Killed by signal ' + signal : 'Exit code ' + code
+          );
+        }
+        const count = (this.daemon.state.get('training_sessions_captured') || 0) + 1;
+        this.daemon.state.set('training_sessions_captured', count);
+      } catch (e) { /* fail silent */ }
+    }
+
+    this.daemon.broadcast({
+      type: 'agent:exit',
+      agentId: agent.id,
+      code,
+      signal,
+      status: finalStatus,
+      error: crashError || undefined,
+    });
+
+    if (this.daemon.integrations) {
+      this.daemon.integrations.refreshMcpJson();
+    }
+
+    if (finalStatus === 'completed' && agent.role === 'planner') {
+      this._extractRecommendedTeam(agent, logPath);
+    }
+
+    if (finalStatus === 'completed') {
+      const pending = this.consumePendingMessage(agent.id);
+      if (pending) {
+        const agentData = registry.get(agent.id);
+        if (agentData?.sessionId) {
+          this.resume(agent.id, pending.message).catch((err) => {
+            console.error(`[Groove] Auto-resume with queued message failed for ${agent.name}: ${err.message}`);
+          });
+          return;
+        }
+      }
+    }
+
+    if (finalStatus === 'completed' && this.daemon.journalist) {
+      const a = registry.get(agent.id);
+      const turns = a?.turns || 0;
+      const tok = a?.tokensUsed || 0;
+      if (turns > 1 || tok >= 100) {
+        this.daemon.journalist.requestSynthesis('completion');
+      }
+    }
+
+    this._checkPhase2(agent.id);
+
+    if (agent.teamId) {
+      this._checkPreviewReady(agent.teamId);
+    }
+
+    if (finalStatus === 'completed') {
+      const files = this.daemon.journalist?.getAgentFiles(agent) || [];
+      if (files.length > 0) this._triggerIdleQC(agent);
+      this._processHandoffs(agent);
+      if (this._rotatingAgents.has(agent.id)) {
+        this._rotatingAgents.delete(agent.id);
+      } else {
+        this._writeCompletionHandoff(agent).catch(err => console.error(`[Groove] Completion handoff failed for ${agent.name}:`, err.message));
+      }
+    }
+
+    if (this.daemon.memory && (finalStatus === 'completed' || finalStatus === 'crashed')) {
+      try {
+        const events = this.daemon.classifier?.agentWindows?.[agent.id] || [];
+        const signals = events.length >= 6
+          ? this.daemon.adaptive.extractSignals(events, agent.scope)
+          : null;
+        const score = signals ? this.daemon.adaptive.scoreSession(signals) : null;
+        const files = this.daemon.journalist?.getAgentFiles(agent) || [];
+        this.daemon.memory.updateSpecialization(agent.id, {
+          role: agent.role,
+          qualityScore: score,
+          filesTouched: files,
+          signals,
+          threshold: this.daemon.adaptive?.getThreshold(agent.provider, agent.role),
+        });
+      } catch { /* best-effort */ }
+    }
+  }
+
+  _handleResumeProcessExit(agent, code, signal, logStream) {
+    if (this._exitHandled.has(agent.id)) return;
+    this._exitHandled.add(agent.id);
+    setTimeout(() => this._exitHandled.delete(agent.id), 30_000);
+
+    const { registry } = this.daemon;
+
+    if (!logStream.destroyed) {
+      logStream.write(`[${new Date().toISOString()}] Process exited: code=${code} signal=${signal}\n`);
+      logStream.end();
+    }
+
+    this.handles.delete(agent.id);
+    this._stalledAgents.delete(agent.id);
+
+    if (this.daemon.locks) this.daemon.locks.release(agent.id);
+
+    const finalStatus = signal === 'SIGTERM' || signal === 'SIGKILL' ? 'killed' : code === 0 ? 'completed' : 'crashed';
+    registry.update(agent.id, { status: finalStatus, pid: null });
+
+    if (this.daemon.trajectoryCapture) {
+      try {
+        if (finalStatus === 'completed') {
+          this.daemon.trajectoryCapture.onAgentComplete(agent.id, {
+            status: 'SUCCESS', exit_code: code, signal,
+          });
+        } else {
+          this.daemon.trajectoryCapture.onAgentCrash(agent.id,
+            signal ? 'Killed by signal ' + signal : 'Exit code ' + code
+          );
+        }
+        const count = (this.daemon.state.get('training_sessions_captured') || 0) + 1;
+        this.daemon.state.set('training_sessions_captured', count);
+      } catch (e) { /* fail silent */ }
+    }
+
+    this.daemon.broadcast({ type: 'agent:exit', agentId: agent.id, code, signal, status: finalStatus });
+    if (finalStatus === 'completed' && this.daemon.journalist) {
+      const a = registry.get(agent.id);
+      const turns = a?.turns || 0;
+      const tok = a?.tokensUsed || 0;
+      if (turns > 1 || tok >= 100) this.daemon.journalist.requestSynthesis('completion');
+    }
+
+    if (finalStatus === 'completed' && !this._rotatingAgents.has(agent.id)) {
+      this._writeCompletionHandoff(agent).catch(err =>
+        console.error(`[Groove] Completion handoff failed for ${agent.name}:`, err.message));
+    }
+    if (this._rotatingAgents.has(agent.id)) {
+      this._rotatingAgents.delete(agent.id);
+    }
+    if (this.daemon.memory && (finalStatus === 'completed' || finalStatus === 'crashed')) {
+      try {
+        const events = this.daemon.classifier?.agentWindows?.[agent.id] || [];
+        const signals = events.length >= 6
+          ? this.daemon.adaptive.extractSignals(events, agent.scope)
+          : null;
+        const score = signals ? this.daemon.adaptive.scoreSession(signals) : null;
+        const files = this.daemon.journalist?.getAgentFiles(agent) || [];
+        this.daemon.memory.updateSpecialization(agent.id, {
+          role: agent.role,
+          qualityScore: score,
+          filesTouched: files,
+          signals,
+          threshold: this.daemon.adaptive?.getThreshold(agent.provider, agent.role),
+        });
+      } catch { /* best-effort */ }
     }
   }
 
@@ -732,6 +969,7 @@ For normal file edits within your scope, proceed without review.
         logStream.write(`[${new Date().toISOString()}] Agent loop exited: status=${status}\n`);
         logStream.end();
         this.handles.delete(agent.id);
+        this._stalledAgents.delete(agent.id);
 
         // Clean up stream throttle so pending timers don't fire for dead agents
         const throttle = this._streamThrottle.get(agent.id);
@@ -775,8 +1013,9 @@ For normal file edits within your scope, proceed without review.
         this.daemon.broadcast({ type: 'agent:exit', agentId: agent.id, code: code || 0, signal, status });
         if (this.daemon.integrations) this.daemon.integrations.refreshMcpJson();
         if (status === 'completed' && this.daemon.journalist) {
-          const turns = agentData?.turns || 0;
-          const tok = agentData?.tokensUsed || 0;
+          const a = registry.get(agent.id);
+          const turns = a?.turns || 0;
+          const tok = a?.tokensUsed || 0;
           if (turns > 1 || tok >= 100) this.daemon.journalist.requestSynthesis('completion');
         }
         this._checkPhase2(agent.id);
@@ -862,6 +1101,7 @@ For normal file edits within your scope, proceed without review.
       if (!logStream.destroyed) logStream.write(`[${new Date().toISOString()}] Spawn error: ${err.message}\n`);
       if (!logStream.destroyed) logStream.end();
       this.handles.delete(agent.id);
+      this._exitHandled.add(agent.id);
       registry.update(agent.id, { status: 'crashed', pid: null });
       this.daemon.broadcast({ type: 'agent:exit', agentId: agent.id, code: null, signal: null, status: 'crashed', error: err.message });
     });
@@ -906,154 +1146,13 @@ For normal file edits within your scope, proceed without review.
       while (stderrBuf.join('').length > 2048) stderrBuf.shift();
     });
 
-    // Handle process exit
+    // Handle process exit — cleanup extracted to _handleProcessExit with dedup
     proc.on('exit', (code, signal) => {
-      const exitLine = `[${new Date().toISOString()}] Process exited: code=${code} signal=${signal}\n`;
-      logStream.write(exitLine);
-      logStream.end();
+      this._handleProcessExit(agent, code, signal, logStream, stderrBuf, logPath);
+    });
 
-      this.handles.delete(agent.id);
-
-      // Clean up stream throttle so pending timers don't fire for dead agents
-      const throttle = this._streamThrottle.get(agent.id);
-      if (throttle?.timer) clearTimeout(throttle.timer);
-      this._streamThrottle.delete(agent.id);
-
-      // Clean up per-agent maps to prevent unbounded growth in long sessions
-      this.peakContextUsage.delete(agent.id);
-      this.pendingMessages.delete(agent.id);
-      this._stalledAgents.delete(agent.id);
-
-      // Release file-scope locks so they don't persist after agent death
-      if (this.daemon.locks) this.daemon.locks.release(agent.id);
-
-      const finalStatus = signal === 'SIGTERM' || signal === 'SIGKILL'
-        ? 'killed'
-        : code === 0
-          ? 'completed'
-          : 'crashed';
-
-      // Capture crash error from stderr for UI display
-      const crashError = finalStatus === 'crashed' ? stderrBuf.join('').trim().slice(-500) : null;
-
-      registry.update(agent.id, { status: finalStatus, pid: null });
-
-      // Record lifecycle event for timeline
-      if (this.daemon.timeline) {
-        const agentData = registry.get(agent.id);
-        this.daemon.timeline.recordEvent(finalStatus === 'completed' ? 'complete' : finalStatus === 'crashed' ? 'crash' : 'kill', {
-          agentId: agent.id, agentName: agent.name, role: agent.role,
-          finalTokens: agentData?.tokensUsed || 0, costUsd: agentData?.costUsd || 0,
-          exitCode: code,
-        });
-      }
-
-      if (this.daemon.trajectoryCapture) {
-        try {
-          if (finalStatus === 'completed') {
-            this.daemon.trajectoryCapture.onAgentComplete(agent.id, {
-              status: 'SUCCESS', exit_code: code, signal,
-            });
-          } else {
-            this.daemon.trajectoryCapture.onAgentCrash(agent.id,
-              signal ? 'Killed by signal ' + signal : 'Exit code ' + code
-            );
-          }
-          const count = (this.daemon.state.get('training_sessions_captured') || 0) + 1;
-          this.daemon.state.set('training_sessions_captured', count);
-        } catch (e) { /* fail silent */ }
-      }
-
-      this.daemon.broadcast({
-        type: 'agent:exit',
-        agentId: agent.id,
-        code,
-        signal,
-        status: finalStatus,
-        error: crashError || undefined,
-      });
-
-      // Refresh MCP config — remove integrations no longer needed by running agents
-      if (this.daemon.integrations) {
-        this.daemon.integrations.refreshMcpJson();
-      }
-
-      // Extract recommended-team.json from planner text output if it wasn't written to disk.
-      // Non-Claude providers (Codex, Gemini) may embed the JSON in text rather than using Write.
-      if (finalStatus === 'completed' && agent.role === 'planner') {
-        this._extractRecommendedTeam(agent, logPath);
-      }
-
-      // Auto-resume with queued message: if the user sent a message while this
-      // CLI agent was still running, resume the session now that it's done.
-      if (finalStatus === 'completed') {
-        const pending = this.consumePendingMessage(agent.id);
-        if (pending) {
-          const agentData = registry.get(agent.id);
-          if (agentData?.sessionId) {
-            this.resume(agent.id, pending.message).catch((err) => {
-              console.error(`[Groove] Auto-resume with queued message failed for ${agent.name}: ${err.message}`);
-            });
-            return;
-          }
-        }
-      }
-
-      // Trigger journalist synthesis on completion (event-driven, debounced).
-      // Skip trivial sessions — a greeting-only completion (user never gave a task)
-      // has nothing worth synthesizing and wastes a $0.04+ headless claude call.
-      if (finalStatus === 'completed' && this.daemon.journalist) {
-        const a = registry.get(agent.id);
-        const turns = a?.turns || 0;
-        const tok = a?.tokensUsed || 0;
-        if (turns > 1 || tok >= 100) {
-          this.daemon.journalist.requestSynthesis('completion');
-        }
-      }
-
-      // Phase 2 auto-spawn: check if all phase 1 agents for a team are done
-      this._checkPhase2(agent.id);
-
-      // Preview launch: when every agent in this team is in a terminal state,
-      // kick off the one-click preview (dev server or static serve) the planner
-      // staged in the team plan. Fires once per team launch.
-      // Fire on any terminal status so crashed QC agents don't block preview
-      // when builders completed successfully.
-      if (agent.teamId) {
-        this._checkPreviewReady(agent.teamId);
-      }
-
-      // Auto-trigger idle QC: if this agent modified files and there's an idle QC
-      // in the same team, activate it to verify the changes
-      if (finalStatus === 'completed') {
-        const files = this.daemon.journalist?.getAgentFiles(agent) || [];
-        if (files.length > 0) this._triggerIdleQC(agent);
-        this._processHandoffs(agent);
-        if (this._rotatingAgents.has(agent.id)) {
-          this._rotatingAgents.delete(agent.id);
-        } else {
-          this._writeCompletionHandoff(agent).catch(err => console.error(`[Groove] Completion handoff failed for ${agent.name}:`, err.message));
-        }
-      }
-
-      // Update Layer 7 specialization profile for this agent's session
-      if (this.daemon.memory && (finalStatus === 'completed' || finalStatus === 'crashed')) {
-        try {
-          const events = this.daemon.classifier?.agentWindows?.[agent.id] || [];
-          const signals = events.length >= 6
-            ? this.daemon.adaptive.extractSignals(events, agent.scope)
-            : null;
-          const score = signals ? this.daemon.adaptive.scoreSession(signals) : null;
-          const files = this.daemon.journalist?.getAgentFiles(agent) || [];
-          this.daemon.memory.updateSpecialization(agent.id, {
-            role: agent.role,
-            qualityScore: score,
-            filesTouched: files,
-            signals,
-            threshold: this.daemon.adaptive?.getThreshold(agent.provider, agent.role),
-          });
-        } catch { /* best-effort */ }
-      }
+    proc.on('close', (code, signal) => {
+      this._handleProcessExit(agent, code, signal, logStream, stderrBuf, logPath);
     });
 
     proc.on('error', (err) => {
@@ -1061,6 +1160,7 @@ For normal file edits within your scope, proceed without review.
       logStream.end();
 
       this.handles.delete(agent.id);
+      this._exitHandled.add(agent.id);
       if (this.daemon.locks) this.daemon.locks.release(agent.id);
       registry.update(agent.id, { status: 'crashed', pid: null });
       this.daemon.broadcast({
@@ -1763,6 +1863,7 @@ For normal file edits within your scope, proceed without review.
       if (!logStream.destroyed) logStream.write(`[${new Date().toISOString()}] Resume spawn error: ${err.message}\n`);
       if (!logStream.destroyed) logStream.end();
       this.handles.delete(newAgent.id);
+      this._exitHandled.add(newAgent.id);
       registry.update(newAgent.id, { status: 'crashed', pid: null });
       this.daemon.broadcast({ type: 'agent:exit', agentId: newAgent.id, code: null, signal: null, status: 'crashed', error: err.message });
     });
@@ -1795,73 +1896,18 @@ For normal file edits within your scope, proceed without review.
     proc.stderr.on('data', (chunk) => { logStream.write(`[stderr] ${chunk}`); });
 
     proc.on('exit', (code, signal) => {
-      logStream.write(`[${new Date().toISOString()}] Process exited: code=${code} signal=${signal}\n`);
-      logStream.end();
-      this.handles.delete(newAgent.id);
-      this._stalledAgents.delete(newAgent.id);
+      this._handleResumeProcessExit(newAgent, code, signal, logStream);
+    });
 
-      // Release file-scope locks so they don't persist after agent death
-      if (this.daemon.locks) this.daemon.locks.release(newAgent.id);
-
-      const finalStatus = signal === 'SIGTERM' || signal === 'SIGKILL' ? 'killed' : code === 0 ? 'completed' : 'crashed';
-      registry.update(newAgent.id, { status: finalStatus, pid: null });
-
-      if (this.daemon.trajectoryCapture) {
-        try {
-          if (finalStatus === 'completed') {
-            this.daemon.trajectoryCapture.onAgentComplete(newAgent.id, {
-              status: 'SUCCESS', exit_code: code, signal,
-            });
-          } else {
-            this.daemon.trajectoryCapture.onAgentCrash(newAgent.id,
-              signal ? 'Killed by signal ' + signal : 'Exit code ' + code
-            );
-          }
-          const count = (this.daemon.state.get('training_sessions_captured') || 0) + 1;
-          this.daemon.state.set('training_sessions_captured', count);
-        } catch (e) { /* fail silent */ }
-      }
-
-      this.daemon.broadcast({ type: 'agent:exit', agentId: newAgent.id, code, signal, status: finalStatus });
-      if (finalStatus === 'completed' && this.daemon.journalist) {
-        const a = registry.get(newAgent.id);
-        const turns = a?.turns || 0;
-        const tok = a?.tokensUsed || 0;
-        if (turns > 1 || tok >= 100) this.daemon.journalist.requestSynthesis('completion');
-      }
-
-      // Persist Layer 7 state for resumed-session completions too, not just fresh spawns.
-      // Without this, every resume after the first loses its work from the handoff chain.
-      if (finalStatus === 'completed' && !this._rotatingAgents.has(newAgent.id)) {
-        this._writeCompletionHandoff(newAgent).catch(err =>
-          console.error(`[Groove] Completion handoff failed for ${newAgent.name}:`, err.message));
-      }
-      if (this._rotatingAgents.has(newAgent.id)) {
-        this._rotatingAgents.delete(newAgent.id);
-      }
-      if (this.daemon.memory && (finalStatus === 'completed' || finalStatus === 'crashed')) {
-        try {
-          const events = this.daemon.classifier?.agentWindows?.[newAgent.id] || [];
-          const signals = events.length >= 6
-            ? this.daemon.adaptive.extractSignals(events, newAgent.scope)
-            : null;
-          const score = signals ? this.daemon.adaptive.scoreSession(signals) : null;
-          const files = this.daemon.journalist?.getAgentFiles(newAgent) || [];
-          this.daemon.memory.updateSpecialization(newAgent.id, {
-            role: newAgent.role,
-            qualityScore: score,
-            filesTouched: files,
-            signals,
-            threshold: this.daemon.adaptive?.getThreshold(newAgent.provider, newAgent.role),
-          });
-        } catch { /* best-effort */ }
-      }
+    proc.on('close', (code, signal) => {
+      this._handleResumeProcessExit(newAgent, code, signal, logStream);
     });
 
     proc.on('error', (err) => {
       logStream.write(`[error] ${err.message}\n`);
       logStream.end();
       this.handles.delete(newAgent.id);
+      this._exitHandled.add(newAgent.id);
       this._stalledAgents.delete(newAgent.id);
       registry.update(newAgent.id, { status: 'crashed', pid: null });
     });

@@ -157,13 +157,10 @@ export function WorkspaceMode() {
   const editorFiles = useGrooveStore((s) => s.editorFiles);
   const editorActiveFile = useGrooveStore((s) => s.editorActiveFile);
   const editorOpenTabs = useGrooveStore((s) => s.editorOpenTabs);
-  const editorChangedFiles = useGrooveStore((s) => s.editorChangedFiles);
   const setActiveFile = useGrooveStore((s) => s.setActiveFile);
   const closeFile = useGrooveStore((s) => s.closeFile);
   const updateFileContent = useGrooveStore((s) => s.updateFileContent);
   const saveFile = useGrooveStore((s) => s.saveFile);
-  const reloadFile = useGrooveStore((s) => s.reloadFile);
-  const dismissFileChange = useGrooveStore((s) => s.dismissFileChange);
 
   const teamAgents = agents.filter((a) => a.teamId === activeTeamId);
   const agent = teamAgents.find((a) => a.id === workspaceAgentId) || teamAgents[0];
@@ -207,7 +204,6 @@ export function WorkspaceMode() {
   }
 
   const file = editorActiveFile ? editorFiles[editorActiveFile] : null;
-  const hasExternalChange = editorActiveFile && editorChangedFiles[editorActiveFile];
   const isMedia = editorActiveFile && isMediaFile(editorActiveFile);
 
   return (
@@ -260,24 +256,6 @@ export function WorkspaceMode() {
               />
 
               <div className="flex-1 relative min-h-0">
-                {hasExternalChange && (
-                  <div className="absolute top-1 right-3 z-10 flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-2/90 border border-border-subtle backdrop-blur-sm">
-                    <span className="text-2xs text-text-3 font-sans">Modified</span>
-                    <button
-                      onClick={() => reloadFile(editorActiveFile)}
-                      className="text-2xs text-accent hover:text-accent/80 font-sans cursor-pointer"
-                    >
-                      Reload
-                    </button>
-                    <button
-                      onClick={() => dismissFileChange(editorActiveFile)}
-                      className="p-0.5 text-text-4 hover:text-text-1 cursor-pointer"
-                    >
-                      <X size={10} />
-                    </button>
-                  </div>
-                )}
-
                 {!editorActiveFile && (
                   <div className="w-full h-full flex items-center justify-center text-text-4 font-sans bg-surface-1">
                     <div className="text-center space-y-2">

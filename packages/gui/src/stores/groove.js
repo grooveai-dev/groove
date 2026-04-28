@@ -225,6 +225,7 @@ export const useGrooveStore = create((set, get) => ({
       get().fetchNetworkInstallStatus();
       get().fetchTrainingStatus();
       get().fetchActivePreviews();
+      ws.send(JSON.stringify({ type: 'editor:watchdir', path: '' }));
       if (!get().onboardingComplete) get().fetchOnboardingStatus();
       if (window.groove?.auth?.onSubscriptionStatus) {
         window.groove.auth.onSubscriptionStatus((data) => {
@@ -612,7 +613,6 @@ export const useGrooveStore = create((set, get) => ({
         case 'file:changed': {
           const savedAt = get().editorRecentSaves[msg.path];
           if (savedAt && Date.now() - savedAt < 2000) break;
-          set((s) => ({ editorChangedFiles: { ...s.editorChangedFiles, [msg.path]: msg.timestamp } }));
           // Auto-capture workspace snapshot for diff viewer
           if (get().workspaceMode && msg.path && !get().workspaceSnapshots[msg.path]) {
             const existing = get().editorFiles[msg.path];
@@ -620,6 +620,14 @@ export const useGrooveStore = create((set, get) => ({
               get().captureSnapshot(msg.path, existing.content);
             }
           }
+          if (get().editorFiles[msg.path]) {
+            get().reloadFile(msg.path);
+          }
+          break;
+        }
+
+        case 'file:tree-changed': {
+          get().fetchTreeDir(msg.path || '');
           break;
         }
 
@@ -2534,6 +2542,8 @@ export const useGrooveStore = create((set, get) => ({
     try {
       const data = await api.get(`/files/tree?path=${encodeURIComponent(dirPath)}`);
       set((s) => ({ editorTreeCache: { ...s.editorTreeCache, [dirPath]: data.entries || [] } }));
+      const ws = get().ws;
+      if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'editor:watchdir', path: dirPath }));
     } catch (err) {
       console.error('[file-tree] fetchTreeDir failed for', dirPath, err.message);
       set((s) => ({ editorTreeCache: { ...s.editorTreeCache, [dirPath]: [] } }));

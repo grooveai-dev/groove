@@ -325,8 +325,9 @@ export class Daemon {
         data: enrichAgents(this.registry.getAll()),
       }));
 
-      // Track which files this client is watching (for cleanup on disconnect)
+      // Track which files/dirs this client is watching (for cleanup on disconnect)
       const watchedFiles = new Set();
+      const watchedDirs = new Set();
 
       ws.on('message', (raw) => {
         try {
@@ -335,7 +336,7 @@ export class Daemon {
           // Validate message type against whitelist
           const VALID_WS_TYPES = new Set([
             'terminal:spawn', 'terminal:resize', 'terminal:input', 'terminal:close', 'terminal:kill', 'terminal:rename',
-            'editor:watch', 'editor:unwatch', 'editor:save',
+            'editor:watch', 'editor:unwatch', 'editor:save', 'editor:watchdir', 'editor:unwatchdir',
             'ping'
           ]);
           if (!msg || typeof msg !== 'object' || !VALID_WS_TYPES.has(msg.type)) return;
@@ -350,6 +351,14 @@ export class Daemon {
               break;
             case 'editor:unwatch':
               if (msg.path) { this.fileWatcher.unwatch(msg.path); watchedFiles.delete(msg.path); }
+              break;
+            case 'editor:watchdir':
+              if (typeof msg.path === 'string' && !msg.path.includes('..')) {
+                this.fileWatcher.watchDir(msg.path); watchedDirs.add(msg.path);
+              }
+              break;
+            case 'editor:unwatchdir':
+              if (typeof msg.path === 'string') { this.fileWatcher.unwatchDir(msg.path); watchedDirs.delete(msg.path); }
               break;
             // Terminal
             case 'terminal:spawn': {
@@ -388,6 +397,9 @@ export class Daemon {
       ws.on('close', () => {
         for (const path of watchedFiles) {
           this.fileWatcher.unwatch(path);
+        }
+        for (const path of watchedDirs) {
+          this.fileWatcher.unwatchDir(path);
         }
         this.terminalManager.cleanupClient(ws);
       });

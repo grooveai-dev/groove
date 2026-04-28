@@ -8,8 +8,7 @@ import { MediaViewer, isMediaFile } from '../components/editor/media-viewer';
 import { EditorStatusBar } from '../components/editor/editor-status-bar';
 import { GotoLine } from '../components/editor/goto-line';
 import { Breadcrumbs } from '../components/editor/breadcrumbs';
-import { Code2, AlertTriangle, RefreshCw, X, Eye, FileCode, PanelLeftOpen } from 'lucide-react';
-import { Button } from '../components/ui/button';
+import { Code2, Eye, FileCode, PanelLeftOpen } from 'lucide-react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 
@@ -25,11 +24,8 @@ const SIDEBAR_MAX = 400;
 export default function EditorView() {
   const activeFile = useGrooveStore((s) => s.editorActiveFile);
   const files = useGrooveStore((s) => s.editorFiles);
-  const changedFiles = useGrooveStore((s) => s.editorChangedFiles);
   const updateFileContent = useGrooveStore((s) => s.updateFileContent);
   const saveFile = useGrooveStore((s) => s.saveFile);
-  const reloadFile = useGrooveStore((s) => s.reloadFile);
-  const dismissFileChange = useGrooveStore((s) => s.dismissFileChange);
   const sidebarWidth = useGrooveStore((s) => s.editorSidebarWidth);
   const setSidebarWidth = useGrooveStore((s) => s.setEditorSidebarWidth);
 
@@ -104,7 +100,6 @@ export default function EditorView() {
   const file = activeFile ? files[activeFile] : null;
   const isMedia = activeFile && isMediaFile(activeFile);
   const isHtml = activeFile && isHtmlFile(activeFile);
-  const hasExternalChange = activeFile && changedFiles[activeFile];
 
   return (
     <div className="flex h-full">
@@ -149,20 +144,6 @@ export default function EditorView() {
               onGoto={handleGoto}
               onClose={() => setShowGotoLine(false)}
             />
-          )}
-
-          {/* External change banner */}
-          {hasExternalChange && (
-            <div className="absolute top-0 left-0 right-0 z-10 flex items-center gap-2 px-4 py-2 bg-warning/10 border-b border-warning/20">
-              <AlertTriangle size={14} className="text-warning" />
-              <span className="text-xs text-warning font-sans flex-1">File modified externally</span>
-              <Button variant="ghost" size="sm" onClick={() => reloadFile(activeFile)}>
-                <RefreshCw size={12} /> Reload
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => dismissFileChange(activeFile)}>
-                <X size={12} /> Dismiss
-              </Button>
-            </div>
           )}
 
           {/* Editor / Media / Empty */}

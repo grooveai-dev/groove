@@ -3,15 +3,13 @@
 
 import { execFileSync, spawn } from 'child_process';
 import { existsSync, writeFileSync, readFileSync, statSync } from 'fs';
-import { resolve, dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { resolve } from 'path';
 import { createConnection } from 'net';
 import crypto from 'crypto';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 function getLocalVersion() {
   try {
-    const pkg = JSON.parse(readFileSync(join(__dirname, '..', '..', '..', 'package.json'), 'utf8'));
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
     return pkg.version || '0.0.0';
   } catch { return '0.0.0'; }
 }
@@ -32,6 +30,11 @@ function validateField(value, name) {
   if (INJECTION_CHARS.test(value)) {
     throw new Error(`Invalid characters in ${name}`);
   }
+}
+
+function sshCmd(cmd) {
+  const nvmProbe = 'export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; ';
+  return `bash -lc '${nvmProbe}${cmd}'`;
 }
 
 export class TunnelManager {
@@ -217,7 +220,7 @@ export class TunnelManager {
         '-o', 'StrictHostKeyChecking=accept-new',
         '-o', 'BatchMode=yes',
         target,
-        `bash -lc 'S=$(curl -sf http://localhost:${REMOTE_PORT}/api/status 2>/dev/null); if [ -n "$S" ]; then echo "__GROOVE_RUNNING__$S__GROOVE_END__"; else which groove >/dev/null 2>&1 && echo __GROOVE_VER__$(groove --version 2>/dev/null || echo unknown)__GROOVE_STOPPED__ || echo __GROOVE_NOT_INSTALLED__; fi'`,
+        sshCmd(`S=$(curl -sf http://localhost:${REMOTE_PORT}/api/status 2>/dev/null); if [ -n "$S" ]; then echo "__GROOVE_RUNNING__$S__GROOVE_END__"; else which groove >/dev/null 2>&1 && echo __GROOVE_VER__$(groove --version 2>/dev/null || echo unknown)__GROOVE_STOPPED__ || echo __GROOVE_NOT_INSTALLED__; fi`),
       ], {
         encoding: 'utf8',
         timeout: 20000,
@@ -412,7 +415,7 @@ export class TunnelManager {
       const installCmd = config.user === 'root' ? `npm i -g --prefer-online ${pinnedPkg}` : `sudo npm i -g --prefer-online ${pinnedPkg}`;
 
       try {
-        execFileSync('ssh', [...sshBase, `bash -lc '${installCmd}'`], {
+        execFileSync('ssh', [...sshBase, sshCmd(installCmd)], {
           encoding: 'utf8',
           timeout: 120000,
           stdio: ['pipe', 'pipe', 'pipe'],
@@ -420,14 +423,14 @@ export class TunnelManager {
       } catch {
         const fallbackPkg = 'groove-dev';
         const fallbackCmd = config.user === 'root' ? `npm i -g --prefer-online ${fallbackPkg}` : `sudo npm i -g --prefer-online ${fallbackPkg}`;
-        execFileSync('ssh', [...sshBase, `bash -lc '${fallbackCmd}'`], {
+        execFileSync('ssh', [...sshBase, sshCmd(fallbackCmd)], {
           encoding: 'utf8',
           timeout: 120000,
           stdio: ['pipe', 'pipe', 'pipe'],
         });
       }
 
-      const verOutput = execFileSync('ssh', [...sshBase, `bash -lc 'groove --version'`], {
+      const verOutput = execFileSync('ssh', [...sshBase, sshCmd('groove --version')], {
         encoding: 'utf8',
         timeout: 10000,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -438,8 +441,8 @@ export class TunnelManager {
         this.daemon.broadcast({ type: 'tunnel.version-mismatch', data: { id, localVersion: localVer, remoteVersion: installedVer, message: 'Pinned version not available on npm, installed latest' } });
       }
 
-      const restartCmd = `kill $(lsof -t -i:${REMOTE_PORT}) 2>/dev/null || true; sleep 2; nohup groove start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:${REMOTE_PORT}/api/status`;
-      const restartResult = execFileSync('ssh', [...sshBase, `bash -lc '${restartCmd}'`], {
+      const restartCmd = `kill $(lsof -t -i:${REMOTE_PORT}) 2>/dev/null || true; sleep 2; GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:${REMOTE_PORT}/api/status`;
+      const restartResult = execFileSync('ssh', [...sshBase, sshCmd(restartCmd)], {
         encoding: 'utf8',
         timeout: 60000,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -484,30 +487,40 @@ export class TunnelManager {
 
     let usedFallback = false;
     try {
-      execFileSync('ssh', [...sshBase, `bash -lc '${installCmd}'`], {
+      execFileSync('ssh', [...sshBase, sshCmd(installCmd)], {
         encoding: 'utf8',
         timeout: 120000,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
     } catch (err) {
-      if (localVer !== '0.0.0' && pkg.includes('@')) {
-        const fallbackCmd = config.user === 'root' ? 'npm i -g --prefer-online groove-dev' : 'sudo npm i -g --prefer-online groove-dev';
+      const errOutput = err.stdout?.toString() || err.stderr?.toString() || err.message;
+      if (errOutput.includes('ENOTEMPTY')) {
         try {
-          execFileSync('ssh', [...sshBase, `bash -lc '${fallbackCmd}'`], {
-            encoding: 'utf8',
-            timeout: 120000,
-            stdio: ['pipe', 'pipe', 'pipe'],
-          });
-          usedFallback = true;
-        } catch { /* fall through to original error */ }
-      }
-      if (!usedFallback) {
-        const output = err.stdout?.toString() || err.stderr?.toString() || err.message;
-        throw new Error(`Remote upgrade failed: ${output.slice(-400)}`);
+          execFileSync('ssh', [...sshBase, sshCmd('rm -rf $(npm root -g)/.groove-dev-* $(npm root -g)/groove-dev 2>/dev/null || true')], { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] });
+          execFileSync('ssh', [...sshBase, sshCmd(installCmd)], { encoding: 'utf8', timeout: 120000, stdio: ['pipe', 'pipe', 'pipe'] });
+        } catch (retryErr) {
+          const retryOutput = retryErr.stdout?.toString() || retryErr.stderr?.toString() || retryErr.message;
+          throw new Error(`Remote upgrade failed after cleanup: ${retryOutput.slice(-400)}`);
+        }
+      } else {
+        if (localVer !== '0.0.0' && pkg.includes('@')) {
+          const fallbackCmd = config.user === 'root' ? 'npm i -g --prefer-online groove-dev' : 'sudo npm i -g --prefer-online groove-dev';
+          try {
+            execFileSync('ssh', [...sshBase, sshCmd(fallbackCmd)], {
+              encoding: 'utf8',
+              timeout: 120000,
+              stdio: ['pipe', 'pipe', 'pipe'],
+            });
+            usedFallback = true;
+          } catch { /* fall through to original error */ }
+        }
+        if (!usedFallback) {
+          throw new Error(`Remote upgrade failed: ${errOutput.slice(-400)}`);
+        }
       }
     }
 
-    const verOutput = execFileSync('ssh', [...sshBase, `bash -lc 'groove --version'`], {
+    const verOutput = execFileSync('ssh', [...sshBase, sshCmd('groove --version')], {
       encoding: 'utf8',
       timeout: 10000,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -537,7 +550,7 @@ export class TunnelManager {
       ? `curl -sf -X POST -H 'Content-Type: application/json' --data '{"path":"${config.projectDir}"}' http://localhost:${REMOTE_PORT}/api/project-dir > /dev/null 2>&1 || true; `
       : '';
     const remoteCmd =
-      `${cdPrefix}nohup groove start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; ` +
+      `${cdPrefix}GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; ` +
       `sleep 5; ` +
       `curl -sf http://localhost:${REMOTE_PORT}/api/health > /dev/null ` +
       `&& (${setProjectDir}echo __DAEMON_OK__) ` +
@@ -550,7 +563,7 @@ export class TunnelManager {
         '-o', 'ConnectTimeout=10',
         '-o', 'BatchMode=yes',
         target,
-        `bash -lc '${remoteCmd}'`,
+        sshCmd(remoteCmd),
       ], {
         encoding: 'utf8',
         timeout: 45000,
@@ -585,7 +598,7 @@ export class TunnelManager {
 
     // Non-interactive SSH doesn't source shell profiles, so npm/node may not be on PATH.
     // Use a login shell (-l) to get the user's full environment.
-    const remoteCmd = (cmd) => `bash -lc '${cmd}'`;
+    const remoteCmd = (cmd) => sshCmd(cmd);
 
     // Step 1: Check if node/npm are available
     try {
@@ -623,7 +636,16 @@ export class TunnelManager {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
     } catch (err) {
-      if (localVer !== '0.0.0' && pkg.includes('@')) {
+      const errOutput = err.stdout?.toString() || err.stderr?.toString() || err.message;
+      if (errOutput.includes('ENOTEMPTY')) {
+        try {
+          execFileSync('ssh', [...sshBase, remoteCmd('rm -rf $(npm root -g)/.groove-dev-* $(npm root -g)/groove-dev 2>/dev/null || true')], { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] });
+          execFileSync('ssh', [...sshBase, remoteCmd(installCmd)], { encoding: 'utf8', timeout: 120000, stdio: ['pipe', 'pipe', 'pipe'] });
+        } catch (retryErr) {
+          const retryOutput = retryErr.stdout?.toString() || retryErr.stderr?.toString() || retryErr.message;
+          throw new Error(`npm install failed after cleanup: ${retryOutput.slice(-400)}`);
+        }
+      } else if (localVer !== '0.0.0' && pkg.includes('@')) {
         const fallbackCmd = config.user === 'root' ? 'npm i -g --prefer-online groove-dev' : 'sudo npm i -g --prefer-online groove-dev';
         try {
           execFileSync('ssh', [...sshBase, remoteCmd(fallbackCmd)], {
@@ -636,8 +658,7 @@ export class TunnelManager {
           throw new Error(`npm install failed: ${output.slice(-400)}`);
         }
       } else {
-        const output = err.stdout?.toString() || err.stderr?.toString() || err.message;
-        throw new Error(`npm install failed: ${output.slice(-400)}`);
+        throw new Error(`npm install failed: ${errOutput.slice(-400)}`);
       }
     }
 
@@ -645,7 +666,7 @@ export class TunnelManager {
     try {
       const result = execFileSync('ssh', [
         ...sshBase,
-        remoteCmd(`nohup groove start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 5; curl -sf http://localhost:${REMOTE_PORT}/api/health > /dev/null && echo __DAEMON_OK__ || (echo __DAEMON_FAIL__; tail -20 /tmp/groove-daemon.log 2>/dev/null)`),
+        remoteCmd(`GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 5; curl -sf http://localhost:${REMOTE_PORT}/api/health > /dev/null && echo __DAEMON_OK__ || (echo __DAEMON_FAIL__; tail -20 /tmp/groove-daemon.log 2>/dev/null)`),
       ], {
         encoding: 'utf8',
         timeout: 45000,
@@ -683,29 +704,40 @@ export class TunnelManager {
     const installCmd = config.user === 'root' ? `npm i -g --prefer-online ${pinnedPkg}` : `sudo npm i -g --prefer-online ${pinnedPkg}`;
 
     try {
-      execFileSync('ssh', [...sshBase, `bash -lc '${installCmd}'`], {
+      execFileSync('ssh', [...sshBase, sshCmd(installCmd)], {
         encoding: 'utf8',
         timeout: 120000,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
-    } catch {
-      const fallbackCmd = config.user === 'root' ? 'npm i -g --prefer-online groove-dev' : 'sudo npm i -g --prefer-online groove-dev';
-      execFileSync('ssh', [...sshBase, `bash -lc '${fallbackCmd}'`], {
-        encoding: 'utf8',
-        timeout: 120000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+    } catch (err) {
+      const errOutput = err.stdout?.toString() || err.stderr?.toString() || err.message;
+      if (errOutput.includes('ENOTEMPTY')) {
+        try {
+          execFileSync('ssh', [...sshBase, sshCmd('rm -rf $(npm root -g)/.groove-dev-* $(npm root -g)/groove-dev 2>/dev/null || true')], { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] });
+          execFileSync('ssh', [...sshBase, sshCmd(installCmd)], { encoding: 'utf8', timeout: 120000, stdio: ['pipe', 'pipe', 'pipe'] });
+        } catch (retryErr) {
+          const retryOutput = retryErr.stdout?.toString() || retryErr.stderr?.toString() || retryErr.message;
+          throw new Error(`npm install failed after cleanup: ${retryOutput.slice(-400)}`);
+        }
+      } else {
+        const fallbackCmd = config.user === 'root' ? 'npm i -g --prefer-online groove-dev' : 'sudo npm i -g --prefer-online groove-dev';
+        execFileSync('ssh', [...sshBase, sshCmd(fallbackCmd)], {
+          encoding: 'utf8',
+          timeout: 120000,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      }
     }
 
-    const verOutput = execFileSync('ssh', [...sshBase, `bash -lc 'groove --version'`], {
+    const verOutput = execFileSync('ssh', [...sshBase, sshCmd('groove --version')], {
       encoding: 'utf8',
       timeout: 10000,
       stdio: ['pipe', 'pipe', 'pipe'],
     }).trim();
     const installedVer = verOutput.replace(/[^0-9.]/g, '') || verOutput.trim();
 
-    const restartCmd = `kill $(lsof -t -i:${REMOTE_PORT}) 2>/dev/null || true; sleep 2; nohup groove start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:${REMOTE_PORT}/api/status`;
-    const restartResult = execFileSync('ssh', [...sshBase, `bash -lc '${restartCmd}'`], {
+    const restartCmd = `kill $(lsof -t -i:${REMOTE_PORT}) 2>/dev/null || true; sleep 2; GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:${REMOTE_PORT}/api/status`;
+    const restartResult = execFileSync('ssh', [...sshBase, sshCmd(restartCmd)], {
       encoding: 'utf8',
       timeout: 60000,
       stdio: ['pipe', 'pipe', 'pipe'],

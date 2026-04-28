@@ -4873,15 +4873,6 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
     if (enabled) {
       try {
-        await import('better-sqlite3');
-      } catch (modErr) {
-        console.error('[training/opt-in] Native module load failed:', modErr);
-        return res.status(500).json({
-          error: 'Failed to enable data sharing',
-          detail: 'Native SQLite module (better-sqlite3) is not available. On remote instances, ensure build tools are installed (gcc, g++, make, python3) and run: npm rebuild better-sqlite3',
-        });
-      }
-      try {
         const userId = ConsentManager.getOrCreateUserId();
         const consent = new ConsentManager();
         try {

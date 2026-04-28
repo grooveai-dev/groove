@@ -141,28 +141,15 @@ export class Teams {
   }
 
   /**
-   * Delete a team — kills its agents, removes its directory, drops it from the
-   * registry. Deleting the default team regenerates a fresh empty one so users
-   * can wipe accumulated state and keep working without restarting the daemon.
+   * Archive a team — kills its agents, moves its directory to archived-teams/,
+   * stores metadata.json for later restore.
    */
-  delete(id) {
+  archive(id) {
     const team = this.teams.get(id);
     if (!team) throw new Error('Team not found');
 
-    // Kill any running agents in this team
-    const agents = this.daemon.registry.getAll().filter((a) => a.teamId === id);
-    for (const agent of agents) {
-      if (agent.status === 'running' || agent.status === 'starting') {
-        try { this.daemon.processes.kill(agent.id); } catch { /* ignore */ }
-      }
-    }
+    const agents = this._killAndRemoveAgents(id);
 
-    // Remove agents from registry
-    for (const agent of agents) {
-      this.daemon.registry.remove(agent.id);
-    }
-
-    // Archive the team's working directory instead of deleting it
     if (
       team.workingDir &&
       team.workingDir !== this.daemon.projectDir &&
@@ -191,6 +178,7 @@ export class Teams {
           originalId: team.id,
           deletedAt: new Date().toISOString(),
           agentCount: agents.length,
+          originalWorkingDir: team.workingDir,
         };
         writeFileSync(resolve(archivePath, 'metadata.json'), JSON.stringify(metadata, null, 2));
       } catch (err) {
@@ -198,21 +186,63 @@ export class Teams {
       }
     }
 
+    this._removeTeamAndCleanup(team, id);
+    return true;
+  }
+
+  /**
+   * Delete a team — kills its agents, removes its directory permanently.
+   * If permanent is false (default), delegates to archive() instead.
+   */
+  delete(id, { permanent = false } = {}) {
+    if (!permanent) return this.archive(id);
+
+    const team = this.teams.get(id);
+    if (!team) throw new Error('Team not found');
+
+    this._killAndRemoveAgents(id);
+
+    if (
+      team.workingDir &&
+      team.workingDir !== this.daemon.projectDir &&
+      existsSync(team.workingDir)
+    ) {
+      try {
+        rmSync(team.workingDir, { recursive: true, force: true });
+      } catch (err) {
+        console.log(`[Groove:Teams] Failed to delete directory: ${err.message}`);
+      }
+    }
+
+    this._removeTeamAndCleanup(team, id);
+    return true;
+  }
+
+  _killAndRemoveAgents(teamId) {
+    const agents = this.daemon.registry.getAll().filter((a) => a.teamId === teamId);
+    for (const agent of agents) {
+      if (agent.status === 'running' || agent.status === 'starting') {
+        try { this.daemon.processes.kill(agent.id); } catch { /* ignore */ }
+      }
+    }
+    for (const agent of agents) {
+      this.daemon.registry.remove(agent.id);
+    }
+    return agents;
+  }
+
+  _removeTeamAndCleanup(team, id) {
     this.teams.delete(id);
     this._save();
     this.daemon.broadcast({ type: 'team:deleted', teamId: id });
 
-    // Always keep a default team available — regenerate one with a clean folder
     if (team.isDefault) {
       this._ensureDefault();
       const fresh = this.getDefault();
       if (fresh) this.daemon.broadcast({ type: 'team:created', team: fresh });
     }
 
-    // Clean up orphaned logs immediately — don't wait for the 24h GC cycle
     try { this.daemon._gc(); } catch { /* gc should never block deletion */ }
-
-    return true;
   }
 
   listArchived() {
@@ -243,11 +273,10 @@ export class Teams {
     try { meta = JSON.parse(readFileSync(metaPath, 'utf8')); } catch { /* use defaults */ }
 
     const name = meta.originalName || archivedId;
-    const dirName = slugify(name);
-    let workingDir = resolve(this.daemon.projectDir, dirName);
+    let workingDir = meta.originalWorkingDir || resolve(this.daemon.projectDir, slugify(name));
 
     if (existsSync(workingDir)) {
-      workingDir = resolve(this.daemon.projectDir, `${dirName}-${Date.now()}`);
+      workingDir = resolve(this.daemon.projectDir, `${slugify(name)}-${Date.now()}`);
     }
 
     try {

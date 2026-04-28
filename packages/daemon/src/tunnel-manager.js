@@ -577,8 +577,9 @@ export class TunnelManager {
       }
     } catch (err) {
       if (err.message.includes('Remote daemon failed')) throw err;
-      const output = err.stdout?.toString() || err.stderr?.toString() || err.message;
-      throw new Error(`Failed to start remote daemon: ${output.slice(-300)}`);
+      const output = err.stdout?.toString() || err.stderr?.toString() || '';
+      if (output.includes('__DAEMON_OK__')) return;
+      throw new Error(`Failed to start remote daemon: ${(output || err.message).slice(-300)}`);
     }
   }
 

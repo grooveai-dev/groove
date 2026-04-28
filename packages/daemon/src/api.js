@@ -1138,8 +1138,9 @@ export function createApi(app, daemon) {
 
   app.delete('/api/teams/:id', (req, res) => {
     try {
-      daemon.teams.delete(req.params.id);
-      daemon.audit.log('team.delete', { id: req.params.id });
+      const permanent = req.query.permanent === 'true';
+      daemon.teams.delete(req.params.id, { permanent });
+      daemon.audit.log(permanent ? 'team.delete' : 'team.archive', { id: req.params.id, permanent });
       res.json({ ok: true });
     } catch (err) {
       res.status(400).json({ error: err.message });

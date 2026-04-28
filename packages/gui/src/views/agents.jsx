@@ -15,6 +15,7 @@ import { PreviewWorkspace } from '../components/preview/preview-workspace';
 import { WorkspaceMode } from '../components/agents/workspace-mode';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../components/ui/context-menu';
 import { Dialog, DialogContent } from '../components/ui/dialog';
+import { TeamRemovalDialog } from '../components/teams/team-removal-dialog';
 import { Select, SelectTrigger, SelectContent, SelectItem } from '../components/ui/select';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Tooltip } from '../components/ui/tooltip';
@@ -84,7 +85,8 @@ export function TeamTabBar() {
   const agents = useGrooveStore((s) => s.agents);
   const switchTeam = useGrooveStore((s) => s.switchTeam);
   const createTeam = useGrooveStore((s) => s.createTeam);
-  const deleteTeam = useGrooveStore((s) => s.deleteTeam);
+  const archiveTeam = useGrooveStore((s) => s.archiveTeam);
+  const deleteTeamPermanently = useGrooveStore((s) => s.deleteTeamPermanently);
   const renameTeam = useGrooveStore((s) => s.renameTeam);
   const cloneTeam = useGrooveStore((s) => s.cloneTeam);
   const reorderTeams = useGrooveStore((s) => s.reorderTeams);
@@ -305,24 +307,13 @@ export function TeamTabBar() {
         </button>
       )}
 
-      <Dialog open={!!archiveConfirm} onOpenChange={(open) => !open && setArchiveConfirm(null)}>
-        <DialogContent title="Archive Team" description="Confirm team archival">
-          <div className="px-5 py-4 space-y-3">
-            <p className="text-sm text-text-1 font-sans">
-              This will archive <span className="font-semibold text-text-0">{archiveConfirm?.name}</span>.
-            </p>
-            <p className="text-xs text-text-2 font-sans">
-              All files will be preserved and can be restored later from the Archived Teams section.
-            </p>
-          </div>
-          <div className="px-5 py-4 border-t border-border-subtle flex justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setArchiveConfirm(null)}>Cancel</Button>
-            <Button variant="danger" size="sm" onClick={() => { deleteTeam(archiveConfirm.id); setArchiveConfirm(null); }}>
-              <Archive size={12} /> Archive
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <TeamRemovalDialog
+        team={archiveConfirm}
+        open={!!archiveConfirm}
+        onOpenChange={(open) => !open && setArchiveConfirm(null)}
+        onArchive={archiveTeam}
+        onDeletePermanently={deleteTeamPermanently}
+      />
     </div>
   );
 }

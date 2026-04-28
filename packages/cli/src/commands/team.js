@@ -5,10 +5,10 @@ import { createInterface } from 'readline';
 import chalk from 'chalk';
 import { apiCall } from '../client.js';
 
-function confirm(prompt) {
+function prompt(question) {
   return new Promise((resolve) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
-    rl.question(prompt, (answer) => { rl.close(); resolve(answer.trim().toLowerCase() === 'y'); });
+    rl.question(question, (answer) => { rl.close(); resolve(answer.trim()); });
   });
 }
 
@@ -45,17 +45,32 @@ export async function teamList() {
 }
 
 export async function teamDelete(id) {
-  const ok = await confirm(`  This will archive the team directory. Continue? [y/N] `);
-  if (!ok) {
+  const choice = await prompt(`  Archive or permanently delete? [${chalk.bold('a')}rchive / ${chalk.bold('D')}elete] `);
+  const normalized = choice.toLowerCase();
+
+  if (normalized === 'd' || normalized === 'delete') {
+    const teamName = await prompt(chalk.yellow('  WARNING: All files in this team will be permanently lost.\n') + `  Type the team name to confirm: `);
+    if (!teamName) {
+      console.log(chalk.dim('  Cancelled.'));
+      return;
+    }
+    try {
+      await apiCall('DELETE', `/api/teams/${encodeURIComponent(id)}?permanent=true`);
+      console.log(chalk.green(`  Permanently deleted team "${id}".`));
+    } catch (err) {
+      console.error(chalk.red('  Failed:'), err.message);
+      process.exit(1);
+    }
+  } else if (normalized === 'a' || normalized === 'archive' || normalized === '') {
+    try {
+      await apiCall('DELETE', `/api/teams/${encodeURIComponent(id)}`);
+      console.log(chalk.green(`  Archived team "${id}"`) + chalk.dim(' — restore with `groove team restore <id>`'));
+    } catch (err) {
+      console.error(chalk.red('  Failed:'), err.message);
+      process.exit(1);
+    }
+  } else {
     console.log(chalk.dim('  Cancelled.'));
-    return;
-  }
-  try {
-    await apiCall('DELETE', `/api/teams/${encodeURIComponent(id)}`);
-    console.log(chalk.green(`  Archived team "${id}"`) + chalk.dim(' — restore with `groove team restore <id>`'));
-  } catch (err) {
-    console.error(chalk.red('  Failed:'), err.message);
-    process.exit(1);
   }
 }
 

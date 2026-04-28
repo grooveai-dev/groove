@@ -1164,19 +1164,30 @@ export const useGrooveStore = create((set, get) => ({
     }
   },
 
-  async deleteTeam(id) {
+  async archiveTeam(id) {
     const team = get().teams.find((t) => t.id === id);
     try {
       await api.delete(`/teams/${encodeURIComponent(id)}`);
-      // WS team:deleted handler removes from array and switches activeTeamId.
-      // Deleting the default team regenerates a fresh one server-side; the
-      // team:created event arrives separately so the list stays populated.
       const wiped = team?.isDefault ? 'wiped' : 'archived';
       get().addToast('success', `Team "${team?.name}" ${wiped}`, wiped === 'archived' ? 'Files preserved — restore anytime from Archived Teams' : undefined);
       get().fetchArchivedTeams();
     } catch (err) {
+      get().addToast('error', 'Failed to archive team', err.message);
+    }
+  },
+
+  async deleteTeamPermanently(id) {
+    const team = get().teams.find((t) => t.id === id);
+    try {
+      await api.delete(`/teams/${encodeURIComponent(id)}?permanent=true`);
+      get().addToast('success', `Team "${team?.name}" permanently deleted`);
+    } catch (err) {
       get().addToast('error', 'Failed to delete team', err.message);
     }
+  },
+
+  async deleteTeam(id) {
+    return get().archiveTeam(id);
   },
 
   reorderTeams(fromIndex, toIndex) {

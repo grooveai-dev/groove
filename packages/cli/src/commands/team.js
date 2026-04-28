@@ -1,8 +1,16 @@
 // GROOVE CLI — team commands
 // FSL-1.1-Apache-2.0 — see LICENSE
 
+import { createInterface } from 'readline';
 import chalk from 'chalk';
 import { apiCall } from '../client.js';
+
+function confirm(prompt) {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(prompt, (answer) => { rl.close(); resolve(answer.trim().toLowerCase() === 'y'); });
+  });
+}
 
 export async function teamCreate(name) {
   try {
@@ -37,9 +45,43 @@ export async function teamList() {
 }
 
 export async function teamDelete(id) {
+  const ok = await confirm(`  This will archive the team directory. Continue? [y/N] `);
+  if (!ok) {
+    console.log(chalk.dim('  Cancelled.'));
+    return;
+  }
   try {
     await apiCall('DELETE', `/api/teams/${encodeURIComponent(id)}`);
-    console.log(chalk.green(`  Deleted team "${id}"`));
+    console.log(chalk.green(`  Archived team "${id}"`) + chalk.dim(' — restore with `groove team restore <id>`'));
+  } catch (err) {
+    console.error(chalk.red('  Failed:'), err.message);
+    process.exit(1);
+  }
+}
+
+export async function teamArchived() {
+  try {
+    const { archived } = await apiCall('GET', '/api/teams/archived');
+    if (archived.length === 0) {
+      console.log(chalk.dim('  No archived teams.'));
+      return;
+    }
+    console.log(chalk.bold(`\n  Archived Teams (${archived.length})\n`));
+    for (const t of archived) {
+      const date = t.deletedAt ? new Date(t.deletedAt).toLocaleDateString() : 'unknown';
+      console.log(`  ${chalk.bold(t.originalName || t.id)}  — archive-id: ${t.id} — deleted ${date} — ${t.agentCount} agent(s)`);
+    }
+    console.log('');
+  } catch {
+    console.error(chalk.red('  Cannot connect to daemon.'));
+    process.exit(1);
+  }
+}
+
+export async function teamRestore(id) {
+  try {
+    const team = await apiCall('POST', `/api/teams/archived/${encodeURIComponent(id)}/restore`);
+    console.log(chalk.green(`  Restored team "${team.name}"`) + ` (new id: ${team.id})`);
   } catch (err) {
     console.error(chalk.red('  Failed:'), err.message);
     process.exit(1);

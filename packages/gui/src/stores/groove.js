@@ -39,6 +39,7 @@ export const useGrooveStore = create((set, get) => ({
 
   // ── Teams ─────────────────────────────────────────────────
   teams: [],
+  archivedTeams: [],
   activeTeamId: localStorage.getItem('groove:activeTeamId') || null,
 
   // ── Gateways ──────────────────────────────────────────────
@@ -1162,8 +1163,9 @@ export const useGrooveStore = create((set, get) => ({
       // WS team:deleted handler removes from array and switches activeTeamId.
       // Deleting the default team regenerates a fresh one server-side; the
       // team:created event arrives separately so the list stays populated.
-      const wiped = team?.isDefault ? 'wiped' : 'deleted';
-      get().addToast('info', `Team "${team?.name}" ${wiped}`);
+      const wiped = team?.isDefault ? 'wiped' : 'archived';
+      get().addToast('success', `Team "${team?.name}" ${wiped}`, wiped === 'archived' ? 'Files preserved — restore anytime from Archived Teams' : undefined);
+      get().fetchArchivedTeams();
     } catch (err) {
       get().addToast('error', 'Failed to delete team', err.message);
     }
@@ -1175,6 +1177,33 @@ export const useGrooveStore = create((set, get) => ({
     teams.splice(toIndex, 0, moved);
     set({ teams });
     try { localStorage.setItem('groove:teamOrder', JSON.stringify(teams.map((t) => t.id))); } catch {}
+  },
+
+  async fetchArchivedTeams() {
+    try {
+      const data = await api.get('/teams/archived');
+      set({ archivedTeams: data.archived || data.teams || [] });
+    } catch { /* endpoint may not exist yet */ }
+  },
+
+  async restoreTeam(archivedId) {
+    try {
+      await api.post(`/teams/archived/${encodeURIComponent(archivedId)}/restore`);
+      get().addToast('success', 'Team restored');
+      get().fetchArchivedTeams();
+    } catch (err) {
+      get().addToast('error', 'Failed to restore team', err.message);
+    }
+  },
+
+  async purgeTeam(archivedId) {
+    try {
+      await api.delete(`/teams/archived/${encodeURIComponent(archivedId)}`);
+      get().addToast('info', 'Archived team permanently deleted');
+      get().fetchArchivedTeams();
+    } catch (err) {
+      get().addToast('error', 'Failed to purge team', err.message);
+    }
   },
 
   async cloneTeam(id) {

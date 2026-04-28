@@ -5,6 +5,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { StatusDot } from '../components/ui/status-dot';
+import { Dialog, DialogContent } from '../components/ui/dialog';
 import { api } from '../lib/api';
 import { useToast } from '../lib/hooks/use-toast';
 import { fmtNum, fmtDollar, timeAgo, fmtUptime } from '../lib/format';
@@ -12,6 +13,7 @@ import { cn } from '../lib/cn';
 import {
   Clock, CheckCircle, XCircle, AlertTriangle, ShieldCheck, ShieldX,
   Users, Folder, Cpu, Trash2, Play, Pause, LayoutDashboard, ListChecks, Calendar,
+  Archive, RotateCcw, ChevronRight,
 } from 'lucide-react';
 
 // ── Team Dashboard ────────────────────────────────────────────
@@ -21,8 +23,18 @@ function TeamsDashboard() {
   const activeTeamId = useGrooveStore((s) => s.activeTeamId);
   const deleteTeam = useGrooveStore((s) => s.deleteTeam);
   const addToast = useGrooveStore((s) => s.addToast);
+  const archivedTeams = useGrooveStore((s) => s.archivedTeams);
+  const fetchArchivedTeams = useGrooveStore((s) => s.fetchArchivedTeams);
+  const restoreTeam = useGrooveStore((s) => s.restoreTeam);
+  const purgeTeam = useGrooveStore((s) => s.purgeTeam);
 
-  if (teams.length === 0) {
+  const [archiveConfirm, setArchiveConfirm] = useState(null);
+  const [purgeConfirm, setPurgeConfirm] = useState(null);
+  const [archivedOpen, setArchivedOpen] = useState(false);
+
+  useEffect(() => { fetchArchivedTeams(); }, []);
+
+  if (teams.length === 0 && archivedTeams.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center space-y-2">
@@ -74,10 +86,10 @@ function TeamsDashboard() {
                       addToast('error', 'Stop running agents first');
                       return;
                     }
-                    deleteTeam(team.id);
+                    setArchiveConfirm(team);
                   }}
                   className="p-1.5 text-text-4 hover:text-danger rounded transition-colors cursor-pointer"
-                  title="Delete team"
+                  title="Archive team"
                 >
                   <Trash2 size={13} />
                 </button>
@@ -112,6 +124,97 @@ function TeamsDashboard() {
           );
         })}
       </div>
+
+      {/* Archived Teams */}
+      {archivedTeams.length > 0 && (
+        <div className="border-t border-border-subtle">
+          <button
+            onClick={() => setArchivedOpen(!archivedOpen)}
+            className="w-full flex items-center gap-2 px-5 py-3 text-left cursor-pointer hover:bg-surface-5/30 transition-colors"
+          >
+            <ChevronRight
+              size={12}
+              className={cn('text-text-4 transition-transform duration-200', archivedOpen && 'rotate-90')}
+            />
+            <Archive size={13} className="text-text-3" />
+            <span className="text-xs font-semibold text-text-2 font-sans uppercase tracking-wider flex-1">
+              Archived Teams
+            </span>
+            <span className="text-2xs font-mono text-text-4 bg-surface-4 px-1.5 py-0.5 rounded">
+              {archivedTeams.length}
+            </span>
+          </button>
+          {archivedOpen && (
+            <div className="px-4 pb-4 space-y-2">
+              {archivedTeams.map((at) => (
+                <div key={at.id} className="flex items-center gap-3 px-3 py-2.5 rounded-md bg-surface-0 border border-border-subtle">
+                  <Archive size={13} className="text-text-4 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-semibold text-text-1 font-sans">{at.originalName || at.name}</span>
+                    {(at.deletedAt || at.archivedAt) && (
+                      <div className="text-2xs text-text-4 font-mono mt-0.5">Archived {timeAgo(at.deletedAt || at.archivedAt)}</div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => restoreTeam(at.id)}
+                    className="p-1.5 text-text-3 hover:text-accent rounded transition-colors cursor-pointer"
+                    title="Restore team"
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                  <button
+                    onClick={() => setPurgeConfirm(at)}
+                    className="p-1.5 text-text-4 hover:text-danger rounded transition-colors cursor-pointer"
+                    title="Permanently delete"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Archive confirmation dialog */}
+      <Dialog open={!!archiveConfirm} onOpenChange={(open) => !open && setArchiveConfirm(null)}>
+        <DialogContent title="Archive Team" description="Confirm team archival">
+          <div className="px-5 py-4 space-y-3">
+            <p className="text-sm text-text-1 font-sans">
+              This will archive <span className="font-semibold text-text-0">{archiveConfirm?.name}</span>.
+            </p>
+            <p className="text-xs text-text-2 font-sans">
+              All files will be preserved and can be restored later from the Archived Teams section.
+            </p>
+          </div>
+          <div className="px-5 py-4 border-t border-border-subtle flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setArchiveConfirm(null)}>Cancel</Button>
+            <Button variant="danger" size="sm" onClick={() => { deleteTeam(archiveConfirm.id); setArchiveConfirm(null); }}>
+              <Archive size={12} /> Archive
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Purge confirmation dialog */}
+      <Dialog open={!!purgeConfirm} onOpenChange={(open) => !open && setPurgeConfirm(null)}>
+        <DialogContent title="Permanently Delete" description="Confirm permanent deletion">
+          <div className="px-5 py-4 space-y-3">
+            <p className="text-sm text-text-1 font-sans">
+              Permanently delete <span className="font-semibold text-text-0">{purgeConfirm?.originalName || purgeConfirm?.name}</span>?
+            </p>
+            <p className="text-xs text-danger font-sans">
+              This cannot be undone. All team files will be permanently removed.
+            </p>
+          </div>
+          <div className="px-5 py-4 border-t border-border-subtle flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setPurgeConfirm(null)}>Cancel</Button>
+            <Button variant="danger" size="sm" onClick={() => { purgeTeam(purgeConfirm.id); setPurgeConfirm(null); }}>
+              <Trash2 size={12} /> Delete Forever
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

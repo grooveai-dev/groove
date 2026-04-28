@@ -1,8 +1,8 @@
 // GROOVE — Teams (Live Agent Groups)
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, rmSync } from 'fs';
-import { resolve } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, rmSync, readdirSync, cpSync } from 'fs';
+import { resolve, basename } from 'path';
 import { randomUUID } from 'crypto';
 import { validateTeamName } from './validate.js';
 
@@ -162,17 +162,39 @@ export class Teams {
       this.daemon.registry.remove(agent.id);
     }
 
-    // Remove the team's working directory — refuse to nuke the project root
-    // (legacy default teams that were never migrated point there).
+    // Archive the team's working directory instead of deleting it
     if (
       team.workingDir &&
       team.workingDir !== this.daemon.projectDir &&
       existsSync(team.workingDir)
     ) {
       try {
-        rmSync(team.workingDir, { recursive: true, force: true });
+        const archiveDir = resolve(this.daemon.grooveDir, 'archived-teams');
+        mkdirSync(archiveDir, { recursive: true });
+        const slug = basename(team.workingDir);
+        const archiveName = `${slug}-${Date.now()}`;
+        const archivePath = resolve(archiveDir, archiveName);
+
+        try {
+          renameSync(team.workingDir, archivePath);
+        } catch (err) {
+          if (err.code === 'EXDEV') {
+            cpSync(team.workingDir, archivePath, { recursive: true });
+            rmSync(team.workingDir, { recursive: true, force: true });
+          } else {
+            throw err;
+          }
+        }
+
+        const metadata = {
+          originalName: team.name,
+          originalId: team.id,
+          deletedAt: new Date().toISOString(),
+          agentCount: agents.length,
+        };
+        writeFileSync(resolve(archivePath, 'metadata.json'), JSON.stringify(metadata, null, 2));
       } catch (err) {
-        console.log(`[Groove:Teams] Failed to remove directory: ${err.message}`);
+        console.log(`[Groove:Teams] Failed to archive directory: ${err.message}`);
       }
     }
 
@@ -190,6 +212,78 @@ export class Teams {
     // Clean up orphaned logs immediately — don't wait for the 24h GC cycle
     try { this.daemon._gc(); } catch { /* gc should never block deletion */ }
 
+    return true;
+  }
+
+  listArchived() {
+    const archiveDir = resolve(this.daemon.grooveDir, 'archived-teams');
+    if (!existsSync(archiveDir)) return [];
+    const entries = readdirSync(archiveDir, { withFileTypes: true });
+    const result = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const metaPath = resolve(archiveDir, entry.name, 'metadata.json');
+      try {
+        const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
+        result.push({ id: entry.name, ...meta });
+      } catch {
+        result.push({ id: entry.name, originalName: entry.name, deletedAt: null, agentCount: 0 });
+      }
+    }
+    return result;
+  }
+
+  restore(archivedId) {
+    const archiveDir = resolve(this.daemon.grooveDir, 'archived-teams');
+    const archivePath = resolve(archiveDir, archivedId);
+    if (!existsSync(archivePath)) throw new Error('Archived team not found');
+
+    let meta = {};
+    const metaPath = resolve(archivePath, 'metadata.json');
+    try { meta = JSON.parse(readFileSync(metaPath, 'utf8')); } catch { /* use defaults */ }
+
+    const name = meta.originalName || archivedId;
+    const dirName = slugify(name);
+    let workingDir = resolve(this.daemon.projectDir, dirName);
+
+    if (existsSync(workingDir)) {
+      workingDir = resolve(this.daemon.projectDir, `${dirName}-${Date.now()}`);
+    }
+
+    try {
+      renameSync(archivePath, workingDir);
+    } catch (err) {
+      if (err.code === 'EXDEV') {
+        cpSync(archivePath, workingDir, { recursive: true });
+        rmSync(archivePath, { recursive: true, force: true });
+      } else {
+        throw err;
+      }
+    }
+
+    // Remove the metadata file from the restored directory
+    const restoredMetaPath = resolve(workingDir, 'metadata.json');
+    try { rmSync(restoredMetaPath); } catch { /* may not exist */ }
+
+    const id = randomUUID().slice(0, 8);
+    const team = {
+      id,
+      name,
+      isDefault: false,
+      workingDir,
+      createdAt: new Date().toISOString(),
+    };
+    this.teams.set(id, team);
+    this._save();
+    this.daemon.broadcast({ type: 'team:created', team });
+    return team;
+  }
+
+  purge(archivedId) {
+    const archiveDir = resolve(this.daemon.grooveDir, 'archived-teams');
+    const archivePath = resolve(archiveDir, archivedId);
+    if (!existsSync(archivePath)) throw new Error('Archived team not found');
+    rmSync(archivePath, { recursive: true, force: true });
     return true;
   }
 

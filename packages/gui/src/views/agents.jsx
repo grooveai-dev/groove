@@ -10,7 +10,7 @@ import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Layers } from 'lucide-react';
+import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Layers, Archive } from 'lucide-react';
 import { PreviewWorkspace } from '../components/preview/preview-workspace';
 import { WorkspaceMode } from '../components/agents/workspace-mode';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../components/ui/context-menu';
@@ -88,11 +88,13 @@ export function TeamTabBar() {
   const renameTeam = useGrooveStore((s) => s.renameTeam);
   const cloneTeam = useGrooveStore((s) => s.cloneTeam);
   const reorderTeams = useGrooveStore((s) => s.reorderTeams);
+  const addToast = useGrooveStore((s) => s.addToast);
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
+  const [archiveConfirm, setArchiveConfirm] = useState(null);
   const submitting = useRef(false);
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
@@ -247,8 +249,15 @@ export function TeamTabBar() {
                 <Copy size={12} /> Clone
               </ContextMenuItem>
               <ContextMenuSeparator />
-              <ContextMenuItem danger onSelect={() => deleteTeam(team.id)}>
-                <Trash2 size={12} /> {team.isDefault ? 'Wipe' : 'Delete'}
+              <ContextMenuItem danger onSelect={() => {
+                const teamAgents = agents.filter((a) => a.teamId === team.id);
+                if (teamAgents.some((a) => a.status === 'running' || a.status === 'starting')) {
+                  addToast('error', 'Stop running agents first');
+                  return;
+                }
+                setArchiveConfirm(team);
+              }}>
+                <Trash2 size={12} /> {team.isDefault ? 'Wipe' : 'Archive'}
               </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
@@ -295,6 +304,25 @@ export function TeamTabBar() {
           <ChevronRight size={14} />
         </button>
       )}
+
+      <Dialog open={!!archiveConfirm} onOpenChange={(open) => !open && setArchiveConfirm(null)}>
+        <DialogContent title="Archive Team" description="Confirm team archival">
+          <div className="px-5 py-4 space-y-3">
+            <p className="text-sm text-text-1 font-sans">
+              This will archive <span className="font-semibold text-text-0">{archiveConfirm?.name}</span>.
+            </p>
+            <p className="text-xs text-text-2 font-sans">
+              All files will be preserved and can be restored later from the Archived Teams section.
+            </p>
+          </div>
+          <div className="px-5 py-4 border-t border-border-subtle flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setArchiveConfirm(null)}>Cancel</Button>
+            <Button variant="danger" size="sm" onClick={() => { deleteTeam(archiveConfirm.id); setArchiveConfirm(null); }}>
+              <Archive size={12} /> Archive
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1100,6 +1100,30 @@ export function createApi(app, daemon) {
     }
   });
 
+  app.get('/api/teams/archived', (req, res) => {
+    res.json({ archived: daemon.teams.listArchived() });
+  });
+
+  app.post('/api/teams/archived/:id/restore', (req, res) => {
+    try {
+      const team = daemon.teams.restore(req.params.id);
+      daemon.audit.log('team.restore', { archivedId: req.params.id, newId: team.id, name: team.name });
+      res.json(team);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/teams/archived/:id', (req, res) => {
+    try {
+      daemon.teams.purge(req.params.id);
+      daemon.audit.log('team.purge', { archivedId: req.params.id });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   app.patch('/api/teams/:id', (req, res) => {
     try {
       if (req.body.name) daemon.teams.rename(req.params.id, req.body.name);

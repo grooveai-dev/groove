@@ -6217,13 +6217,15 @@ Keep responses concise. Help them think, don't lecture them about the system the
         stdio: ['ignore', 'pipe', 'pipe'],
         env: tagEnv,
       });
+      daemon._networkCheckProc = proc;
       let stdout = '';
       let stderr = '';
       proc.stdout.on('data', (c) => { stdout += c.toString(); });
       proc.stderr.on('data', (c) => { stderr += c.toString(); });
       const timeout = setTimeout(() => { safeKill(proc, 'SIGTERM'); }, 10_000);
-      proc.on('error', () => { clearTimeout(timeout); resolvePromise(null); });
+      proc.on('error', () => { clearTimeout(timeout); daemon._networkCheckProc = null; resolvePromise(null); });
       proc.on('close', (code) => {
+        daemon._networkCheckProc = null;
         clearTimeout(timeout);
         if (code !== 0) return resolvePromise(null);
         const tags = [];

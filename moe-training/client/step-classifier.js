@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-const ERROR_SIGNAL_RE = /\b(?:error|Error|ERROR|exception|Exception|EXCEPTION|failed|FAILED|exit code [1-9]|ENOENT|EACCES|EPERM|TypeError|ReferenceError|SyntaxError|Cannot find|Module not found|Command failed|non-zero exit)\b/;
+const ERROR_SIGNAL_RE = /(?:^|\n)\s*(?:error[ :\[]\S|Error[ :\[]\S|ERROR[ :\[]\S)|(?:exit code [1-9]|non-zero exit|ENOENT|EACCES|EPERM|Command failed)|(?:(?:TypeError|ReferenceError|SyntaxError|RangeError|URIError):\s)|(?:Cannot find module|Module not found|ModuleNotFoundError|ImportError:)|(?:FATAL|PANIC|Traceback \(most recent)|(?:error TS\d{4}:)/;
 const FIX_SIGNAL_RE = /\b(?:fix|correcting|I see the issue|let me fix|the (?:issue|problem|bug) (?:is|was)|instead I should|my mistake)\b/i;
 
 const CORRECTION_RE = /\b(?:no[,. ](?:that|not|don't|wrong)|that'?s (?:not|wrong|incorrect)|don'?t do that|stop (?:doing|that)|instead (?:of|do)|undo|revert|go back|try (?:again|differently)|you (?:broke|missed|forgot))\b/i;
@@ -54,7 +54,7 @@ export class StepClassifier {
 
     const content = step.content || '';
 
-    if ((step.type === 'action' || step.type === 'observation') && step.is_error !== false && ERROR_SIGNAL_RE.test(content)) {
+    if (step.type === 'observation' && step.is_error !== false && ERROR_SIGNAL_RE.test(content)) {
       step.type = 'error';
     }
 

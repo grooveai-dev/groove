@@ -290,11 +290,11 @@ export class Daemon {
     });
 
     // Debounced file I/O for registry changes (at most once per 2s)
-    let _registryIoTimer = null;
+    this._registryIoTimer = null;
     const _debouncedRegistryIo = () => {
-      if (_registryIoTimer) return;
-      _registryIoTimer = setTimeout(() => {
-        _registryIoTimer = null;
+      if (this._registryIoTimer) return;
+      this._registryIoTimer = setTimeout(() => {
+        this._registryIoTimer = null;
         this.introducer.writeRegistryFile(this.projectDir);
         this.introducer.injectGrooveSection(this.projectDir);
       }, 2000);
@@ -779,6 +779,11 @@ export class Daemon {
     if (this._stateSaveInterval) clearInterval(this._stateSaveInterval);
     if (this._classifierInterval) clearInterval(this._classifierInterval);
     if (this._subscriptionPollInterval) clearInterval(this._subscriptionPollInterval);
+    if (this._registryIoTimer) clearTimeout(this._registryIoTimer);
+    if (this._networkCheckProc) {
+      try { this._networkCheckProc.kill(); } catch { /* already exited */ }
+      this._networkCheckProc = null;
+    }
 
     // Clean up file watchers and terminal sessions
     this.fileWatcher.unwatchAll();
@@ -823,10 +828,19 @@ export class Daemon {
 
     // Close server
     return new Promise((resolvePromise) => {
-      this.wss.close(() => {
-        this.server.close(() => {
-          console.log('GROOVE daemon stopped.');
-          resolvePromise();
+      this.federationWss.close(() => {
+        this.wss.close(() => {
+          this.server.close(() => {
+            // Unref lingering handles (idle fetch/undici TLS pool connections,
+            // closed servers) so they don't prevent process exit in tests.
+            for (const h of process._getActiveHandles()) {
+              if (typeof h.unref === 'function' && h !== process.stdout && h !== process.stderr) {
+                h.unref();
+              }
+            }
+            console.log('GROOVE daemon stopped.');
+            resolvePromise();
+          });
         });
       });
     });

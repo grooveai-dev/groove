@@ -132,11 +132,11 @@ describe('StepClassifier', () => {
     assert.equal(StepClassifier.countUserInterventions(steps), 0);
   });
 
-  it('reclassifies action with error content to error', () => {
+  it('never reclassifies action to error', () => {
     const classifier = new StepClassifier();
     const step = { type: 'action', content: 'Command failed with exit code 1' };
     const result = classifier.onStep(step);
-    assert.equal(result.type, 'error');
+    assert.equal(result.type, 'action');
   });
 
   it('reclassifies observation with error content to error', () => {
@@ -215,18 +215,74 @@ describe('StepClassifier', () => {
     assert.equal(result.type, 'error');
   });
 
-  it('preserves action type when is_error is false', () => {
+  it('does not reclassify observation containing bare word "error" in source code', () => {
     const classifier = new StepClassifier();
-    const step = { type: 'action', content: 'Command failed with exit code 1', is_error: false };
+    const step = { type: 'observation', content: 'function handleError(err) { console.error(err); }' };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'observation');
+  });
+
+  it('does not reclassify observation with "0 errors" or "found 0 vulnerabilities"', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'observation', content: 'Build succeeded\n0 errors, 0 warnings\nfound 0 vulnerabilities' };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'observation');
+  });
+
+  it('does not reclassify observation reading a file that mentions exceptions', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'observation', content: '{"scripts": {"build": "tsc && vite build"}, "name": "my-app"}' };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'observation');
+  });
+
+  it('reclassifies observation with real TypeScript build error', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'observation', content: 'src/main.ts(1,8): error TS2882: Cannot find module' };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'error');
+  });
+
+  it('reclassifies observation with Python traceback', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'observation', content: 'Traceback (most recent call last):\n  File "main.py", line 5' };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'error');
+  });
+
+  it('reclassifies observation with actual TypeError message', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'observation', content: 'TypeError: Cannot read properties of undefined (reading "map")' };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'error');
+  });
+
+  it('reclassifies observation with exit code failure', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'observation', content: 'Process exited with exit code 1' };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'error');
+  });
+
+  it('reclassifies observation with ModuleNotFoundError', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'observation', content: 'ModuleNotFoundError: No module named requests' };
+    const result = classifier.onStep(step);
+    assert.equal(result.type, 'error');
+  });
+
+  it('preserves action type even with error keywords', () => {
+    const classifier = new StepClassifier();
+    const step = { type: 'action', content: 'Command failed with exit code 1' };
     const result = classifier.onStep(step);
     assert.equal(result.type, 'action');
   });
 
-  it('still reclassifies action to error when is_error is not set', () => {
+  it('preserves action type regardless of is_error flag', () => {
     const classifier = new StepClassifier();
-    const step = { type: 'action', content: 'Command failed with exit code 1' };
+    const step = { type: 'action', content: 'ENOENT: no such file', is_error: true };
     const result = classifier.onStep(step);
-    assert.equal(result.type, 'error');
+    assert.equal(result.type, 'action');
   });
 });
 

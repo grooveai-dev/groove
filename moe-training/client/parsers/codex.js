@@ -57,15 +57,15 @@ export class CodexParser {
         if (item.type === 'command_execution') {
           const rawOutput = item.aggregated_output || '';
           if (item.exit_code !== 0) {
-            return { type: 'error', content: rawOutput.slice(0, 2000) || `Exit code: ${item.exit_code}` };
+            return { type: 'error', is_error: true, content: rawOutput.slice(0, 2000) || `Exit code: ${item.exit_code}` };
           }
           const obs = truncateObservation(rawOutput);
-          return { type: 'observation', content: obs.content, truncated: obs.truncated, original_token_count: obs.original_token_count };
+          return { type: 'observation', is_error: false, content: obs.content, truncated: obs.truncated, original_token_count: obs.original_token_count };
         }
         if (item.type === 'file_edit' || item.type === 'file_write' || item.type === 'file_read') {
           const rawOutput = item.output || item.content || '';
           const obs = truncateObservation(rawOutput);
-          return { type: 'observation', content: obs.content, truncated: obs.truncated, original_token_count: obs.original_token_count };
+          return { type: 'observation', is_error: false, content: obs.content, truncated: obs.truncated, original_token_count: obs.original_token_count };
         }
         return null;
       }

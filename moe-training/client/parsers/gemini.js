@@ -64,11 +64,11 @@ export class GeminiParser {
         const contentParts = Array.isArray(rawContent) ? rawContent : (typeof rawContent === 'string' ? [{ text: rawContent }] : rawContent ? [rawContent] : []);
         const rawText = contentParts.map((p) => p.text || '').join('');
         const obs = truncateObservation(rawText);
-        return { type: 'observation', content: obs.content, truncated: obs.truncated, original_token_count: obs.original_token_count };
+        return { type: 'observation', is_error: false, content: obs.content, truncated: obs.truncated, original_token_count: obs.original_token_count };
       }
 
       case 'error': {
-        return { type: 'error', content: jsonEvent.message || 'Unknown error' };
+        return { type: 'error', is_error: true, content: jsonEvent.message || 'Unknown error' };
       }
 
       case 'agent_end': {

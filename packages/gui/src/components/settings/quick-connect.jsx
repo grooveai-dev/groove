@@ -4,7 +4,7 @@ import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Server, Radio, ExternalLink, Loader2, X, Plus, ArrowLeft, Unplug, ArrowUpCircle,
+  Server, Radio, ExternalLink, Loader2, X, Plus, ArrowLeft, Unplug, ArrowUpCircle, Trash2,
 } from 'lucide-react';
 import { StatusDot } from '../ui/status-dot';
 import { Button } from '../ui/button';
@@ -202,14 +202,36 @@ export function QuickConnect() {
                             >
                               <Unplug size={12} />
                             </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                useGrooveStore.getState().deleteTunnel(server.id);
+                              }}
+                              className="p-1 text-text-4 hover:text-danger cursor-pointer transition-colors rounded"
+                              title="Delete connection"
+                            >
+                              <Trash2 size={12} />
+                            </button>
                           </>
                         ) : (
-                          <button
-                            onClick={() => handleConnect(server.id)}
-                            className="text-2xs text-text-3 font-sans hover:text-text-1 cursor-pointer transition-colors"
-                          >
-                            Connect
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleConnect(server.id)}
+                              className="text-2xs text-text-3 font-sans hover:text-text-1 cursor-pointer transition-colors"
+                            >
+                              Connect
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                useGrooveStore.getState().deleteTunnel(server.id);
+                              }}
+                              className="p-1 text-text-4 hover:text-danger cursor-pointer transition-colors rounded"
+                              title="Delete connection"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>

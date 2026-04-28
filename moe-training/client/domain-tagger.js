@@ -2,7 +2,7 @@
 
 import { EMBEDDING_SERVICE_URL } from '../shared/constants.js';
 
-const DEFAULT_MODEL = 'sentence-transformers/all-MiniLM-L6-v2';
+const DEFAULT_MODEL = 'BAAI/bge-small-en-v1.5';
 const DEFAULT_TOP_K = 3;
 
 // ~40 domains covering broad technical territory.
@@ -170,8 +170,8 @@ const DOMAIN_TAXONOMY = {
     description: 'Scientific computing, numerical methods, MATLAB/SciPy/Julia, simulations, optimization, statistics',
   },
   planning_strategy: {
-    keywords: ['plan', 'strategy', 'architect', 'design doc', 'breakdown', 'scope', 'roadmap', 'milestone', 'prioritize', 'tradeoff', 'approach', 'recommend', 'team', 'coordinate', 'delegate', 'assign'],
-    description: 'Project planning, task breakdown, architecture decisions, team coordination, strategy, roadmaps, scoping, prioritization',
+    keywords: ['plan', 'strategy', 'architect', 'design doc', 'breakdown', 'scope', 'roadmap', 'milestone', 'prioritize', 'tradeoff', 'approach', 'recommend', 'team', 'coordinate', 'delegate', 'assign', 'orchestration', 'dispatch', 'routing', 'decompose', 'pipeline', 'inference', 'layer'],
+    description: 'Project planning, task decomposition, architecture design, system orchestration, routing and dispatch design, inference pipelines, team coordination, strategy, roadmaps, scoping, prioritization, tradeoff analysis',
   },
   conversational_reasoning: {
     keywords: ['explain', 'why', 'how does', 'what is', 'clarify', 'understand', 'reason', 'think through', 'analyze', 'compare', 'evaluate', 'brainstorm', 'discuss', 'opinion', 'advice'],

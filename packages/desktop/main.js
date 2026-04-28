@@ -1347,7 +1347,7 @@ body {
     showError('Failed to load recent projects: ' + err.message);
   });
 
-  // --- SSH (read-only list) ---
+  // --- SSH connections ---
   var sshData = [];
   var sshListEl = document.getElementById('ssh-list');
   var sshSection = document.getElementById('ssh-section');
@@ -1368,12 +1368,31 @@ body {
     }
     sshSection.style.display = '';
     sshListEl.innerHTML = sshData.slice(0, 5).map(function(c) {
-      return '<div class="list-row" style="cursor:default">' +
+      return '<div class="list-row" data-ssh-id="' + esc(c.id) + '">' +
         '<div class="list-info">' +
           '<div class="list-name">' + esc(c.name || c.host) + '</div>' +
         '</div>' +
+        '<button class="list-delete" data-del-ssh="' + esc(c.id) + '" title="Remove connection">' + X_IC + '</button>' +
       '</div>';
     }).join('');
+    sshListEl.querySelectorAll('.list-row').forEach(function(el) {
+      el.addEventListener('click', function(e) {
+        if (e.target.closest('.list-delete')) return;
+        window.groove.home.connectSSH(el.getAttribute('data-ssh-id'));
+      });
+    });
+    sshListEl.querySelectorAll('.list-delete').forEach(function(btn) {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var id = btn.getAttribute('data-del-ssh');
+        window.groove.home.removeSSH(id).then(function(updated) {
+          renderSSH(updated);
+        }).catch(function() {
+          sshData = sshData.filter(function(c) { return c.id !== id; });
+          renderSSH(sshData);
+        });
+      });
+    });
     checkEmpty();
   }
 

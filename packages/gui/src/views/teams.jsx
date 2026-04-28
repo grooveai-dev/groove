@@ -5,7 +5,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { StatusDot } from '../components/ui/status-dot';
-import { Dialog, DialogContent } from '../components/ui/dialog';
 import { api } from '../lib/api';
 import { useToast } from '../lib/hooks/use-toast';
 import { fmtNum, fmtDollar, timeAgo, fmtUptime } from '../lib/format';
@@ -15,13 +14,15 @@ import {
   Users, Folder, Cpu, Trash2, Play, Pause, LayoutDashboard, ListChecks, Calendar,
   Archive, RotateCcw, ChevronRight,
 } from 'lucide-react';
+import { TeamRemovalDialog, PurgeConfirmDialog } from '../components/teams/team-removal-dialog';
 
 // ── Team Dashboard ────────────────────────────────────────────
 function TeamsDashboard() {
   const teams = useGrooveStore((s) => s.teams);
   const agents = useGrooveStore((s) => s.agents);
   const activeTeamId = useGrooveStore((s) => s.activeTeamId);
-  const deleteTeam = useGrooveStore((s) => s.deleteTeam);
+  const archiveTeam = useGrooveStore((s) => s.archiveTeam);
+  const deleteTeamPermanently = useGrooveStore((s) => s.deleteTeamPermanently);
   const addToast = useGrooveStore((s) => s.addToast);
   const archivedTeams = useGrooveStore((s) => s.archivedTeams);
   const fetchArchivedTeams = useGrooveStore((s) => s.fetchArchivedTeams);
@@ -82,7 +83,7 @@ function TeamsDashboard() {
                 </div>
                 <button
                   onClick={() => {
-                    if (teamAgents.some((a) => a.status === 'running')) {
+                    if (teamAgents.some((a) => a.status === 'running' || a.status === 'starting')) {
                       addToast('error', 'Stop running agents first');
                       return;
                     }
@@ -176,45 +177,20 @@ function TeamsDashboard() {
         </div>
       )}
 
-      {/* Archive confirmation dialog */}
-      <Dialog open={!!archiveConfirm} onOpenChange={(open) => !open && setArchiveConfirm(null)}>
-        <DialogContent title="Archive Team" description="Confirm team archival">
-          <div className="px-5 py-4 space-y-3">
-            <p className="text-sm text-text-1 font-sans">
-              This will archive <span className="font-semibold text-text-0">{archiveConfirm?.name}</span>.
-            </p>
-            <p className="text-xs text-text-2 font-sans">
-              All files will be preserved and can be restored later from the Archived Teams section.
-            </p>
-          </div>
-          <div className="px-5 py-4 border-t border-border-subtle flex justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setArchiveConfirm(null)}>Cancel</Button>
-            <Button variant="danger" size="sm" onClick={() => { deleteTeam(archiveConfirm.id); setArchiveConfirm(null); }}>
-              <Archive size={12} /> Archive
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <TeamRemovalDialog
+        team={archiveConfirm}
+        open={!!archiveConfirm}
+        onOpenChange={(open) => !open && setArchiveConfirm(null)}
+        onArchive={archiveTeam}
+        onDeletePermanently={deleteTeamPermanently}
+      />
 
-      {/* Purge confirmation dialog */}
-      <Dialog open={!!purgeConfirm} onOpenChange={(open) => !open && setPurgeConfirm(null)}>
-        <DialogContent title="Permanently Delete" description="Confirm permanent deletion">
-          <div className="px-5 py-4 space-y-3">
-            <p className="text-sm text-text-1 font-sans">
-              Permanently delete <span className="font-semibold text-text-0">{purgeConfirm?.originalName || purgeConfirm?.name}</span>?
-            </p>
-            <p className="text-xs text-danger font-sans">
-              This cannot be undone. All team files will be permanently removed.
-            </p>
-          </div>
-          <div className="px-5 py-4 border-t border-border-subtle flex justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setPurgeConfirm(null)}>Cancel</Button>
-            <Button variant="danger" size="sm" onClick={() => { purgeTeam(purgeConfirm.id); setPurgeConfirm(null); }}>
-              <Trash2 size={12} /> Delete Forever
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <PurgeConfirmDialog
+        team={purgeConfirm}
+        open={!!purgeConfirm}
+        onOpenChange={(open) => !open && setPurgeConfirm(null)}
+        onPurge={purgeTeam}
+      />
     </div>
   );
 }

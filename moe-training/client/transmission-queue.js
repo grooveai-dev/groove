@@ -10,6 +10,7 @@ export class TransmissionQueue {
     this._offlineQueue = [];
     this._running = false;
     this._drainPromise = null;
+    this._onSent = null;
 
     if (process.env.NODE_ENV === 'production' && !centralCommandUrl.startsWith('https://')) {
       console.warn('[TransmissionQueue] WARNING: centralCommandUrl does not use HTTPS in production');
@@ -18,6 +19,10 @@ export class TransmissionQueue {
 
   get offlineQueueSize() {
     return this._offlineQueue.length;
+  }
+
+  set onSent(fn) {
+    this._onSent = typeof fn === 'function' ? fn : null;
   }
 
   enqueue(signedEnvelope) {
@@ -86,6 +91,7 @@ export class TransmissionQueue {
           });
           if (res.ok) {
             success = true;
+            if (this._onSent) this._onSent(envelope);
             break;
           }
         } catch {

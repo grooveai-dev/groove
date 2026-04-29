@@ -101,11 +101,13 @@ function InlineInput({ defaultValue = '', placeholder, onSubmit, onCancel, depth
 
 // ── Tree Node ────────────────────────────────────────────────
 
-function TreeNode({ entry, depth = 0, activePath, onFileClick, onDirToggle, expanded, onContextMenu }) {
+function TreeNode({ entry, depth = 0, activePath, onFileClick, onDirToggle, expanded, onContextMenu, dragState, onDragStartEntry, onDragEndEntry, onSetDragOver, onDropOnDir }) {
   const isDir = entry.type === 'dir';
   const isActive = activePath === entry.path;
   const isOpen = expanded.has(entry.path);
   const indent = depth * 16 + 8;
+  const isDragging = dragState?.draggingPath === entry.path;
+  const isDragOver = isDir && dragState?.dragOverPath === entry.path;
 
   function handleContextMenu(e) {
     e.preventDefault();
@@ -115,6 +117,15 @@ function TreeNode({ entry, depth = 0, activePath, onFileClick, onDirToggle, expa
 
   return (
     <button
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('application/json', JSON.stringify({ path: entry.path, name: entry.name, type: entry.type }));
+        e.dataTransfer.effectAllowed = 'move';
+        onDragStartEntry(entry.path);
+      }}
+      onDragEnd={onDragEndEntry}
+      onDragOver={isDir ? (e) => { e.preventDefault(); e.stopPropagation(); onSetDragOver(entry.path); } : undefined}
+      onDrop={isDir ? (e) => onDropOnDir(entry.path, e) : undefined}
       onClick={() => isDir ? onDirToggle(entry.path) : onFileClick(entry.path)}
       onDoubleClick={handleContextMenu}
       onContextMenu={handleContextMenu}
@@ -123,6 +134,8 @@ function TreeNode({ entry, depth = 0, activePath, onFileClick, onDirToggle, expa
         'hover:bg-surface-5 transition-colors text-left select-none',
         isActive && 'bg-accent/10 text-text-0',
         !isActive && 'text-text-1',
+        isDragging && 'opacity-50',
+        isDragOver && 'bg-accent/15 ring-1 ring-accent/50 rounded',
       )}
       style={{ paddingLeft: indent }}
     >
@@ -142,7 +155,7 @@ function TreeNode({ entry, depth = 0, activePath, onFileClick, onDirToggle, expa
   );
 }
 
-function TreeDir({ dirPath, depth, activePath, onFileClick, expanded, onDirToggle, treeCache, fetchTreeDir, onContextMenu, inlineInput }) {
+function TreeDir({ dirPath, depth, activePath, onFileClick, expanded, onDirToggle, treeCache, fetchTreeDir, onContextMenu, inlineInput, dragState, onDragStartEntry, onDragEndEntry, onSetDragOver, onDropOnDir }) {
   const entries = treeCache[dirPath] || [];
 
   useEffect(() => {
@@ -183,6 +196,11 @@ function TreeDir({ dirPath, depth, activePath, onFileClick, expanded, onDirToggl
               onDirToggle={onDirToggle}
               expanded={expanded}
               onContextMenu={onContextMenu}
+              dragState={dragState}
+              onDragStartEntry={onDragStartEntry}
+              onDragEndEntry={onDragEndEntry}
+              onSetDragOver={onSetDragOver}
+              onDropOnDir={onDropOnDir}
             />
           )}
           {entry.type === 'dir' && (
@@ -197,6 +215,11 @@ function TreeDir({ dirPath, depth, activePath, onFileClick, expanded, onDirToggl
               fetchTreeDir={fetchTreeDir}
               onContextMenu={onContextMenu}
               inlineInput={inlineInput}
+              dragState={dragState}
+              onDragStartEntry={onDragStartEntry}
+              onDragEndEntry={onDragEndEntry}
+              onSetDragOver={onSetDragOver}
+              onDropOnDir={onDropOnDir}
             />
           )}
         </div>
@@ -218,6 +241,7 @@ export function FileTree({ rootDir, onCollapse }) {
   const [filter, setFilter] = useState('');
   const [contextMenu, setContextMenu] = useState(null);
   const [inlineInput, setInlineInput] = useState(null);
+  const [dragState, setDragState] = useState({ draggingPath: null, dragOverPath: null });
 
   useEffect(() => {
     fetchTreeDir('');
@@ -234,6 +258,45 @@ export function FileTree({ rootDir, onCollapse }) {
 
   function handleCollapseAll() {
     setExpanded(new Set(['']));
+  }
+
+  function handleDragStartEntry(path) {
+    setDragState({ draggingPath: path, dragOverPath: null });
+  }
+
+  function handleDragEndEntry() {
+    setDragState({ draggingPath: null, dragOverPath: null });
+  }
+
+  function setDragOverDir(path) {
+    setDragState(prev => prev.dragOverPath === path ? prev : { ...prev, dragOverPath: path });
+  }
+
+  async function handleDropOnDir(targetDirPath, e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragState({ draggingPath: null, dragOverPath: null });
+
+    let data;
+    try { data = JSON.parse(e.dataTransfer.getData('application/json')); } catch { return; }
+    if (!data?.path) return;
+
+    if (data.type === 'dir' && (targetDirPath === data.path || targetDirPath.startsWith(data.path + '/'))) {
+      addToast('error', 'Cannot move a folder into itself');
+      return;
+    }
+    const sourceDir = parentDir(data.path);
+    if (sourceDir === targetDirPath) return;
+
+    const newPath = targetDirPath ? `${targetDirPath}/${data.name}` : data.name;
+    try {
+      await api.post('/files/rename', { oldPath: data.path, newPath });
+      fetchTreeDir(sourceDir);
+      fetchTreeDir(targetDirPath);
+      addToast('success', `Moved ${data.name} to ${targetDirPath || '/'}`);
+    } catch (err) {
+      addToast('error', 'Move failed', err.message);
+    }
   }
 
   function handleContextMenu(e, entry) {
@@ -405,7 +468,11 @@ export function FileTree({ rootDir, onCollapse }) {
 
       {/* Tree */}
       <ScrollArea className="flex-1">
-        <div className="py-1">
+        <div
+          className="py-1"
+          onDragOver={(e) => { if (!dragState.draggingPath) return; e.preventDefault(); setDragOverDir(null); }}
+          onDrop={(e) => handleDropOnDir('', e)}
+        >
           {/* Inline input at root level */}
           {inlineInput?.parentPath === '' && (
             <InlineInput
@@ -435,6 +502,11 @@ export function FileTree({ rootDir, onCollapse }) {
                     onDirToggle={onDirToggle}
                     expanded={expanded}
                     onContextMenu={handleContextMenu}
+                    dragState={dragState}
+                    onDragStartEntry={handleDragStartEntry}
+                    onDragEndEntry={handleDragEndEntry}
+                    onSetDragOver={setDragOverDir}
+                    onDropOnDir={handleDropOnDir}
                   />
                 )}
                 {entry.type === 'dir' && (
@@ -449,6 +521,11 @@ export function FileTree({ rootDir, onCollapse }) {
                     fetchTreeDir={fetchTreeDir}
                     onContextMenu={handleContextMenu}
                     inlineInput={inlineInput}
+                    dragState={dragState}
+                    onDragStartEntry={handleDragStartEntry}
+                    onDragEndEntry={handleDragEndEntry}
+                    onSetDragOver={setDragOverDir}
+                    onDropOnDir={handleDropOnDir}
                   />
                 )}
               </div>

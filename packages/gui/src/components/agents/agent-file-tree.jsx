@@ -106,10 +106,12 @@ function ContextMenu({ x, y, items, onClose }) {
   );
 }
 
-function TreeEntry({ entry, depth, onOpen, expandedDirs, onToggleDir, onContextMenu }) {
+function TreeEntry({ entry, depth, onOpen, expandedDirs, onToggleDir, onContextMenu, dragState, onDragStartEntry, onDragEndEntry, onSetDragOver, onDropOnDir }) {
   const isDir = entry.type === 'dir';
   const isExpanded = expandedDirs.has(entry.path);
   const fileColor = isDir ? 'text-accent' : getFileColor(entry.name);
+  const isDragging = dragState?.draggingPath === entry.path;
+  const isDragOver = isDir && dragState?.dragOverPath === entry.path;
 
   function handleCtxMenu(e) {
     e.preventDefault();
@@ -120,12 +122,23 @@ function TreeEntry({ entry, depth, onOpen, expandedDirs, onToggleDir, onContextM
   return (
     <>
       <button
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData('application/json', JSON.stringify({ path: entry.path, name: entry.name, type: entry.type }));
+          e.dataTransfer.effectAllowed = 'move';
+          onDragStartEntry(entry.path);
+        }}
+        onDragEnd={onDragEndEntry}
+        onDragOver={isDir ? (e) => { e.preventDefault(); e.stopPropagation(); onSetDragOver(entry.path); } : undefined}
+        onDrop={isDir ? (e) => onDropOnDir(entry.path, e) : undefined}
         onClick={() => isDir ? onToggleDir(entry.path) : onOpen(entry.path)}
         onDoubleClick={handleCtxMenu}
         onContextMenu={handleCtxMenu}
         className={cn(
           'w-full flex items-center gap-1.5 py-1 text-xs font-sans cursor-pointer',
           'hover:bg-surface-4/50 transition-colors text-left',
+          isDragging && 'opacity-50',
+          isDragOver && 'bg-accent/15 ring-1 ring-accent/50 rounded',
         )}
         style={{ paddingLeft: depth * 14 + 8 }}
       >
@@ -151,6 +164,11 @@ function TreeEntry({ entry, depth, onOpen, expandedDirs, onToggleDir, onContextM
           expandedDirs={expandedDirs}
           onToggleDir={onToggleDir}
           onContextMenu={onContextMenu}
+          dragState={dragState}
+          onDragStartEntry={onDragStartEntry}
+          onDragEndEntry={onDragEndEntry}
+          onSetDragOver={onSetDragOver}
+          onDropOnDir={onDropOnDir}
         />
       ))}
     </>
@@ -176,6 +194,7 @@ export function AgentFileTree({ agentId, onCollapse }) {
   const [touchedFiles, setTouchedFiles] = useState([]);
   const [inlineInput, setInlineInput] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
+  const [dragState, setDragState] = useState({ draggingPath: null, dragOverPath: null });
   const fetchedRef = useRef(new Set());
 
   useEffect(() => {
@@ -300,6 +319,44 @@ export function AgentFileTree({ agentId, onCollapse }) {
 
   function handleCollapseAll() {
     setExpandedDirs(new Set());
+  }
+
+  function handleDragStartEntry(path) {
+    setDragState({ draggingPath: path, dragOverPath: null });
+  }
+
+  function handleDragEndEntry() {
+    setDragState({ draggingPath: null, dragOverPath: null });
+  }
+
+  function setDragOverDir(path) {
+    setDragState(prev => prev.dragOverPath === path ? prev : { ...prev, dragOverPath: path });
+  }
+
+  async function handleDropOnDir(targetDirPath, e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragState({ draggingPath: null, dragOverPath: null });
+
+    let data;
+    try { data = JSON.parse(e.dataTransfer.getData('application/json')); } catch { return; }
+    if (!data?.path) return;
+
+    if (data.type === 'dir' && (targetDirPath === data.path || targetDirPath.startsWith(data.path + '/'))) {
+      addToast('error', 'Cannot move a folder into itself');
+      return;
+    }
+    const sourceDir = parentDir(data.path);
+    if (sourceDir === targetDirPath) return;
+
+    const newPath = targetDirPath ? `${targetDirPath}/${data.name}` : data.name;
+    try {
+      await api.post('/files/rename', { oldPath: data.path, newPath });
+      addToast('success', `Moved ${data.name} to ${targetDirPath || '/'}`);
+      handleRefresh();
+    } catch (err) {
+      addToast('error', 'Move failed', err.message);
+    }
   }
 
   function toRelativePath(absPath) {
@@ -484,7 +541,11 @@ export function AgentFileTree({ agentId, onCollapse }) {
             No files in scope
           </div>
         ) : (
-          <div className="px-1">
+          <div
+            className="px-1"
+            onDragOver={(e) => { if (!dragState.draggingPath) return; e.preventDefault(); setDragOverDir(null); }}
+            onDrop={(e) => handleDropOnDir('', e)}
+          >
             <div className="flex items-center gap-1.5 px-2 py-1.5 text-2xs font-semibold text-text-3 uppercase tracking-wider">
               <Folder size={10} />
               Scope
@@ -507,6 +568,11 @@ export function AgentFileTree({ agentId, onCollapse }) {
                   expandedDirs={expandedDirs}
                   onToggleDir={handleToggleDir}
                   onContextMenu={handleContextMenu}
+                  dragState={dragState}
+                  onDragStartEntry={handleDragStartEntry}
+                  onDragEndEntry={handleDragEndEntry}
+                  onSetDragOver={setDragOverDir}
+                  onDropOnDir={handleDropOnDir}
                 />
               )
             ))}

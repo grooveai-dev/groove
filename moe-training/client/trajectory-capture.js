@@ -34,6 +34,12 @@ export class TrajectoryCapture {
     this._offlineRetryTimer = null;
     this._contexts = new Map();
     this._shutdown = false;
+    this._onEnvelopeSent = null;
+  }
+
+  set onEnvelopeSent(fn) {
+    this._onEnvelopeSent = typeof fn === 'function' ? fn : null;
+    if (this._transmissionQueue) this._transmissionQueue.onSent = this._onEnvelopeSent;
   }
 
   async init() {
@@ -46,6 +52,7 @@ export class TrajectoryCapture {
     this._scrubber = new PIIScrubber();
     this._attestation = new SessionAttestation(this._centralCommandUrl);
     this._transmissionQueue = new TransmissionQueue(this._centralCommandUrl);
+    if (this._onEnvelopeSent) this._transmissionQueue.onSent = this._onEnvelopeSent;
     this._transmissionQueue.start();
     this._domainTagger = new DomainTagger();
     await this._domainTagger.init();

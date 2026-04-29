@@ -1378,7 +1378,17 @@ body {
     sshListEl.querySelectorAll('.list-row').forEach(function(el) {
       el.addEventListener('click', function(e) {
         if (e.target.closest('.list-delete')) return;
-        window.groove.home.connectSSH(el.getAttribute('data-ssh-id'));
+        var id = el.getAttribute('data-ssh-id');
+        var conn = sshData.find(function(c) { return c.id === id; });
+        var label = conn ? (conn.name || conn.host) : 'server';
+        setLoading(true, 'Connecting to ' + label + '…');
+        hideError();
+        window.groove.home.connectSSH(id).then(function(result) {
+          return window.groove.remote.openWindow(result.localPort, result.name || label);
+        }).catch(function(err) {
+          setLoading(false);
+          showError(err.message || 'Failed to connect');
+        });
       });
     });
     sshListEl.querySelectorAll('.list-delete').forEach(function(btn) {
@@ -1757,7 +1767,7 @@ ipcMain.handle('home-remove-recent', (_event, dir) => {
 ipcMain.handle('home-remove-ssh', (_event, id) => {
   if (!workspaces || !id) return { error: 'Invalid id' };
   workspaces.removeSSH(id);
-  return { ok: true };
+  return workspaces.sshConnections;
 });
 
 ipcMain.handle('home-connect-ssh', async (_event, id) => {

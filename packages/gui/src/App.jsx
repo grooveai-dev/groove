@@ -7,6 +7,7 @@ import { AppShell } from './components/layout/app-shell';
 import { SetupWizard } from './components/onboarding/setup-wizard';
 import { useKeyboard } from './lib/hooks/use-keyboard';
 import { UpgradeModal } from './components/pro/upgrade-modal';
+import { DataSharingModal } from './components/ui/data-sharing-modal';
 import { WelcomeSplash } from './components/layout/welcome-splash';
 import { FolderBrowser } from './components/agents/folder-browser';
 
@@ -182,6 +183,7 @@ export default function App() {
     <ErrorBoundary>
       <ViewRouter />
       <UpgradeModal />
+      <DataSharingModal />
     </ErrorBoundary>
   );
 }

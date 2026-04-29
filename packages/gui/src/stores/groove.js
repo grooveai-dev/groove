@@ -141,6 +141,8 @@ export const useGrooveStore = create((set, get) => ({
   // ── Training Data ──────────────────────────────────────────
   trainingOptIn: false,
   trainingStats: null,
+  dataSharingDismissed: false,
+  dataSharingModalOpen: false,
 
   // ── Marketplace Auth ───────────────────────────────────────
   marketplaceUser: null,        // { id, displayName, avatar, ... } or null
@@ -224,6 +226,15 @@ export const useGrooveStore = create((set, get) => ({
       get().fetchBetaStatus();
       get().fetchNetworkInstallStatus();
       get().fetchTrainingStatus();
+      api.get('/config').then((cfg) => {
+        if (cfg?.dataSharingDismissed) set({ dataSharingDismissed: true });
+      }).catch(() => {});
+      setTimeout(() => {
+        const st = get();
+        if (!st.trainingOptIn && !st.dataSharingDismissed) {
+          set({ dataSharingModalOpen: true });
+        }
+      }, 1500);
       get().fetchActivePreviews();
       ws.send(JSON.stringify({ type: 'editor:watchdir', path: '' }));
       if (!get().onboardingComplete) get().fetchOnboardingStatus();
@@ -940,10 +951,12 @@ export const useGrooveStore = create((set, get) => ({
         }
 
         case 'training:status': {
-          set({
+          const updates = {
             trainingOptIn: msg.data?.optedIn ?? false,
             trainingStats: msg.data,
-          });
+          };
+          if (msg.data?.optedIn) updates.dataSharingModalOpen = false;
+          set(updates);
           break;
         }
 
@@ -2759,7 +2772,7 @@ export const useGrooveStore = create((set, get) => ({
   async setTrainingOptIn(enabled) {
     try {
       await api.post('/training/opt-in', { enabled });
-      set({ trainingOptIn: enabled });
+      set({ trainingOptIn: enabled, dataSharingModalOpen: false });
       if (!enabled) set({ trainingStats: null });
     } catch (e) {
       get().addToast('error', 'Failed to update training preference', e.body?.detail || e.message);
@@ -2771,6 +2784,15 @@ export const useGrooveStore = create((set, get) => ({
       const data = await api.get('/training/status');
       set({ trainingOptIn: data.optedIn, trainingStats: data });
     } catch { /* endpoint may not exist on older daemons */ }
+  },
+
+  async dismissDataSharingModal(permanent) {
+    if (permanent) {
+      try { await api.patch('/config', { dataSharingDismissed: true }); } catch {}
+      set({ dataSharingDismissed: true, dataSharingModalOpen: false });
+    } else {
+      set({ dataSharingModalOpen: false });
+    }
   },
 
   // ── Network (Early Access) ────────────────────────────────

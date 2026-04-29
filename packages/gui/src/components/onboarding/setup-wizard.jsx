@@ -242,7 +242,7 @@ function InstallStep({ providerStatus, selected, onInstall, installing, statusCh
 
 // ── Step 4: Authentication ──────────────────────────────────
 
-function AuthCard({ provider, providerStatus, onSaveKey, onSubscriptionLogin }) {
+function AuthCard({ provider, providerStatus, onSaveKey }) {
   const [authMode, setAuthMode] = useState(
     provider.authModes.includes('subscription') ? 'subscription' : 'apikey',
   );
@@ -307,14 +307,12 @@ function AuthCard({ provider, providerStatus, onSaveKey, onSubscriptionLogin }) 
 
       {authMode === 'subscription' && (
         <div className="space-y-3">
-          <p className="text-xs text-text-2">Sign in with your Claude subscription</p>
-          <button
-            type="button"
-            onClick={() => onSubscriptionLogin(provider.id)}
-            className="h-8 px-4 rounded-md bg-purple/15 text-purple border border-purple/20 text-xs font-medium hover:bg-purple/25 transition-colors duration-100 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-purple"
-          >
-            Sign In
-          </button>
+          <p className="text-xs text-text-2">Sign in via the terminal with your Claude subscription.</p>
+          <div className="space-y-1.5">
+            <p className="text-2xs text-text-2 font-sans">
+              Open a terminal and run: <code className="font-mono text-accent bg-surface-4 px-1.5 py-0.5 rounded text-2xs">claude</code> — then follow the prompts to sign in.
+            </p>
+          </div>
           {providerStatus?.authenticated && (
             <p className="text-xs text-success flex items-center gap-1.5">
               <Check className="w-3.5 h-3.5" /> Connected
@@ -388,7 +386,7 @@ function AuthCard({ provider, providerStatus, onSaveKey, onSubscriptionLogin }) 
   );
 }
 
-function AuthStep({ providerStatus, installedIds, onSaveKey, onSubscriptionLogin }) {
+function AuthStep({ providerStatus, installedIds, onSaveKey }) {
   const installed = PROVIDERS.filter((p) => installedIds.includes(p.id) || providerStatus[p.id]?.installed);
   const hasAuthenticated = installed.some((p) => providerStatus[p.id]?.authenticated);
 
@@ -406,7 +404,6 @@ function AuthStep({ providerStatus, installedIds, onSaveKey, onSubscriptionLogin
             provider={p}
             providerStatus={providerStatus[p.id] || {}}
             onSaveKey={onSaveKey}
-            onSubscriptionLogin={onSubscriptionLogin}
           />
         ))}
       </div>
@@ -687,17 +684,6 @@ export function SetupWizard() {
     }
   }, [addToast]);
 
-  const handleSubscriptionLogin = useCallback((providerId) => {
-    if (isElectron() && window.groove?.auth?.login) {
-      window.groove.auth.login();
-    } else {
-      fetch('/api/auth/login-url')
-        .then((r) => r.json())
-        .then((d) => { if (d.url) window.open(d.url, '_blank'); })
-        .catch(() => addToast('error', 'Failed to start login'));
-    }
-  }, [addToast]);
-
   const handleSetDefault = useCallback(async (provider, model) => {
     setDefaultProv(provider);
     setDefaultMod(model);
@@ -741,7 +727,6 @@ export function SetupWizard() {
       providerStatus={providerStatus}
       installedIds={selected}
       onSaveKey={handleSaveKey}
-      onSubscriptionLogin={handleSubscriptionLogin}
     />,
     <DefaultModelStep
       key="default"

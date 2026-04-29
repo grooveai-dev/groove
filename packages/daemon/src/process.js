@@ -697,6 +697,28 @@ export class ProcessManager {
       }
     }
 
+    // Validate provider is both installed and authenticated — fall back if not
+    const isProviderAuthed = (name) => {
+      const p = getProvider(name);
+      if (!p || !p.constructor.isInstalled()) return false;
+      const authType = p.constructor.authType;
+      if (authType === 'local' || authType === 'none') return true;
+      if (authType === 'api-key') return !!this.daemon.credentials?.hasKey(name);
+      if (authType === 'subscription') {
+        const status = p.constructor.isAuthenticated?.();
+        return status?.authenticated === true;
+      }
+      return true;
+    };
+
+    if (!isProviderAuthed(providerName)) {
+      const priority = ['claude-code', 'gemini', 'codex', 'local', 'ollama'];
+      const fallback = priority.find(p => p !== providerName && isProviderAuthed(p));
+      if (fallback) {
+        providerName = fallback;
+      }
+    }
+
     const provider = getProvider(providerName);
     if (!provider) {
       throw new Error(`Unknown provider: ${providerName}`);
@@ -1098,6 +1120,26 @@ For normal file edits within your scope, proceed without review.
           const storedKey = this.daemon.credentials.getKey(agentProvider);
           if (storedKey) {
             env[meta.constructor.envKey] = storedKey;
+          }
+        }
+      }
+    }
+
+    // Best-effort Codex auth recovery: refresh ~/.codex/auth.json if stale
+    const agentProviderName = agent.provider || config.provider;
+    if (agentProviderName === 'codex') {
+      const codexMeta = getProvider('codex');
+      if (codexMeta?.constructor?.isAuthenticated) {
+        const authStatus = codexMeta.constructor.isAuthenticated();
+        if (!authStatus?.authenticated && this.daemon.credentials?.hasKey('codex')) {
+          const storedKey = this.daemon.credentials.getKey('codex');
+          if (storedKey && codexMeta.constructor.onKeySet) {
+            try {
+              const result = await codexMeta.constructor.onKeySet(storedKey);
+              logStream.write(`[${new Date().toISOString()}] Codex auth recovery: ${result?.ok ? 'success' : result?.error || 'failed'}\n`);
+            } catch (e) {
+              logStream.write(`[${new Date().toISOString()}] Codex auth recovery error: ${e.message}\n`);
+            }
           }
         }
       }

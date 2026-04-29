@@ -5,6 +5,7 @@ import { createServer as createHttpServer, request as httpProxyRequest } from 'h
 import { createServer as createNetServer } from 'net';
 import { execFileSync } from 'child_process';
 import { resolve } from 'path';
+import { homedir } from 'os';
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, readdirSync, rmdirSync, rmSync, statSync } from 'fs';
 import express from 'express';
 import { WebSocketServer } from 'ws';
@@ -94,7 +95,7 @@ export class Daemon {
     this.port = options.port !== undefined ? options.port : (parseInt(process.env.GROOVE_PORT, 10) || DEFAULT_PORT);
     this.host = resolveHost(options.host);
     this.projectDir = options.projectDir || process.cwd();
-    this.grooveDir = options.grooveDir || resolve(this.projectDir, '.groove');
+    this.grooveDir = options.grooveDir || resolve(homedir(), '.groove');
     this.pidFile = resolve(this.grooveDir, 'daemon.pid');
 
     // Ensure .groove directories exist

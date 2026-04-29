@@ -12,7 +12,7 @@ import {
   Shield, Database, Megaphone, Calculator, UserCheck,
   Headphones, BarChart3, Rocket, ChevronDown, Pen, Presentation,
   Sparkles, X, Search, AlertTriangle, Plug, MessageCircle, GitBranch, Globe,
-  Check, ExternalLink, Loader2,
+  Check,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Dialog, DialogContent } from '../ui/dialog';
@@ -83,8 +83,6 @@ export function SpawnWizard() {
   const [recommendations, setRecommendations] = useState([]);
   const [preflightDialog, setPreflightDialog] = useState(null);
   const [claudeAuth, setClaudeAuth] = useState(null);
-  const [claudeAuthLoading, setClaudeAuthLoading] = useState(false);
-  const [claudeAuthPolling, setClaudeAuthPolling] = useState(false);
   const federation = useGrooveStore((s) => s.federation);
 
   const selectedRole = role || customRole;
@@ -127,8 +125,6 @@ export function SpawnWizard() {
       setRecommendations([]);
       setPreflightDialog(null);
       setClaudeAuth(null);
-      setClaudeAuthLoading(false);
-      setClaudeAuthPolling(false);
     }
   }, [open, fetchProviders]);
 
@@ -152,23 +148,6 @@ export function SpawnWizard() {
       setClaudeAuth(data);
     }).catch(() => setClaudeAuth(null));
   }, [open, provider]);
-
-  useEffect(() => {
-    if (!claudeAuthPolling) return;
-    const start = Date.now();
-    const interval = setInterval(() => {
-      if (Date.now() - start > 300000) { setClaudeAuthPolling(false); clearInterval(interval); return; }
-      api.get('/providers/claude-code/auth').then((data) => {
-        if (data?.authenticated) {
-          setClaudeAuth(data);
-          setClaudeAuthPolling(false);
-          setClaudeAuthLoading(false);
-          clearInterval(interval);
-        }
-      }).catch(() => {});
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [claudeAuthPolling]);
 
   async function runSpawn() {
     setSpawning(true);
@@ -205,16 +184,6 @@ export function SpawnWizard() {
       }
     } catch { /* preflight endpoint may not exist yet — proceed */ }
     runSpawn();
-  }
-
-  async function handleClaudeLogin() {
-    setClaudeAuthLoading(true);
-    try {
-      await api.post('/providers/claude-code/login');
-      setClaudeAuthPolling(true);
-    } catch {
-      setClaudeAuthLoading(false);
-    }
   }
 
   const claudeNotAuthed = provider === 'claude-code' && claudeAuth && !claudeAuth.authenticated;
@@ -457,17 +426,9 @@ export function SpawnWizard() {
                       <AlertTriangle size={13} className="text-warning flex-shrink-0" />
                       <span className="text-xs font-semibold text-text-0 font-sans">Claude Code is not signed in</span>
                     </div>
-                    {claudeAuthLoading ? (
-                      <div className="flex items-center gap-2 text-2xs text-text-2 font-sans">
-                        <Loader2 size={12} className="animate-spin text-accent" />
-                        Waiting for browser authentication...
-                      </div>
-                    ) : (
-                      <Button variant="primary" size="sm" onClick={handleClaudeLogin} className="text-2xs gap-1.5">
-                        <ExternalLink size={10} />
-                        Sign in to Claude
-                      </Button>
-                    )}
+                    <p className="text-2xs text-text-2 font-sans">
+                      Open the terminal and run: <code className="font-mono text-accent bg-surface-4 px-1.5 py-0.5 rounded text-2xs">claude</code>
+                    </p>
                   </div>
                 )}
                 {provider === 'claude-code' && claudeAuth?.authenticated && (

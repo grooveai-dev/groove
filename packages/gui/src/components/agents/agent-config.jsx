@@ -6,7 +6,6 @@ import {
   AlertCircle, Layers, Activity,
   RotateCw, Skull, Copy, Trash2,
   Sparkles, Calendar, Plug, MessageCircle, Save, GitBranch,
-  ExternalLink, Loader2,
 } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { Badge } from '../ui/badge';
@@ -169,8 +168,6 @@ export function AgentConfig({ agent }) {
   const [savingPersonality, setSavingPersonality] = useState(false);
   const [installedIntegrations, setInstalledIntegrations] = useState([]);
   const [claudeAuth, setClaudeAuth] = useState(null);
-  const [claudeAuthLoading, setClaudeAuthLoading] = useState(false);
-  const [claudeAuthPolling, setClaudeAuthPolling] = useState(false);
 
   const isAlive = agent.status === 'running' || agent.status === 'starting';
 
@@ -216,23 +213,6 @@ export function AgentConfig({ agent }) {
       setPersonalities(Array.isArray(data) ? data : data.personalities || []);
     }).catch(() => {});
   }, [agent.id, agent.name]);
-
-  useEffect(() => {
-    if (!claudeAuthPolling) return;
-    const start = Date.now();
-    const interval = setInterval(() => {
-      if (Date.now() - start > 300000) { setClaudeAuthPolling(false); clearInterval(interval); return; }
-      api.get('/providers/claude-code/auth').then((data) => {
-        if (data?.authenticated) {
-          setClaudeAuth(data);
-          setClaudeAuthPolling(false);
-          setClaudeAuthLoading(false);
-          clearInterval(interval);
-        }
-      }).catch(() => {});
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [claudeAuthPolling]);
 
   const currentProvider = providers.find((p) => p.id === agent.provider);
 
@@ -301,16 +281,6 @@ export function AgentConfig({ agent }) {
       window.dispatchEvent(new CustomEvent('groove:providers-changed'));
     } catch (err) {
       addToast('error', 'Failed to set key', err.message);
-    }
-  }
-
-  async function handleClaudeLogin() {
-    setClaudeAuthLoading(true);
-    try {
-      await api.post('/providers/claude-code/login');
-      setClaudeAuthPolling(true);
-    } catch {
-      setClaudeAuthLoading(false);
     }
   }
 
@@ -475,17 +445,9 @@ export function AgentConfig({ agent }) {
             <AlertCircle size={13} className="text-warning flex-shrink-0" />
             <span className="text-xs font-semibold text-text-0 font-sans">Claude Code is not signed in</span>
           </div>
-          {claudeAuthLoading ? (
-            <div className="flex items-center gap-2 text-2xs text-text-2 font-sans">
-              <Loader2 size={12} className="animate-spin text-accent" />
-              Waiting for browser authentication...
-            </div>
-          ) : (
-            <Button variant="primary" size="sm" onClick={handleClaudeLogin} className="text-2xs gap-1.5">
-              <ExternalLink size={10} />
-              Sign in to Claude
-            </Button>
-          )}
+          <p className="text-2xs text-text-2 font-sans">
+            Open the terminal and run: <code className="font-mono text-accent bg-surface-4 px-1.5 py-0.5 rounded text-2xs">claude</code>
+          </p>
         </div>
       )}
       {agent.provider === 'claude-code' && claudeAuth?.authenticated && (

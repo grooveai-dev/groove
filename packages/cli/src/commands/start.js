@@ -3,12 +3,13 @@
 
 import { existsSync } from 'fs';
 import { resolve } from 'path';
+import { homedir } from 'os';
 import { Daemon } from '@groove-dev/daemon';
 import chalk from 'chalk';
 import { runSetupWizard, saveKeysViaDaemon } from '../setup.js';
 
 export async function start(options) {
-  const grooveDir = process.env.GROOVE_DIR || resolve(process.cwd(), '.groove');
+  const grooveDir = process.env.GROOVE_DIR || resolve(homedir(), '.groove');
   const isFirstRun = !existsSync(resolve(grooveDir, 'config.json'));
 
   // ── First-run interactive wizard ────────────────────────────

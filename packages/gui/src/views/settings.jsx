@@ -62,10 +62,8 @@ function ProviderCard({ provider, onKeyChange }) {
   const [customPathOpen, setCustomPathOpen] = useState(false);
   const [customPath, setCustomPath] = useState('');
   const [savingPath, setSavingPath] = useState(false);
-  const [loginPending, setLoginPending] = useState(false);
   const addToast = useGrooveStore((s) => s.addToast);
   const installProgress = useGrooveStore((s) => s.providerInstallProgress[provider.id]);
-  const loginProvider = useGrooveStore((s) => s.loginProvider);
   const setProviderPath = useGrooveStore((s) => s.setProviderPath);
   const verifyProvider = useGrooveStore((s) => s.verifyProvider);
   const installProvider = useGrooveStore((s) => s.installProvider);
@@ -97,15 +95,6 @@ function ProviderCard({ provider, onKeyChange }) {
       if (onKeyChange) onKeyChange();
     } catch (err) {
       addToast('error', 'Remove failed', err.message);
-    }
-  }
-
-  async function handleLogin(body) {
-    try {
-      setLoginPending(true);
-      await loginProvider(provider.id, body);
-    } catch {
-      setLoginPending(false);
     }
   }
 
@@ -321,15 +310,30 @@ function ProviderCard({ provider, onKeyChange }) {
           {effectivelyInstalled && !isReady && !settingKey && !isInstalling && (
             <div className="flex flex-col gap-3 flex-1">
               {/* ── Claude Code auth ── */}
-              {provider.id === 'claude-code' && !loginPending && (
+              {provider.id === 'claude-code' && (
                 <>
-                  <div className="space-y-1.5">
-                    <p className="text-xs text-text-1 font-sans font-medium">Sign in with your Claude account</p>
-                    <p className="text-2xs text-text-3 font-sans">A browser window will open where you can sign in with your existing Anthropic account or Claude subscription.</p>
+                  <div className="space-y-2">
+                    <p className="text-xs text-text-1 font-sans font-medium">Sign in via terminal</p>
+                    <div className="space-y-1.5">
+                      <div className="flex items-start gap-2">
+                        <span className="text-2xs font-bold text-accent font-mono mt-0.5">1</span>
+                        <p className="text-2xs text-text-2 font-sans flex items-center gap-1">
+                          <Terminal size={10} className="text-text-3 flex-shrink-0" />
+                          Open the Groove terminal below
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-2xs font-bold text-accent font-mono mt-0.5">2</span>
+                        <p className="text-2xs text-text-2 font-sans">
+                          Run: <code className="font-mono text-accent bg-surface-4 px-1.5 py-0.5 rounded text-2xs">claude</code>
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-2xs font-bold text-accent font-mono mt-0.5">3</span>
+                        <p className="text-2xs text-text-2 font-sans">Follow the prompts to sign in with your Anthropic account</p>
+                      </div>
+                    </div>
                   </div>
-                  <Button variant="primary" size="sm" onClick={() => handleLogin()} className="w-full h-9 text-xs gap-1.5">
-                    <ExternalLink size={12} /> Sign In
-                  </Button>
                   <button
                     onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
                     className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans text-center"
@@ -340,15 +344,36 @@ function ProviderCard({ provider, onKeyChange }) {
               )}
 
               {/* ── Codex auth ── */}
-              {provider.id === 'codex' && !loginPending && (
+              {provider.id === 'codex' && (
                 <>
-                  <div className="space-y-1.5">
-                    <p className="text-xs text-text-1 font-sans font-medium">Sign in with your ChatGPT account</p>
-                    <p className="text-2xs text-text-3 font-sans">A browser window will open where you can sign in with your ChatGPT Plus or Teams subscription.</p>
+                  <div className="space-y-2">
+                    <p className="text-xs text-text-1 font-sans font-medium">Sign in via terminal</p>
+                    <div className="space-y-1.5">
+                      <div className="flex items-start gap-2">
+                        <span className="text-2xs font-bold text-accent font-mono mt-0.5">1</span>
+                        <p className="text-2xs text-text-2 font-sans flex items-center gap-1">
+                          <Terminal size={10} className="text-text-3 flex-shrink-0" />
+                          Open the Groove terminal below
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-2xs font-bold text-accent font-mono mt-0.5">2</span>
+                        <p className="text-2xs text-text-2 font-sans">
+                          Run: <code className="font-mono text-accent bg-surface-4 px-1.5 py-0.5 rounded text-2xs">npm i -g @openai/codex</code> (if not installed)
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-2xs font-bold text-accent font-mono mt-0.5">3</span>
+                        <p className="text-2xs text-text-2 font-sans">
+                          Run: <code className="font-mono text-accent bg-surface-4 px-1.5 py-0.5 rounded text-2xs">codex login</code>
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-2xs font-bold text-accent font-mono mt-0.5">4</span>
+                        <p className="text-2xs text-text-2 font-sans">Follow the prompts to authenticate</p>
+                      </div>
+                    </div>
                   </div>
-                  <Button variant="primary" size="sm" onClick={() => handleLogin({ method: 'chatgpt-plus' })} className="w-full h-9 text-xs gap-1.5">
-                    <ExternalLink size={12} /> Sign In
-                  </Button>
                   <button
                     onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }}
                     className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans text-center"
@@ -442,65 +467,6 @@ function ProviderCard({ provider, onKeyChange }) {
                 </>
               )}
 
-              {/* ── Any provider: login pending state ── */}
-              {(provider.id === 'claude-code' || provider.id === 'codex') && loginPending && (
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2 p-3 bg-accent/5 border border-accent/15 rounded-md">
-                    <Loader2 size={14} className="text-accent animate-spin" />
-                    <div>
-                      <p className="text-xs text-accent font-sans font-medium">Check your browser</p>
-                      <p className="text-2xs text-text-3 font-sans">Complete the sign-in in the browser window that opened.</p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    disabled={checking}
-                    onClick={async () => {
-                      if (provider.id === 'codex') {
-                        setChecking(true);
-                        try {
-                          const res = await api.post(`/providers/codex/verify`);
-                          if (res.authenticated) {
-                            setLoginPending(false);
-                            if (onKeyChange) onKeyChange();
-                          } else {
-                            addToast('error', 'Authentication not detected yet. Please complete sign-in in your browser and try again.');
-                          }
-                        } catch {
-                          addToast('error', 'Authentication not detected yet. Please complete sign-in in your browser and try again.');
-                        } finally {
-                          setChecking(false);
-                        }
-                      } else {
-                        setChecking(true);
-                        try {
-                          const res = await api.post(`/providers/claude-code/verify`);
-                          if (res.authenticated) {
-                            setLoginPending(false);
-                            if (onKeyChange) onKeyChange();
-                          } else {
-                            addToast('error', 'Authentication not detected yet. Please complete sign-in in your browser and try again.');
-                          }
-                        } catch {
-                          addToast('error', 'Authentication not detected yet. Please complete sign-in in your browser and try again.');
-                        } finally {
-                          setChecking(false);
-                        }
-                      }
-                    }}
-                    className="w-full h-8 text-xs gap-1.5"
-                  >
-                    {checking ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} I've signed in
-                  </Button>
-                  <button
-                    onClick={() => setLoginPending(false)}
-                    className="text-2xs text-text-4 hover:text-text-2 cursor-pointer font-sans text-center"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
             </div>
           )}
 

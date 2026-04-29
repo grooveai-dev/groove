@@ -9,7 +9,7 @@ import { cn } from '../../lib/cn';
 import { api } from '../../lib/api';
 import {
   Download, Loader2, Check, ChevronDown, ChevronUp,
-  Eye, EyeOff, Key, RotateCcw, ExternalLink, Sparkles,
+  Eye, EyeOff, Key, RotateCcw, Sparkles,
 } from 'lucide-react';
 
 const PROVIDER_META = {
@@ -166,15 +166,15 @@ function InstallStep({ providerId, meta }) {
 }
 
 function AuthenticateStep({ providerId, meta, onSaveKey }) {
-  const loginProvider = useGrooveStore((s) => s.loginProvider);
   const addToast = useGrooveStore((s) => s.addToast);
   const [key, setKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [loginStarted, setLoginStarted] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [verifyError, setVerifyError] = useState('');
-  const [authMode, setAuthMode] = useState(meta.authType === 'subscription' ? 'subscription' : 'apikey');
+  const [authMode, setAuthMode] = useState(
+    providerId === 'claude-code' ? 'terminal' :
+    providerId === 'codex' ? 'terminal' :
+    'apikey',
+  );
 
   async function handleSaveKey() {
     if (!key.trim()) return;
@@ -190,158 +190,69 @@ function AuthenticateStep({ providerId, meta, onSaveKey }) {
     }
   }
 
-  async function handleLogin() {
-    const body = authMode === 'chatgpt-plus' ? { method: 'chatgpt-plus' } : undefined;
-    try {
-      await loginProvider(providerId, body);
-      setLoginStarted(true);
-    } catch { /* handled in store */ }
-  }
-
   return (
     <div className="space-y-4">
       <p className="text-sm font-medium text-text-0 font-sans">{meta.authLabel}</p>
 
       {providerId === 'claude-code' && (
-        <div className="flex gap-1 bg-surface-3 p-0.5 rounded-md mb-4">
+        <div className="space-y-3">
+          <p className="text-xs text-text-2 font-sans">Sign in via the terminal with your Claude subscription.</p>
+          <div className="space-y-1.5">
+            <div className="flex items-start gap-2">
+              <span className="text-2xs font-bold text-accent font-mono mt-0.5">1</span>
+              <p className="text-2xs text-text-2 font-sans">Open the Groove terminal below</p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-2xs font-bold text-accent font-mono mt-0.5">2</span>
+              <p className="text-2xs text-text-2 font-sans">
+                Run: <code className="font-mono text-accent bg-surface-4 px-1.5 py-0.5 rounded text-2xs">claude</code>
+              </p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-2xs font-bold text-accent font-mono mt-0.5">3</span>
+              <p className="text-2xs text-text-2 font-sans">Follow the prompts to sign in with your Anthropic account</p>
+            </div>
+          </div>
           <button
-            onClick={() => { setAuthMode('subscription'); setLoginStarted(false); }}
-            className={cn(
-              'flex-1 h-7 rounded text-xs font-medium transition-colors cursor-pointer font-sans',
-              authMode === 'subscription' ? 'bg-surface-5 text-text-0' : 'text-text-3 hover:text-text-1',
-            )}
+            onClick={() => setAuthMode(authMode === 'apikey' ? 'terminal' : 'apikey')}
+            className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans"
           >
-            Subscription
-          </button>
-          <button
-            onClick={() => { setAuthMode('apikey'); setLoginStarted(false); }}
-            className={cn(
-              'flex-1 h-7 rounded text-xs font-medium transition-colors cursor-pointer font-sans',
-              authMode === 'apikey' ? 'bg-surface-5 text-text-0' : 'text-text-3 hover:text-text-1',
-            )}
-          >
-            API Key
+            {authMode === 'apikey' ? 'Use terminal login instead' : 'I have an API key instead'}
           </button>
         </div>
       )}
 
       {providerId === 'codex' && (
-        <div className="flex gap-1 bg-surface-3 p-0.5 rounded-md mb-4">
-          <button
-            onClick={() => { setAuthMode('apikey'); setLoginStarted(false); }}
-            className={cn(
-              'flex-1 h-7 rounded text-xs font-medium transition-colors cursor-pointer font-sans',
-              authMode === 'apikey' ? 'bg-surface-5 text-text-0' : 'text-text-3 hover:text-text-1',
-            )}
-          >
-            API Key
-          </button>
-          <button
-            onClick={() => { setAuthMode('chatgpt-plus'); setLoginStarted(false); }}
-            className={cn(
-              'flex-1 h-7 rounded text-xs font-medium transition-colors cursor-pointer font-sans',
-              authMode === 'chatgpt-plus' ? 'bg-surface-5 text-text-0' : 'text-text-3 hover:text-text-1',
-            )}
-          >
-            ChatGPT Plus
-          </button>
-        </div>
-      )}
-
-      {authMode === 'subscription' && (
         <div className="space-y-3">
-          <p className="text-xs text-text-2 font-sans">
-            Click below to sign in with your existing Claude subscription.
-          </p>
-          {!loginStarted ? (
-            <Button variant="primary" size="md" onClick={handleLogin} className="gap-1.5">
-              <ExternalLink size={12} /> {meta.loginLabel}
-            </Button>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 p-3 bg-accent/5 border border-accent/15 rounded-md">
-                <ExternalLink size={12} className="text-accent" />
-                <span className="text-xs text-accent font-sans">Sign-in opened in your browser</span>
-              </div>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={verifying}
-                onClick={async () => {
-                  setVerifying(true);
-                  setVerifyError('');
-                  try {
-                    const res = await api.post(`/providers/${providerId}/verify`);
-                    if (res.authenticated) {
-                      onSaveKey();
-                    } else {
-                      setVerifyError('Authentication not detected yet. Please complete sign-in in your browser and try again.');
-                    }
-                  } catch {
-                    setVerifyError('Authentication not detected yet. Please complete sign-in in your browser and try again.');
-                  } finally {
-                    setVerifying(false);
-                  }
-                }}
-                className="gap-1.5"
-              >
-                {verifying ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} I've signed in
-              </Button>
-              {verifyError && (
-                <p className="text-2xs text-danger font-sans">{verifyError}</p>
-              )}
+          <p className="text-xs text-text-2 font-sans">Sign in via the terminal with your OpenAI account.</p>
+          <div className="space-y-1.5">
+            <div className="flex items-start gap-2">
+              <span className="text-2xs font-bold text-accent font-mono mt-0.5">1</span>
+              <p className="text-2xs text-text-2 font-sans">Open the Groove terminal below</p>
             </div>
-          )}
-          <p className="text-2xs text-text-4 font-sans">
-            A browser window will open for you to sign in.
-          </p>
-        </div>
-      )}
-
-      {authMode === 'chatgpt-plus' && (
-        <div className="space-y-3">
-          <p className="text-xs text-text-2 font-sans">
-            Click below to sign in with your ChatGPT Plus subscription.
-          </p>
-          {!loginStarted ? (
-            <Button variant="primary" size="md" onClick={handleLogin} className="gap-1.5">
-              <ExternalLink size={12} /> {meta.loginLabel}
-            </Button>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 p-3 bg-accent/5 border border-accent/15 rounded-md">
-                <ExternalLink size={12} className="text-accent" />
-                <span className="text-xs text-accent font-sans">Sign-in opened in your browser</span>
-              </div>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={verifying}
-                onClick={async () => {
-                  setVerifying(true);
-                  setVerifyError('');
-                  try {
-                    const res = await api.post(`/providers/codex/verify`);
-                    if (res.authenticated) {
-                      onSaveKey();
-                    } else {
-                      setVerifyError('Authentication not detected yet. Please complete sign-in in your browser and try again.');
-                    }
-                  } catch {
-                    setVerifyError('Authentication not detected yet. Please complete sign-in in your browser and try again.');
-                  } finally {
-                    setVerifying(false);
-                  }
-                }}
-                className="gap-1.5"
-              >
-                {verifying ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} I've signed in
-              </Button>
-              {verifyError && (
-                <p className="text-2xs text-danger font-sans">{verifyError}</p>
-              )}
+            <div className="flex items-start gap-2">
+              <span className="text-2xs font-bold text-accent font-mono mt-0.5">2</span>
+              <p className="text-2xs text-text-2 font-sans">
+                Run: <code className="font-mono text-accent bg-surface-4 px-1.5 py-0.5 rounded text-2xs">npm i -g @openai/codex</code> (if not installed)
+              </p>
             </div>
-          )}
+            <div className="flex items-start gap-2">
+              <span className="text-2xs font-bold text-accent font-mono mt-0.5">3</span>
+              <p className="text-2xs text-text-2 font-sans">
+                Run: <code className="font-mono text-accent bg-surface-4 px-1.5 py-0.5 rounded text-2xs">codex login</code>
+              </p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-2xs font-bold text-accent font-mono mt-0.5">4</span>
+              <p className="text-2xs text-text-2 font-sans">Follow the prompts to authenticate</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setAuthMode(authMode === 'apikey' ? 'terminal' : 'apikey')}
+            className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans"
+          >
+            {authMode === 'apikey' ? 'Use terminal login instead' : 'I have an API key instead'}
+          </button>
         </div>
       )}
 

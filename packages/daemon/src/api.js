@@ -16,7 +16,7 @@ import { OllamaProvider } from './providers/ollama.js';
 import { ClaudeCodeProvider } from './providers/claude-code.js';
 import { supportsSignalFlag, compareSemver, parseSemver } from './providers/groove-network.js';
 import { ConsentManager } from '../../../moe-training/client/index.js';
-import { validateAgentConfig, validateReasoningEffort, validateVerbosity } from './validate.js';
+import { validateAgentConfig, validateReasoningEffort, validateVerbosity, validateTeamMode } from './validate.js';
 import { ROLE_INTEGRATIONS, wrapWithRoleReminder } from './process.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -1092,8 +1092,8 @@ export function createApi(app, daemon) {
 
   app.post('/api/teams', (req, res) => {
     try {
-      const team = daemon.teams.create(req.body.name, req.body.workingDir);
-      daemon.audit.log('team.create', { id: team.id, name: team.name, workingDir: team.workingDir });
+      const team = daemon.teams.create(req.body.name, { mode: req.body.mode });
+      daemon.audit.log('team.create', { id: team.id, name: team.name, mode: team.mode, workingDir: team.workingDir });
       res.status(201).json(team);
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -3447,9 +3447,17 @@ Keep responses concise. Help them think, don't lecture them about the system the
       }
       const defaultTeamId = launchTeamId || daemon.teams.getDefault()?.id || null;
 
+      // Determine team build mode
+      let launchMode;
+      try { launchMode = validateTeamMode(req.body?.mode || raw.mode); } catch { launchMode = 'sandbox'; }
+
       // If planner specified a project directory, create it and use it as workingDir
+      // Production mode: always use projectDir directly, skip subdirectory creation
       let projectWorkingDir = baseDir;
-      if (projectDir) {
+      if (launchMode === 'production') {
+        projectWorkingDir = daemon.projectDir;
+        console.log(`[Groove] Production mode — working in project root: ${projectWorkingDir}`);
+      } else if (projectDir) {
         // Sanitize: kebab-case, no path traversal
         const safeName = String(projectDir).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64);
         projectWorkingDir = resolve(baseDir, safeName);

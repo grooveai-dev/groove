@@ -65,7 +65,7 @@ export const useGrooveStore = create((set, get) => ({
   previewIterating: false,
 
   // ── Team Launch Config (set during planner spawn, cascades to team) ──
-  teamLaunchConfig: null, // { provider, model, reasoningEffort, temperature, verbosity }
+  teamLaunchConfig: null, // { provider, model, reasoningEffort, temperature, verbosity, mode }
 
   // ── Team Builder ──────────────────────────────────────────
   teamBuilderOpen: false,
@@ -1161,10 +1161,11 @@ export const useGrooveStore = create((set, get) => ({
     localStorage.setItem('groove:activeTeamId', id);
   },
 
-  async createTeam(name, workingDir) {
+  async createTeam(name, workingDir, mode) {
     try {
       const body = { name };
       if (workingDir) body.workingDir = workingDir;
+      if (mode) body.mode = mode;
       const team = await api.post('/teams', body);
       // Only set activeTeamId — the WS team:created handler adds to the teams array
       set({ activeTeamId: team.id });
@@ -1677,6 +1678,7 @@ export const useGrooveStore = create((set, get) => ({
         ...(tlc?.reasoningEffort != null && { teamReasoningEffort: tlc.reasoningEffort }),
         ...(tlc?.temperature != null && { teamTemperature: tlc.temperature }),
         ...(tlc?.verbosity != null && { teamVerbosity: tlc.verbosity }),
+        ...(tlc?.mode && { mode: tlc.mode }),
       };
       const result = await api.post('/recommended-team/launch', body);
       const totalOk = (result.launched || 0) + (result.reused || 0);

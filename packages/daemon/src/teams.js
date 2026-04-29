@@ -2,9 +2,9 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, rmSync, readdirSync, cpSync } from 'fs';
-import { resolve, basename } from 'path';
+import { resolve } from 'path';
 import { randomUUID } from 'crypto';
-import { validateTeamName } from './validate.js';
+import { validateTeamName, validateTeamMode } from './validate.js';
 
 function slugify(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64) || 'team';
@@ -44,6 +44,7 @@ export class Teams {
         id,
         name: 'Default',
         isDefault: true,
+        mode: 'sandbox',
         workingDir: defaultDir,
         createdAt: new Date().toISOString(),
       };
@@ -64,19 +65,25 @@ export class Teams {
   /**
    * Create a team with an auto-managed working directory.
    */
-  create(name) {
+  create(name, { mode = 'sandbox' } = {}) {
     validateTeamName(name);
+    mode = validateTeamMode(mode);
     const id = randomUUID().slice(0, 8);
-    const dirName = slugify(name);
-    const workingDir = resolve(this.daemon.projectDir, dirName);
 
-    // Create the directory
-    mkdirSync(workingDir, { recursive: true });
+    let workingDir;
+    if (mode === 'production') {
+      workingDir = this.daemon.projectDir;
+    } else {
+      const dirName = slugify(name);
+      workingDir = resolve(this.daemon.projectDir, dirName);
+      mkdirSync(workingDir, { recursive: true });
+    }
 
     const team = {
       id,
       name,
       isDefault: false,
+      mode,
       workingDir,
       createdAt: new Date().toISOString(),
     };
@@ -110,8 +117,9 @@ export class Teams {
     const oldName = team.name;
     team.name = name;
 
+    // Production teams use the project root — never rename directories
     // Rename the directory if it was auto-managed (under projectDir)
-    if (team.workingDir && !team.isDefault) {
+    if (team.workingDir && !team.isDefault && team.mode !== 'production') {
       const newDirName = slugify(name);
       const newWorkingDir = resolve(this.daemon.projectDir, newDirName);
       const oldWorkingDir = team.workingDir;
@@ -150,18 +158,30 @@ export class Teams {
 
     const agents = this._killAndRemoveAgents(id);
 
-    if (
-      team.workingDir &&
-      team.workingDir !== this.daemon.projectDir &&
-      existsSync(team.workingDir)
-    ) {
-      try {
-        const archiveDir = resolve(this.daemon.grooveDir, 'archived-teams');
-        mkdirSync(archiveDir, { recursive: true });
-        const slug = basename(team.workingDir);
-        const archiveName = `${slug}-${Date.now()}`;
-        const archivePath = resolve(archiveDir, archiveName);
+    try {
+      const archiveDir = resolve(this.daemon.grooveDir, 'archived-teams');
+      mkdirSync(archiveDir, { recursive: true });
+      const slug = slugify(team.name);
+      const archiveName = `${slug}-${Date.now()}`;
+      const archivePath = resolve(archiveDir, archiveName);
 
+      if (team.mode === 'production') {
+        // Production teams: metadata-only archive (no directory move)
+        mkdirSync(archivePath, { recursive: true });
+        const metadata = {
+          originalName: team.name,
+          originalId: team.id,
+          mode: team.mode,
+          deletedAt: new Date().toISOString(),
+          agentCount: agents.length,
+          originalWorkingDir: team.workingDir,
+        };
+        writeFileSync(resolve(archivePath, 'metadata.json'), JSON.stringify(metadata, null, 2));
+      } else if (
+        team.workingDir &&
+        team.workingDir !== this.daemon.projectDir &&
+        existsSync(team.workingDir)
+      ) {
         try {
           renameSync(team.workingDir, archivePath);
         } catch (err) {
@@ -176,14 +196,15 @@ export class Teams {
         const metadata = {
           originalName: team.name,
           originalId: team.id,
+          mode: team.mode || 'sandbox',
           deletedAt: new Date().toISOString(),
           agentCount: agents.length,
           originalWorkingDir: team.workingDir,
         };
         writeFileSync(resolve(archivePath, 'metadata.json'), JSON.stringify(metadata, null, 2));
-      } catch (err) {
-        console.log(`[Groove:Teams] Failed to archive directory: ${err.message}`);
       }
+    } catch (err) {
+      console.log(`[Groove:Teams] Failed to archive directory: ${err.message}`);
     }
 
     this._removeTeamAndCleanup(team, id);
@@ -273,32 +294,42 @@ export class Teams {
     try { meta = JSON.parse(readFileSync(metaPath, 'utf8')); } catch { /* use defaults */ }
 
     const name = meta.originalName || archivedId;
-    let workingDir = meta.originalWorkingDir || resolve(this.daemon.projectDir, slugify(name));
+    const mode = meta.mode || 'sandbox';
 
-    if (existsSync(workingDir)) {
-      workingDir = resolve(this.daemon.projectDir, `${slugify(name)}-${Date.now()}`);
-    }
+    let workingDir;
+    if (mode === 'production') {
+      workingDir = this.daemon.projectDir;
+      // Production archive is metadata-only — just remove the archive directory
+      try { rmSync(archivePath, { recursive: true, force: true }); } catch { /* ignore */ }
+    } else {
+      workingDir = meta.originalWorkingDir || resolve(this.daemon.projectDir, slugify(name));
 
-    try {
-      renameSync(archivePath, workingDir);
-    } catch (err) {
-      if (err.code === 'EXDEV') {
-        cpSync(archivePath, workingDir, { recursive: true });
-        rmSync(archivePath, { recursive: true, force: true });
-      } else {
-        throw err;
+      if (existsSync(workingDir)) {
+        workingDir = resolve(this.daemon.projectDir, `${slugify(name)}-${Date.now()}`);
       }
-    }
 
-    // Remove the metadata file from the restored directory
-    const restoredMetaPath = resolve(workingDir, 'metadata.json');
-    try { rmSync(restoredMetaPath); } catch { /* may not exist */ }
+      try {
+        renameSync(archivePath, workingDir);
+      } catch (err) {
+        if (err.code === 'EXDEV') {
+          cpSync(archivePath, workingDir, { recursive: true });
+          rmSync(archivePath, { recursive: true, force: true });
+        } else {
+          throw err;
+        }
+      }
+
+      // Remove the metadata file from the restored directory
+      const restoredMetaPath = resolve(workingDir, 'metadata.json');
+      try { rmSync(restoredMetaPath); } catch { /* may not exist */ }
+    }
 
     const id = randomUUID().slice(0, 8);
     const team = {
       id,
       name,
       isDefault: false,
+      mode,
       workingDir,
       createdAt: new Date().toISOString(),
     };

@@ -73,6 +73,9 @@ function TeamsDashboard() {
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-text-0 font-sans">{team.name}</span>
                     {isActive && <Badge variant="accent" className="text-2xs">Active</Badge>}
+                    <Badge variant={team.mode === 'production' ? 'success' : 'default'} className="text-2xs">
+                      {team.mode === 'production' ? 'Production' : 'Sandbox'}
+                    </Badge>
                   </div>
                   {team.workingDir && (
                     <div className="flex items-center gap-1 mt-0.5">
@@ -183,6 +186,7 @@ function TeamsDashboard() {
         onOpenChange={(open) => !open && setArchiveConfirm(null)}
         onArchive={archiveTeam}
         onDeletePermanently={deleteTeamPermanently}
+        mode={archiveConfirm?.mode || 'sandbox'}
       />
 
       <PurgeConfirmDialog

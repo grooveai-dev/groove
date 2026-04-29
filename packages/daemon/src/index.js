@@ -686,6 +686,10 @@ export class Daemon {
         centralCommandUrl: process.env.GROOVE_CENTRAL_URL || 'https://api.groovedev.ai',
         grooveVersion: version,
       });
+      this.trajectoryCapture.onEnvelopeSent = () => {
+        const count = (this.state.get('training_envelopes_sent') || 0) + 1;
+        this.state.set('training_envelopes_sent', count);
+      };
       this.trajectoryCapture.init();
     } catch (e) {
       // Training capture is never critical

@@ -4,7 +4,7 @@ import { Dialog, DialogContent } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Archive, Trash2, AlertTriangle } from 'lucide-react';
 
-export function TeamRemovalDialog({ team, open, onOpenChange, onArchive, onDeletePermanently }) {
+export function TeamRemovalDialog({ team, open, onOpenChange, onArchive, onDeletePermanently, mode }) {
   const [confirmName, setConfirmName] = useState('');
   const [showConfirmInput, setShowConfirmInput] = useState(false);
 
@@ -36,7 +36,9 @@ export function TeamRemovalDialog({ team, open, onOpenChange, onArchive, onDelet
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold text-text-0 font-sans">Archive</div>
               <p className="text-xs text-text-3 font-sans mt-0.5">
-                Files are preserved. You can restore the team later.
+                {mode === 'production'
+                  ? 'Team metadata will be archived. Your files remain in the project directory.'
+                  : 'Files are preserved. You can restore the team later.'}
               </p>
             </div>
           </button>
@@ -53,7 +55,9 @@ export function TeamRemovalDialog({ team, open, onOpenChange, onArchive, onDelet
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-semibold text-danger font-sans">Delete Permanently</div>
                 <p className="text-xs text-text-3 font-sans mt-0.5">
-                  All files in this team will be permanently deleted.
+                  {mode === 'production'
+                    ? 'Team will be removed. Your files remain in the project directory.'
+                    : 'All files in this team will be permanently deleted.'}
                 </p>
               </div>
             </button>

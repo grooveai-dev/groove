@@ -239,6 +239,16 @@ export function validateVerbosity(value) {
   return value;
 }
 
+const VALID_TEAM_MODES = ['sandbox', 'production'];
+
+export function validateTeamMode(mode) {
+  if (!mode) return 'sandbox';
+  if (!VALID_TEAM_MODES.includes(mode)) {
+    throw new Error(`Invalid team mode: must be one of ${VALID_TEAM_MODES.join(', ')}`);
+  }
+  return mode;
+}
+
 export function escapeMd(text) {
   if (!text) return '';
   // Escape markdown special chars that could break table rendering or inject formatting.

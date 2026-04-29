@@ -10,7 +10,7 @@ import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Layers, Archive } from 'lucide-react';
+import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Layers, Archive, Box, HardDrive } from 'lucide-react';
 import { PreviewWorkspace } from '../components/preview/preview-workspace';
 import { WorkspaceMode } from '../components/agents/workspace-mode';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../components/ui/context-menu';
@@ -313,6 +313,7 @@ export function TeamTabBar() {
         onOpenChange={(open) => !open && setArchiveConfirm(null)}
         onArchive={archiveTeam}
         onDeletePermanently={deleteTeamPermanently}
+        mode={archiveConfirm?.mode || 'sandbox'}
       />
     </div>
   );
@@ -1244,6 +1245,7 @@ function RecommendedTeamCard() {
   const [tsModel, setTsModel] = useState(teamLaunchConfig?.model || '');
   const [tsReasoning, setTsReasoning] = useState(teamLaunchConfig?.reasoningEffort ?? 50);
   const [tsTemp, setTsTemp] = useState(teamLaunchConfig?.temperature ?? 0.5);
+  const [tsMode, setTsMode] = useState(teamLaunchConfig?.mode || 'sandbox');
 
   useEffect(() => {
     fetchProviders().then((list) => {
@@ -1278,15 +1280,14 @@ function RecommendedTeamCard() {
   async function handleLaunch() {
     setLaunching(true);
     // Save overrides to store so launchRecommendedTeam sends them
-    if (tsProvider) {
-      useGrooveStore.setState({
-        teamLaunchConfig: {
-          provider: tsProvider, model: tsModel,
-          reasoningEffort: tsReasoning,
-          ...(showTemp && { temperature: tsTemp }),
-        },
-      });
-    }
+    useGrooveStore.setState({
+      teamLaunchConfig: {
+        ...(tsProvider && { provider: tsProvider, model: tsModel }),
+        reasoningEffort: tsReasoning,
+        ...(showTemp && { temperature: tsTemp }),
+        mode: tsMode,
+      },
+    });
     try {
       const modified = [...agentEdits, ...phase2];
       await launchRecommendedTeam(modified);
@@ -1362,6 +1363,41 @@ function RecommendedTeamCard() {
                   formatValue={(v) => v.toFixed(2)}
                 />
               )}
+              {/* Build Mode */}
+              <div className="space-y-1">
+                <label className="text-2xs text-text-3 font-sans">Build Mode</label>
+                <div className="flex rounded-md bg-surface-4 border border-border-subtle p-0.5">
+                  <button
+                    onClick={() => setTsMode('sandbox')}
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-sans transition-all cursor-pointer',
+                      tsMode === 'sandbox'
+                        ? 'bg-surface-2 text-text-0 font-semibold shadow-sm'
+                        : 'text-text-3 hover:text-text-1',
+                    )}
+                  >
+                    <Box size={11} />
+                    Sandbox
+                  </button>
+                  <button
+                    onClick={() => setTsMode('production')}
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-sans transition-all cursor-pointer',
+                      tsMode === 'production'
+                        ? 'bg-surface-2 text-text-0 font-semibold shadow-sm'
+                        : 'text-text-3 hover:text-text-1',
+                    )}
+                  >
+                    <HardDrive size={11} />
+                    Production
+                  </button>
+                </div>
+                <p className="text-2xs text-text-4 font-sans">
+                  {tsMode === 'sandbox'
+                    ? 'Files live in a team directory, removable with the team'
+                    : 'Files live in the project directory, persist forever'}
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -1394,7 +1430,7 @@ function RecommendedTeamCard() {
             );
           })}
 
-          {recommendedTeam.projectDir && (
+          {recommendedTeam.projectDir && tsMode === 'sandbox' && (
             <div className="flex items-center gap-1.5 text-2xs text-text-2 font-mono pt-0.5">
               <span className="text-text-4">Project:</span>
               <span className="text-accent">{recommendedTeam.projectDir}/</span>

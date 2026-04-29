@@ -1274,6 +1274,19 @@ export const useGrooveStore = create((set, get) => ({
       throw err;
     }
   },
+
+  async promoteTeam(id) {
+    try {
+      const team = await api.post(`/teams/${encodeURIComponent(id)}/promote`);
+      set((s) => ({ teams: s.teams.map((t) => (t.id === id ? { ...t, ...team } : t)) }));
+      get().addToast('success', 'Team promoted to production');
+      return team;
+    } catch (err) {
+      get().addToast('error', 'Failed to promote team', err.message);
+      throw err;
+    }
+  },
+
   openDetail(descriptor) {
     const tid = get().activeTeamId;
     set((s) => ({ detailPanel: descriptor, teamDetailPanels: { ...s.teamDetailPanels, [tid]: descriptor } }));

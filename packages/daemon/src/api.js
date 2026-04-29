@@ -1147,6 +1147,16 @@ export function createApi(app, daemon) {
     }
   });
 
+  app.post('/api/teams/:id/promote', (req, res) => {
+    try {
+      const team = daemon.teams.promote(req.params.id);
+      daemon.audit.log('team.promote', { id: team.id, name: team.name });
+      res.json(team);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // --- Conversations ---
 
   app.get('/api/conversations', (req, res) => {
@@ -2957,8 +2967,8 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
     try {
       const stat = statSync(result.fullPath);
-      if (stat.size > 5 * 1024 * 1024) {
-        return res.status(400).json({ error: 'File too large (>5MB)' });
+      if (stat.size > 50 * 1024 * 1024) {
+        return res.status(400).json({ error: 'File too large (>50MB)' });
       }
 
       // Binary detection: check first 8KB for null bytes
@@ -2990,8 +3000,8 @@ Keep responses concise. Help them think, don't lecture them about the system the
     if (typeof content !== 'string') {
       return res.status(400).json({ error: 'content must be a string' });
     }
-    if (content.length > 5 * 1024 * 1024) {
-      return res.status(400).json({ error: 'Content too large (>5MB)' });
+    if (content.length > 50 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Content too large (>50MB)' });
     }
 
     try {
@@ -3435,6 +3445,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       const plannerAgent = found.agentId ? daemon.registry.get(found.agentId) : null;
       const baseDir = plannerAgent?.workingDir || daemon.config?.defaultWorkingDir || daemon.projectDir;
       const plannerProvider = plannerAgent?.provider || undefined;
+      const plannerModel = plannerAgent?.model || undefined;
 
       // Use the planner's teamId so launched agents join the correct team.
       // Priority: explicit from frontend > agent that wrote the file > most recent planner > default
@@ -3477,6 +3488,15 @@ Keep responses concise. Help them think, don't lecture them about the system the
         });
       }
 
+      function resolveProviderAndModel(cfgProvider, cfgModel, fallbackProvider, fallbackModel) {
+        const provider = cfgProvider || plannerProvider || daemon.config?.defaultProvider || fallbackProvider || undefined;
+        if (cfgModel) return { provider, model: cfgModel };
+        if (!cfgProvider && plannerProvider && plannerProvider !== daemon.config?.defaultProvider) {
+          return { provider, model: plannerModel || 'auto' };
+        }
+        return { provider, model: daemon.config?.defaultModel || fallbackModel || 'auto' };
+      }
+
       // Team-level overrides from the pre-planner config panel
       const teamProvider = req.body?.teamProvider || undefined;
       const teamModel = req.body?.teamModel || undefined;
@@ -3500,10 +3520,12 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
       // Safety net: if planner forgot the QC agent, auto-add one
       if (phase2.length === 0 && phase1.length >= 2) {
+        const { provider: qcProvider, model: qcModel } = resolveProviderAndModel(teamProvider, teamModel);
         phase2 = [{
           name: 'qc-agent',
           role: 'fullstack', phase: 2, scope: [],
-          provider: teamProvider || plannerProvider || daemon.config?.defaultProvider || undefined,
+          provider: qcProvider,
+          model: qcModel,
           prompt: 'QC Senior Dev: All builder agents have completed. Audit their changes for correctness, fix any issues, run tests, and verify the project builds cleanly (npm run build). Do NOT start long-running dev servers — just verify the build succeeds. Commit all changes. IMPORTANT: Do NOT delete files from other projects or directories outside this project.',
         }];
       }
@@ -3556,8 +3578,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
               role: existing.role,
               scope: normalizeScope(config.scope || existing.scope || [], existing.workingDir || projectWorkingDir),
               prompt,
-              provider: config.provider || plannerProvider || daemon.config?.defaultProvider || existing.provider || undefined,
-              model: config.model || existing.model || daemon.config?.defaultModel || 'auto',
+              ...resolveProviderAndModel(config.provider, config.model, existing.provider, existing.model),
               permission: config.permission || existing.permission || 'auto',
               workingDir: existing.workingDir || projectWorkingDir,
               name: existing.name,
@@ -3581,8 +3602,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
               role: config.role,
               scope: normalizeScope(config.scope || [], config.workingDir || projectWorkingDir),
               prompt,
-              provider: config.provider || plannerProvider || daemon.config?.defaultProvider || undefined,
-              model: config.model || daemon.config?.defaultModel || 'auto',
+              ...resolveProviderAndModel(config.provider, config.model),
               permission: config.permission || 'auto',
               workingDir: config.workingDir || projectWorkingDir,
               name: config.name || undefined,
@@ -3624,7 +3644,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
             waitFor: phase1Ids,
             agents: phase2.map((c) => ({
               role: c.role, scope: c.scope || [], prompt: c.prompt || '',
-              provider: c.provider || plannerProvider || daemon.config?.defaultProvider || undefined, model: c.model || daemon.config?.defaultModel || 'auto',
+              ...resolveProviderAndModel(c.provider, c.model),
               permission: c.permission || 'auto',
               reasoningEffort: c.reasoningEffort, temperature: c.temperature, verbosity: c.verbosity,
               workingDir: c.workingDir || projectWorkingDir,

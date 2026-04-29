@@ -9,10 +9,11 @@ import { api } from '../lib/api';
 import { useToast } from '../lib/hooks/use-toast';
 import { fmtNum, fmtDollar, timeAgo, fmtUptime } from '../lib/format';
 import { cn } from '../lib/cn';
+import { Dialog, DialogContent } from '../components/ui/dialog';
 import {
   Clock, CheckCircle, XCircle, AlertTriangle, ShieldCheck, ShieldX,
   Users, Folder, Cpu, Trash2, Play, Pause, LayoutDashboard, ListChecks, Calendar,
-  Archive, RotateCcw, ChevronRight,
+  Archive, RotateCcw, ChevronRight, ArrowUpCircle,
 } from 'lucide-react';
 import { TeamRemovalDialog, PurgeConfirmDialog } from '../components/teams/team-removal-dialog';
 
@@ -28,9 +29,11 @@ function TeamsDashboard() {
   const fetchArchivedTeams = useGrooveStore((s) => s.fetchArchivedTeams);
   const restoreTeam = useGrooveStore((s) => s.restoreTeam);
   const purgeTeam = useGrooveStore((s) => s.purgeTeam);
+  const promoteTeam = useGrooveStore((s) => s.promoteTeam);
 
   const [archiveConfirm, setArchiveConfirm] = useState(null);
   const [purgeConfirm, setPurgeConfirm] = useState(null);
+  const [promoteConfirm, setPromoteConfirm] = useState(null);
   const [archivedOpen, setArchivedOpen] = useState(false);
 
   useEffect(() => { fetchArchivedTeams(); }, []);
@@ -84,6 +87,15 @@ function TeamsDashboard() {
                     </div>
                   )}
                 </div>
+                {team.mode !== 'production' && (
+                  <button
+                    onClick={() => setPromoteConfirm(team)}
+                    className="p-1.5 text-text-4 hover:text-success rounded transition-colors cursor-pointer"
+                    title="Promote to production"
+                  >
+                    <ArrowUpCircle size={13} />
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     if (teamAgents.some((a) => a.status === 'running' || a.status === 'starting')) {
@@ -195,7 +207,55 @@ function TeamsDashboard() {
         onOpenChange={(open) => !open && setPurgeConfirm(null)}
         onPurge={purgeTeam}
       />
+
+      <PromoteConfirmDialog
+        team={promoteConfirm}
+        open={!!promoteConfirm}
+        onOpenChange={(open) => !open && setPromoteConfirm(null)}
+        onPromote={promoteTeam}
+      />
     </div>
+  );
+}
+
+function PromoteConfirmDialog({ team, open, onOpenChange, onPromote }) {
+  const [promoting, setPromoting] = useState(false);
+
+  useEffect(() => {
+    if (!open) setPromoting(false);
+  }, [open]);
+
+  async function handleConfirm() {
+    setPromoting(true);
+    try {
+      await onPromote(team?.id);
+      onOpenChange(false);
+    } catch {
+      setPromoting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent title="Promote to Production" description="Promote this team to production mode">
+        <div className="px-5 py-4 space-y-3">
+          <p className="text-sm text-text-1 font-sans">
+            Promote <span className="font-semibold text-text-0">{team?.name}</span> to production?
+          </p>
+          <p className="text-xs text-text-3 font-sans">
+            This will move files from the team directory into the project directory.
+            The team will switch to production mode and files will persist when the team is removed.
+          </p>
+        </div>
+        <div className="px-5 py-3 border-t border-border-subtle flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="primary" size="sm" disabled={promoting} onClick={handleConfirm} className="gap-1.5">
+            <ArrowUpCircle size={12} />
+            {promoting ? 'Promoting...' : 'Promote'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

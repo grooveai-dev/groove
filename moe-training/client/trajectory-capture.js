@@ -128,6 +128,61 @@ export class TrajectoryCapture {
     await this._attestation.openSession(sessionId, metadata);
   }
 
+  onChatTurnStart(conversationId, provider, model, message) {
+    if (!this._enabled) return null;
+
+    const agentId = `chat-api-${conversationId}-${Date.now()}`;
+    const sessionId = `sess_${randomUUID()}`;
+    const contributorId = ConsentManager.getOrCreateUserId();
+    const metadata = {
+      model_engine: model,
+      provider,
+      agent_role: 'chat',
+      agent_id: agentId,
+      task_complexity: 'medium',
+      team_size: 1,
+      session_quality: 0,
+      groove_version: this._grooveVersion,
+      leaf_context: null,
+    };
+
+    const builder = new EnvelopeBuilder(sessionId, contributorId, metadata);
+    const classifier = new StepClassifier();
+
+    const ctx = {
+      sessionId,
+      parser: null,
+      builder,
+      classifier,
+      metadata,
+      stepCount: 0,
+      chunkCount: 0,
+      totalTokens: 0,
+      errorsEncountered: 0,
+      errorsRecovered: 0,
+      filesModified: 0,
+      coordinationEvents: 0,
+      startTime: Date.now(),
+      chunkTimer: null,
+      allSteps: [],
+      revisionRounds: 0,
+    };
+
+    this._contexts.set(agentId, ctx);
+
+    if (message && typeof message === 'string' && message.trim()) {
+      this._processStep(agentId, ctx, {
+        type: 'instruction',
+        content: message.slice(0, USER_MESSAGE_MAX_CHARS),
+        source: 'user',
+      });
+    }
+
+    this._attestation.openSession(sessionId, metadata).catch(() => {});
+
+    return agentId;
+  }
+
   onStdoutLine(agentId, jsonLine) {
     if (!this._enabled) return;
     const ctx = this._contexts.get(agentId);

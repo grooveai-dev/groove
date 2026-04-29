@@ -717,7 +717,11 @@ export class ProcessManager {
     if (config.model && config.model !== 'auto' && provider.constructor.models) {
       const valid = provider.constructor.models.some(m => m.id === config.model);
       if (!valid) {
-        throw new Error(`Model '${config.model}' is not available for ${provider.constructor.displayName}. Available: ${provider.constructor.models.map(m => m.id).join(', ')}`);
+        const fallback = provider.constructor.models[0];
+        if (fallback) {
+          console.log(`[Groove] Model '${config.model}' not available for ${provider.constructor.displayName}, falling back to '${fallback.id}'`);
+          config.model = fallback.id;
+        }
       }
     }
 

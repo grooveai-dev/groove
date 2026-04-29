@@ -358,6 +358,39 @@ export class Teams {
     }
   }
 
+  promote(id) {
+    const team = this.teams.get(id);
+    if (!team) throw new Error('Team not found');
+    if (team.mode === 'production') throw new Error('Team is already in production mode');
+
+    const oldDir = team.workingDir;
+    const targetDir = this.daemon.projectDir;
+
+    const entries = readdirSync(oldDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name === '.groove') continue;
+      const src = resolve(oldDir, entry.name);
+      const dest = resolve(targetDir, entry.name);
+      cpSync(src, dest, { recursive: true, force: true });
+    }
+
+    rmSync(oldDir, { recursive: true, force: true });
+
+    team.workingDir = targetDir;
+    team.mode = 'production';
+
+    const agents = this.daemon.registry.getAll().filter((a) => a.teamId === id);
+    for (const agent of agents) {
+      if (agent.workingDir === oldDir) {
+        this.daemon.registry.update(agent.id, { workingDir: targetDir });
+      }
+    }
+
+    this._save();
+    this.daemon.broadcast({ type: 'team:updated', team });
+    return team;
+  }
+
   // Backward compat stubs
   onAgentChange() {}
   getActiveTeam() { return this.getDefault()?.name || null; }

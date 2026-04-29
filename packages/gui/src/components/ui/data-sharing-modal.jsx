@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Dialog, DialogContent } from './dialog';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useGrooveStore } from '../../stores/groove';
-import { Sparkles, Share2, Cpu, Gift, Shield, Check, X } from 'lucide-react';
+import { Sparkles, Shield, X } from 'lucide-react';
 
 export function DataSharingModal() {
   const open = useGrooveStore((s) => s.dataSharingModalOpen);
@@ -14,8 +14,8 @@ export function DataSharingModal() {
   return (
     <Dialog open={open}>
       <DialogContent
-        className="max-w-2xl"
-        description="Review how your data helps build open source AI"
+        className="max-w-md"
+        description="Help improve Groove by sharing usage data"
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
       >
@@ -27,51 +27,10 @@ export function DataSharingModal() {
             </div>
           </div>
           <DialogPrimitive.Title className="text-xl font-bold text-text-0 font-sans">
-            Help Build Open Source Intelligence
+            Help Build a Better Groove
           </DialogPrimitive.Title>
           <p className="text-sm text-text-2 font-sans mt-2 max-w-md mx-auto">
-            Your usage data trains a free, local MoE model that every Groove user gets to use — including you.
-          </p>
-        </div>
-
-        {/* Value Proposition */}
-        <div className="px-6 pt-5 pb-1">
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { icon: Share2, title: 'You Share', desc: 'Anonymized agent session data: tool calls, error patterns, task flows' },
-              { icon: Cpu, title: 'We Train', desc: 'A Groove-specific Mixture of Experts model built on real multi-agent workflows' },
-              { icon: Gift, title: 'Everyone Wins', desc: 'Free, local, open source model for all Groove users. More data = smarter agents' },
-            ].map(({ icon: Icon, title, desc }) => (
-              <div key={title} className="rounded-lg border border-border-subtle bg-surface-2/50 p-3 text-center">
-                <div className="flex justify-center mb-2">
-                  <Icon size={18} className="text-accent" />
-                </div>
-                <div className="text-xs font-semibold text-text-0 font-sans mb-1">{title}</div>
-                <div className="text-2xs text-text-2 font-sans leading-relaxed">{desc}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* What We Collect */}
-        <div className="px-6 pt-4">
-          <div className="text-xs font-semibold uppercase text-text-3 tracking-wider font-sans mb-2.5">What We Collect</div>
-          <div className="space-y-1.5">
-            {[
-              'Agent tool calling patterns',
-              'Error and recovery sequences',
-              'Task complexity and coordination events',
-              'Model and provider usage metadata',
-              'Session duration and outcomes',
-            ].map((item) => (
-              <div key={item} className="flex items-center gap-2">
-                <Check size={12} className="text-accent flex-shrink-0" />
-                <span className="text-xs text-text-1 font-sans">{item}</span>
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-text-0 font-sans font-medium mt-3">
-            That&apos;s it. Groove orchestration data only.
+            We collect errors and usage reports to improve the quality of Groove for everyone.
           </p>
         </div>
 
@@ -87,7 +46,7 @@ export function DataSharingModal() {
                 'Your source code or file contents',
                 'API keys, passwords, or credentials',
                 'Personal information — emails, names, file paths',
-                'Anything that could identify your IP or projects',
+                'Anything that could identify you, your IP or projects',
               ].map((item) => (
                 <div key={item} className="flex items-center gap-2">
                   <X size={12} className="text-danger flex-shrink-0" />
@@ -96,16 +55,7 @@ export function DataSharingModal() {
               ))}
             </div>
             <p className="text-xs text-text-0 font-sans font-medium mt-3">
-              13 categories of PII are automatically scrubbed before any data leaves your machine.
-            </p>
-          </div>
-        </div>
-
-        {/* Mission Statement */}
-        <div className="px-6 pt-4">
-          <div className="border-l-2 border-accent/30 pl-3">
-            <p className="text-xs text-text-3 italic leading-relaxed font-sans">
-              We believe in open source, decentralized intelligence. Not walled gardens. Not data hoarding. Every contribution makes the model better for everyone. We need your help to get there.
+              PII is automatically scrubbed before any data leaves your machine.
             </p>
           </div>
         </div>

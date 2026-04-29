@@ -354,6 +354,69 @@ describe('TrajectoryCapture — planner/conversational eligibility', () => {
   });
 });
 
+describe('TrajectoryCapture — API chat capture via onChatTurnStart', () => {
+  function makeChatTc() {
+    const tc = makeTc();
+    tc._enabled = true;
+    tc._scrubber = { scrub: (s) => s };
+    tc._attestation = { openSession: async () => {}, closeSession: async () => {}, signEnvelope: (sid, e) => e };
+    tc._transmissionQueue = { enqueue: () => {}, waitForDrain: async () => {} };
+    tc._domainTagger = null;
+    return tc;
+  }
+
+  it('returns a synthetic agent ID and creates context', () => {
+    const tc = makeChatTc();
+    const agentId = tc.onChatTurnStart('conv-123', 'claude-code', 'opus', 'What is React?');
+    assert.ok(agentId);
+    assert.ok(agentId.startsWith('chat-api-conv-123-'));
+    const ctx = tc._contexts.get(agentId);
+    assert.ok(ctx);
+    assert.equal(ctx.metadata.agent_role, 'chat');
+    assert.equal(ctx.metadata.provider, 'claude-code');
+    assert.equal(ctx.metadata.model_engine, 'opus');
+  });
+
+  it('records the user message as an instruction step', () => {
+    const tc = makeChatTc();
+    const agentId = tc.onChatTurnStart('conv-456', 'claude-code', 'opus', 'Explain hooks');
+    const ctx = tc._contexts.get(agentId);
+    assert.equal(ctx.stepCount, 1);
+    assert.equal(ctx.allSteps[0].type, 'instruction');
+    assert.ok(ctx.allSteps[0].content.includes('Explain hooks'));
+  });
+
+  it('works with onParsedOutput and onAgentComplete', async () => {
+    const tc = makeChatTc();
+    const agentId = tc.onChatTurnStart('conv-789', 'claude-code', 'opus', 'Tell me about React');
+
+    tc.onParsedOutput(agentId, { type: 'activity', subtype: 'assistant', data: 'React is a UI library' });
+    tc.onParsedOutput(agentId, { type: 'result', data: 'React is a UI library' });
+
+    const ctx = tc._contexts.get(agentId);
+    assert.equal(ctx.stepCount, 3);
+    assert.equal(ctx.allSteps[1].type, 'thought');
+    assert.equal(ctx.allSteps[2].type, 'resolution');
+
+    await tc.onAgentComplete(agentId, { status: 'SUCCESS' });
+    assert.equal(tc._contexts.has(agentId), false);
+  });
+
+  it('returns null when disabled', () => {
+    const tc = makeChatTc();
+    tc._enabled = false;
+    const agentId = tc.onChatTurnStart('conv-000', 'claude-code', 'opus', 'Hello');
+    assert.equal(agentId, null);
+  });
+
+  it('context has no parser (not needed for API chat)', () => {
+    const tc = makeChatTc();
+    const agentId = tc.onChatTurnStart('conv-nop', 'claude-code', 'opus', 'Hello');
+    const ctx = tc._contexts.get(agentId);
+    assert.equal(ctx.parser, null);
+  });
+});
+
 describe('TrajectoryCapture — initial prompt capture', () => {
   function makeSpawnTc() {
     const tc = makeTc();

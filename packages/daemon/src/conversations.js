@@ -387,10 +387,19 @@ export class ConversationManager {
     const effectiveReasoningEffort = reasoningEffort || conv.reasoningEffort || null;
     const effectiveVerbosity = verbosity || conv.verbosity || null;
 
+    // Trajectory capture for training data
+    const tc = this.daemon.trajectoryCapture;
+    let tcAgentId = null;
+    let tcResponseText = '';
+    if (tc) {
+      try { tcAgentId = tc.onChatTurnStart(id, providerName, modelId, message); } catch { /* never block chat */ }
+    }
+
     // Try direct API streaming first (sub-second latency)
     const controller = provider.streamChat(
       messages, modelId, apiKey,
       (text) => {
+        if (tcAgentId) tcResponseText += text;
         this.daemon.broadcast({
           type: 'conversation:chunk',
           data: { conversationId: id, text },
@@ -402,6 +411,15 @@ export class ConversationManager {
           this._save();
         }
         this._getStreamingProcesses().delete(id);
+        if (tcAgentId && tc) {
+          try {
+            tc.onParsedOutput(tcAgentId, { type: 'activity', subtype: 'assistant', data: tcResponseText });
+            tc.onParsedOutput(tcAgentId, { type: 'result', data: tcResponseText });
+            tc.onAgentComplete(tcAgentId, { status: 'SUCCESS' });
+            const count = (this.daemon.state.get('training_sessions_captured') || 0) + 1;
+            this.daemon.state.set('training_sessions_captured', count);
+          } catch { /* never block chat */ }
+        }
         this.daemon.broadcast({
           type: 'conversation:complete',
           data: { conversationId: id },
@@ -409,6 +427,9 @@ export class ConversationManager {
       },
       (err) => {
         this._getStreamingProcesses().delete(id);
+        if (tcAgentId && tc) {
+          try { tc.onAgentCrash(tcAgentId, err); } catch { /* never block chat */ }
+        }
         this.daemon.broadcast({
           type: 'conversation:error',
           data: { conversationId: id, error: err.message },
@@ -430,6 +451,9 @@ export class ConversationManager {
     const prompt = this._buildHistoryPrompt(history, message);
     const headlessCmd = provider.buildHeadlessCommand(prompt, modelId);
     if (!headlessCmd) {
+      if (tcAgentId && tc) {
+        try { tc.onAgentCrash(tcAgentId, new Error('No API key for chat')); } catch { /* never block chat */ }
+      }
       this.daemon.broadcast({
         type: 'conversation:error',
         data: { conversationId: id, error: `${providerName} requires an API key for chat` },
@@ -450,6 +474,9 @@ export class ConversationManager {
 
     proc.on('error', (err) => {
       this._getStreamingProcesses().delete(id);
+      if (tcAgentId && tc) {
+        try { tc.onAgentCrash(tcAgentId, err); } catch { /* never block chat */ }
+      }
       this.daemon.broadcast({
         type: 'conversation:error',
         data: { conversationId: id, error: err.message },
@@ -460,6 +487,14 @@ export class ConversationManager {
       proc.stdin.write(stdinData);
       proc.stdin.end();
     }
+
+    const emitChunk = (text) => {
+      if (tcAgentId) tcResponseText += text;
+      this.daemon.broadcast({
+        type: 'conversation:chunk',
+        data: { conversationId: id, text },
+      });
+    };
 
     proc.stdout.on('data', (data) => {
       const text = data.toString();
@@ -473,64 +508,51 @@ export class ConversationManager {
           if (json.type === 'assistant' && json.message?.content) {
             for (const block of json.message.content) {
               if (block.type === 'text' && block.text) {
-                this.daemon.broadcast({
-                  type: 'conversation:chunk',
-                  data: { conversationId: id, text: block.text },
-                });
+                emitChunk(block.text);
               }
             }
             continue;
           }
           if (json.type === 'content_block_delta' && json.delta?.text) {
-            this.daemon.broadcast({
-              type: 'conversation:chunk',
-              data: { conversationId: id, text: json.delta.text },
-            });
+            emitChunk(json.delta.text);
             continue;
           }
           if (json.type === 'result' && json.result) continue;
           if (json.type === 'token' && json.text != null) {
-            this.daemon.broadcast({
-              type: 'conversation:chunk',
-              data: { conversationId: id, text: json.text },
-            });
+            emitChunk(json.text);
             continue;
           }
           if ((json.type === 'done' || json.type === 'complete' || json.type === 'result') && json.text) {
-            this.daemon.broadcast({
-              type: 'conversation:chunk',
-              data: { conversationId: id, text: json.text },
-            });
+            emitChunk(json.text);
             continue;
           }
           if (json.content?.[0]?.text) {
-            this.daemon.broadcast({
-              type: 'conversation:chunk',
-              data: { conversationId: id, text: json.content[0].text },
-            });
+            emitChunk(json.content[0].text);
             continue;
           }
         } catch { /* not JSON */ }
 
         if (!trimmed.startsWith('{')) {
-          this.daemon.broadcast({
-            type: 'conversation:chunk',
-            data: { conversationId: id, text: trimmed },
-          });
+          emitChunk(trimmed);
         }
       }
     });
 
-    proc.on('error', (err) => {
-      this._getStreamingProcesses().delete(id);
-      this.daemon.broadcast({
-        type: 'conversation:error',
-        data: { conversationId: id, error: err.message },
-      });
-    });
-
     proc.on('exit', (code) => {
       this._getStreamingProcesses().delete(id);
+      if (tcAgentId && tc) {
+        try {
+          tc.onParsedOutput(tcAgentId, { type: 'activity', subtype: 'assistant', data: tcResponseText });
+          tc.onParsedOutput(tcAgentId, { type: 'result', data: tcResponseText });
+          if (code === 0 || code === null) {
+            tc.onAgentComplete(tcAgentId, { status: 'SUCCESS' });
+          } else {
+            tc.onAgentCrash(tcAgentId, new Error(`Exit code ${code}`));
+          }
+          const count = (this.daemon.state.get('training_sessions_captured') || 0) + 1;
+          this.daemon.state.set('training_sessions_captured', count);
+        } catch { /* never block chat */ }
+      }
       this.daemon.broadcast({
         type: 'conversation:complete',
         data: { conversationId: id, exitCode: code },

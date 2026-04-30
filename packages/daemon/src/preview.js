@@ -131,7 +131,13 @@ export class PreviewService {
           result = await this._launchStatic(teamId, baseDir, preview);
         }
       } else {
-        result = await this._launchStatic(teamId, baseDir, preview);
+        const distDir = resolve(baseDir, 'dist');
+        const openFile = (preview.openPath || 'index.html').replace(/^\/+/, '');
+        if (existsSync(resolve(distDir, openFile))) {
+          result = await this._launchStatic(teamId, distDir, { ...preview, openPath: openFile });
+        } else {
+          result = await this._launchStatic(teamId, baseDir, preview);
+        }
       }
     } else if (preview.kind === 'dev-server') {
       if (this._needsPreBuild(baseDir)) {
@@ -250,14 +256,31 @@ export class PreviewService {
   _runBuild(teamId, baseDir) {
     const pkgPath = resolve(baseDir, 'package.json');
     if (!existsSync(pkgPath)) return { failed: true, reason: 'no package.json for build' };
+    let pkg;
     try {
-      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+      pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
       if (!pkg.scripts?.build) return { failed: true, reason: 'no build script' };
     } catch { return { failed: true, reason: 'malformed package.json' }; }
+
+    const isVite = ['vite.config.js', 'vite.config.ts', 'vite.config.mjs']
+      .some((f) => existsSync(resolve(baseDir, f)));
+
+    let command = 'npm run build';
+    const buildScript = (pkg.scripts.build || '').trim();
+
+    if (isVite && /^(tsc\s*&&\s*)?vite\s+build\s*$/.test(buildScript)) {
+      command = `npm run build -- --base=./`;
+    }
+
+    const env = { ...process.env };
+    if (isVite && command === 'npm run build') {
+      env.VITE_BASE = './';
+    }
+
     try {
-      console.log(`[Groove:Preview] Running npm run build in ${baseDir}`);
-      this.daemon.audit?.log('preview.build', { teamId, baseDir });
-      execSync('npm run build', { cwd: baseDir, timeout: 120_000, stdio: 'pipe' });
+      console.log(`[Groove:Preview] Running ${command} in ${baseDir}`);
+      this.daemon.audit?.log('preview.build', { teamId, baseDir, command });
+      execSync(command, { cwd: baseDir, timeout: 120_000, stdio: 'pipe', env });
       return null;
     } catch (err) {
       return { failed: true, reason: `build failed: ${err.message?.slice(0, 300)}` };

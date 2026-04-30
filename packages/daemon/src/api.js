@@ -3916,8 +3916,14 @@ Keep responses concise. Help them think, don't lecture them about the system the
     // JS imports: from '/' and import('/')
     out = out.replace(/(from\s+(["']))\/(?!\/|api\/preview\/)/g, `$1${proxyBase}/`);
     out = out.replace(/(import\s*\(\s*(["']))\/(?!\/|api\/preview\/)/g, `$1${proxyBase}/`);
+    // JS bare import: import '/path'
+    out = out.replace(/(import\s+(["']))\/(?!\/|api\/preview\/)/g, `$1${proxyBase}/`);
     // CSS url()
     out = out.replace(/(url\s*\(\s*(["']?))\/(?!\/|api\/preview\/)/g, `$1${proxyBase}/`);
+    // CSS @import '/path'
+    out = out.replace(/(@import\s+(["']))\/(?!\/|api\/preview\/)/g, `$1${proxyBase}/`);
+    // Vite base assignments: globalThis.__vite_base = "/" or window.__vite_base = "/"
+    out = out.replace(/((?:globalThis|window)\.__vite_base\s*=\s*(["']))\/(?=["'])/g, `$1${proxyBase}/`);
     return out;
   }
 

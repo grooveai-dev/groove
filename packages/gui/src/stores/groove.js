@@ -48,6 +48,13 @@ export const useGrooveStore = create((set, get) => ({
   // ── Providers ────────────────────────────────────────────
   _providerRefreshTick: 0,
 
+  // ── Local Models (Ollama) ─────────────────────────────────
+  ollamaStatus: { installed: false, serverRunning: false, hardware: null },
+  ollamaInstalledModels: [],
+  ollamaRunningModels: [],
+  ollamaCatalog: [],
+  ollamaPullProgress: {},
+
   // ── Federation ────────────────────────────────────────────
   federation: {
     peers: [],
@@ -570,6 +577,34 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'agent:message_queued':
           get().addChatMessage(msg.agentId, 'system', 'Agent is working — message will be delivered when it finishes.');
+          break;
+
+        case 'ollama:pull:progress':
+          set({ ollamaPullProgress: { ...get().ollamaPullProgress, [msg.model]: { status: 'pulling', progress: msg.progress } } });
+          break;
+
+        case 'ollama:pull:complete': {
+          const pullProg = { ...get().ollamaPullProgress };
+          delete pullProg[msg.model];
+          set({ ollamaPullProgress: pullProg });
+          get().fetchOllamaStatus();
+          break;
+        }
+
+        case 'ollama:pull:error': {
+          const pullProg2 = { ...get().ollamaPullProgress };
+          delete pullProg2[msg.model];
+          set({ ollamaPullProgress: pullProg2 });
+          get().addToast('error', `Model pull failed: ${msg.error}`);
+          break;
+        }
+
+        case 'ollama:model:loaded':
+          get().fetchOllamaStatus();
+          break;
+
+        case 'ollama:model:unloaded':
+          get().fetchOllamaStatus();
           break;
 
         case 'rotation:start':
@@ -2058,6 +2093,140 @@ export const useGrooveStore = create((set, get) => ({
 
   async fetchProviders() {
     return api.get('/providers');
+  },
+
+  // ── Local Models (Ollama) ─────────────────────────────────
+
+  async fetchOllamaStatus() {
+    try {
+      const check = await api.post('/providers/ollama/check');
+      const updates = {
+        ollamaStatus: { installed: check.installed, serverRunning: check.serverRunning, hardware: check.hardware },
+      };
+      if (check.installed) {
+        try {
+          const models = await api.get('/providers/ollama/models');
+          updates.ollamaInstalledModels = models.installed || [];
+          updates.ollamaCatalog = models.catalog || [];
+        } catch {}
+      }
+      if (check.serverRunning) {
+        try {
+          const running = await api.get('/providers/ollama/running');
+          updates.ollamaRunningModels = running.models || [];
+        } catch {
+          updates.ollamaRunningModels = [];
+        }
+      } else {
+        updates.ollamaRunningModels = [];
+      }
+      set(updates);
+      return updates.ollamaStatus;
+    } catch {
+      return get().ollamaStatus;
+    }
+  },
+
+  async startOllamaServer() {
+    try {
+      const result = await api.post('/providers/ollama/serve');
+      if (result.ok) {
+        get().addToast('success', 'Ollama server started');
+        await new Promise((r) => setTimeout(r, 2000));
+        await get().fetchOllamaStatus();
+      }
+      return result;
+    } catch (err) {
+      get().addToast('error', 'Could not start server', err.message);
+      throw err;
+    }
+  },
+
+  async stopOllamaServer() {
+    try {
+      const result = await api.post('/providers/ollama/stop');
+      if (result.ok) {
+        get().addToast('info', 'Ollama server stopped');
+        set((s) => ({
+          ollamaStatus: { ...s.ollamaStatus, serverRunning: false },
+          ollamaRunningModels: [],
+        }));
+      }
+      return result;
+    } catch (err) {
+      get().addToast('error', 'Stop failed', err.message);
+      throw err;
+    }
+  },
+
+  async restartOllamaServer() {
+    try {
+      const result = await api.post('/providers/ollama/restart');
+      if (result.ok) {
+        get().addToast('success', 'Ollama server restarted');
+        await new Promise((r) => setTimeout(r, 2000));
+        await get().fetchOllamaStatus();
+      }
+      return result;
+    } catch (err) {
+      get().addToast('error', 'Restart failed', err.message);
+      throw err;
+    }
+  },
+
+  async pullOllamaModel(modelId) {
+    try {
+      set((s) => ({ ollamaPullProgress: { ...s.ollamaPullProgress, [modelId]: { status: 'pulling', progress: '' } } }));
+      await api.post('/providers/ollama/pull', { model: modelId });
+      set((s) => {
+        const progress = { ...s.ollamaPullProgress };
+        delete progress[modelId];
+        return { ollamaPullProgress: progress };
+      });
+      get().addToast('success', `${modelId} ready to use`);
+      get().fetchOllamaStatus();
+    } catch (err) {
+      set((s) => {
+        const progress = { ...s.ollamaPullProgress };
+        delete progress[modelId];
+        return { ollamaPullProgress: progress };
+      });
+      get().addToast('error', `Pull failed: ${err.message}`);
+    }
+  },
+
+  async deleteOllamaModel(modelId) {
+    try {
+      await api.delete(`/providers/ollama/models/${encodeURIComponent(modelId)}`);
+      set((s) => ({ ollamaInstalledModels: s.ollamaInstalledModels.filter((m) => m.id !== modelId) }));
+      get().addToast('success', `Removed ${modelId}`);
+    } catch (err) {
+      get().addToast('error', `Delete failed: ${err.message}`);
+    }
+  },
+
+  async loadOllamaModel(modelId) {
+    try {
+      await api.post('/providers/ollama/load', { model: modelId });
+      get().addToast('success', `${modelId} loaded into memory`);
+      get().fetchOllamaStatus();
+    } catch (err) {
+      get().addToast('error', `Could not load model: ${err.message}`);
+    }
+  },
+
+  async unloadOllamaModel(modelId) {
+    try {
+      await api.post('/providers/ollama/unload', { model: modelId });
+      set((s) => ({ ollamaRunningModels: s.ollamaRunningModels.filter((m) => m.name !== modelId) }));
+      get().addToast('info', `${modelId} unloaded`);
+    } catch (err) {
+      get().addToast('error', `Unload failed: ${err.message}`);
+    }
+  },
+
+  spawnFromModel(modelId) {
+    get().openDetail({ type: 'spawn', presetProvider: 'ollama', presetModel: modelId });
   },
 
   // ── Onboarding ────────────────────────────────────────────

@@ -59,27 +59,13 @@ export class LocalProvider extends Provider {
 
   // Only return models that are actually installed and ready to use
   static get models() {
-    const installed = [];
+    if (!LocalProvider._hasOllama()) return [];
 
-    // Ollama installed models
-    if (LocalProvider._hasOllama()) {
-      try {
-        const ollamaModels = OllamaProvider.getInstalledModels();
-        for (const m of ollamaModels) {
-          installed.push({
-            id: m.id, name: m.name || m.id,
-            tier: m.tier || 'medium', category: m.category || 'general',
-          });
-        }
-      } catch { /* Ollama not running */ }
-    }
-
-    // If nothing installed, show a hint instead of a blank list
-    if (installed.length === 0) {
-      return [{ id: '_none', name: 'No models installed — pull one with: ollama pull qwen2.5-coder:7b', tier: 'medium', disabled: true }];
-    }
-
-    return installed;
+    const ollamaModels = OllamaProvider.getInstalledModels();
+    return ollamaModels.map((m) => ({
+      id: m.id, name: m.name || m.id,
+      tier: m.tier || 'medium', category: m.category || 'general',
+    }));
   }
 
   // Full catalog for the Models browser (includes uninstalled)
@@ -121,6 +107,19 @@ export class LocalProvider extends Provider {
 
   static getInstalledModels() {
     return OllamaProvider.getInstalledModels();
+  }
+
+  static async ensureServerRunning() {
+    if (!LocalProvider._hasOllama()) {
+      throw new Error('Ollama binary not found. Install with: ' + OllamaProvider.installCommand().command);
+    }
+    if (await OllamaProvider.isServerRunning()) return true;
+    OllamaProvider.startServer();
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      if (await OllamaProvider.isServerRunning()) return true;
+    }
+    throw new Error('Ollama server failed to start within 10s');
   }
 
   /**

@@ -6,6 +6,8 @@ import { createWriteStream, mkdirSync, chmodSync, existsSync, readFileSync, writ
 import { resolve, dirname, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
 import { getProvider, getInstalledProviders, resolveProviderCommand } from './providers/index.js';
+import { LocalProvider } from './providers/local.js';
+import { OllamaProvider } from './providers/ollama.js';
 import { AgentLoop } from './agent-loop.js';
 import { validateAgentConfig } from './validate.js';
 
@@ -733,6 +735,25 @@ export class ProcessManager {
       throw new Error(
         `${provider.constructor.displayName} is not installed. Run: ${provider.constructor.installCommand()}`
       );
+    }
+
+    // Pre-flight for local model providers: ensure Ollama server is running and model is installed
+    if (providerName === 'local' || providerName === 'ollama') {
+      try {
+        await LocalProvider.ensureServerRunning();
+      } catch (err) {
+        const agent = registry.add({ ...config, provider: providerName, status: 'error' });
+        registry.update(agent.id, { status: 'error', error: 'Ollama server failed to start' });
+        this.daemon.broadcast({ type: 'model:error', agentId: agent.id, error: err.message });
+        throw new Error('Ollama server failed to start: ' + err.message);
+      }
+      if (config.model && config.model !== 'auto') {
+        const installed = OllamaProvider.getInstalledModels();
+        const modelInstalled = installed.some((m) => m.id === config.model || config.model.startsWith(m.id.split(':')[0]));
+        if (!modelInstalled) {
+          throw new Error(`Model '${config.model}' is not installed. Pull it first with: ollama pull ${config.model}`);
+        }
+      }
     }
 
     // Validate explicit model against provider's supported models

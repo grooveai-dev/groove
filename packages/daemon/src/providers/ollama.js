@@ -1,8 +1,7 @@
 // GROOVE — Ollama Provider (Local Models)
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { execSync } from 'child_process';
-import { execFile } from 'child_process';
+import { execSync, execFile, execFileSync } from 'child_process';
 import os from 'os';
 import { Provider } from './base.js';
 
@@ -246,9 +245,73 @@ export class OllamaProvider extends Provider {
     });
   }
 
+  static getRunningModels() {
+    try {
+      const output = execSync('ollama ps', { encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] });
+      const lines = output.split('\n').slice(1).filter(Boolean);
+      return lines.map((line) => {
+        const parts = line.split(/\s+/);
+        return {
+          id: parts[0] || '',
+          name: parts[0] || '',
+          size: parts[1] || '',
+          vram: parts[2] || '',
+          processor: parts[3] || '',
+          until: parts.slice(4).join(' ') || '',
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  static async loadModel(modelId) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+    try {
+      const res = await fetch('http://localhost:11434/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: modelId, prompt: '', keep_alive: '10m' }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Ollama API ${res.status}: ${text.slice(0, 200)}`);
+      }
+      return { loaded: true, model: modelId };
+    } catch (err) {
+      clearTimeout(timeout);
+      throw err;
+    }
+  }
+
+  static async unloadModel(modelId) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const res = await fetch('http://localhost:11434/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: modelId, prompt: '', keep_alive: 0 }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Ollama API ${res.status}: ${text.slice(0, 200)}`);
+      }
+      return { unloaded: true, model: modelId };
+    } catch (err) {
+      clearTimeout(timeout);
+      throw err;
+    }
+  }
+
   static deleteModel(modelId) {
     try {
-      execSync(`ollama rm ${modelId}`, { encoding: 'utf8', timeout: 30000 });
+      execFileSync('ollama', ['rm', modelId], { encoding: 'utf8', timeout: 30000 });
       return true;
     } catch {
       return false;

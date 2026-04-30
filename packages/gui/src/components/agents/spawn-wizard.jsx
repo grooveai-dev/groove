@@ -83,7 +83,10 @@ export function SpawnWizard() {
   const [recommendations, setRecommendations] = useState([]);
   const [preflightDialog, setPreflightDialog] = useState(null);
   const [claudeAuth, setClaudeAuth] = useState(null);
+  const [ollamaInstalled, setOllamaInstalled] = useState([]);
+  const [ollamaServerRunning, setOllamaServerRunning] = useState(false);
   const federation = useGrooveStore((s) => s.federation);
+  const ollamaRunningModels = useGrooveStore((s) => s.ollamaRunningModels);
 
   const selectedRole = role || customRole;
   const selectedProvider = providers.find((p) => p.id === provider);
@@ -92,11 +95,14 @@ export function SpawnWizard() {
 
   useEffect(() => {
     if (open) {
+      const _presetProvider = detailPanel?.presetProvider || '';
+      const _presetModel = detailPanel?.presetModel || '';
+
       fetchProviders().then((data) => {
         const list = Array.isArray(data) ? data : data.providers || [];
         setProviders(list);
         const installed = list.filter((p) => p.authType === 'api-key' ? (p.installed && p.hasKey) : p.installed);
-        if (installed.length > 0 && !provider) {
+        if (installed.length > 0 && !_presetProvider) {
           const priority = ['claude-code', 'gemini', 'codex', 'ollama'];
           const best = priority.find((pid) => installed.some((p) => p.id === pid)) || installed[0].id;
           setProvider(best);
@@ -114,7 +120,9 @@ export function SpawnWizard() {
       api.get('/personalities').then((data) => {
         setPersonalities(Array.isArray(data) ? data : data.personalities || []);
       }).catch(() => {});
-      setRole(''); setCustomRole(''); setName(''); setProvider(''); setModel(''); setPrompt('');
+      setRole(''); setCustomRole(''); setName('');
+      setProvider(_presetProvider); setModel(_presetModel);
+      setPrompt('');
       setSelectedSkills([]);
       setSelectedIntegrations([]);
       setIntegrationApproval('manual');
@@ -147,6 +155,16 @@ export function SpawnWizard() {
     api.get('/providers/claude-code/auth').then((data) => {
       setClaudeAuth(data);
     }).catch(() => setClaudeAuth(null));
+  }, [open, provider]);
+
+  useEffect(() => {
+    if (!open || provider !== 'ollama') { setOllamaInstalled([]); return; }
+    api.get('/providers/ollama/models').then((data) => {
+      setOllamaInstalled(data.installed || []);
+    }).catch(() => setOllamaInstalled([]));
+    api.post('/providers/ollama/check').then((data) => {
+      setOllamaServerRunning(data.serverRunning);
+    }).catch(() => setOllamaServerRunning(false));
   }, [open, provider]);
 
   async function runSpawn() {
@@ -396,9 +414,32 @@ export function SpawnWizard() {
                         className="w-full h-8 px-3 pr-8 text-sm rounded-md bg-surface-1 border border-border text-text-0 font-sans appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-40"
                       >
                         <option value="">Auto</option>
-                        {availableModels.map((m) => (
-                          <option key={m.id} value={m.id}>{m.name}</option>
-                        ))}
+                        {provider === 'ollama' && ollamaInstalled.length > 0 ? (
+                          <>
+                            <optgroup label="Installed Models">
+                              {ollamaInstalled.map((m) => {
+                                const isRunning = ollamaRunningModels.some((r) => r.name === m.id);
+                                return (
+                                  <option key={m.id} value={m.id}>
+                                    {m.name || m.id} ({m.size}){isRunning ? ' ● Running' : ''}
+                                  </option>
+                                );
+                              })}
+                            </optgroup>
+                            <optgroup label="Catalog">
+                              {availableModels
+                                .filter((m) => !ollamaInstalled.some((i) => i.id === m.id))
+                                .map((m) => (
+                                  <option key={m.id} value={m.id}>{m.name} (not installed)</option>
+                                ))
+                              }
+                            </optgroup>
+                          </>
+                        ) : (
+                          availableModels.map((m) => (
+                            <option key={m.id} value={m.id}>{m.name}</option>
+                          ))
+                        )}
                       </select>
                       <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none" />
                     </div>
@@ -406,7 +447,7 @@ export function SpawnWizard() {
                 </div>
 
                 {provider && selectedProvider && (
-                  <div className="text-2xs text-text-3 font-sans flex items-center gap-2">
+                  <div className="text-2xs text-text-3 font-sans flex items-center gap-2 flex-wrap">
                     {selectedProvider.authType === 'local' ? (
                       <Badge variant="success">Local</Badge>
                     ) : selectedProvider.authType === 'subscription' ? (
@@ -415,6 +456,25 @@ export function SpawnWizard() {
                       <Badge variant="success">API key set</Badge>
                     ) : (
                       <Badge variant="warning">No API key — set with: groove set-key {provider} YOUR_KEY</Badge>
+                    )}
+                  </div>
+                )}
+
+                {/* Ollama model status */}
+                {provider === 'ollama' && model && (
+                  <div className="flex items-center gap-2 flex-wrap text-2xs font-sans">
+                    {ollamaRunningModels.some((r) => r.name === model) ? (
+                      <Badge variant="success" className="text-2xs gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-success" />
+                        Ready — running in memory
+                      </Badge>
+                    ) : ollamaInstalled.some((m) => m.id === model) ? (
+                      <Badge variant="subtle" className="text-2xs">Will auto-start when agent spawns</Badge>
+                    ) : (
+                      <Badge variant="warning" className="text-2xs">Not installed — will pull first</Badge>
+                    )}
+                    {!ollamaServerRunning && (
+                      <span className="text-warning">Server not running — will auto-start</span>
                     )}
                   </div>
                 )}

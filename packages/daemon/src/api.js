@@ -493,6 +493,8 @@ export function createApi(app, daemon) {
 
   // --- Ollama ---
 
+  const isValidModelId = (id) => typeof id === 'string' && id.length > 0 && id.length < 200 && /^[a-zA-Z0-9._:/-]+$/.test(id);
+
   app.get('/api/providers/ollama/hardware', (req, res) => {
     res.json(OllamaProvider.getSystemHardware());
   });
@@ -507,6 +509,7 @@ export function createApi(app, daemon) {
   app.post('/api/providers/ollama/pull', async (req, res) => {
     const { model } = req.body;
     if (!model) return res.status(400).json({ error: 'model is required' });
+    if (!isValidModelId(model)) return res.status(400).json({ error: 'Invalid model ID' });
     if (!OllamaProvider.isInstalled()) {
       const install = OllamaProvider.installCommand();
       return res.status(400).json({ error: `Ollama is not installed. Install with: ${install.command}` });
@@ -541,6 +544,7 @@ export function createApi(app, daemon) {
   });
 
   app.delete('/api/providers/ollama/models/:model', (req, res) => {
+    if (!isValidModelId(req.params.model)) return res.status(400).json({ error: 'Invalid model ID' });
     if (!OllamaProvider.isInstalled()) return res.status(400).json({ error: 'Ollama is not installed' });
     const success = OllamaProvider.deleteModel(req.params.model);
     if (success) {
@@ -601,6 +605,65 @@ export function createApi(app, daemon) {
       res.json({ ok: nowRunning, method: result.method });
     } else {
       res.status(500).json({ error: 'Could not restart server' });
+    }
+  });
+
+  app.get('/api/providers/ollama/running', async (req, res) => {
+    if (!OllamaProvider.isInstalled()) return res.json({ models: [] });
+    const serverRunning = await OllamaProvider.isServerRunning();
+    if (!serverRunning) return res.json({ models: [] });
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const apiRes = await fetch('http://localhost:11434/api/ps', { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!apiRes.ok) return res.json({ models: [] });
+      const data = await apiRes.json();
+      const models = (data.models || []).map((m) => ({
+        name: m.name || m.model || '',
+        size: m.size || 0,
+        vram: m.size_vram ?? m.size ?? 0,
+        expires: m.expires_at || null,
+      }));
+      res.json({ models });
+    } catch {
+      res.json({ models: OllamaProvider.getRunningModels() });
+    }
+  });
+
+  app.post('/api/providers/ollama/load', async (req, res) => {
+    const { model } = req.body;
+    if (!model) return res.status(400).json({ error: 'model is required' });
+    if (!isValidModelId(model)) return res.status(400).json({ error: 'Invalid model ID' });
+    if (!OllamaProvider.isInstalled()) return res.status(400).json({ error: 'Ollama is not installed' });
+    const serverRunning = await OllamaProvider.isServerRunning();
+    if (!serverRunning) return res.status(400).json({ error: 'Ollama server is not running' });
+    try {
+      await OllamaProvider.loadModel(model);
+      daemon.broadcast({ type: 'ollama:model:loaded', model });
+      daemon.audit.log('ollama.model.load', { model });
+      res.json({ ok: true, model });
+    } catch (err) {
+      daemon.broadcast({ type: 'model:error', model, error: err.message });
+      res.status(500).json({ error: `Failed to load model: ${err.message}` });
+    }
+  });
+
+  app.post('/api/providers/ollama/unload', async (req, res) => {
+    const { model } = req.body;
+    if (!model) return res.status(400).json({ error: 'model is required' });
+    if (!isValidModelId(model)) return res.status(400).json({ error: 'Invalid model ID' });
+    if (!OllamaProvider.isInstalled()) return res.status(400).json({ error: 'Ollama is not installed' });
+    const serverRunning = await OllamaProvider.isServerRunning();
+    if (!serverRunning) return res.status(400).json({ error: 'Ollama server is not running' });
+    try {
+      await OllamaProvider.unloadModel(model);
+      daemon.broadcast({ type: 'ollama:model:unloaded', model });
+      daemon.audit.log('ollama.model.unload', { model });
+      res.json({ ok: true });
+    } catch (err) {
+      daemon.broadcast({ type: 'model:error', model, error: err.message });
+      res.status(500).json({ error: `Failed to unload model: ${err.message}` });
     }
   });
 
@@ -965,6 +1028,59 @@ export function createApi(app, daemon) {
       .sort((a, b) => b.ramGb - a.ramGb) // Biggest that fits = best quality
       .slice(0, 12);
     res.json({ models: recommended, hardware });
+  });
+
+  // --- Ollama Running Models ---
+
+  app.get('/api/models/status', async (req, res) => {
+    const installed = OllamaProvider.isInstalled();
+    if (!installed) return res.json({ serverRunning: false, runningModels: [], installedModels: [], hardware: OllamaProvider.getSystemHardware() });
+    const serverRunning = await OllamaProvider.isServerRunning();
+    const runningModels = serverRunning ? OllamaProvider.getRunningModels() : [];
+    const installedModels = OllamaProvider.getInstalledModels();
+    const hardware = OllamaProvider.getSystemHardware();
+    res.json({ serverRunning, runningModels, installedModels, hardware });
+  });
+
+  app.get('/api/models/running', async (req, res) => {
+    if (!OllamaProvider.isInstalled()) return res.json([]);
+    const serverRunning = await OllamaProvider.isServerRunning();
+    if (!serverRunning) return res.json([]);
+    res.json(OllamaProvider.getRunningModels());
+  });
+
+  app.post('/api/models/:id/load', async (req, res) => {
+    const modelId = req.params.id;
+    if (!modelId) return res.status(400).json({ error: 'model id is required' });
+    if (!OllamaProvider.isInstalled()) return res.status(400).json({ error: 'Ollama is not installed' });
+    const serverRunning = await OllamaProvider.isServerRunning();
+    if (!serverRunning) return res.status(400).json({ error: 'Ollama server is not running' });
+    try {
+      const result = await OllamaProvider.loadModel(modelId);
+      daemon.broadcast({ type: 'model:loaded', model: modelId });
+      daemon.audit.log('model.load', { model: modelId });
+      res.json(result);
+    } catch (err) {
+      daemon.broadcast({ type: 'model:error', model: modelId, error: err.message });
+      res.status(500).json({ error: `Failed to load model: ${err.message}` });
+    }
+  });
+
+  app.post('/api/models/:id/unload', async (req, res) => {
+    const modelId = req.params.id;
+    if (!modelId) return res.status(400).json({ error: 'model id is required' });
+    if (!OllamaProvider.isInstalled()) return res.status(400).json({ error: 'Ollama is not installed' });
+    const serverRunning = await OllamaProvider.isServerRunning();
+    if (!serverRunning) return res.status(400).json({ error: 'Ollama server is not running' });
+    try {
+      const result = await OllamaProvider.unloadModel(modelId);
+      daemon.broadcast({ type: 'model:unloaded', model: modelId });
+      daemon.audit.log('model.unload', { model: modelId });
+      res.json(result);
+    } catch (err) {
+      daemon.broadcast({ type: 'model:error', model: modelId, error: err.message });
+      res.status(500).json({ error: `Failed to unload model: ${err.message}` });
+    }
   });
 
   app.get('/api/llama/status', (req, res) => {

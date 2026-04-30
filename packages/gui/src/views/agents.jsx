@@ -53,14 +53,12 @@ function savePositions(teamId, positions) {
   try { localStorage.setItem(key, s); } catch { /* still over — give up silently */ }
 }
 
-function loadRoleLayout(teamId) {
-  if (!teamId) return {};
-  try { return JSON.parse(localStorage.getItem(`groove:roleLayout:${teamId}`) || '{}'); } catch { return {}; }
+function loadRoleLayout() {
+  try { return JSON.parse(localStorage.getItem('groove:roleLayout') || '{}'); } catch { return {}; }
 }
 
-function saveRoleLayout(teamId, layout) {
-  if (!teamId) return;
-  const key = `groove:roleLayout:${teamId}`;
+function saveRoleLayout(layout) {
+  const key = 'groove:roleLayout';
   const s = JSON.stringify(layout);
   try { localStorage.setItem(key, s); return; } catch { /* quota */ }
   if (!freeLocalStorage()) return;
@@ -367,7 +365,7 @@ function AgentTreeInner() {
   // Build nodes — positions are stable, data updates flow to node components
   const targetNodes = useMemo(() => {
     const saved = positionsRef.current;
-    const roleLayout = loadRoleLayout(activeTeamId);
+    const roleLayout = loadRoleLayout();
     const runningCount = agents.filter((a) => a.status === 'running').length;
 
     const rootPosition = saved[ROOT_ID] || roleLayout[ROOT_ID] || { x: 0, y: 0 };
@@ -1589,7 +1587,7 @@ export default function AgentsView() {
             const positions = loadPositions(activeTeamId);
             const layout = {};
             const roleCounts = new Map();
-            teamAgents.forEach((agent) => {
+            [...teamAgents].sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)).forEach((agent) => {
               const key = agent.name || agent.id;
               const pos = positions[key];
               if (!pos) return;
@@ -1600,13 +1598,13 @@ export default function AgentsView() {
               layout[roleKey] = pos;
             });
             if (positions[ROOT_ID]) layout[ROOT_ID] = positions[ROOT_ID];
-            saveRoleLayout(activeTeamId, layout);
+            saveRoleLayout(layout);
             addToast('success', 'Layout saved', 'Future spawns will use these positions');
           }}
           className="absolute bottom-4 left-28 z-40 flex items-center gap-1.5 h-8 px-4 rounded-md bg-accent/15 text-accent text-xs font-semibold font-sans hover:bg-accent/25 transition-colors cursor-pointer select-none shadow-lg shadow-black/10"
         >
           <LayoutGrid size={14} />
-          {Object.keys(loadRoleLayout(activeTeamId)).length > 0 ? 'Update Layout' : 'Save Layout'}
+          {Object.keys(loadRoleLayout()).length > 0 ? 'Update Layout' : 'Save Layout'}
         </button>
       )}
       {!isLoading && teamAgents.length > 0 && !workspaceMode && (

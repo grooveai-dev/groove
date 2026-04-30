@@ -10,7 +10,7 @@ import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Layers, Archive, Box, HardDrive } from 'lucide-react';
+import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Layers, Archive, Box, HardDrive, LayoutGrid } from 'lucide-react';
 import { PreviewWorkspace } from '../components/preview/preview-workspace';
 import { WorkspaceMode } from '../components/agents/workspace-mode';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../components/ui/context-menu';
@@ -48,6 +48,20 @@ function savePositions(teamId, positions) {
   if (!teamId) return;
   const key = `groove:nodePositions:${teamId}`;
   const s = JSON.stringify(positions);
+  try { localStorage.setItem(key, s); return; } catch { /* quota */ }
+  if (!freeLocalStorage()) return;
+  try { localStorage.setItem(key, s); } catch { /* still over — give up silently */ }
+}
+
+function loadRoleLayout(teamId) {
+  if (!teamId) return {};
+  try { return JSON.parse(localStorage.getItem(`groove:roleLayout:${teamId}`) || '{}'); } catch { return {}; }
+}
+
+function saveRoleLayout(teamId, layout) {
+  if (!teamId) return;
+  const key = `groove:roleLayout:${teamId}`;
+  const s = JSON.stringify(layout);
   try { localStorage.setItem(key, s); return; } catch { /* quota */ }
   if (!freeLocalStorage()) return;
   try { localStorage.setItem(key, s); } catch { /* still over — give up silently */ }
@@ -353,13 +367,15 @@ function AgentTreeInner() {
   // Build nodes — positions are stable, data updates flow to node components
   const targetNodes = useMemo(() => {
     const saved = positionsRef.current;
+    const roleLayout = loadRoleLayout(activeTeamId);
     const runningCount = agents.filter((a) => a.status === 'running').length;
 
+    const rootPosition = saved[ROOT_ID] || roleLayout[ROOT_ID] || { x: 0, y: 0 };
     const nodes = [
       {
         id: ROOT_ID,
         type: 'rootNode',
-        position: saved[ROOT_ID] || { x: 0, y: 0 },
+        position: rootPosition,
         data: { agentCount: agents.length, runningCount },
         draggable: true,
         selectable: false,
@@ -369,8 +385,7 @@ function AgentTreeInner() {
     const occupied = new Set();
     const posKey = (x, y) => `${Math.round(x / 100)},${Math.round(y / 100)}`;
 
-    const rootPos = saved[ROOT_ID] || { x: 0, y: 0 };
-    occupied.add(posKey(rootPos.x, rootPos.y));
+    occupied.add(posKey(rootPosition.x, rootPosition.y));
 
     const pending = [];
     agents.forEach((agent) => {
@@ -388,12 +403,23 @@ function AgentTreeInner() {
       }
     });
 
+    const roleCounts = new Map();
     pending.forEach((agent, idx) => {
-      const row = Math.floor(idx / MAX_PER_ROW);
-      const col = idx % MAX_PER_ROW;
-      const totalInRow = Math.min(pending.length - row * MAX_PER_ROW, MAX_PER_ROW);
-      const offsetX = -((totalInRow - 1) * NODE_X_GAP) / 2;
-      let pos = { x: offsetX + col * NODE_X_GAP, y: NODE_Y_GAP + row * NODE_Y_GAP };
+      const role = agent.role || 'agent';
+      const count = roleCounts.get(role) || 0;
+      roleCounts.set(role, count + 1);
+      const roleKey = count === 0 ? role : `${role}-${count}`;
+
+      let pos;
+      if (roleLayout[roleKey]) {
+        pos = { ...roleLayout[roleKey] };
+      } else {
+        const row = Math.floor(idx / MAX_PER_ROW);
+        const col = idx % MAX_PER_ROW;
+        const totalInRow = Math.min(pending.length - row * MAX_PER_ROW, MAX_PER_ROW);
+        const offsetX = -((totalInRow - 1) * NODE_X_GAP) / 2;
+        pos = { x: offsetX + col * NODE_X_GAP, y: NODE_Y_GAP + row * NODE_Y_GAP };
+      }
 
       while (occupied.has(posKey(pos.x, pos.y))) {
         pos = { x: pos.x, y: pos.y + NODE_Y_GAP };
@@ -1466,6 +1492,7 @@ export default function AgentsView() {
   const selectAgent = useGrooveStore((s) => s.selectAgent);
   const recommendedTeam = useGrooveStore((s) => s.recommendedTeam);
   const checkRecommendedTeam = useGrooveStore((s) => s.checkRecommendedTeam);
+  const addToast = useGrooveStore((s) => s.addToast);
   const showPreviewInAgents = useGrooveStore((s) => s.showPreviewInAgents);
   const previewState = useGrooveStore((s) => s.previewState);
   const togglePreviewInAgents = useGrooveStore((s) => s.togglePreviewInAgents);
@@ -1554,6 +1581,32 @@ export default function AgentsView() {
         >
           <Plus size={14} />
           Spawn
+        </button>
+      )}
+      {!isLoading && teamAgents.length > 0 && !workspaceMode && (
+        <button
+          onClick={() => {
+            const positions = loadPositions(activeTeamId);
+            const layout = {};
+            const roleCounts = new Map();
+            teamAgents.forEach((agent) => {
+              const key = agent.name || agent.id;
+              const pos = positions[key];
+              if (!pos) return;
+              const role = agent.role || 'agent';
+              const count = roleCounts.get(role) || 0;
+              roleCounts.set(role, count + 1);
+              const roleKey = count === 0 ? role : `${role}-${count}`;
+              layout[roleKey] = pos;
+            });
+            if (positions[ROOT_ID]) layout[ROOT_ID] = positions[ROOT_ID];
+            saveRoleLayout(activeTeamId, layout);
+            addToast('success', 'Layout saved', 'Future spawns will use these positions');
+          }}
+          className="absolute bottom-4 left-28 z-40 flex items-center gap-1.5 h-8 px-4 rounded-md bg-accent/15 text-accent text-xs font-semibold font-sans hover:bg-accent/25 transition-colors cursor-pointer select-none shadow-lg shadow-black/10"
+        >
+          <LayoutGrid size={14} />
+          {Object.keys(loadRoleLayout(activeTeamId)).length > 0 ? 'Update Layout' : 'Save Layout'}
         </button>
       )}
       {!isLoading && teamAgents.length > 0 && !workspaceMode && (

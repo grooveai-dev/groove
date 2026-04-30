@@ -1278,8 +1278,8 @@ export const useGrooveStore = create((set, get) => ({
   async promoteTeam(id) {
     try {
       const team = await api.post(`/teams/${encodeURIComponent(id)}/promote`);
-      set((s) => ({ teams: s.teams.map((t) => (t.id === id ? { ...t, ...team } : t)) }));
-      get().addToast('success', 'Team promoted to production');
+      set((s) => ({ teams: s.teams.filter((t) => t.id !== id) }));
+      get().addToast('success', 'Team promoted — files moved to project directory');
       return team;
     } catch (err) {
       get().addToast('error', 'Failed to promote team', err.message);

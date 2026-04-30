@@ -376,9 +376,6 @@ export class Teams {
 
     rmSync(oldDir, { recursive: true, force: true });
 
-    team.workingDir = targetDir;
-    team.mode = 'production';
-
     const agents = this.daemon.registry.getAll().filter((a) => a.teamId === id);
     for (const agent of agents) {
       if (agent.workingDir === oldDir) {
@@ -386,9 +383,18 @@ export class Teams {
       }
     }
 
+    const wasDefault = team.isDefault;
+    this.teams.delete(id);
     this._save();
-    this.daemon.broadcast({ type: 'team:updated', team });
-    return team;
+    this.daemon.broadcast({ type: 'team:deleted', teamId: id });
+
+    if (wasDefault) {
+      this._ensureDefault();
+      const fresh = this.getDefault();
+      if (fresh) this.daemon.broadcast({ type: 'team:created', team: fresh });
+    }
+
+    return { promoted: true, destination: targetDir };
   }
 
   // Backward compat stubs

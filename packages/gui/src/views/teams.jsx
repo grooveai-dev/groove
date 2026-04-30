@@ -198,6 +198,7 @@ function TeamsDashboard() {
         onOpenChange={(open) => !open && setArchiveConfirm(null)}
         onArchive={archiveTeam}
         onDeletePermanently={deleteTeamPermanently}
+        onPromote={promoteTeam}
         mode={archiveConfirm?.mode || 'sandbox'}
       />
 
@@ -244,7 +245,7 @@ function PromoteConfirmDialog({ team, open, onOpenChange, onPromote }) {
           </p>
           <p className="text-xs text-text-3 font-sans">
             This will move files from the team directory into the project directory.
-            The team will switch to production mode and files will persist when the team is removed.
+            The team will be removed but your work stays in the project permanently.
           </p>
         </div>
         <div className="px-5 py-3 border-t border-border-subtle flex justify-end gap-2">

@@ -1149,9 +1149,9 @@ export function createApi(app, daemon) {
 
   app.post('/api/teams/:id/promote', (req, res) => {
     try {
-      const team = daemon.teams.promote(req.params.id);
-      daemon.audit.log('team.promote', { id: team.id, name: team.name });
-      res.json(team);
+      const result = daemon.teams.promote(req.params.id);
+      daemon.audit.log('team.promote', { id: req.params.id, destination: result.destination });
+      res.json(result);
     } catch (err) {
       res.status(400).json({ error: err.message });
     }

@@ -2,20 +2,33 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent } from '../ui/dialog';
 import { Button } from '../ui/button';
-import { Archive, Trash2, AlertTriangle } from 'lucide-react';
+import { Archive, Trash2, AlertTriangle, ArrowUpCircle } from 'lucide-react';
 
-export function TeamRemovalDialog({ team, open, onOpenChange, onArchive, onDeletePermanently, mode }) {
+export function TeamRemovalDialog({ team, open, onOpenChange, onArchive, onDeletePermanently, onPromote, mode }) {
   const [confirmName, setConfirmName] = useState('');
   const [showConfirmInput, setShowConfirmInput] = useState(false);
+  const [promoting, setPromoting] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setConfirmName('');
       setShowConfirmInput(false);
+      setPromoting(false);
     }
   }, [open]);
 
   const nameMatch = confirmName === (team?.name || '');
+  const isSandbox = mode !== 'production';
+
+  async function handlePromote() {
+    setPromoting(true);
+    try {
+      await onPromote(team?.id);
+      onOpenChange(false);
+    } catch {
+      setPromoting(false);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -24,6 +37,27 @@ export function TeamRemovalDialog({ team, open, onOpenChange, onArchive, onDelet
           <p className="text-sm text-text-1 font-sans">
             What would you like to do with this team and its files?
           </p>
+
+          {/* Promote option — sandbox teams only */}
+          {isSandbox && onPromote && (
+            <button
+              onClick={handlePromote}
+              disabled={promoting}
+              className="w-full flex items-start gap-3 p-3.5 rounded-lg border border-success/20 bg-success/5 hover:border-success/40 hover:bg-success/10 transition-all cursor-pointer text-left group disabled:opacity-50"
+            >
+              <div className="w-8 h-8 rounded-md bg-success/10 flex items-center justify-center flex-shrink-0 group-hover:bg-success/20 transition-colors">
+                <ArrowUpCircle size={16} className="text-success" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-text-0 font-sans">
+                  {promoting ? 'Promoting...' : 'Promote to Project'}
+                </div>
+                <p className="text-xs text-text-3 font-sans mt-0.5">
+                  Move files to the project directory. The team will be removed but your work stays in the project permanently.
+                </p>
+              </div>
+            </button>
+          )}
 
           {/* Archive option */}
           <button

@@ -247,8 +247,19 @@ class WorkspaceManager {
         .catch(() => {});
     });
 
+    let loadRetries = 0;
+    const MAX_LOAD_RETRIES = 3;
+    const RETRY_DELAY_MS = 2000;
+
     win.webContents.on('did-fail-load', (_e, code, desc) => {
       if (code === -3) return;
+      if (loadRetries < MAX_LOAD_RETRIES) {
+        loadRetries++;
+        setTimeout(() => {
+          if (!win.isDestroyed()) win.loadURL(remoteUrl);
+        }, RETRY_DELAY_MS);
+        return;
+      }
       const failHtml = 'data:text/html,' + encodeURIComponent([
         '<!DOCTYPE html><html><head><style>',
         '*{margin:0;padding:0;box-sizing:border-box}',
@@ -265,6 +276,8 @@ class WorkspaceManager {
       ].join(''));
       win.webContents.loadURL(failHtml);
     });
+
+    win.webContents.on('did-finish-load', () => { loadRetries = 0; });
 
     // Clear HTTP cache before loading remote GUI — prevents stale bundles after npm update
     win.webContents.session.clearCache().then(() => {

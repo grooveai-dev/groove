@@ -347,8 +347,36 @@ export class TunnelManager {
       failCount: 0,
     });
 
-    const skipUpgrade = testResult.daemonRunning && testResult.remoteVersion && testResult.remoteVersion === getLocalVersion();
-    if (!preConnectHandled && !skipUpgrade) {
+    // Verify the remote daemon is actually reachable through the tunnel.
+    // The cached test result (line 270) assumes daemonRunning=true based on
+    // lastConnected, but the daemon may have stopped since then.
+    let remoteAlive = false;
+    try {
+      const probe = await fetch(`http://localhost:${localPort}/api/health`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      remoteAlive = probe.ok;
+    } catch { /* not reachable */ }
+
+    if (!remoteAlive && config.autoStart) {
+      this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'starting' } });
+      await this.autoStart(id);
+      // Give the daemon a moment to accept connections through the tunnel
+      for (let i = 0; i < 5; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        try {
+          const retry = await fetch(`http://localhost:${localPort}/api/health`, {
+            signal: AbortSignal.timeout(3000),
+          });
+          if (retry.ok) { remoteAlive = true; break; }
+        } catch { /* retry */ }
+      }
+    } else if (!remoteAlive && !config.autoStart) {
+      this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'waiting', message: 'Remote daemon not running. Start it manually or enable auto-start.' } });
+    }
+
+    const skipUpgrade = remoteAlive && testResult.remoteVersion && testResult.remoteVersion === getLocalVersion();
+    if (remoteAlive && !preConnectHandled && !skipUpgrade) {
       await this._checkAndUpgradeRunning(id, config, localPort);
     }
 

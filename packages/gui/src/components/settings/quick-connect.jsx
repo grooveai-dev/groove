@@ -15,6 +15,7 @@ export function QuickConnect() {
   const toggle = useGrooveStore((s) => s.toggleQuickConnect);
   const savedTunnels = useGrooveStore((s) => s.savedTunnels);
   const addToast = useGrooveStore((s) => s.addToast);
+  const tunnelStep = useGrooveStore((s) => s.tunnelConnectStep);
   const [connectingId, setConnectingId] = useState(null);
   const [showWizard, setShowWizard] = useState(false);
   const wizardTunnelId = useRef(null);
@@ -167,7 +168,14 @@ export function QuickConnect() {
                       </button>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         {connectingId === server.id ? (
-                          <Loader2 size={14} className="text-text-3 animate-spin" />
+                          <div className="flex items-center gap-1.5">
+                            <Loader2 size={14} className="text-text-3 animate-spin" />
+                            {tunnelStep?.id === server.id && tunnelStep?.step && (
+                              <span className="text-2xs text-text-3 font-sans">
+                                {{ testing: 'Testing…', installing: 'Installing…', upgrading: 'Updating remote…', starting: 'Starting daemon…', connecting: 'Connecting…', forwarding: 'Establishing tunnel…' }[tunnelStep.step] || tunnelStep.step}
+                              </span>
+                            )}
+                          </div>
                         ) : server.active ? (
                           <>
                             <button

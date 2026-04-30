@@ -216,14 +216,14 @@ export class TunnelManager {
       const result = execFileSync('ssh', [
         ...keyArgs,
         '-p', String(config.port || 22),
-        '-o', 'ConnectTimeout=10',
+        '-o', 'ConnectTimeout=5',
         '-o', 'StrictHostKeyChecking=accept-new',
         '-o', 'BatchMode=yes',
         target,
         sshCmd(`S=$(curl -sf http://localhost:${REMOTE_PORT}/api/status 2>/dev/null); if [ -n "$S" ]; then echo "__GROOVE_RUNNING__$S__GROOVE_END__"; else which groove >/dev/null 2>&1 && echo __GROOVE_VER__$(groove --version 2>/dev/null || echo unknown)__GROOVE_STOPPED__ || echo __GROOVE_NOT_INSTALLED__; fi`),
       ], {
         encoding: 'utf8',
-        timeout: 20000,
+        timeout: 15000,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
@@ -267,6 +267,8 @@ export class TunnelManager {
     let testResult;
     if (opts.skipTest && opts.testResult) {
       testResult = opts.testResult;
+    } else if (config.lastConnected && opts.skipTest !== false) {
+      testResult = { reachable: true, daemonRunning: true, grooveInstalled: true, remoteVersion: null };
     } else {
       testResult = await this.test(id);
     }
@@ -345,19 +347,20 @@ export class TunnelManager {
       failCount: 0,
     });
 
-    if (!preConnectHandled) {
+    const skipUpgrade = testResult.daemonRunning && testResult.remoteVersion && testResult.remoteVersion === getLocalVersion();
+    if (!preConnectHandled && !skipUpgrade) {
       await this._checkAndUpgradeRunning(id, config, localPort);
     }
 
-    try {
-      const statusResp = await fetch(`http://localhost:${localPort}/api/status`, { signal: AbortSignal.timeout(5000) });
-      if (statusResp.ok) {
-        const statusData = await statusResp.json();
-        const remoteVer = statusData.version;
-        const localVer = getLocalVersion();
-        this.daemon.broadcast({ type: 'tunnel.version-info', data: { id, localVersion: localVer, remoteVersion: remoteVer, match: remoteVer === localVer } });
-      }
-    } catch { /* non-fatal */ }
+    const remoteVer = testResult?.remoteVersion || null;
+    const localVer = getLocalVersion();
+    if (remoteVer) {
+      this.daemon.broadcast({ type: 'tunnel.version-info', data: { id, localVersion: localVer, remoteVersion: remoteVer, match: remoteVer === localVer } });
+    }
+
+    config.lastConnected = new Date().toISOString();
+    this.saved.set(id, config);
+    this._save();
 
     const url = `http://localhost:${localPort}?instance=${encodeURIComponent(config.name)}`;
 

@@ -174,6 +174,7 @@ export const useGrooveStore = create((set, get) => ({
 
   // ── Tunnels ────────────────────────────────────────────────
   savedTunnels: [],
+  tunnelConnectStep: null,
 
   // ── GitHub Repo Import ────────────────────────────────────
   importedRepos: [],
@@ -715,7 +716,13 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'tunnel.connected':
           get().fetchTunnels();
+          set({ tunnelConnectStep: null });
           break;
+
+        case 'tunnel.status': {
+          set({ tunnelConnectStep: msg.data });
+          break;
+        }
 
         case 'tunnel.disconnected':
           get().fetchTunnels();
@@ -1940,16 +1947,20 @@ export const useGrooveStore = create((set, get) => ({
   },
 
   async connectTunnel(id) {
-    const result = await api.post(`/tunnels/${encodeURIComponent(id)}/connect`);
-    get().fetchTunnels();
-    if (result.localPort && result.name) {
-      if (window.groove?.remote?.openWindow) {
-        window.groove.remote.openWindow(result.localPort, result.name);
-      } else {
-        window.open(`http://localhost:${result.localPort}?instance=${encodeURIComponent(result.name)}`, '_blank');
+    try {
+      const result = await api.post(`/tunnels/${encodeURIComponent(id)}/connect`);
+      get().fetchTunnels();
+      if (result.localPort && result.name) {
+        if (window.groove?.remote?.openWindow) {
+          window.groove.remote.openWindow(result.localPort, result.name);
+        } else {
+          window.open(`http://localhost:${result.localPort}?instance=${encodeURIComponent(result.name)}`, '_blank');
+        }
       }
+      return result;
+    } finally {
+      set({ tunnelConnectStep: null });
     }
-    return result;
   },
 
   async upgradeTunnel(id) {

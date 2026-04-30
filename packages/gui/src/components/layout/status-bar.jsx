@@ -90,16 +90,14 @@ export function StatusBar({
                 </button>
               </div>
             ))}
-            {savedTunnels.length > 0 && (
-              <button
-                onClick={() => useGrooveStore.getState().toggleQuickConnect()}
-                className="flex items-center gap-1.5 text-text-4 hover:text-text-1 cursor-pointer transition-colors"
-                title="Quick Connect to remote server"
-              >
-                <Plug size={10} />
-                <span>Connect</span>
-              </button>
-            )}
+            <button
+              onClick={() => useGrooveStore.getState().toggleQuickConnect()}
+              className="flex items-center gap-1.5 text-text-4 hover:text-text-1 cursor-pointer transition-colors"
+              title="Quick Connect to remote server"
+            >
+              <Plug size={10} />
+              <span>Connect</span>
+            </button>
           </>
         )}
         {connected && (

@@ -295,8 +295,12 @@ export class Daemon {
       if (this._registryIoTimer) return;
       this._registryIoTimer = setTimeout(() => {
         this._registryIoTimer = null;
-        this.introducer.writeRegistryFile(this.projectDir);
-        this.introducer.injectGrooveSection(this.projectDir);
+        try {
+          this.introducer.writeRegistryFile(this.projectDir);
+          this.introducer.injectGrooveSection(this.projectDir);
+        } catch (err) {
+          console.error('[registry-io] Failed to update registry files:', err.message);
+        }
       }, 2000);
     };
 
@@ -765,8 +769,12 @@ export class Daemon {
       // 5. Refresh journalist context — regenerate project map and registry
       //    so stale agent references don't persist in GROOVE_PROJECT_MAP.md
       if (cleaned > 0) {
-        this.introducer.writeRegistryFile(this.projectDir);
-        this.introducer.injectGrooveSection(this.projectDir);
+        try {
+          this.introducer.writeRegistryFile(this.projectDir);
+          this.introducer.injectGrooveSection(this.projectDir);
+        } catch (err) {
+          console.error('[registry-io] Failed to refresh registry during GC:', err.message);
+        }
         // Clear journalist's stale in-memory state for removed agents
         this.journalist.lastLogSizes = Object.fromEntries(
           Object.entries(this.journalist.lastLogSizes).filter(([id]) => {

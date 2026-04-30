@@ -449,7 +449,11 @@ export class TunnelManager {
         this.daemon.broadcast({ type: 'tunnel.version-mismatch', data: { id, localVersion: localVer, remoteVersion: installedVer, message: 'Pinned version not available on npm, installed latest' } });
       }
 
-      const restartCmd = `kill $(lsof -t -i:${REMOTE_PORT}) 2>/dev/null || true; sleep 2; GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:${REMOTE_PORT}/api/status`;
+      const cdPrefix = config.projectDir ? `cd "${config.projectDir}" && ` : '';
+      const setProjectDir = config.projectDir
+        ? `curl -sf -X POST -H 'Content-Type: application/json' --data '{"path":"${config.projectDir}"}' http://localhost:${REMOTE_PORT}/api/project-dir > /dev/null 2>&1 || true; `
+        : '';
+      const restartCmd = `kill $(lsof -t -i:${REMOTE_PORT}) 2>/dev/null || true; sleep 2; ${cdPrefix}GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:${REMOTE_PORT}/api/status && (${setProjectDir}true) || true`;
       const restartResult = execFileSync('ssh', [...sshBase, sshCmd(restartCmd)], {
         encoding: 'utf8',
         timeout: 60000,

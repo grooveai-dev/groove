@@ -477,7 +477,7 @@ export class Introducer {
     if (agents.length === 0) {
       const regPath = resolve(projectDir, 'AGENTS_REGISTRY.md');
       if (existsSync(regPath)) {
-        writeFileSync(regPath, '');
+        try { writeFileSync(regPath, ''); } catch { /* dir may be gone */ }
       }
       return;
     }
@@ -494,6 +494,7 @@ export class Introducer {
     for (const [teamId, teamAgents] of teamGroups) {
       const team = teamId !== '_default' ? this.daemon.teams?.get(teamId) : null;
       const dir = team?.workingDir || projectDir;
+      if (!existsSync(dir)) continue;
 
       const lines = [
         `# AGENTS REGISTRY`,
@@ -518,9 +519,7 @@ export class Introducer {
   }
 
   injectGrooveSection(projectDir) {
-    // Inject a GROOVE section into the project's CLAUDE.md.
-    // This section is delimited by markers so we can update it without
-    // clobbering the user's content.
+    if (!existsSync(projectDir)) return;
     const claudeMdPath = resolve(projectDir, 'CLAUDE.md');
     const agents = this.daemon.registry.getAll();
 

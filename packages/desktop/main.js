@@ -586,11 +586,19 @@ class WorkspaceManager {
       }
 
       emitProgress('Starting remote daemon...');
-      try { sshExec('groove start -d', 30000); } catch {}
+      try {
+        const startResult = sshExec('GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:31415/api/health > /dev/null && echo __DAEMON_OK__ || echo __DAEMON_FAIL__', 60000);
+        if (startResult.includes('__DAEMON_OK__')) {
+          healthy = true;
+        }
+      } catch {}
 
-      await new Promise(r => setTimeout(r, 5000));
-      healthy = await checkHealth(3);
+      if (!healthy) {
+        healthy = await checkHealth(5, 3000);
+      }
     }
+
+    let didUpgrade = false;
 
     if (!healthy) {
       proc.kill();
@@ -604,6 +612,7 @@ class WorkspaceManager {
         const status = await resp.json();
         const remoteVersion = status.version;
         if (remoteVersion && remoteVersion !== localVersion) {
+          didUpgrade = true;
           emitProgress(`Updating remote Groove ${remoteVersion} → ${localVersion}...`);
           const upgradeCmd = (pkg) => conn.user === 'root' ? `npm i -g ${pkg}` : `sudo npm i -g ${pkg}`;
           try {
@@ -618,18 +627,30 @@ class WorkspaceManager {
               emitProgress('Remote upgrade failed — running older version');
             }
           }
-          try { sshExec('groove stop', 10000); } catch {}
-          await new Promise(r => setTimeout(r, 1000));
-          try { sshExec('groove start -d', 30000); } catch {}
-          await new Promise(r => setTimeout(r, 5000));
-          if (!await checkHealth(3)) {
+          healthy = false;
+          try { sshExec('kill $(lsof -t -i:31415) 2>/dev/null || true', 10000); } catch {}
+          await new Promise(r => setTimeout(r, 2000));
+          try {
+            const restartResult = sshExec('GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:31415/api/health > /dev/null && echo __DAEMON_OK__ || echo __DAEMON_FAIL__', 60000);
+            if (restartResult.includes('__DAEMON_OK__')) {
+              healthy = true;
+            }
+          } catch {}
+          if (!healthy && !await checkHealth(5, 3000)) {
             emitProgress('Remote updated but daemon slow to restart — retrying...');
             await new Promise(r => setTimeout(r, 5000));
-            await checkHealth(3);
+            if (!await checkHealth(3, 3000)) {
+              emitProgress('Remote daemon slow to start, attempting connection...');
+            }
           }
         }
       }
     } catch {}
+
+    if (didUpgrade && !await checkHealth(5, 3000)) {
+      proc.kill();
+      throw new Error('Remote daemon started but not responding on port 31415 — check firewall settings or try again');
+    }
 
     this._sshTunnels = this._sshTunnels || new Map();
     this._sshTunnels.set(id, proc);

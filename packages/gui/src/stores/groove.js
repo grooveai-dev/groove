@@ -3285,6 +3285,11 @@ export const useGrooveStore = create((set, get) => ({
       const data = await api.get('/lab/runtimes');
       set({ labRuntimes: data });
       persistJSON('groove:labRuntimes', data);
+      if (data.length > 0 && !get().labActiveRuntime) {
+        get().setLabActiveRuntime(data[0].id);
+      } else if (get().labActiveRuntime) {
+        get().fetchLabModels(get().labActiveRuntime);
+      }
     } catch { /* backend may not have lab endpoints yet */ }
   },
 
@@ -3292,8 +3297,9 @@ export const useGrooveStore = create((set, get) => ({
     try {
       const created = await api.post('/lab/runtimes', runtime);
       const runtimes = [...get().labRuntimes, created];
-      set({ labRuntimes: runtimes, labActiveRuntime: created.id });
+      set({ labRuntimes: runtimes });
       persistJSON('groove:labRuntimes', runtimes);
+      get().setLabActiveRuntime(created.id);
       get().addToast('success', `Runtime "${runtime.name}" added`);
       return created;
     } catch (err) {
@@ -3321,7 +3327,11 @@ export const useGrooveStore = create((set, get) => ({
       const runtimes = get().labRuntimes.map((r) =>
         r.id === id ? { ...r, status: result.ok ? 'connected' : 'error', latency: result.latency } : r,
       );
-      set({ labRuntimes: runtimes });
+      const updates = { labRuntimes: runtimes };
+      if (result.ok && result.models && get().labActiveRuntime === id) {
+        updates.labModels = result.models;
+      }
+      set(updates);
       persistJSON('groove:labRuntimes', runtimes);
       return result;
     } catch (err) {

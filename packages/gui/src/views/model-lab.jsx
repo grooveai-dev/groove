@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useGrooveStore } from '../stores/groove';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Select, SelectTrigger, SelectContent, SelectItem } from '../components/ui/select';
@@ -69,6 +69,9 @@ function ResizeHandle({ onMouseDown, direction = 'vertical' }) {
 }
 
 export default function ModelLabView() {
+  const fetchLabRuntimes = useGrooveStore((s) => s.fetchLabRuntimes);
+  useEffect(() => { fetchLabRuntimes(); }, [fetchLabRuntimes]);
+
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [leftWidth, setLeftWidth] = useState(LEFT_DEFAULT);

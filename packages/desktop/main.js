@@ -11,6 +11,21 @@ import { execSync } from 'child_process';
 import { createServer, createConnection } from 'net';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Fedora/RHEL disable unprivileged user namespaces by default (sysctl or SELinux),
+// which makes Electron's Chromium sandbox fail silently inside AppImages.
+// Fall back to --no-sandbox at the Chromium level; sandbox:true stays in webPreferences for intent.
+if (process.platform === 'linux') {
+  let nsDisabled = false;
+  try {
+    const val = readFileSync('/proc/sys/kernel/unprivileged_userns_clone', 'utf8').trim();
+    nsDisabled = val === '0';
+  } catch {}
+  if (nsDisabled || process.env.APPIMAGE) {
+    app.commandLine.appendSwitch('no-sandbox');
+  }
+}
+
 const IS_MAC = process.platform === 'darwin';
 const STUDIO_URL = 'https://studio.groovedev.ai';
 const SUBSCRIPTION_POLL_MS = 5 * 60 * 1000;

@@ -221,7 +221,7 @@ function InstalledModelCard({ model, catalogEntry, isRunning, onStart, onSpawn, 
 }
 
 // ---- Downloaded GGUF Model Card ----
-function GgufModelCard({ model, onDelete, deleting }) {
+function GgufModelCard({ model, onImport, onDelete, importing, deleting }) {
   return (
     <div className="flex items-center gap-3 px-4 py-3 bg-surface-1 border border-border-subtle rounded-lg">
       <Box size={18} className="flex-shrink-0 text-purple-400" />
@@ -244,10 +244,19 @@ function GgufModelCard({ model, onDelete, deleting }) {
       </div>
       <div className="flex items-center gap-1">
         <button
+          onClick={() => onImport(model.id)}
+          disabled={importing === model.id || deleting === model.id}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-2xs font-sans font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer disabled:opacity-40"
+          title="Import into Ollama so you can use it to spawn agents"
+        >
+          {importing === model.id ? <Loader2 size={11} className="animate-spin" /> : <Rocket size={11} />}
+          {importing === model.id ? 'Importing...' : 'Import to Ollama'}
+        </button>
+        <button
           onClick={() => onDelete(model.id)}
-          disabled={deleting === model.id}
+          disabled={deleting === model.id || importing === model.id}
           className="p-1.5 rounded-md text-text-4 hover:text-red-400 hover:bg-red-400/10 transition-colors cursor-pointer disabled:opacity-40"
-          title="Delete model"
+          title="Delete model file"
         >
           {deleting === model.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
         </button>
@@ -453,6 +462,7 @@ export default function ModelsView() {
   const [deletingModel, setDeletingModel] = useState(null);
   const [ggufModels, setGgufModels] = useState([]);
   const [deletingGguf, setDeletingGguf] = useState(null);
+  const [importingGguf, setImportingGguf] = useState(null);
   const toast = useToast();
 
   const ollamaStatus = useGrooveStore((s) => s.ollamaStatus);
@@ -565,6 +575,19 @@ export default function ModelsView() {
     setDeletingModel(modelId);
     try { await deleteModel(modelId); } catch {}
     setDeletingModel(null);
+  }
+
+  async function handleImportToOllama(modelId) {
+    setImportingGguf(modelId);
+    try {
+      const result = await api.post(`/models/${encodeURIComponent(modelId)}/import-to-ollama`);
+      toast.success(`Imported as "${result.ollamaName}" — now available in Ollama`);
+      fetchOllamaStatus();
+      setGgufModels((prev) => prev.filter((m) => m.id !== modelId));
+    } catch (err) {
+      toast.error(`Import failed: ${err.message}`);
+    }
+    setImportingGguf(null);
   }
 
   async function handleDeleteGguf(modelId) {
@@ -726,7 +749,9 @@ export default function ModelsView() {
                   <GgufModelCard
                     key={m.id}
                     model={m}
+                    onImport={handleImportToOllama}
                     onDelete={handleDeleteGguf}
+                    importing={importingGguf}
                     deleting={deletingGguf}
                   />
                 ))}

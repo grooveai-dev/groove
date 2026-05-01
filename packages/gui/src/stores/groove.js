@@ -607,6 +607,10 @@ export const useGrooveStore = create((set, get) => ({
           get().fetchOllamaStatus();
           break;
 
+        case 'ollama:model:imported':
+          get().fetchOllamaStatus();
+          break;
+
         case 'rotation:start':
           break;
 

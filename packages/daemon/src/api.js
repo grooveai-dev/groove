@@ -1012,6 +1012,29 @@ export function createApi(app, daemon) {
     }
   });
 
+  app.post('/api/models/:id/import-to-ollama', async (req, res) => {
+    const model = daemon.modelManager.getModel(req.params.id);
+    if (!model) return res.status(404).json({ error: 'Model not found' });
+    const ggufPath = daemon.modelManager.getModelPath(req.params.id);
+    if (!ggufPath) return res.status(404).json({ error: 'Model file not found on disk' });
+    if (!OllamaProvider.isInstalled()) return res.status(400).json({ error: 'Ollama is not installed' });
+
+    const ollamaName = (model.id || model.filename.replace('.gguf', '')).toLowerCase().replace(/[^a-z0-9._-]/g, '-');
+    const modelfilePath = resolve(ggufPath + '.Modelfile');
+    try {
+      writeFileSync(modelfilePath, `FROM ${ggufPath}\n`);
+      const { execFileSync } = await import('child_process');
+      execFileSync('ollama', ['create', ollamaName, '-f', modelfilePath], { timeout: 120000, stdio: ['pipe', 'pipe', 'pipe'] });
+      try { unlinkSync(modelfilePath); } catch {}
+      daemon.audit.log('model.import-ollama', { id: model.id, ollamaName });
+      daemon.broadcast({ type: 'ollama:model:imported', model: ollamaName });
+      res.json({ ok: true, ollamaName });
+    } catch (err) {
+      try { unlinkSync(modelfilePath); } catch {}
+      res.status(500).json({ error: `Import failed: ${err.message}` });
+    }
+  });
+
   app.get('/api/models/recommend', (req, res) => {
     const ramGb = parseInt(req.query.ram) || 16;
     const quant = daemon.modelManager.recommendQuantization('7B', ramGb);

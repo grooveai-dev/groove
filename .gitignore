@@ -13,10 +13,6 @@
 !favicon.png
 !groove-logo.png
 
-# CI / GitHub
-!.github/
-!.github/**
-
 # Source packages
 !packages/
 !packages/daemon/

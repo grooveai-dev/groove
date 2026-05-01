@@ -220,6 +220,42 @@ function InstalledModelCard({ model, catalogEntry, isRunning, onStart, onSpawn, 
   );
 }
 
+// ---- Downloaded GGUF Model Card ----
+function GgufModelCard({ model, onDelete, deleting }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 bg-surface-1 border border-border-subtle rounded-lg">
+      <Box size={18} className="flex-shrink-0 text-purple-400" />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-mono font-bold text-text-0 truncate">{model.id}</span>
+          {model.quantization && (
+            <Badge variant="subtle" className="text-2xs">{model.quantization}</Badge>
+          )}
+          {model.parameters && (
+            <span className="text-2xs font-semibold text-blue-400">{model.parameters}</span>
+          )}
+          <Badge variant="accent" className="text-2xs">GGUF</Badge>
+        </div>
+        <div className="text-2xs text-text-3 font-sans mt-0.5">
+          {model.sizeBytes ? formatBytes(model.sizeBytes) : '—'}
+          {model.repoId && <> &middot; {model.repoId}</>}
+          {model.contextWindow && <> &middot; {(model.contextWindow / 1024).toFixed(0)}K context</>}
+        </div>
+      </div>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onDelete(model.id)}
+          disabled={deleting === model.id}
+          className="p-1.5 rounded-md text-text-4 hover:text-red-400 hover:bg-red-400/10 transition-colors cursor-pointer disabled:opacity-40"
+          title="Delete model"
+        >
+          {deleting === model.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ---- Download Progress Bar ----
 function DownloadProgress({ download }) {
   const pct = Math.round((download.percent || 0) * 100);
@@ -415,6 +451,8 @@ export default function ModelsView() {
   const [loadingModel, setLoadingModel] = useState(null);
   const [unloadingModel, setUnloadingModel] = useState(null);
   const [deletingModel, setDeletingModel] = useState(null);
+  const [ggufModels, setGgufModels] = useState([]);
+  const [deletingGguf, setDeletingGguf] = useState(null);
   const toast = useToast();
 
   const ollamaStatus = useGrooveStore((s) => s.ollamaStatus);
@@ -441,10 +479,13 @@ export default function ModelsView() {
     return () => clearInterval(pollingRef.current);
   }, [fetchOllamaStatus]);
 
-  // Fetch recommended models
+  // Fetch recommended models and GGUF downloads
   useEffect(() => {
     api.get('/models/recommended').then((data) => {
       setRecommended(data.models || []);
+    }).catch(() => {});
+    api.get('/models/installed').then((data) => {
+      setGgufModels((data.models || []).filter((m) => m.exists));
     }).catch(() => {});
   }, []);
 
@@ -475,6 +516,9 @@ export default function ModelsView() {
         if (msg.type === 'model:download:complete') {
           setDownloads((prev) => prev.filter((d) => d.filename !== msg.data.filename));
           toast.success(`${msg.data.filename} downloaded`);
+          api.get('/models/installed').then((data) => {
+            setGgufModels((data.models || []).filter((m) => m.exists));
+          }).catch(() => {});
         }
         if (msg.type === 'model:download:error') {
           setDownloads((prev) => prev.filter((d) => d.filename !== msg.data.filename));
@@ -523,6 +567,18 @@ export default function ModelsView() {
     setDeletingModel(null);
   }
 
+  async function handleDeleteGguf(modelId) {
+    setDeletingGguf(modelId);
+    try {
+      await api.delete(`/models/${encodeURIComponent(modelId)}`);
+      setGgufModels((prev) => prev.filter((m) => m.id !== modelId));
+      toast.success(`Removed ${modelId}`);
+    } catch (err) {
+      toast.error(`Delete failed: ${err.message}`);
+    }
+    setDeletingGguf(null);
+  }
+
   async function handlePull(modelId) {
     pullModel(modelId);
   }
@@ -562,7 +618,7 @@ export default function ModelsView() {
         <div className="flex items-center justify-between">
           <h1 className="text-base font-bold font-sans text-text-0">Local Models</h1>
           <div className="flex items-center gap-2">
-            <Badge variant="subtle" className="text-2xs">{installedModels.length} installed</Badge>
+            <Badge variant="subtle" className="text-2xs">{installedModels.length + ggufModels.length} installed</Badge>
             {runningModels.length > 0 && (
               <Badge variant="success" className="text-2xs">{runningModels.length} running</Badge>
             )}
@@ -660,6 +716,23 @@ export default function ModelsView() {
               </div>
             )}
           </div>
+
+          {/* Downloaded GGUF Models Section */}
+          {ggufModels.length > 0 && (
+            <div>
+              <SectionHeader title="Downloaded Models (GGUF)" count={ggufModels.length} icon={Download} />
+              <div className="space-y-2">
+                {ggufModels.map((m) => (
+                  <GgufModelCard
+                    key={m.id}
+                    model={m}
+                    onDelete={handleDeleteGguf}
+                    deleting={deletingGguf}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Divider */}
           <div className="border-t border-border-subtle" />

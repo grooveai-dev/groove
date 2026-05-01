@@ -203,6 +203,23 @@ export const useGrooveStore = create((set, get) => ({
   workspaceReviewMode: false,
   workspaceReviewFiles: [],
 
+  // ── Model Lab ──────────────────────────────────────────────
+  labRuntimes: loadJSON('groove:labRuntimes', []),
+  labActiveRuntime: null,
+  labModels: [],
+  labActiveModel: null,
+  labPresets: loadJSON('groove:labPresets', []),
+  labActivePreset: null,
+  labSessions: [],
+  labActiveSession: null,
+  labMetrics: { ttft: null, tokensPerSec: null, tokensPerSecHistory: [], memory: null, totalTokens: 0, generationTime: null },
+  labParameters: loadJSON('groove:labParameters', {
+    temperature: 0.7, topP: 0.9, topK: 40, repeatPenalty: 1.1,
+    maxTokens: 2048, frequencyPenalty: 0, presencePenalty: 0,
+  }),
+  labSystemPrompt: localStorage.getItem('groove:labSystemPrompt') || '',
+  labStreaming: false,
+
   // ── Onboarding ────────────────────────────────────────────
   onboardingComplete: localStorage.getItem('groove:onboardingComplete') === 'true',
 
@@ -3248,6 +3265,302 @@ export const useGrooveStore = create((set, get) => ({
     try {
       return await api.get(`/network/traces/live?offset=${offset}`);
     } catch { return null; }
+  },
+
+  // ── Model Lab Actions ──────────────────────────────────────
+
+  setLabParameter(key, value) {
+    const params = { ...get().labParameters, [key]: value };
+    set({ labParameters: params });
+    persistJSON('groove:labParameters', params);
+  },
+
+  setLabSystemPrompt(text) {
+    set({ labSystemPrompt: text });
+    localStorage.setItem('groove:labSystemPrompt', text);
+  },
+
+  async fetchLabRuntimes() {
+    try {
+      const data = await api.get('/lab/runtimes');
+      set({ labRuntimes: data });
+      persistJSON('groove:labRuntimes', data);
+    } catch { /* backend may not have lab endpoints yet */ }
+  },
+
+  async addLabRuntime(runtime) {
+    try {
+      const created = await api.post('/lab/runtimes', runtime);
+      const runtimes = [...get().labRuntimes, created];
+      set({ labRuntimes: runtimes, labActiveRuntime: created.id });
+      persistJSON('groove:labRuntimes', runtimes);
+      get().addToast('success', `Runtime "${runtime.name}" added`);
+      return created;
+    } catch (err) {
+      get().addToast('error', 'Failed to add runtime', err.message);
+      throw err;
+    }
+  },
+
+  async removeLabRuntime(id) {
+    try {
+      await api.delete(`/lab/runtimes/${id}`);
+      const runtimes = get().labRuntimes.filter((r) => r.id !== id);
+      const active = get().labActiveRuntime === id ? null : get().labActiveRuntime;
+      set({ labRuntimes: runtimes, labActiveRuntime: active, labModels: active ? get().labModels : [] });
+      persistJSON('groove:labRuntimes', runtimes);
+      get().addToast('success', 'Runtime removed');
+    } catch (err) {
+      get().addToast('error', 'Failed to remove runtime', err.message);
+    }
+  },
+
+  async testLabRuntime(id) {
+    try {
+      const result = await api.post(`/lab/runtimes/${id}/test`);
+      const runtimes = get().labRuntimes.map((r) =>
+        r.id === id ? { ...r, status: result.ok ? 'connected' : 'error', latency: result.latency } : r,
+      );
+      set({ labRuntimes: runtimes });
+      persistJSON('groove:labRuntimes', runtimes);
+      return result;
+    } catch (err) {
+      const runtimes = get().labRuntimes.map((r) =>
+        r.id === id ? { ...r, status: 'error' } : r,
+      );
+      set({ labRuntimes: runtimes });
+      persistJSON('groove:labRuntimes', runtimes);
+      return { ok: false, error: err.message };
+    }
+  },
+
+  setLabActiveRuntime(id) {
+    set({ labActiveRuntime: id, labModels: [], labActiveModel: null });
+    if (id) get().fetchLabModels(id);
+  },
+
+  setLabActiveModel(model) {
+    set({ labActiveModel: model });
+  },
+
+  async fetchLabModels(runtimeId) {
+    try {
+      const data = await api.get(`/lab/runtimes/${runtimeId}/models`);
+      set({ labModels: data });
+    } catch { set({ labModels: [] }); }
+  },
+
+  newLabSession() {
+    const id = `lab-${Date.now()}`;
+    const session = { id, messages: [], createdAt: Date.now() };
+    set((s) => ({
+      labSessions: [session, ...s.labSessions],
+      labActiveSession: id,
+      labMetrics: { ttft: null, tokensPerSec: null, tokensPerSecHistory: [], memory: null, totalTokens: 0, generationTime: null },
+    }));
+    return id;
+  },
+
+  loadLabSession(id) {
+    set({ labActiveSession: id });
+  },
+
+  async sendLabMessage(text) {
+    const st = get();
+    if (st.labStreaming) return;
+    let sessionId = st.labActiveSession;
+    if (!sessionId) sessionId = get().newLabSession();
+
+    const userMsg = { role: 'user', content: text, timestamp: Date.now() };
+    set((s) => {
+      const sessions = s.labSessions.map((sess) =>
+        sess.id === sessionId ? { ...sess, messages: [...sess.messages, userMsg] } : sess,
+      );
+      return { labSessions: sessions, labStreaming: true };
+    });
+
+    const assistantMsg = { role: 'assistant', content: '', timestamp: Date.now(), metrics: null };
+    set((s) => {
+      const sessions = s.labSessions.map((sess) =>
+        sess.id === sessionId ? { ...sess, messages: [...sess.messages, assistantMsg] } : sess,
+      );
+      return { labSessions: sessions };
+    });
+
+    const startTime = performance.now();
+    let firstTokenTime = null;
+    let tokenCount = 0;
+
+    try {
+      const p = st.labParameters;
+      const parameters = {};
+      if (p.temperature !== undefined) parameters.temperature = p.temperature;
+      if (p.topP !== undefined) parameters.top_p = p.topP;
+      if (p.topK !== undefined) parameters.top_k = p.topK;
+      if (p.repeatPenalty !== undefined) parameters.repeat_penalty = p.repeatPenalty;
+      if (p.maxTokens !== undefined) parameters.max_tokens = p.maxTokens;
+      if (p.frequencyPenalty !== undefined) parameters.frequency_penalty = p.frequencyPenalty;
+      if (p.presencePenalty !== undefined) parameters.presence_penalty = p.presencePenalty;
+
+      const messages = [];
+      if (st.labSystemPrompt) messages.push({ role: 'system', content: st.labSystemPrompt });
+      const sessionMsgs = get().labSessions.find((s) => s.id === sessionId)?.messages || [];
+      for (const m of sessionMsgs) {
+        if (m.role === 'assistant' && !m.content) continue;
+        messages.push({ role: m.role, content: m.content });
+      }
+
+      const body = {
+        runtimeId: st.labActiveRuntime,
+        model: st.labActiveModel,
+        messages,
+        parameters,
+        sessionId,
+      };
+
+      const res = await fetch('/api/lab/inference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        let errMsg;
+        try { errMsg = (await res.json()).error || `HTTP ${res.status}`; } catch { errMsg = `HTTP ${res.status}`; }
+        throw new Error(errMsg);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullContent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6);
+          if (payload === '[DONE]') continue;
+          try {
+            const chunk = JSON.parse(payload);
+            if (chunk.type === 'token' && chunk.content) {
+              if (!firstTokenTime) firstTokenTime = performance.now();
+              tokenCount++;
+              fullContent += chunk.content;
+              set((s) => {
+                const sessions = s.labSessions.map((sess) => {
+                  if (sess.id !== sessionId) return sess;
+                  const msgs = [...sess.messages];
+                  msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: fullContent };
+                  return { ...sess, messages: msgs };
+                });
+                return { labSessions: sessions };
+              });
+            }
+            if (chunk.type === 'done' && chunk.metrics) {
+              const elapsed = performance.now() - startTime;
+              const ttft = firstTokenTime ? firstTokenTime - startTime : null;
+              const tps = tokenCount > 0 && elapsed > 0 ? (tokenCount / (elapsed / 1000)) : null;
+              const msgMetrics = { ttft, tokensPerSec: tps, tokens: tokenCount, generationTime: elapsed, ...chunk.metrics };
+
+              set((s) => {
+                const tpsHist = [...s.labMetrics.tokensPerSecHistory, tps].slice(-10);
+                const sessions = s.labSessions.map((sess) => {
+                  if (sess.id !== sessionId) return sess;
+                  const msgs = [...sess.messages];
+                  msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], metrics: msgMetrics };
+                  return { ...sess, messages: msgs };
+                });
+                return {
+                  labSessions: sessions,
+                  labMetrics: {
+                    ttft, tokensPerSec: tps, tokensPerSecHistory: tpsHist,
+                    memory: chunk.metrics.memoryUsage || s.labMetrics.memory,
+                    totalTokens: s.labMetrics.totalTokens + (chunk.metrics.totalTokens || tokenCount),
+                    generationTime: chunk.metrics.generationTime || elapsed,
+                  },
+                };
+              });
+            }
+            if (chunk.type === 'error') {
+              throw new Error(chunk.error || 'Inference error');
+            }
+          } catch (e) {
+            if (e.message && e.message !== 'Inference error' && !e.message.startsWith('HTTP ')) continue;
+            throw e;
+          }
+        }
+      }
+
+      // Final metrics if no done event came
+      if (!get().labSessions.find((s) => s.id === sessionId)?.messages.slice(-1)[0]?.metrics) {
+        const elapsed = performance.now() - startTime;
+        const ttft = firstTokenTime ? firstTokenTime - startTime : null;
+        const tps = tokenCount > 0 && elapsed > 0 ? (tokenCount / (elapsed / 1000)) : null;
+        set((s) => {
+          const tpsHist = [...s.labMetrics.tokensPerSecHistory, tps].slice(-10);
+          return {
+            labMetrics: { ...s.labMetrics, ttft, tokensPerSec: tps, tokensPerSecHistory: tpsHist, totalTokens: s.labMetrics.totalTokens + tokenCount, generationTime: elapsed },
+          };
+        });
+      }
+    } catch (err) {
+      set((s) => {
+        const sessions = s.labSessions.map((sess) => {
+          if (sess.id !== sessionId) return sess;
+          const msgs = [...sess.messages];
+          msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: `Error: ${err.message}`, error: true };
+          return { ...sess, messages: msgs };
+        });
+        return { labSessions: sessions };
+      });
+    } finally {
+      set({ labStreaming: false });
+    }
+  },
+
+  saveLabPreset(name) {
+    const st = get();
+    const preset = {
+      id: `preset-${Date.now()}`,
+      name,
+      parameters: { ...st.labParameters },
+      systemPrompt: st.labSystemPrompt,
+      runtimeId: st.labActiveRuntime,
+      model: st.labActiveModel,
+      createdAt: Date.now(),
+    };
+    const presets = [...st.labPresets.filter((p) => p.name !== name), preset];
+    set({ labPresets: presets, labActivePreset: preset.id });
+    persistJSON('groove:labPresets', presets);
+    get().addToast('success', `Preset "${name}" saved`);
+    return preset;
+  },
+
+  loadLabPreset(id) {
+    const preset = get().labPresets.find((p) => p.id === id);
+    if (!preset) return;
+    const updates = {
+      labParameters: { ...preset.parameters },
+      labSystemPrompt: preset.systemPrompt || '',
+      labActivePreset: id,
+    };
+    if (preset.model) updates.labActiveModel = preset.model;
+    set(updates);
+    persistJSON('groove:labParameters', preset.parameters);
+    if (preset.systemPrompt !== undefined) localStorage.setItem('groove:labSystemPrompt', preset.systemPrompt);
+  },
+
+  deleteLabPreset(id) {
+    const presets = get().labPresets.filter((p) => p.id !== id);
+    set({ labPresets: presets, labActivePreset: get().labActivePreset === id ? null : get().labActivePreset });
+    persistJSON('groove:labPresets', presets);
+    get().addToast('success', 'Preset deleted');
   },
 
   async renameFile(oldPath, newPath) {

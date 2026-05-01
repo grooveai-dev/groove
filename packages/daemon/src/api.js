@@ -16,7 +16,7 @@ import { OllamaProvider } from './providers/ollama.js';
 import { ClaudeCodeProvider } from './providers/claude-code.js';
 import { supportsSignalFlag, compareSemver, parseSemver } from './providers/groove-network.js';
 import { ConsentManager } from '../../../moe-training/client/index.js';
-import { validateAgentConfig, validateReasoningEffort, validateVerbosity, validateTeamMode } from './validate.js';
+import { validateAgentConfig, validateReasoningEffort, validateVerbosity, validateTeamMode, validateLabRuntimeConfig, validateLabInferenceParams, validateLabPresetConfig } from './validate.js';
 import { ROLE_INTEGRATIONS, wrapWithRoleReminder } from './process.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -6616,6 +6616,131 @@ Keep responses concise. Help them think, don't lecture them about the system the
         fail(err?.message || 'Update failed');
       }
     })();
+  });
+
+  // --- Model Lab ---
+
+  app.get('/api/lab/runtimes', async (req, res) => {
+    try {
+      const runtimes = daemon.modelLab.listRuntimes();
+      const results = await Promise.all(runtimes.map(async (rt) => {
+        const status = await daemon.modelLab.getRuntimeStatus(rt);
+        return { ...rt, ...status };
+      }));
+      res.json(results);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/lab/runtimes', async (req, res) => {
+    try {
+      const config = validateLabRuntimeConfig(req.body);
+      const runtime = await daemon.modelLab.addRuntime(config);
+      res.status(201).json(runtime);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/lab/runtimes/:id', (req, res) => {
+    const removed = daemon.modelLab.removeRuntime(req.params.id);
+    if (!removed) return res.status(404).json({ error: 'Runtime not found' });
+    res.json({ ok: true });
+  });
+
+  app.post('/api/lab/runtimes/:id/test', async (req, res) => {
+    try {
+      const result = await daemon.modelLab.testRuntime(req.params.id);
+      res.json(result);
+    } catch (err) {
+      const status = err.message === 'Runtime not found' ? 404 : 500;
+      res.status(status).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/lab/runtimes/:id/models', async (req, res) => {
+    try {
+      const models = await daemon.modelLab.discoverModels(req.params.id);
+      res.json(models);
+    } catch (err) {
+      const status = err.message === 'Runtime not found' ? 404 : 500;
+      res.status(status).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/lab/inference', async (req, res) => {
+    try {
+      const params = validateLabInferenceParams(req.body);
+
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders();
+
+      let closed = false;
+      req.on('close', () => { closed = true; });
+
+      const stream = daemon.modelLab.streamInference(params);
+      for await (const event of stream) {
+        if (closed) break;
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
+
+      if (!closed) {
+        res.write('data: [DONE]\n\n');
+        res.end();
+      }
+    } catch (err) {
+      if (!res.headersSent) {
+        res.status(400).json({ error: err.message });
+      } else {
+        res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+        res.end();
+      }
+    }
+  });
+
+  app.get('/api/lab/presets', (req, res) => {
+    res.json(daemon.modelLab.listPresets());
+  });
+
+  app.post('/api/lab/presets', (req, res) => {
+    try {
+      const config = validateLabPresetConfig(req.body);
+      const preset = daemon.modelLab.createPreset(config);
+      res.status(201).json(preset);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/lab/presets/:id', (req, res) => {
+    try {
+      const updates = validateLabPresetConfig({ ...req.body, name: req.body.name || 'temp' });
+      const preset = daemon.modelLab.updatePreset(req.params.id, updates);
+      if (!preset) return res.status(404).json({ error: 'Preset not found' });
+      res.json(preset);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/lab/presets/:id', (req, res) => {
+    const removed = daemon.modelLab.deletePreset(req.params.id);
+    if (!removed) return res.status(404).json({ error: 'Preset not found' });
+    res.json({ ok: true });
+  });
+
+  app.get('/api/lab/sessions', (req, res) => {
+    res.json(daemon.modelLab.listSessions());
+  });
+
+  app.get('/api/lab/sessions/:id', (req, res) => {
+    const session = daemon.modelLab.getSession(req.params.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    res.json(session);
   });
 
   // --- Wallet & earnings stubs (Base L2 — wired to real data post-mainnet) ---

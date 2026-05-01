@@ -39,6 +39,7 @@ import { GatewayManager } from './gateways/manager.js';
 import { McpManager } from './mcp-manager.js';
 import { TunnelManager } from './tunnel-manager.js';
 import { ModelManager } from './model-manager.js';
+import { ModelLab } from './model-lab.js';
 import { LlamaServerManager } from './llama-server.js';
 import { RepoImporter } from './repo-import.js';
 import { ConversationManager } from './conversations.js';
@@ -151,6 +152,7 @@ export class Daemon {
     this.mcpManager = new McpManager(this);
     this.tunnelManager = new TunnelManager(this);
     this.repoImporter = new RepoImporter(this);
+    this.modelLab = new ModelLab(this);
     this.toys = new Toys(this);
     this.trajectoryCapture = null;
 

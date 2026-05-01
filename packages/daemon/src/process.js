@@ -676,6 +676,19 @@ export class ProcessManager {
       }
     }
 
+    // Resolve lab preset — apply runtime/model/parameters from a saved preset
+    if (config.labPresetId && this.daemon.modelLab) {
+      const preset = this.daemon.modelLab.getPreset(config.labPresetId);
+      if (preset) {
+        if (preset.model && !config.model) config.model = preset.model;
+        if (preset.runtimeId) {
+          const rt = this.daemon.modelLab.getRuntime(preset.runtimeId);
+          if (rt && rt.type === 'ollama' && !config.provider) config.provider = 'ollama';
+        }
+        config._labPreset = preset;
+      }
+    }
+
     // Resolve provider — auto-detect best installed if not specified
     let providerName = config.provider;
     if (!providerName && this.daemon.config?.defaultProvider) {

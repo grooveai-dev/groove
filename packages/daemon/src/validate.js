@@ -131,6 +131,7 @@ export function validateAgentConfig(config) {
     reasoningEffort: numericReasoningEffort ?? reasoningEffort,
     temperature,
     verbosity,
+    labPresetId: (typeof config.labPresetId === 'string' && config.labPresetId.length <= 64) ? config.labPresetId : undefined,
   };
 }
 
@@ -247,6 +248,221 @@ export function validateTeamMode(mode) {
     throw new Error(`Invalid team mode: must be one of ${VALID_TEAM_MODES.join(', ')}`);
   }
   return mode;
+}
+
+const VALID_RUNTIME_TYPES = ['ollama', 'vllm', 'llama-cpp', 'tgi', 'openai-compatible'];
+const MAX_ENDPOINT_LENGTH = 500;
+const MAX_SYSTEM_PROMPT_LENGTH = 20_000;
+const MAX_MESSAGES = 500;
+const MAX_MESSAGE_CONTENT_LENGTH = 100_000;
+const PRESET_NAME_PATTERN = /^[a-zA-Z0-9 _\-().]{1,100}$/;
+
+export function validateLabRuntimeConfig(config) {
+  if (!config || typeof config !== 'object') {
+    throw new Error('Invalid runtime config');
+  }
+
+  if (!config.name || typeof config.name !== 'string' || config.name.length > 100) {
+    throw new Error('Runtime name is required (max 100 chars)');
+  }
+
+  if (!config.type || !VALID_RUNTIME_TYPES.includes(config.type)) {
+    throw new Error(`Invalid runtime type: must be one of ${VALID_RUNTIME_TYPES.join(', ')}`);
+  }
+
+  if (!config.endpoint || typeof config.endpoint !== 'string') {
+    throw new Error('Endpoint URL is required');
+  }
+  if (config.endpoint.length > MAX_ENDPOINT_LENGTH) {
+    throw new Error(`Endpoint URL too long (max ${MAX_ENDPOINT_LENGTH} chars)`);
+  }
+  try {
+    new URL(config.endpoint);
+  } catch {
+    throw new Error('Invalid endpoint URL');
+  }
+
+  if (config.apiKey !== undefined && config.apiKey !== null) {
+    if (typeof config.apiKey !== 'string' || config.apiKey.length > 500) {
+      throw new Error('Invalid API key');
+    }
+  }
+
+  return {
+    name: config.name.trim(),
+    type: config.type,
+    endpoint: config.endpoint.trim(),
+    apiKey: config.apiKey || null,
+  };
+}
+
+export function validateLabInferenceParams(params) {
+  if (!params || typeof params !== 'object') {
+    throw new Error('Invalid inference params');
+  }
+
+  if (!params.runtimeId || typeof params.runtimeId !== 'string') {
+    throw new Error('runtimeId is required');
+  }
+
+  if (!params.model || typeof params.model !== 'string') {
+    throw new Error('model is required');
+  }
+
+  if (!Array.isArray(params.messages) || params.messages.length === 0) {
+    throw new Error('messages array is required and must not be empty');
+  }
+  if (params.messages.length > MAX_MESSAGES) {
+    throw new Error(`Too many messages (max ${MAX_MESSAGES})`);
+  }
+
+  const validRoles = ['system', 'user', 'assistant'];
+  for (const msg of params.messages) {
+    if (!msg || typeof msg !== 'object') {
+      throw new Error('Each message must be an object');
+    }
+    if (!validRoles.includes(msg.role)) {
+      throw new Error(`Invalid message role: must be one of ${validRoles.join(', ')}`);
+    }
+    if (typeof msg.content !== 'string') {
+      throw new Error('Message content must be a string');
+    }
+    if (msg.content.length > MAX_MESSAGE_CONTENT_LENGTH) {
+      throw new Error(`Message content too long (max ${MAX_MESSAGE_CONTENT_LENGTH} chars)`);
+    }
+  }
+
+  const parameters = {};
+  if (params.parameters && typeof params.parameters === 'object') {
+    const p = params.parameters;
+    if (p.temperature !== undefined) {
+      const t = Number(p.temperature);
+      if (isNaN(t) || t < 0 || t > 2) throw new Error('temperature must be 0-2');
+      parameters.temperature = t;
+    }
+    if (p.top_p !== undefined) {
+      const v = Number(p.top_p);
+      if (isNaN(v) || v < 0 || v > 1) throw new Error('top_p must be 0-1');
+      parameters.top_p = v;
+    }
+    if (p.top_k !== undefined) {
+      const v = Number(p.top_k);
+      if (isNaN(v) || v < 0 || v > 1000) throw new Error('top_k must be 0-1000');
+      parameters.top_k = Math.round(v);
+    }
+    if (p.repeat_penalty !== undefined) {
+      const v = Number(p.repeat_penalty);
+      if (isNaN(v) || v < 0 || v > 10) throw new Error('repeat_penalty must be 0-10');
+      parameters.repeat_penalty = v;
+    }
+    if (p.max_tokens !== undefined) {
+      const v = Number(p.max_tokens);
+      if (isNaN(v) || v < 1 || v > 1_000_000) throw new Error('max_tokens must be 1-1000000');
+      parameters.max_tokens = Math.round(v);
+    }
+    if (p.stop !== undefined) {
+      if (!Array.isArray(p.stop)) throw new Error('stop must be an array of strings');
+      if (p.stop.length > 10) throw new Error('Too many stop sequences (max 10)');
+      parameters.stop = p.stop.filter((s) => typeof s === 'string' && s.length <= 100);
+    }
+    if (p.frequency_penalty !== undefined) {
+      const v = Number(p.frequency_penalty);
+      if (isNaN(v) || v < -2 || v > 2) throw new Error('frequency_penalty must be -2 to 2');
+      parameters.frequency_penalty = v;
+    }
+    if (p.presence_penalty !== undefined) {
+      const v = Number(p.presence_penalty);
+      if (isNaN(v) || v < -2 || v > 2) throw new Error('presence_penalty must be -2 to 2');
+      parameters.presence_penalty = v;
+    }
+  }
+
+  return {
+    runtimeId: params.runtimeId,
+    model: params.model,
+    messages: params.messages.map((m) => ({ role: m.role, content: m.content })),
+    parameters,
+    sessionId: (typeof params.sessionId === 'string' && params.sessionId.length <= 64) ? params.sessionId : undefined,
+  };
+}
+
+export function validateLabPresetConfig(config) {
+  if (!config || typeof config !== 'object') {
+    throw new Error('Invalid preset config');
+  }
+
+  if (!config.name || typeof config.name !== 'string') {
+    throw new Error('Preset name is required');
+  }
+  if (!PRESET_NAME_PATTERN.test(config.name)) {
+    throw new Error('Invalid preset name: alphanumeric, spaces, dashes, underscores, parens (max 100 chars)');
+  }
+
+  if (config.runtimeId !== undefined && config.runtimeId !== null) {
+    if (typeof config.runtimeId !== 'string' || config.runtimeId.length > 64) {
+      throw new Error('Invalid runtimeId');
+    }
+  }
+
+  if (config.model !== undefined && config.model !== null) {
+    if (typeof config.model !== 'string' || config.model.length > 200) {
+      throw new Error('Invalid model name');
+    }
+  }
+
+  if (config.systemPrompt !== undefined && config.systemPrompt !== null) {
+    if (typeof config.systemPrompt !== 'string') {
+      throw new Error('systemPrompt must be a string');
+    }
+    if (config.systemPrompt.length > MAX_SYSTEM_PROMPT_LENGTH) {
+      throw new Error(`systemPrompt too long (max ${MAX_SYSTEM_PROMPT_LENGTH} chars)`);
+    }
+  }
+
+  // Validate parameters sub-object if present
+  let parameters = {};
+  if (config.parameters && typeof config.parameters === 'object') {
+    const p = config.parameters;
+    if (p.temperature !== undefined) {
+      const t = Number(p.temperature);
+      if (!isNaN(t) && t >= 0 && t <= 2) parameters.temperature = t;
+    }
+    if (p.top_p !== undefined) {
+      const v = Number(p.top_p);
+      if (!isNaN(v) && v >= 0 && v <= 1) parameters.top_p = v;
+    }
+    if (p.top_k !== undefined) {
+      const v = Number(p.top_k);
+      if (!isNaN(v) && v >= 0 && v <= 1000) parameters.top_k = Math.round(v);
+    }
+    if (p.repeat_penalty !== undefined) {
+      const v = Number(p.repeat_penalty);
+      if (!isNaN(v) && v >= 0 && v <= 10) parameters.repeat_penalty = v;
+    }
+    if (p.max_tokens !== undefined) {
+      const v = Number(p.max_tokens);
+      if (!isNaN(v) && v >= 1 && v <= 1_000_000) parameters.max_tokens = Math.round(v);
+    }
+    if (p.stop !== undefined && Array.isArray(p.stop)) {
+      parameters.stop = p.stop.filter((s) => typeof s === 'string' && s.length <= 100).slice(0, 10);
+    }
+    if (p.frequency_penalty !== undefined) {
+      const v = Number(p.frequency_penalty);
+      if (!isNaN(v) && v >= -2 && v <= 2) parameters.frequency_penalty = v;
+    }
+    if (p.presence_penalty !== undefined) {
+      const v = Number(p.presence_penalty);
+      if (!isNaN(v) && v >= -2 && v <= 2) parameters.presence_penalty = v;
+    }
+  }
+
+  return {
+    name: config.name.trim(),
+    runtimeId: config.runtimeId || null,
+    model: config.model || null,
+    parameters,
+    systemPrompt: config.systemPrompt || '',
+  };
 }
 
 export function escapeMd(text) {

@@ -21,6 +21,7 @@ import SettingsView from './views/settings';
 import ModelsView from './views/models';
 import FederationView from './views/federation';
 import ToysView from './views/toys';
+import ModelLabView from './views/model-lab';
 import NetworkView from './views/network';
 import ChatView from './views/chat';
 import PreviewView from './views/preview';
@@ -73,6 +74,7 @@ function ViewRouter() {
     case 'toys':        content = <ToysView />;        break;
     case 'teams':       content = <TeamsView />;       break;
     case 'models':      content = <ModelsView />;      break;
+    case 'model-lab':   content = <ModelLabView />;    break;
     case 'federation':  content = <FederationView />;  break;
     case 'settings':    content = <SettingsView />;    break;
     case 'chat':        content = <ChatView />;        break;

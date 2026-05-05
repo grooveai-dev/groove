@@ -1,7 +1,7 @@
 // GROOVE — Teams (Live Agent Groups)
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, rmSync, readdirSync, cpSync } from 'fs';
+import { readFileSync, writeFileSync, copyFileSync, existsSync, mkdirSync, renameSync, rmSync, readdirSync, cpSync } from 'fs';
 import { resolve } from 'path';
 import { randomUUID } from 'crypto';
 import { validateTeamName, validateTeamMode } from './validate.js';
@@ -14,22 +14,41 @@ export class Teams {
   constructor(daemon) {
     this.daemon = daemon;
     this.filePath = resolve(daemon.grooveDir, 'teams.json');
+    this.backupPath = resolve(daemon.grooveDir, 'teams.json.bak');
     this.teams = new Map();
     this._load();
     this._ensureDefault();
   }
 
   _load() {
-    if (!existsSync(this.filePath)) return;
-    try {
-      const data = JSON.parse(readFileSync(this.filePath, 'utf8'));
-      if (Array.isArray(data)) {
-        for (const team of data) this.teams.set(team.id, team);
+    if (existsSync(this.filePath)) {
+      try {
+        const data = JSON.parse(readFileSync(this.filePath, 'utf8'));
+        if (Array.isArray(data)) {
+          for (const team of data) this.teams.set(team.id, team);
+          return;
+        }
+      } catch {
+        console.error('[Groove:Teams] teams.json corrupt — trying backup');
       }
-    } catch { /* ignore corrupt file */ }
+    }
+    if (existsSync(this.backupPath)) {
+      try {
+        const data = JSON.parse(readFileSync(this.backupPath, 'utf8'));
+        if (Array.isArray(data)) {
+          for (const team of data) this.teams.set(team.id, team);
+          writeFileSync(this.filePath, readFileSync(this.backupPath, 'utf8'));
+          console.log('[Groove:Teams] Restored from teams.json.bak');
+          return;
+        }
+      } catch {
+        console.error('[Groove:Teams] Backup also corrupt');
+      }
+    }
   }
 
   _save() {
+    try { copyFileSync(this.filePath, this.backupPath); } catch { /* may not exist yet */ }
     writeFileSync(this.filePath, JSON.stringify([...this.teams.values()], null, 2));
   }
 

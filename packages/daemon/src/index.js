@@ -719,10 +719,23 @@ export class Daemon {
 
     try {
       // Build set of agent names still in the registry — never remove their logs
-      const activeNames = new Set(this.registry.getAll().map((a) => a.name));
+      const allAgents = this.registry.getAll();
+      const activeNames = new Set(allAgents.map((a) => a.name));
+
+      // Safety: if registry is empty but log files exist, state may have been
+      // lost (corrupt JSON, partial write). Skip log cleanup to prevent
+      // destroying agent history that could still be recovered.
+      const logsDir = resolve(grooveDir, 'logs');
+      const agentLogsDir = resolve(this.projectDir, 'GROOVE_AGENT_LOGS');
+      const hasOrphanedLogs = (existsSync(logsDir) && readdirSync(logsDir).length > 0) ||
+        (existsSync(agentLogsDir) && readdirSync(agentLogsDir).length > 0);
+
+      if (allAgents.length === 0 && hasOrphanedLogs) {
+        console.log('[Groove:GC] Registry empty but log files exist — skipping cleanup to prevent data loss');
+        return;
+      }
 
       // 1. Clean raw log files for agents no longer in the registry
-      const logsDir = resolve(grooveDir, 'logs');
       if (existsSync(logsDir)) {
         for (const file of readdirSync(logsDir)) {
           const agentName = file.replace(/\.log$/, '');
@@ -732,7 +745,6 @@ export class Daemon {
       }
 
       // 2. Clean GROOVE_AGENT_LOGS/ for agents no longer in the registry
-      const agentLogsDir = resolve(this.projectDir, 'GROOVE_AGENT_LOGS');
       if (existsSync(agentLogsDir)) {
         for (const dir of readdirSync(agentLogsDir, { withFileTypes: true })) {
           if (!dir.isDirectory()) continue;

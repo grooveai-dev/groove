@@ -10,7 +10,7 @@ import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Layers, Archive, Box, HardDrive, LayoutGrid } from 'lucide-react';
+import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Layers, Archive, Box, HardDrive, LayoutGrid, ArrowUpCircle } from 'lucide-react';
 import { PreviewWorkspace } from '../components/preview/preview-workspace';
 import { WorkspaceMode } from '../components/agents/workspace-mode';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../components/ui/context-menu';
@@ -101,6 +101,7 @@ export function TeamTabBar() {
   const deleteTeamPermanently = useGrooveStore((s) => s.deleteTeamPermanently);
   const renameTeam = useGrooveStore((s) => s.renameTeam);
   const cloneTeam = useGrooveStore((s) => s.cloneTeam);
+  const promoteTeam = useGrooveStore((s) => s.promoteTeam);
   const reorderTeams = useGrooveStore((s) => s.reorderTeams);
   const addToast = useGrooveStore((s) => s.addToast);
 
@@ -262,6 +263,11 @@ export function TeamTabBar() {
               <ContextMenuItem onSelect={() => cloneTeam(team.id)}>
                 <Copy size={12} /> Clone
               </ContextMenuItem>
+              {team.mode !== 'production' && (
+                <ContextMenuItem onSelect={() => promoteTeam(team.id)}>
+                  <ArrowUpCircle size={12} /> Promote to Production
+                </ContextMenuItem>
+              )}
               <ContextMenuSeparator />
               <ContextMenuItem danger onSelect={() => {
                 const teamAgents = agents.filter((a) => a.teamId === team.id);

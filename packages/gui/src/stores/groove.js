@@ -224,9 +224,9 @@ export const useGrooveStore = create((set, get) => ({
   labLlamaInstalled: null,
   labLaunchPhase: null,
   labLaunchError: null,
-  labAssistantAgentId: null,
+  labAssistantAgentId: localStorage.getItem('groove:labAssistantAgentId') || null,
   labAssistantMode: false,
-  labAssistantBackend: null,
+  labAssistantBackend: localStorage.getItem('groove:labAssistantBackend') || null,
 
   // ── Onboarding ────────────────────────────────────────────
   onboardingComplete: localStorage.getItem('groove:onboardingComplete') === 'true',
@@ -3640,6 +3640,8 @@ export const useGrooveStore = create((set, get) => ({
     }
     try {
       const data = await api.post('/lab/assistant', { backend });
+      localStorage.setItem('groove:labAssistantAgentId', data.agentId);
+      localStorage.setItem('groove:labAssistantBackend', backend);
       set({ labAssistantAgentId: data.agentId, labAssistantMode: true, labAssistantBackend: backend });
       get().addToast('info', `Lab Assistant started for ${backend}`);
     } catch (err) {
@@ -3654,6 +3656,8 @@ export const useGrooveStore = create((set, get) => ({
   clearLabAssistant() {
     const id = get().labAssistantAgentId;
     if (id) api.delete(`/agents/${encodeURIComponent(id)}`).catch(() => {});
+    localStorage.removeItem('groove:labAssistantAgentId');
+    localStorage.removeItem('groove:labAssistantBackend');
     set({ labAssistantAgentId: null, labAssistantMode: false, labAssistantBackend: null });
   },
 

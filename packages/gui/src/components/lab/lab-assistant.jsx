@@ -21,7 +21,7 @@ function AssistantMessage({ msg }) {
           'text-xs font-sans whitespace-pre-wrap break-words leading-relaxed',
           msg.error ? 'text-danger' : 'text-text-1',
         )}>
-          {msg.content}
+          {msg.text}
         </div>
       </div>
     </div>
@@ -33,7 +33,7 @@ function UserMessage({ msg }) {
     <div className="flex justify-end">
       <div className="max-w-[85%]">
         <div className="px-3 py-2 rounded-xl rounded-br-sm bg-accent/10 border border-accent/15">
-          <p className="text-xs text-text-0 font-sans whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
+          <p className="text-xs text-text-0 font-sans whitespace-pre-wrap break-words leading-relaxed">{msg.text}</p>
         </div>
       </div>
     </div>
@@ -65,7 +65,7 @@ export function LabAssistant() {
       const el = scrollRef.current.querySelector('[data-radix-scroll-area-viewport]');
       if (el) el.scrollTop = el.scrollHeight;
     }
-  }, [messages.length, messages[messages.length - 1]?.content]);
+  }, [messages.length, messages[messages.length - 1]?.text]);
 
   const handleSend = useCallback(() => {
     const text = input.trim();
@@ -120,7 +120,7 @@ export function LabAssistant() {
             </div>
           ) : (
             messages.map((msg, i) =>
-              msg.role === 'user' ? (
+              msg.from === 'user' ? (
                 <UserMessage key={i} msg={msg} />
               ) : (
                 <AssistantMessage key={i} msg={msg} />

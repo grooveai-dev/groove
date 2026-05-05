@@ -71,7 +71,7 @@ export class LlamaServerManager {
 
     // Flash attention for better memory efficiency (if supported)
     if (options.flashAttention !== false) {
-      args.push('--flash-attn');
+      args.push('--flash-attn', 'auto');
     }
 
     const proc = spawn('llama-server', args, {

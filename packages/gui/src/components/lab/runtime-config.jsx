@@ -271,11 +271,17 @@ export function LaunchModel() {
                     </div>
                   )}
                   {llamaInstalled === false && (
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <div className="flex items-center gap-2 text-2xs text-danger font-sans">
                         <AlertTriangle size={10} /> llama-server not found
                       </div>
                       <code className="block text-2xs font-mono text-text-3 bg-surface-1 px-2 py-1 rounded">brew install llama.cpp</code>
+                      <button
+                        onClick={checkLlama}
+                        className="flex items-center gap-1.5 text-2xs font-sans text-accent hover:text-accent/80 transition-colors cursor-pointer"
+                      >
+                        <RotateCcw size={10} /> Recheck after install
+                      </button>
                     </div>
                   )}
                 </div>

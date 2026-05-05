@@ -442,6 +442,52 @@ export class ModelLab {
     this._saveSession(session);
   }
 
+  // ─── Launch Local GGUF ───────────────────────────────────────
+
+  async launchLocalModel(modelId) {
+    const mm = this.daemon.modelManager;
+    const ls = this.daemon.llamaServer;
+    if (!mm || !ls) throw new Error('Local model serving not available');
+
+    const model = mm.getModel(modelId);
+    if (!model) throw new Error('Model not found in local store');
+
+    const modelPath = mm.getModelPath(modelId);
+    if (!modelPath) throw new Error('Model file not found on disk');
+
+    const endpoint = await ls.ensureServer(modelPath);
+    if (!endpoint) throw new Error('Failed to start inference server');
+
+    const existing = [...this.runtimes.values()].find(
+      (r) => r._localModelId === modelId,
+    );
+    if (existing) {
+      existing.endpoint = endpoint;
+      existing.models = [{ id: model.filename, name: model.filename, size: model.sizeBytes }];
+      this._saveRuntimes();
+      this.daemon.broadcast({ type: 'lab:runtime:updated', data: existing });
+      return { runtime: existing, model: model.filename };
+    }
+
+    const label = model.filename.replace(/\.gguf$/i, '');
+    const runtime = await this.addRuntime({
+      name: `${label} (local)`,
+      type: 'llama-cpp',
+      endpoint,
+      models: [{ id: model.filename, name: model.filename, size: model.sizeBytes }],
+    });
+    runtime._localModelId = modelId;
+    this._saveRuntimes();
+
+    return { runtime, model: model.filename };
+  }
+
+  listLocalModels() {
+    const mm = this.daemon.modelManager;
+    if (!mm) return [];
+    return mm.getInstalled().filter((m) => m.exists);
+  }
+
   // ─── Auto-detect Ollama ─────────────────────────────────────
 
   async autoDetectOllama() {

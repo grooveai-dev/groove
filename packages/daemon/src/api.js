@@ -6669,6 +6669,27 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
+  app.get('/api/lab/local-models', (req, res) => {
+    try {
+      res.json(daemon.modelLab.listLocalModels());
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/lab/launch-local', async (req, res) => {
+    try {
+      const { modelId } = req.body;
+      if (!modelId || typeof modelId !== 'string') {
+        return res.status(400).json({ error: 'modelId is required' });
+      }
+      const result = await daemon.modelLab.launchLocalModel(modelId);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   app.post('/api/lab/inference', async (req, res) => {
     try {
       const params = validateLabInferenceParams(req.body);

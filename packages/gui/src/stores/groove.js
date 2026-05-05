@@ -219,6 +219,8 @@ export const useGrooveStore = create((set, get) => ({
   }),
   labSystemPrompt: localStorage.getItem('groove:labSystemPrompt') || '',
   labStreaming: false,
+  labLocalModels: [],
+  labLaunching: null,
 
   // ── Onboarding ────────────────────────────────────────────
   onboardingComplete: localStorage.getItem('groove:onboardingComplete') === 'true',
@@ -3291,6 +3293,31 @@ export const useGrooveStore = create((set, get) => ({
         get().fetchLabModels(get().labActiveRuntime);
       }
     } catch { /* backend may not have lab endpoints yet */ }
+  },
+
+  async fetchLabLocalModels() {
+    try {
+      const data = await api.get('/lab/local-models');
+      set({ labLocalModels: data });
+    } catch { set({ labLocalModels: [] }); }
+  },
+
+  async launchLocalModel(modelId) {
+    set({ labLaunching: modelId });
+    try {
+      const result = await api.post('/lab/launch-local', { modelId });
+      const runtimes = await api.get('/lab/runtimes');
+      set({ labRuntimes: runtimes });
+      persistJSON('groove:labRuntimes', runtimes);
+      get().setLabActiveRuntime(result.runtime.id);
+      set({ labActiveModel: result.model, labLaunching: null });
+      get().addToast('success', `Launched ${result.model}`);
+      return result;
+    } catch (err) {
+      set({ labLaunching: null });
+      get().addToast('error', 'Failed to launch model', err.message);
+      throw err;
+    }
   },
 
   async addLabRuntime(runtime) {

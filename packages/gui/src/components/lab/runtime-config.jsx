@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -8,7 +8,7 @@ import { Dialog, DialogContent } from '../ui/dialog';
 import { Select, SelectTrigger, SelectContent, SelectItem } from '../ui/select';
 import { Tooltip } from '../ui/tooltip';
 import { ScrollArea } from '../ui/scroll-area';
-import { Plus, Trash2, Loader2, Wifi, WifiOff, RotateCcw } from 'lucide-react';
+import { Plus, Trash2, Loader2, Wifi, WifiOff, RotateCcw, HardDrive, Play } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
 const RUNTIME_TYPES = [
@@ -125,6 +125,61 @@ function RuntimeItem({ runtime, active, onSelect, onTest, onRemove, testing }) {
         </Tooltip>
       </div>
     </button>
+  );
+}
+
+function formatSize(bytes) {
+  if (!bytes) return '';
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(0)} MB`;
+  return `${(bytes / 1e3).toFixed(0)} KB`;
+}
+
+export function LocalModels() {
+  const localModels = useGrooveStore((s) => s.labLocalModels);
+  const fetchLocalModels = useGrooveStore((s) => s.fetchLabLocalModels);
+  const launchModel = useGrooveStore((s) => s.launchLocalModel);
+  const launching = useGrooveStore((s) => s.labLaunching);
+
+  useEffect(() => { fetchLocalModels(); }, [fetchLocalModels]);
+
+  if (localModels.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <span className="text-xs font-semibold font-sans text-text-2 uppercase tracking-wider">Local Models</span>
+      <ScrollArea className="max-h-44">
+        <div className="space-y-0.5">
+          {localModels.map((m) => (
+            <div
+              key={m.id}
+              className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-5/50 transition-colors group"
+            >
+              <HardDrive size={12} className="text-text-4 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-sans font-medium text-text-1 truncate">
+                  {m.filename?.replace(/\.gguf$/i, '') || m.id}
+                </div>
+                <div className="text-2xs font-mono text-text-4 flex items-center gap-2">
+                  {m.quantization && <span>{m.quantization}</span>}
+                  {m.parameters && <span>{m.parameters}</span>}
+                  {m.sizeBytes && <span>{formatSize(m.sizeBytes)}</span>}
+                </div>
+              </div>
+              <Tooltip content="Launch with llama-server">
+                <button
+                  onClick={() => launchModel(m.id)}
+                  disabled={!!launching}
+                  className="p-1.5 rounded text-text-3 hover:text-success hover:bg-success/10 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                >
+                  {launching === m.id ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                </button>
+              </Tooltip>
+            </div>
+          ))}
+        </div>
+      </ScrollArea>
+    </div>
   );
 }
 

@@ -5,7 +5,7 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { Select, SelectTrigger, SelectContent, SelectItem } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
 import { Tooltip } from '../components/ui/tooltip';
-import { RuntimeConfig } from '../components/lab/runtime-config';
+import { RuntimeConfig, LocalModels } from '../components/lab/runtime-config';
 import { ParameterPanel } from '../components/lab/parameter-panel';
 import { SystemPromptEditor } from '../components/lab/system-prompt-editor';
 import { ChatPlayground } from '../components/lab/chat-playground';
@@ -169,6 +169,8 @@ export default function ModelLabView() {
         >
           <ScrollArea className="h-full">
             <div className="px-4 py-4 space-y-5">
+              <LocalModels />
+              <div className="border-t border-border-subtle" />
               <RuntimeConfig />
               <div className="border-t border-border-subtle" />
               <ModelSelector />

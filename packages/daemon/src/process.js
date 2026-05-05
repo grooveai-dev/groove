@@ -1953,6 +1953,9 @@ For normal file edits within your scope, proceed without review.
         this.daemon.trajectoryCapture.onAgentSpawn(
           newAgent.id, config.provider, config.model || null, config.role, teamSize, config.prompt
         ).catch(() => {});
+        if (message && typeof message === 'string' && message.trim()) {
+          this.daemon.trajectoryCapture.onUserMessage(newAgent.id, message, 'user');
+        }
       } catch (e) { /* fail silent */ }
     }
 
@@ -2095,6 +2098,9 @@ For normal file edits within your scope, proceed without review.
         this.daemon.trajectoryCapture.onAgentSpawn(
           newAgent.id, config.provider, loopConfig.model || config.model || null, config.role, teamSize, config.prompt
         ).catch(() => {});
+        if (message && typeof message === 'string' && message.trim()) {
+          this.daemon.trajectoryCapture.onUserMessage(newAgent.id, message, 'user');
+        }
       } catch (e) { /* fail silent */ }
     }
 

@@ -224,6 +224,9 @@ export const useGrooveStore = create((set, get) => ({
   labLlamaInstalled: null,
   labLaunchPhase: null,
   labLaunchError: null,
+  labAssistantAgentId: null,
+  labAssistantMode: false,
+  labAssistantBackend: null,
 
   // ── Onboarding ────────────────────────────────────────────
   onboardingComplete: localStorage.getItem('groove:onboardingComplete') === 'true',
@@ -3624,6 +3627,38 @@ export const useGrooveStore = create((set, get) => ({
     set({ labPresets: presets, labActivePreset: get().labActivePreset === id ? null : get().labActivePreset });
     persistJSON('groove:labPresets', presets);
     get().addToast('success', 'Preset deleted');
+  },
+
+  async launchLabAssistant(backend) {
+    const existing = get().labAssistantAgentId;
+    if (existing) {
+      const agent = get().agents.find((a) => a.id === existing);
+      if (agent && agent.status === 'running') {
+        set({ labAssistantMode: true });
+        return;
+      }
+    }
+    try {
+      const data = await api.post('/lab/assistant', { backend });
+      set({ labAssistantAgentId: data.agentId, labAssistantMode: true, labAssistantBackend: backend });
+      get().addToast('info', `Lab Assistant started for ${backend}`);
+    } catch (err) {
+      get().addToast('error', 'Failed to start assistant', err.message);
+    }
+  },
+
+  dismissLabAssistant() {
+    set({ labAssistantMode: false });
+  },
+
+  clearLabAssistant() {
+    const id = get().labAssistantAgentId;
+    if (id) api.delete(`/agents/${encodeURIComponent(id)}`).catch(() => {});
+    set({ labAssistantAgentId: null, labAssistantMode: false, labAssistantBackend: null });
+  },
+
+  setLabAssistantMode(mode) {
+    set({ labAssistantMode: mode });
   },
 
   async renameFile(oldPath, newPath) {

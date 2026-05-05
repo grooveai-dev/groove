@@ -6764,6 +6764,31 @@ Keep responses concise. Help them think, don't lecture them about the system the
     res.json(session);
   });
 
+  app.post('/api/lab/assistant', async (req, res) => {
+    try {
+      const { backend } = req.body || {};
+      if (!backend || !['vllm', 'tgi'].includes(backend)) {
+        return res.status(400).json({ error: 'backend must be "vllm" or "tgi"' });
+      }
+      const templatePath = resolve(__dirname, `../templates/${backend}-setup.json`);
+      const template = JSON.parse(readFileSync(templatePath, 'utf8'));
+      const agentConfig = template.agents[0];
+      const config = {
+        role: 'lab-assistant',
+        scope: agentConfig.scope || [],
+        provider: agentConfig.provider || daemon.config.defaultProvider,
+        prompt: agentConfig.prompt,
+        metadata: { labAssistant: true, backend },
+      };
+      if (!config.provider) config.provider = daemon.config.defaultProvider;
+      const agent = await daemon.processes.spawn(config);
+      daemon.audit.log('lab.assistant.spawn', { id: agent.id, backend });
+      res.status(201).json({ agentId: agent.id, backend });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // --- Wallet & earnings stubs (Base L2 — wired to real data post-mainnet) ---
 
   app.get('/api/network/wallet', networkGate, (req, res) => {

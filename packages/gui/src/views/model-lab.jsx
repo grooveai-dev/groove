@@ -9,6 +9,7 @@ import { RuntimeConfig, LaunchModel } from '../components/lab/runtime-config';
 import { ParameterPanel } from '../components/lab/parameter-panel';
 import { SystemPromptEditor } from '../components/lab/system-prompt-editor';
 import { ChatPlayground } from '../components/lab/chat-playground';
+import { LabAssistant } from '../components/lab/lab-assistant';
 import { MetricsPanel } from '../components/lab/metrics-panel';
 import { PresetManager } from '../components/lab/preset-manager';
 import { cn } from '../lib/cn';
@@ -66,6 +67,9 @@ function ResizeHandle({ onMouseDown, direction = 'vertical' }) {
 
 export default function ModelLabView() {
   const fetchLabRuntimes = useGrooveStore((s) => s.fetchLabRuntimes);
+  const labAssistantAgentId = useGrooveStore((s) => s.labAssistantAgentId);
+  const labAssistantMode = useGrooveStore((s) => s.labAssistantMode);
+  const setLabAssistantMode = useGrooveStore((s) => s.setLabAssistantMode);
 
   useEffect(() => { fetchLabRuntimes(); }, [fetchLabRuntimes]);
 
@@ -188,9 +192,33 @@ export default function ModelLabView() {
 
         {!leftCollapsed && <ResizeHandle onMouseDown={onLeftMouseDown} />}
 
-        {/* Center panel — chat playground */}
-        <div className="flex-1 min-w-0 p-3">
-          <ChatPlayground />
+        {/* Center panel — chat playground / assistant */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          {labAssistantAgentId && (
+            <div className="flex-shrink-0 flex items-center gap-1 px-3 pt-2">
+              <button
+                onClick={() => setLabAssistantMode(false)}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-sans font-medium rounded-t-md transition-colors cursor-pointer',
+                  !labAssistantMode ? 'text-accent bg-accent/10' : 'text-text-3 hover:text-text-1',
+                )}
+              >
+                Playground
+              </button>
+              <button
+                onClick={() => setLabAssistantMode(true)}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-sans font-medium rounded-t-md transition-colors cursor-pointer',
+                  labAssistantMode ? 'text-accent bg-accent/10' : 'text-text-3 hover:text-text-1',
+                )}
+              >
+                Assistant
+              </button>
+            </div>
+          )}
+          <div className="flex-1 min-h-0 p-3">
+            {labAssistantMode && labAssistantAgentId ? <LabAssistant /> : <ChatPlayground />}
+          </div>
         </div>
 
         {!rightCollapsed && <ResizeHandle onMouseDown={onRightMouseDown} />}

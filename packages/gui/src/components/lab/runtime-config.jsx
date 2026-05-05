@@ -8,7 +8,7 @@ import { Dialog, DialogContent } from '../ui/dialog';
 import { Select, SelectTrigger, SelectContent, SelectItem } from '../ui/select';
 import { Tooltip } from '../ui/tooltip';
 import { ScrollArea } from '../ui/scroll-area';
-import { Plus, Trash2, Loader2, WifiOff, RotateCcw, HardDrive, Play, CheckCircle, AlertTriangle, Info, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Loader2, WifiOff, RotateCcw, HardDrive, Play, CheckCircle, AlertTriangle, Info, ChevronRight, Wrench } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
 const RUNTIME_TYPES = [
@@ -141,8 +141,8 @@ function formatSize(bytes) {
 
 const BACKENDS = [
   { id: 'llama-cpp', label: 'llama.cpp', subtitle: 'CPU + GPU, auto-managed', recommended: true, autoLaunch: true },
-  { id: 'vllm', label: 'vLLM', subtitle: 'GPU-optimized, manual setup', autoLaunch: false },
-  { id: 'tgi', label: 'TGI', subtitle: 'HuggingFace, manual setup', autoLaunch: false },
+  { id: 'vllm', label: 'vLLM', subtitle: 'GPU-optimized, guided setup', autoLaunch: false },
+  { id: 'tgi', label: 'TGI', subtitle: 'HuggingFace, guided setup', autoLaunch: false },
 ];
 
 function LaunchStatus({ phase, error }) {
@@ -171,9 +171,11 @@ export function LaunchModel() {
   const llamaInstalled = useGrooveStore((s) => s.labLlamaInstalled);
   const launchPhase = useGrooveStore((s) => s.labLaunchPhase);
   const launchError = useGrooveStore((s) => s.labLaunchError);
+  const launchLabAssistant = useGrooveStore((s) => s.launchLabAssistant);
 
   const [selectedModel, setSelectedModel] = useState(null);
   const [selectedBackend, setSelectedBackend] = useState('llama-cpp');
+  const [assistantLaunching, setAssistantLaunching] = useState(false);
 
   useEffect(() => { fetchLocalModels(); checkLlama(); }, [fetchLocalModels, checkLlama]);
 
@@ -183,6 +185,16 @@ export function LaunchModel() {
   function handleLaunch() {
     if (!canLaunch) return;
     launchModel(selectedModel);
+  }
+
+  async function handleLaunchAssistant() {
+    if (assistantLaunching) return;
+    setAssistantLaunching(true);
+    try {
+      await launchLabAssistant(currentBackend.id);
+    } finally {
+      setAssistantLaunching(false);
+    }
   }
 
   return (
@@ -287,13 +299,18 @@ export function LaunchModel() {
                 </div>
               )}
 
-              {/* Manual setup guidance for vLLM/TGI */}
+              {/* Setup assistant for vLLM/TGI */}
               {!currentBackend?.autoLaunch && (
-                <div className="flex items-start gap-2 px-3 py-2 bg-surface-1 rounded-md border border-border-subtle">
-                  <Info size={12} className="text-text-3 flex-shrink-0 mt-0.5" />
-                  <div className="text-2xs text-text-3 font-sans">
-                    Start your {currentBackend?.label} server manually, then add it as a <strong className="text-text-2">Runtime</strong> below with the endpoint URL.
-                  </div>
+                <div className="space-y-2">
+                  <Button variant="primary" size="sm" className="w-full" onClick={handleLaunchAssistant} disabled={assistantLaunching}>
+                    {assistantLaunching
+                      ? <><Loader2 size={12} className="animate-spin mr-1.5" /> Starting Assistant...</>
+                      : <><Wrench size={12} className="mr-1.5" /> Setup {currentBackend?.label} with Assistant</>
+                    }
+                  </Button>
+                  <p className="text-2xs text-text-4 font-sans px-1">
+                    An AI assistant will check your system and handle the installation, or start your server manually and add it as a Runtime below.
+                  </p>
                 </div>
               )}
 

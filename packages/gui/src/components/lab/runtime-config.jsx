@@ -8,7 +8,7 @@ import { Dialog, DialogContent } from '../ui/dialog';
 import { Select, SelectTrigger, SelectContent, SelectItem } from '../ui/select';
 import { Tooltip } from '../ui/tooltip';
 import { ScrollArea } from '../ui/scroll-area';
-import { Plus, Trash2, Loader2, Wifi, WifiOff, RotateCcw, HardDrive, Play } from 'lucide-react';
+import { Plus, Trash2, Loader2, WifiOff, RotateCcw, HardDrive, Play, CheckCircle, AlertTriangle, Info, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
 const RUNTIME_TYPES = [
@@ -101,7 +101,11 @@ function RuntimeItem({ runtime, active, onSelect, onTest, onRemove, testing }) {
       )} />
       <div className="flex-1 min-w-0">
         <div className="text-xs font-sans font-medium truncate">{runtime.name}</div>
-        <div className="text-2xs font-mono text-text-4 truncate">{runtime.type}</div>
+        <div className="text-2xs text-text-4 flex items-center gap-1.5">
+          <span className="font-mono">{runtime.type}</span>
+          {runtime.status === 'connected' && <span className="text-success">Healthy</span>}
+          {runtime.status === 'error' && <span className="text-danger">Unreachable</span>}
+        </div>
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
         {runtime.latency != null && (
@@ -135,50 +139,181 @@ function formatSize(bytes) {
   return `${(bytes / 1e3).toFixed(0)} KB`;
 }
 
-export function LocalModels() {
+const BACKENDS = [
+  { id: 'llama-cpp', label: 'llama.cpp', subtitle: 'CPU + GPU, auto-managed', recommended: true, autoLaunch: true },
+  { id: 'vllm', label: 'vLLM', subtitle: 'GPU-optimized, manual setup', autoLaunch: false },
+  { id: 'tgi', label: 'TGI', subtitle: 'HuggingFace, manual setup', autoLaunch: false },
+];
+
+function LaunchStatus({ phase, error }) {
+  if (!phase) return null;
+  return (
+    <div className={cn(
+      'flex items-center gap-2 px-3 py-2 rounded-md text-xs font-sans',
+      phase === 'ready' && 'bg-success/10 text-success',
+      phase === 'error' && 'bg-danger/10 text-danger',
+      (phase === 'starting' || phase === 'checking') && 'bg-accent/10 text-accent',
+    )}>
+      {phase === 'starting' && <><Loader2 size={12} className="animate-spin" /> Starting server...</>}
+      {phase === 'checking' && <><Loader2 size={12} className="animate-spin" /> Checking...</>}
+      {phase === 'ready' && <><CheckCircle size={12} /> Server ready</>}
+      {phase === 'error' && <><AlertTriangle size={12} /> {error || 'Launch failed'}</>}
+    </div>
+  );
+}
+
+export function LaunchModel() {
   const localModels = useGrooveStore((s) => s.labLocalModels);
   const fetchLocalModels = useGrooveStore((s) => s.fetchLabLocalModels);
+  const checkLlama = useGrooveStore((s) => s.checkLlamaStatus);
   const launchModel = useGrooveStore((s) => s.launchLocalModel);
   const launching = useGrooveStore((s) => s.labLaunching);
+  const llamaInstalled = useGrooveStore((s) => s.labLlamaInstalled);
+  const launchPhase = useGrooveStore((s) => s.labLaunchPhase);
+  const launchError = useGrooveStore((s) => s.labLaunchError);
 
-  useEffect(() => { fetchLocalModels(); }, [fetchLocalModels]);
+  const [selectedModel, setSelectedModel] = useState(null);
+  const [selectedBackend, setSelectedBackend] = useState('llama-cpp');
 
-  if (localModels.length === 0) return null;
+  useEffect(() => { fetchLocalModels(); checkLlama(); }, [fetchLocalModels, checkLlama]);
+
+  const currentBackend = BACKENDS.find((b) => b.id === selectedBackend);
+  const canLaunch = selectedModel && currentBackend?.autoLaunch && llamaInstalled && !launching;
+
+  function handleLaunch() {
+    if (!canLaunch) return;
+    launchModel(selectedModel);
+  }
 
   return (
-    <div className="space-y-2">
-      <span className="text-xs font-semibold font-sans text-text-2 uppercase tracking-wider">Local Models</span>
-      <ScrollArea className="max-h-44">
-        <div className="space-y-0.5">
-          {localModels.map((m) => (
-            <div
-              key={m.id}
-              className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-5/50 transition-colors group"
-            >
-              <HardDrive size={12} className="text-text-4 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-sans font-medium text-text-1 truncate">
-                  {m.filename?.replace(/\.gguf$/i, '') || m.id}
-                </div>
-                <div className="text-2xs font-mono text-text-4 flex items-center gap-2">
-                  {m.quantization && <span>{m.quantization}</span>}
-                  {m.parameters && <span>{m.parameters}</span>}
-                  {m.sizeBytes && <span>{formatSize(m.sizeBytes)}</span>}
-                </div>
-              </div>
-              <Tooltip content="Launch with llama-server">
-                <button
-                  onClick={() => launchModel(m.id)}
-                  disabled={!!launching}
-                  className="p-1.5 rounded text-text-3 hover:text-success hover:bg-success/10 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-                >
-                  {launching === m.id ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-                </button>
-              </Tooltip>
-            </div>
-          ))}
+    <div className="space-y-3">
+      <span className="text-xs font-semibold font-sans text-text-2 uppercase tracking-wider">Launch Model</span>
+
+      {localModels.length === 0 ? (
+        <div className="px-3 py-4 text-center">
+          <HardDrive size={20} className="mx-auto text-text-4 mb-1.5" />
+          <p className="text-xs text-text-3 font-sans">No downloaded models</p>
+          <p className="text-2xs text-text-4 font-sans mt-1">Download GGUFs from the Models tab</p>
         </div>
-      </ScrollArea>
+      ) : (
+        <>
+          {/* Model list */}
+          <ScrollArea className="max-h-36">
+            <div className="space-y-0.5">
+              {localModels.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => setSelectedModel(m.id)}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors cursor-pointer',
+                    selectedModel === m.id ? 'bg-accent/10 text-text-0' : 'text-text-2 hover:bg-surface-5/50 hover:text-text-0',
+                  )}
+                >
+                  <HardDrive size={12} className={cn('flex-shrink-0', selectedModel === m.id ? 'text-accent' : 'text-text-4')} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-sans font-medium truncate">
+                      {m.filename?.replace(/\.gguf$/i, '') || m.id}
+                    </div>
+                    <div className="text-2xs font-mono text-text-4 flex items-center gap-2">
+                      {m.quantization && <span>{m.quantization}</span>}
+                      {m.parameters && <span>{m.parameters}</span>}
+                      {m.sizeBytes && <span>{formatSize(m.sizeBytes)}</span>}
+                    </div>
+                  </div>
+                  {selectedModel === m.id && <ChevronRight size={12} className="text-accent flex-shrink-0" />}
+                </button>
+              ))}
+            </div>
+          </ScrollArea>
+
+          {/* Backend picker — show when model selected */}
+          {selectedModel && (
+            <div className="space-y-2">
+              <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider">Backend</span>
+              <div className="space-y-1">
+                {BACKENDS.map((b) => (
+                  <button
+                    key={b.id}
+                    onClick={() => setSelectedBackend(b.id)}
+                    className={cn(
+                      'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left transition-colors cursor-pointer',
+                      selectedBackend === b.id ? 'bg-accent/10' : 'hover:bg-surface-5/50',
+                    )}
+                  >
+                    <span className={cn(
+                      'w-2 h-2 rounded-full border-2 flex-shrink-0',
+                      selectedBackend === b.id ? 'border-accent bg-accent' : 'border-text-4',
+                    )} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn('text-xs font-sans font-medium', selectedBackend === b.id ? 'text-text-0' : 'text-text-2')}>
+                          {b.label}
+                        </span>
+                        {b.recommended && <Badge variant="success" className="text-2xs">Recommended</Badge>}
+                      </div>
+                      <div className="text-2xs text-text-4 font-sans">{b.subtitle}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Binary status for llama.cpp */}
+              {selectedBackend === 'llama-cpp' && (
+                <div className="px-3">
+                  {llamaInstalled === null && (
+                    <div className="flex items-center gap-2 text-2xs text-text-3 font-sans">
+                      <Loader2 size={10} className="animate-spin" /> Checking llama-server...
+                    </div>
+                  )}
+                  {llamaInstalled === true && (
+                    <div className="flex items-center gap-2 text-2xs text-success font-sans">
+                      <CheckCircle size={10} /> llama-server found
+                    </div>
+                  )}
+                  {llamaInstalled === false && (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-2xs text-danger font-sans">
+                        <AlertTriangle size={10} /> llama-server not found
+                      </div>
+                      <code className="block text-2xs font-mono text-text-3 bg-surface-1 px-2 py-1 rounded">brew install llama.cpp</code>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Manual setup guidance for vLLM/TGI */}
+              {!currentBackend?.autoLaunch && (
+                <div className="flex items-start gap-2 px-3 py-2 bg-surface-1 rounded-md border border-border-subtle">
+                  <Info size={12} className="text-text-3 flex-shrink-0 mt-0.5" />
+                  <div className="text-2xs text-text-3 font-sans">
+                    Start your {currentBackend?.label} server manually, then add it as a <strong className="text-text-2">Runtime</strong> below with the endpoint URL.
+                  </div>
+                </div>
+              )}
+
+              {/* Launch button + status */}
+              {currentBackend?.autoLaunch && (
+                <div className="space-y-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="w-full"
+                    disabled={!canLaunch}
+                    onClick={handleLaunch}
+                  >
+                    {launching ? (
+                      <><Loader2 size={12} className="animate-spin mr-1.5" /> Starting...</>
+                    ) : (
+                      <><Play size={12} className="mr-1.5" /> Launch</>
+                    )}
+                  </Button>
+                  <LaunchStatus phase={launchPhase} error={launchError} />
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

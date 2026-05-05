@@ -2,10 +2,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useGrooveStore } from '../stores/groove';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { Select, SelectTrigger, SelectContent, SelectItem } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
 import { Tooltip } from '../components/ui/tooltip';
-import { RuntimeConfig, LocalModels } from '../components/lab/runtime-config';
+import { Combobox } from '../components/ui/combobox';
+import { RuntimeConfig, LaunchModel } from '../components/lab/runtime-config';
 import { ParameterPanel } from '../components/lab/parameter-panel';
 import { SystemPromptEditor } from '../components/lab/system-prompt-editor';
 import { ChatPlayground } from '../components/lab/chat-playground';
@@ -32,25 +32,21 @@ function ModelSelector() {
   return (
     <div className="space-y-1.5">
       <span className="text-xs font-semibold font-sans text-text-2 uppercase tracking-wider">Model</span>
-      {models.length > 0 ? (
-        <Select value={activeModel || ''} onValueChange={setActiveModel}>
-          <SelectTrigger placeholder="Select model" />
-          <SelectContent>
-            {models.map((m) => (
-              <SelectItem key={m.id || m.name} value={m.id || m.name}>
-                <div className="flex items-center gap-2">
-                  <Box size={12} className="text-text-3" />
-                  <span>{m.name}</span>
-                  {m.size && <span className="text-2xs text-text-4 font-mono">{m.size}</span>}
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      ) : (
-        <div className="px-3 py-2 rounded-md bg-surface-1 border border-border-subtle">
-          <p className="text-2xs text-text-4 font-sans">No models discovered</p>
-        </div>
+      <Combobox
+        value={activeModel || ''}
+        onChange={setActiveModel}
+        options={models.map((m) => ({ id: m.id || m.name, name: m.name, size: m.size }))}
+        placeholder="Select or type a model name"
+        renderOption={(o) => (
+          <div className="flex items-center gap-2">
+            <Box size={12} className="text-text-3 flex-shrink-0" />
+            <span className="truncate">{o.name}</span>
+            {o.size && <span className="text-2xs text-text-4 font-mono flex-shrink-0">{o.size}</span>}
+          </div>
+        )}
+      />
+      {!activeModel && models.length === 0 && (
+        <p className="text-2xs text-text-4 font-sans px-1">No models discovered — type a model name or test the runtime</p>
       )}
     </div>
   );
@@ -70,7 +66,13 @@ function ResizeHandle({ onMouseDown, direction = 'vertical' }) {
 
 export default function ModelLabView() {
   const fetchLabRuntimes = useGrooveStore((s) => s.fetchLabRuntimes);
+
   useEffect(() => { fetchLabRuntimes(); }, [fetchLabRuntimes]);
+
+  useEffect(() => {
+    const interval = setInterval(fetchLabRuntimes, 30000);
+    return () => clearInterval(interval);
+  }, [fetchLabRuntimes]);
 
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -169,7 +171,7 @@ export default function ModelLabView() {
         >
           <ScrollArea className="h-full">
             <div className="px-4 py-4 space-y-5">
-              <LocalModels />
+              <LaunchModel />
               <div className="border-t border-border-subtle" />
               <RuntimeConfig />
               <div className="border-t border-border-subtle" />

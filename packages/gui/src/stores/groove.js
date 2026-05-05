@@ -221,6 +221,9 @@ export const useGrooveStore = create((set, get) => ({
   labStreaming: false,
   labLocalModels: [],
   labLaunching: null,
+  labLlamaInstalled: null,
+  labLaunchPhase: null,
+  labLaunchError: null,
 
   // ── Onboarding ────────────────────────────────────────────
   onboardingComplete: localStorage.getItem('groove:onboardingComplete') === 'true',
@@ -628,6 +631,17 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'ollama:model:imported':
           get().fetchOllamaStatus();
+          break;
+
+        case 'lab:runtime:added':
+        case 'lab:runtime:updated':
+        case 'lab:runtime:removed':
+          get().fetchLabRuntimes();
+          break;
+
+        case 'lab:preset:created':
+        case 'lab:preset:updated':
+        case 'lab:preset:deleted':
           break;
 
         case 'rotation:start':
@@ -3284,7 +3298,11 @@ export const useGrooveStore = create((set, get) => ({
 
   async fetchLabRuntimes() {
     try {
-      const data = await api.get('/lab/runtimes');
+      const raw = await api.get('/lab/runtimes');
+      const data = raw.map((rt) => ({
+        ...rt,
+        status: rt.online === true ? 'connected' : rt.online === false ? 'error' : rt.status,
+      }));
       set({ labRuntimes: data });
       persistJSON('groove:labRuntimes', data);
       if (data.length > 0 && !get().labActiveRuntime) {
@@ -3302,19 +3320,27 @@ export const useGrooveStore = create((set, get) => ({
     } catch { set({ labLocalModels: [] }); }
   },
 
+  async checkLlamaStatus() {
+    try {
+      const data = await api.get('/llama/status');
+      set({ labLlamaInstalled: !!data.installed });
+    } catch { set({ labLlamaInstalled: false }); }
+  },
+
   async launchLocalModel(modelId) {
-    set({ labLaunching: modelId });
+    set({ labLaunching: modelId, labLaunchPhase: 'starting', labLaunchError: null });
     try {
       const result = await api.post('/lab/launch-local', { modelId });
       const runtimes = await api.get('/lab/runtimes');
       set({ labRuntimes: runtimes });
       persistJSON('groove:labRuntimes', runtimes);
       get().setLabActiveRuntime(result.runtime.id);
-      set({ labActiveModel: result.model, labLaunching: null });
+      set({ labActiveModel: result.model, labLaunching: null, labLaunchPhase: 'ready' });
       get().addToast('success', `Launched ${result.model}`);
+      setTimeout(() => { if (get().labLaunchPhase === 'ready') set({ labLaunchPhase: null }); }, 3000);
       return result;
     } catch (err) {
-      set({ labLaunching: null });
+      set({ labLaunching: null, labLaunchPhase: 'error', labLaunchError: err.message });
       get().addToast('error', 'Failed to launch model', err.message);
       throw err;
     }

@@ -42,7 +42,7 @@ export class LlamaServerManager {
       const server = this.servers.get(modelPath);
       server.users++;
       server.lastUsed = Date.now();
-      return `http://127.0.0.1:${server.port}/v1`;
+      return `http://127.0.0.1:${server.port}`;
     }
 
     // Check capacity
@@ -120,7 +120,7 @@ export class LlamaServerManager {
         data: { modelPath, port },
       });
 
-      return `http://127.0.0.1:${port}/v1`;
+      return `http://127.0.0.1:${port}`;
     } catch (err) {
       // Server failed to start
       await this.stopServer(modelPath);

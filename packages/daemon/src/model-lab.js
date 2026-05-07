@@ -274,6 +274,14 @@ export class ModelLab {
           try {
             const chunk = JSON.parse(payload);
             const delta = chunk.choices?.[0]?.delta;
+            if (delta?.reasoning_content) {
+              if (ttft === null) {
+                ttft = Date.now() - requestStart;
+                generationStart = Date.now();
+              }
+              completionTokens++;
+              yield { type: 'reasoning', content: delta.reasoning_content };
+            }
             if (delta?.content) {
               if (ttft === null) {
                 ttft = Date.now() - requestStart;

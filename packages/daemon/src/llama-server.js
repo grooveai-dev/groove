@@ -42,7 +42,7 @@ export class LlamaServerManager {
       const server = this.servers.get(modelPath);
       server.users++;
       server.lastUsed = Date.now();
-      return `http://127.0.0.1:${server.port}`;
+      return `http://localhost:${server.port}`;
     }
 
     // Check capacity
@@ -120,7 +120,7 @@ export class LlamaServerManager {
         data: { modelPath, port },
       });
 
-      return `http://127.0.0.1:${port}`;
+      return `http://localhost:${port}`;
     } catch (err) {
       // Server failed to start
       await this.stopServer(modelPath);
@@ -187,7 +187,7 @@ export class LlamaServerManager {
     const start = Date.now();
     while (Date.now() - start < HEALTH_TIMEOUT) {
       try {
-        const res = await fetch(`http://127.0.0.1:${port}/health`, {
+        const res = await fetch(`http://localhost:${port}/health`, {
           signal: AbortSignal.timeout(2000),
         });
         if (res.ok) {
@@ -209,7 +209,7 @@ export class LlamaServerManager {
     if (!server) return { running: false };
 
     try {
-      const res = await fetch(`http://127.0.0.1:${server.port}/health`, {
+      const res = await fetch(`http://localhost:${server.port}/health`, {
         signal: AbortSignal.timeout(3000),
       });
       const data = await res.json().catch(() => ({}));

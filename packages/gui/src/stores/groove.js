@@ -3500,6 +3500,7 @@ export const useGrooveStore = create((set, get) => ({
       const decoder = new TextDecoder();
       let buffer = '';
       let fullContent = '';
+      let fullReasoning = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -3514,6 +3515,20 @@ export const useGrooveStore = create((set, get) => ({
           if (payload === '[DONE]') continue;
           try {
             const chunk = JSON.parse(payload);
+            if (chunk.type === 'reasoning' && chunk.content) {
+              if (!firstTokenTime) firstTokenTime = performance.now();
+              tokenCount++;
+              fullReasoning += chunk.content;
+              set((s) => {
+                const sessions = s.labSessions.map((sess) => {
+                  if (sess.id !== sessionId) return sess;
+                  const msgs = [...sess.messages];
+                  msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], reasoning: fullReasoning };
+                  return { ...sess, messages: msgs };
+                });
+                return { labSessions: sessions };
+              });
+            }
             if (chunk.type === 'token' && chunk.content) {
               if (!firstTokenTime) firstTokenTime = performance.now();
               tokenCount++;

@@ -48,12 +48,21 @@ function UserMessage({ msg }) {
 }
 
 function AssistantMessage({ msg, streaming }) {
-  const isStreaming = streaming && !msg.content && !msg.error;
+  const isStreaming = streaming && !msg.content && !msg.reasoning && !msg.error;
+  const isReasoning = streaming && msg.reasoning && !msg.content;
   return (
     <div>
       <div className="text-2xs text-text-3 font-sans mb-0.5 font-medium flex items-center gap-1">
         <Bot size={10} /> Assistant
       </div>
+      {msg.reasoning && (
+        <div className="border-l-2 border-text-4/30 pl-3 py-0.5 mb-1">
+          <div className="text-2xs font-sans text-text-3 italic whitespace-pre-wrap break-words leading-relaxed">
+            {msg.reasoning}
+            {isReasoning && <span className="inline-block w-1 h-3 bg-text-4/50 ml-0.5 animate-pulse" />}
+          </div>
+        </div>
+      )}
       <div className={cn(
         'border-l-2 pl-3 py-0.5',
         msg.error ? 'border-danger/40' : 'border-accent/40',

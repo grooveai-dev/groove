@@ -577,6 +577,16 @@ export class ProcessManager {
 
     this.handles.delete(agent.id);
     this._stalledAgents.delete(agent.id);
+    this._truncationFlagged.delete(agent.id);
+    this._lastAssistantBlocks.delete(agent.id);
+    this._previousCacheReadTokens.delete(agent.id);
+
+    const throttle = this._streamThrottle.get(agent.id);
+    if (throttle?.timer) clearTimeout(throttle.timer);
+    this._streamThrottle.delete(agent.id);
+
+    this.peakContextUsage.delete(agent.id);
+    this.pendingMessages.delete(agent.id);
 
     if (this.daemon.locks) this.daemon.locks.release(agent.id);
 

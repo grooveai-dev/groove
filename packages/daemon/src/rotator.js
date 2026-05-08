@@ -34,6 +34,7 @@ export class Rotator extends EventEmitter {
     this.rotating = new Set();
     this.lastRotationTime = new Map(); // agentId -> timestamp of last rotation
     this._lastContextState = new Map(); // agentId -> { contextUsage, timestamp }
+    this.compactionCounts = new Map(); // agentId -> number of natural compactions
     this.enabled = false;
     this.liveScores = {};
     this.scoreHistory = {};
@@ -148,6 +149,9 @@ export class Rotator extends EventEmitter {
 
     if (ageSec > 1800) score -= 5;
     if (ageSec > 3600) score -= 10;
+    if (ageSec > 7200) score -= 15;
+    if (ageSec > 14400) score -= 20;
+    if (ageSec > 28800) score -= 25;
 
     score = Math.max(0, Math.min(100, score));
 
@@ -236,13 +240,34 @@ export class Rotator extends EventEmitter {
         }
       }
 
+      // --- Change 4: Truncation-triggered immediate rotation (all providers) ---
+      if (agent.consecutiveTruncations >= 2) {
+        console.log(`  Rotator: ${agent.name} consecutiveTruncations=${agent.consecutiveTruncations} — FORCE rotating (incomplete_response)`);
+        await this.rotate(agent.id, { reason: 'incomplete_response', qualityScore: 0 });
+        continue;
+      }
+
+      // --- Change 3: Compaction-aware rotation for self-managing providers ---
+      const compactions = this.compactionCounts.get(agent.id) || 0;
+      if (compactions >= 5) {
+        console.log(`  Rotator: ${agent.name} compactions=${compactions} — FORCE rotating (compaction_ceiling)`);
+        await this.rotate(agent.id, { reason: 'compaction_ceiling' });
+        continue;
+      }
+
       // Quality rotation uses a shorter cooldown (2 min vs 5 min) so degraded
       // agents don't persist producing bad output for 8-10 minutes
       if (this._isOnCooldown(agent.id, QUALITY_COOLDOWN_MS)) continue;
 
+      // Effective quality threshold: lower for agents showing degradation signals
+      let effectiveQualityThreshold = QUALITY_THRESHOLD;
+      if (compactions >= 3 || agent.truncationSuspected || agent.cacheResetDetected) {
+        effectiveQualityThreshold = 55;
+      }
+
       // All providers: quality-based rotation — detects degradation before tokens are wasted
       const quality = this.scoreLiveSession(agent);
-      if (quality.hasEnoughData && quality.score < QUALITY_THRESHOLD) {
+      if (quality.hasEnoughData && quality.score < effectiveQualityThreshold) {
         // Severe degradation (score < 25): rotate immediately regardless of idle state.
         // The agent is producing bad output — waiting for idle is counterproductive.
         if (quality.score < 25) {
@@ -293,6 +318,7 @@ export class Rotator extends EventEmitter {
       this.daemon.classifier.clearAgent(agentId);
       delete this.liveScores[agentId];
       delete this.scoreHistory[agentId];
+      this.compactionCounts.delete(agentId);
 
       let brief = await journalist.generateHandoffBrief(agent, {
         reason: options.reason,
@@ -482,6 +508,22 @@ export class Rotator extends EventEmitter {
   }
 
   recordNaturalCompaction(agent, peakUsage, currentUsage) {
+    // Guard: require valid agent data to prevent duplicate ghost entries
+    if (!agent?.id || !agent?.name || !agent?.provider) return;
+
+    // Dedup: skip if we already recorded a compaction for this agent within 30s
+    const now = Date.now();
+    const recent = this.rotationHistory.filter(
+      (r) => r.reason === 'natural_compaction' && r.agentId === agent.id
+    );
+    if (recent.length > 0) {
+      const lastTs = new Date(recent[recent.length - 1].timestamp).getTime();
+      if (now - lastTs < 30_000) return;
+    }
+
+    // Track compaction count for compaction-ceiling rotation
+    this.compactionCounts.set(agent.id, (this.compactionCounts.get(agent.id) || 0) + 1);
+
     const record = {
       agentId: agent.id,
       agentName: agent.name,
@@ -492,7 +534,7 @@ export class Rotator extends EventEmitter {
       contextAfter: currentUsage,
       reason: 'natural_compaction',
       qualityScore: null,
-      timestamp: new Date().toISOString(),
+      timestamp: new Date(now).toISOString(),
       newAgentId: agent.id,
       newTokens: agent.tokensUsed || 0,
     };

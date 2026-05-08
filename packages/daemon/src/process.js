@@ -1378,6 +1378,18 @@ For normal file edits within your scope, proceed without review.
         }
       }
 
+      // Check 2: previous turn had tool_use blocks but this turn is near-empty
+      // (<20 chars of text, no new tool calls). In normal flow the assistant
+      // processes tool results and produces a substantive follow-up; a near-empty
+      // response suggests the tool call was abandoned or its result was lost.
+      const prevBlocks = this._lastAssistantBlocks.get(agentId);
+      if (prevBlocks && prevBlocks.some(b => b.type === 'tool_use')) {
+        const totalCurrentText = textBlocks.reduce((sum, b) => sum + (b.text?.length || 0), 0);
+        if (totalCurrentText < 20 && !blocks.some(b => b.type === 'tool_use')) {
+          truncated = true;
+        }
+      }
+
       this._lastAssistantBlocks.set(agentId, blocks);
 
       if (truncated) {

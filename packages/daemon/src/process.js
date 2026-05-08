@@ -342,6 +342,9 @@ export class ProcessManager {
     this._stalledAgents = new Set(); // agentIds already flagged as stalled (avoids duplicate broadcasts)
     this._exitHandled = new Set();
     this._resultReceived = new Set();
+    this._truncationFlagged = new Set(); // agentIds that have had any truncation in their session
+    this._lastAssistantBlocks = new Map(); // agentId -> last assistant content blocks (for abandoned tool_use detection)
+    this._previousCacheReadTokens = new Map(); // agentId -> previous turn's cacheReadTokens
 
     this._stallWatchdog = setInterval(() => this._checkStalls(), STALL_CHECK_INTERVAL_MS);
     if (this._stallWatchdog.unref) this._stallWatchdog.unref();
@@ -355,7 +358,8 @@ export class ProcessManager {
       if (!agent || agent.status !== 'running') continue;
       const lastActivity = agent.lastActivity ? new Date(agent.lastActivity).getTime() : now;
       const silentMs = now - lastActivity;
-      if (silentMs < STALL_THRESHOLD_MS) {
+      const effectiveStallMs = this._truncationFlagged.has(agentId) ? 2 * 60_000 : STALL_THRESHOLD_MS;
+      if (silentMs < effectiveStallMs) {
         if (this._stalledAgents.has(agentId)) {
           this._stalledAgents.delete(agentId);
           registry.update(agentId, { stalled: false });
@@ -402,6 +406,9 @@ export class ProcessManager {
         setTimeout(() => this._exitHandled.delete(agentId), 30_000);
         this._stalledAgents.delete(agentId);
         this._resultReceived.delete(agentId);
+        this._truncationFlagged.delete(agentId);
+        this._lastAssistantBlocks.delete(agentId);
+        this._previousCacheReadTokens.delete(agentId);
         const throttle = this._streamThrottle.get(agentId);
         if (throttle?.timer) clearTimeout(throttle.timer);
         this._streamThrottle.delete(agentId);
@@ -435,6 +442,9 @@ export class ProcessManager {
     this.peakContextUsage.delete(agent.id);
     this.pendingMessages.delete(agent.id);
     this._stalledAgents.delete(agent.id);
+    this._truncationFlagged.delete(agent.id);
+    this._lastAssistantBlocks.delete(agent.id);
+    this._previousCacheReadTokens.delete(agent.id);
 
     if (this.daemon.locks) this.daemon.locks.release(agent.id);
 
@@ -884,7 +894,19 @@ export class ProcessManager {
     // Handoffs are injected only when the agent has a real task or is a rotation.
     const hasTask = !!(config.prompt && config.prompt.trim().length > 0);
     const isRotation = !!(config.isRotation);
-    const introContext = introducer.generateContext(agent, { taskNegotiation, hasTask, isRotation });
+    let introContext = introducer.generateContext(agent, { taskNegotiation, hasTask, isRotation });
+
+    // Intro context size warning and optional truncation (Change 7)
+    if (introContext) {
+      const introLen = introContext.length;
+      const maxIntroChars = this.daemon.config?.maxIntroContextChars || 10000;
+      if (introLen > 8000) {
+        console.warn(`[Groove] Intro context for ${agent.name} is ${introLen} chars — consider reducing CLAUDE.md.`);
+      }
+      if (introLen > maxIntroChars) {
+        introContext = introContext.slice(0, maxIntroChars) + '\n\n[Intro context truncated at ' + maxIntroChars + ' chars]';
+      }
+    }
 
     // Ensure the project map is fresh before the new agent reads CLAUDE.md
     if (this.daemon.journalist) {
@@ -1050,6 +1072,9 @@ For normal file edits within your scope, proceed without review.
         this.handles.delete(agent.id);
         this._stalledAgents.delete(agent.id);
         this._resultReceived.delete(agent.id);
+        this._truncationFlagged.delete(agent.id);
+        this._lastAssistantBlocks.delete(agent.id);
+        this._previousCacheReadTokens.delete(agent.id);
 
         // Clean up stream throttle so pending timers don't fire for dead agents
         const throttle = this._streamThrottle.get(agent.id);
@@ -1336,6 +1361,48 @@ For normal file edits within your scope, proceed without review.
     if (this._stalledAgents.has(agentId)) {
       this._stalledAgents.delete(agentId);
       updates.stalled = false;
+    }
+
+    // --- Incomplete response / truncation detection (Change 1) ---
+    if (output.type === 'activity' && output.subtype === 'assistant' && Array.isArray(output.data)) {
+      const blocks = output.data;
+      let truncated = false;
+
+      // Check 1: last text block ends mid-sentence (no terminal punctuation).
+      // Skip short responses (<40 chars) — "OK", "Done", "Sure" are legitimate.
+      const textBlocks = blocks.filter(b => b.type === 'text' && b.text);
+      if (textBlocks.length > 0) {
+        const lastText = textBlocks[textBlocks.length - 1].text.trimEnd();
+        if (lastText.length >= 40 && !/[.?!}\])`'"]$/.test(lastText) && !/```\s*$/.test(lastText)) {
+          truncated = true;
+        }
+      }
+
+      this._lastAssistantBlocks.set(agentId, blocks);
+
+      if (truncated) {
+        this._truncationFlagged.add(agentId);
+        const prev = agent.consecutiveTruncations || 0;
+        updates.truncationSuspected = true;
+        updates.consecutiveTruncations = prev + 1;
+        classifier.addEvent(agentId, { type: 'error', subtype: 'truncated_response', timestamp: Date.now() });
+      } else if (agent.truncationSuspected) {
+        updates.truncationSuspected = false;
+        updates.consecutiveTruncations = 0;
+      }
+    }
+
+    // --- Cache reset detection (Change 5) ---
+    if (output.cacheReadTokens !== undefined) {
+      const prevCache = this._previousCacheReadTokens.get(agentId);
+      if (prevCache !== undefined && prevCache > 50_000) {
+        const drop = prevCache - output.cacheReadTokens;
+        if (drop > prevCache * 0.5) {
+          classifier.addEvent(agentId, { type: 'error', subtype: 'cache_reset', timestamp: Date.now() });
+          updates.cacheResetDetected = true;
+        }
+      }
+      this._previousCacheReadTokens.set(agentId, output.cacheReadTokens);
     }
 
     // Token tracking — feed subsystems with full breakdown

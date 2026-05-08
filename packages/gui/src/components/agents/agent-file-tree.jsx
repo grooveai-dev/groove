@@ -7,11 +7,11 @@ import { ChevronRight, ChevronDown, File, Folder, FolderOpen, FileEdit, Eye, Fil
 import { ScrollArea } from '../ui/scroll-area';
 
 const FILE_COLORS = {
-  js: 'text-warning', jsx: 'text-warning', ts: 'text-info', tsx: 'text-info',
-  css: 'text-info', html: 'text-orange', json: 'text-warning',
-  md: 'text-text-2', py: 'text-success', rs: 'text-orange',
-  go: 'text-accent', sh: 'text-success', yaml: 'text-danger', yml: 'text-danger',
-  sql: 'text-purple', xml: 'text-orange', svg: 'text-warning',
+  js: 'text-text-2', jsx: 'text-text-2', ts: 'text-text-2', tsx: 'text-text-2',
+  css: 'text-text-3', html: 'text-text-3', json: 'text-text-3',
+  md: 'text-text-3', py: 'text-text-2', rs: 'text-text-3',
+  go: 'text-text-2', sh: 'text-text-3', yaml: 'text-text-3', yml: 'text-text-3',
+  sql: 'text-text-3', xml: 'text-text-3', svg: 'text-text-3',
 };
 
 function getFileColor(name) {
@@ -135,7 +135,7 @@ function TreeEntry({ entry, depth, onOpen, expandedDirs, onToggleDir, onContextM
         onDoubleClick={handleCtxMenu}
         onContextMenu={handleCtxMenu}
         className={cn(
-          'w-full flex items-center gap-1.5 py-1 text-xs font-sans cursor-pointer',
+          'w-full flex items-center gap-1.5 py-[3px] text-[13px] font-sans cursor-pointer',
           'hover:bg-surface-4/50 transition-colors text-left',
           isDragging && 'opacity-50',
           isDragOver && 'bg-accent/15 ring-1 ring-accent/50 rounded',

@@ -2,7 +2,7 @@
 
 import { SUPPORTED_PROVIDERS, MODEL_TIERS, TRAINING_EXCLUSION_REASONS } from './constants.js';
 
-export const STEP_TYPES = ['thought', 'action', 'observation', 'correction', 'resolution', 'error', 'coordination', 'edit', 'instruction', 'clarification', 'approval'];
+export const STEP_TYPES = ['thought', 'action', 'observation', 'correction', 'resolution', 'error', 'coordination', 'edit', 'instruction', 'clarification', 'approval', 'delegate', 'yield'];
 const VALID_QUALITY_TIERS = ['TIER_A', 'TIER_B', 'TIER_C'];
 const VALID_FEEDBACK_SIGNALS = ['accepted', 'modified', 'rejected', 'iterated'];
 

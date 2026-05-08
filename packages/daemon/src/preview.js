@@ -116,65 +116,92 @@ export class PreviewService {
       return { launched: false, reason: installResult.reason };
     }
 
-    let result;
-    if (preview.kind === 'static-html') {
-      if (this._needsBuild(baseDir, preview)) {
-        const buildResult = this._runBuild(teamId, baseDir);
-        if (buildResult?.failed) {
-          this.daemon.audit?.log('preview.failed', { teamId, reason: buildResult.reason });
-          return { launched: false, reason: buildResult.reason };
-        }
-        const distDir = resolve(baseDir, 'dist');
-        if (existsSync(distDir)) {
-          result = await this._launchStatic(teamId, distDir, { ...preview, openPath: preview.openPath || 'index.html' });
-        } else {
-          result = await this._launchStatic(teamId, baseDir, preview);
-        }
-      } else {
-        const distDir = resolve(baseDir, 'dist');
-        const openFile = (preview.openPath || 'index.html').replace(/^\/+/, '');
-        if (existsSync(resolve(distDir, openFile))) {
-          result = await this._launchStatic(teamId, distDir, { ...preview, openPath: openFile });
-        } else {
-          result = await this._launchStatic(teamId, baseDir, preview);
-        }
-      }
-    } else if (preview.kind === 'dev-server') {
-      if (this._needsPreBuild(baseDir)) {
-        const preBuild = this._runBuild(teamId, baseDir);
-        if (preBuild?.failed) {
-          this.daemon.audit?.log('preview.prebuild-failed', { teamId, reason: preBuild.reason });
+    // Static-first strategy: always try build+static before dev-server.
+    // Static serving is near-100% reliable — no port conflicts, no proxy
+    // issues, no HMR quirks, no URL rewriting. Dev servers fail constantly
+    // in AI-generated projects (wrong ports, missing scripts, relative path
+    // breakage through the proxy). Only fall back to dev-server when there
+    // is no build output at all.
+
+    const openFile = (preview.openPath || 'index.html').replace(/^\/+/, '');
+    const pkgPath = resolve(baseDir, 'package.json');
+    let hasBuildScript = false;
+    let isFrontendProject = false;
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+      hasBuildScript = !!pkg.scripts?.build;
+      const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+      isFrontendProject = !!(allDeps?.react || allDeps?.vue || allDeps?.svelte || allDeps?.vite
+        || allDeps?.['@angular/core'] || allDeps?.next || allDeps?.nuxt || allDeps?.astro);
+    } catch { /* no package.json or malformed */ }
+
+    // Also detect frontend by config files
+    if (!isFrontendProject) {
+      const frontendConfigs = ['vite.config', 'next.config', 'webpack.config', 'svelte.config', 'astro.config', 'nuxt.config', 'angular.json'];
+      for (const cfg of frontendConfigs) {
+        if (['.js', '.ts', '.mjs', '.cjs', ''].some((ext) => existsSync(resolve(baseDir, cfg + ext)))) {
+          isFrontendProject = true;
+          break;
         }
       }
-      result = await this._launchDevServer(teamId, baseDir, preview);
-      // Fallback: if dev-server failed, try building and serving statically
-      if (!result.launched) {
-        const pkgPath = resolve(baseDir, 'package.json');
-        if (existsSync(pkgPath)) {
-          try {
-            const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
-            if (pkg.scripts?.build) {
-              const buildResult = this._runBuild(teamId, baseDir);
-              if (!buildResult?.failed) {
-                const distDir = resolve(baseDir, 'dist');
-                if (existsSync(resolve(distDir, 'index.html'))) {
-                  result = await this._launchStatic(teamId, distDir, { ...preview, openPath: 'index.html' });
-                }
-              }
-            }
-          } catch { /* fallback failed, keep original error */ }
-        }
-      }
-    } else {
-      result = { launched: false, reason: `unknown_kind: ${preview.kind}` };
     }
 
-    if (result.launched) {
-      this.daemon.audit?.log('preview.launched', { teamId, url: result.url, kind: result.kind, baseDir });
-    } else {
-      this.daemon.audit?.log('preview.failed', { teamId, reason: result.reason, baseDir });
+    // Common build output directories
+    const OUTPUT_DIRS = ['dist', 'build', 'out', '.next/standalone', 'public'];
+
+    let result;
+
+    // Strategy 1: Build and serve static (only for frontend projects — skip for backends)
+    if (hasBuildScript && (isFrontendProject || preview.kind === 'static-html')) {
+      const buildResult = this._runBuild(teamId, baseDir);
+      if (!buildResult?.failed) {
+        result = this._findAndServeStatic(teamId, baseDir, OUTPUT_DIRS, openFile, preview);
+        if (result && (await result).launched) {
+          result = await result;
+          this.daemon.audit?.log('preview.launched', { teamId, url: result.url, kind: result.kind, baseDir, strategy: 'build-static' });
+          return result;
+        }
+      }
     }
+
+    // Strategy 2: Serve existing static files (pre-built, plain HTML, no-build projects)
+    result = this._findAndServeStatic(teamId, baseDir, OUTPUT_DIRS, openFile, preview);
+    if (result && (await result).launched) {
+      result = await result;
+      this.daemon.audit?.log('preview.launched', { teamId, url: result.url, kind: result.kind, baseDir, strategy: 'serve-existing' });
+      return result;
+    }
+
+    // Strategy 3: Dev server (backends, SSR frameworks, projects with no static output)
+    if (preview.kind === 'dev-server') {
+      result = await this._launchDevServer(teamId, baseDir, preview);
+      if (result?.launched) {
+        this.daemon.audit?.log('preview.launched', { teamId, url: result.url, kind: result.kind, baseDir, strategy: 'dev-server' });
+        return result;
+      }
+    }
+
+    result = result || { launched: false, reason: 'all_strategies_failed' };
+    this.daemon.audit?.log('preview.failed', { teamId, reason: result.reason, baseDir });
     return result;
+  }
+
+  _findAndServeStatic(teamId, baseDir, outputDirs, openFile, preview) {
+    // Check output directories first, then baseDir itself
+    for (const dir of outputDirs) {
+      const fullDir = resolve(baseDir, dir);
+      if (existsSync(resolve(fullDir, openFile))) {
+        return this._launchStatic(teamId, fullDir, { ...preview, openPath: openFile });
+      }
+      if (openFile !== 'index.html' && existsSync(resolve(fullDir, 'index.html'))) {
+        return this._launchStatic(teamId, fullDir, { ...preview, openPath: 'index.html' });
+      }
+    }
+    // Finally check baseDir itself (plain HTML projects)
+    if (existsSync(resolve(baseDir, openFile))) {
+      return this._launchStatic(teamId, baseDir, { ...preview, openPath: openFile });
+    }
+    return Promise.resolve({ launched: false, reason: 'no_static_entry' });
   }
 
   _ensureDependencies(teamId, baseDir) {
@@ -262,18 +289,18 @@ export class PreviewService {
       if (!pkg.scripts?.build) return { failed: true, reason: 'no build script' };
     } catch { return { failed: true, reason: 'malformed package.json' }; }
 
-    const isVite = ['vite.config.js', 'vite.config.ts', 'vite.config.mjs']
+    const isVite = ['vite.config.js', 'vite.config.ts', 'vite.config.mjs', 'vite.config.cjs']
       .some((f) => existsSync(resolve(baseDir, f)));
 
     let command = 'npm run build';
-    const buildScript = (pkg.scripts.build || '').trim();
-
-    if (isVite && /^(tsc\s*&&\s*)?vite\s+build\s*$/.test(buildScript)) {
-      command = `npm run build -- --base=./`;
-    }
-
     const env = { ...process.env };
-    if (isVite && command === 'npm run build') {
+
+    // Force relative base paths for Vite — absolute paths break in iframe
+    if (isVite) {
+      const buildScript = (pkg.scripts.build || '').trim();
+      if (/\bvite\s+build\b/.test(buildScript)) {
+        command = `npm run build -- --base=./`;
+      }
       env.VITE_BASE = './';
     }
 

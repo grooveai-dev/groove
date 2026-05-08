@@ -3,10 +3,10 @@ import { useRef, useEffect } from 'react';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view';
 import { EditorState, Compartment } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-import { bracketMatching, syntaxHighlighting } from '@codemirror/language';
+import { bracketMatching, syntaxHighlighting, HighlightStyle } from '@codemirror/language';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion } from '@codemirror/autocomplete';
-import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark';
+import { tags as t } from '@lezer/highlight';
 import { javascript } from '@codemirror/lang-javascript';
 import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
@@ -23,6 +23,29 @@ const LANGS = {
   markdown: () => markdown(),
   python: () => python(),
 };
+
+const grooveHighlightStyle = HighlightStyle.define([
+  { tag: t.keyword, color: '#b07fd5' },
+  { tag: [t.name, t.deleted, t.character, t.macroName], color: '#d4d8e0' },
+  { tag: [t.function(t.variableName), t.labelName], color: '#7ab0df' },
+  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#c4956a' },
+  { tag: [t.definition(t.name), t.separator], color: '#bcc2cd' },
+  { tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace], color: '#cda869' },
+  { tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.special(t.string)], color: '#73c991' },
+  { tag: [t.meta, t.comment], color: '#6e7681', fontStyle: 'italic' },
+  { tag: t.strong, fontWeight: 'bold' },
+  { tag: t.emphasis, fontStyle: 'italic' },
+  { tag: t.strikethrough, textDecoration: 'line-through' },
+  { tag: t.link, color: '#7ab0df', textDecoration: 'underline' },
+  { tag: t.heading, fontWeight: '400', color: '#bcc2cd' },
+  { tag: [t.atom, t.bool, t.special(t.variableName)], color: '#c4956a' },
+  { tag: [t.processingInstruction, t.string, t.inserted], color: '#73c991' },
+  { tag: t.invalid, color: '#d4736e' },
+  { tag: t.propertyName, color: '#7ab0df' },
+  { tag: [t.tagName], color: '#d4736e' },
+  { tag: t.attributeName, color: '#cda869' },
+  { tag: t.attributeValue, color: '#73c991' },
+]);
 
 // Custom theme overrides to match our design tokens
 const grooveTheme = EditorView.theme({
@@ -98,7 +121,7 @@ export function CodeEditor({ content, language, onChange, onSave, onCursorChange
         autocompletion(),
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
         saveKeymap,
-        syntaxHighlighting(oneDarkHighlightStyle),
+        syntaxHighlighting(grooveHighlightStyle),
         grooveTheme,
         langCompartment.current.of(langExt()),
         EditorView.updateListener.of((update) => {

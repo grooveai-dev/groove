@@ -1,8 +1,8 @@
 // GROOVE — Introduction Protocol
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { writeFileSync, readFileSync, existsSync } from 'fs';
-import { resolve } from 'path';
+import { writeFileSync, readFileSync, existsSync, readdirSync, statSync } from 'fs';
+import { resolve, dirname, basename } from 'path';
 import { escapeMd } from './validate.js';
 
 const GROOVE_SECTION_START = '<!-- GROOVE:START -->';
@@ -28,7 +28,50 @@ export class Introducer {
     ];
 
     if (newAgent.workingDir) {
-      lines.push(`Your working directory: \`${newAgent.workingDir}\` — you are spawned inside this subdirectory. Stay within it unless coordination requires otherwise.`);
+      lines.push(`Your working directory: \`${newAgent.workingDir}\` — this is the team orchestration directory (.groove/, coordination files). Do NOT create source code or project files here.`);
+
+      // Inject parent directory context so agents know the root layout
+      const parentDir = dirname(newAgent.workingDir);
+      const teamDirName = basename(newAgent.workingDir);
+      lines.push(`Your project root: \`${parentDir}\` — all source code, features, and builds go here (one level up from team dir).`);
+      lines.push('');
+      lines.push('## Project Root Structure');
+      lines.push('');
+      lines.push(`Team dir: \`${teamDirName}/\` (orchestration only — do NOT build here)`);
+      lines.push(`Project root: \`${parentDir}\``);
+      lines.push('');
+      try {
+        const entries = readdirSync(parentDir, { withFileTypes: true });
+        const dirs = [];
+        const files = [];
+        for (const entry of entries) {
+          if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+          if (entry.name === teamDirName) continue;
+          if (entry.isDirectory()) {
+            dirs.push(entry.name + '/');
+          } else {
+            files.push(entry.name);
+          }
+        }
+        if (dirs.length > 0) {
+          lines.push('Directories:');
+          for (const d of dirs.slice(0, 30)) {
+            lines.push(`  ${d}`);
+          }
+          if (dirs.length > 30) lines.push(`  (+${dirs.length - 30} more)`);
+        }
+        if (files.length > 0) {
+          lines.push('Files:');
+          for (const f of files.slice(0, 20)) {
+            lines.push(`  ${f}`);
+          }
+          if (files.length > 20) lines.push(`  (+${files.length - 20} more)`);
+        }
+        lines.push('');
+        lines.push('When creating or modifying project files, use "../" paths relative to the team dir (e.g., "../demo/src/app.js"). The team directory is ephemeral and may be deleted — never put project work inside it.');
+      } catch {
+        // Parent dir not readable — skip
+      }
     }
 
     if (newAgent.scope && newAgent.scope.length > 0) {
@@ -185,7 +228,8 @@ export class Introducer {
     lines.push('');
     lines.push(`CRITICAL: NEVER delete files you did not create in this session. Do NOT remove files from other projects, previous work, or unrelated directories.`);
     if (newAgent.workingDir) {
-      lines.push(`Your working directory is \`${newAgent.workingDir}\`. Stay inside it. Do NOT modify or delete files outside this directory.`);
+      const parentDir = dirname(newAgent.workingDir);
+      lines.push(`Your team directory is \`${newAgent.workingDir}\` (orchestration only). Build all project files in the project root: \`${parentDir}\`.`);
     }
     lines.push(`If you see files that seem unrelated to your task, leave them alone — they belong to another project or agent.`);
 

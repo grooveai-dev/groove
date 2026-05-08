@@ -266,6 +266,13 @@ For NEW projects (team creation only):
 Include "projectDir" with a short kebab-case directory name. All agents spawn inside it.
 For EXISTING codebases: Do NOT include "projectDir".
 
+DIRECTORY RULES:
+Your team directory (where you are spawned) is for ORCHESTRATION ONLY — .groove/, AGENTS_REGISTRY.md, coordination files. Do NOT instruct agents to create source code, projects, or build artifacts inside the team directory.
+
+All source code, features, and projects MUST be created in the PARENT directory (one level up from the team dir). Look at the parent directory structure provided in your context to understand existing directories, naming conventions, and paths. Reference files and directories relative to the parent using "../" prefix in prompts (e.g., "../demo/", "../training/src/").
+
+Scope patterns CAN use "../" to reference directories outside the team dir. For multi-directory projects, use patterns like "../demo/**", "../training/**". If the project spans many directories or you are unsure of boundaries, use empty scope ([]) to give agents unrestricted access.
+
 MANDATORY RULES:
 
 1. For team creation: the LAST entry MUST be { "role": "fullstack", "phase": 2 } — the QC agent.
@@ -283,6 +290,8 @@ MANDATORY RULES:
 6. You MUST always write .groove/recommended-team.json. NEVER skip it.
 
 7. In MODE 2, be FAST. Read only the files needed to understand the specific task. Do not re-analyze the full codebase.
+
+8. NEVER build source code or project files inside the team directory. The team dir is ephemeral — the user may delete it at any time. All persistent work goes in the parent directory.
 
 IMPORTANT: Do not use markdown formatting like ** or ### in your output. Write in plain text with clean formatting. Use line breaks, dashes, and indentation for structure.
 

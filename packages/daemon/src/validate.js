@@ -146,10 +146,6 @@ export function validateScopePattern(pattern) {
   if (pattern.startsWith('/')) {
     throw new Error('Scope patterns cannot be absolute paths');
   }
-  // No path traversal
-  if (pattern.includes('..')) {
-    throw new Error('Scope patterns cannot contain path traversal (..)');
-  }
   // No null bytes
   if (pattern.includes('\0')) {
     throw new Error('Scope pattern contains invalid characters');

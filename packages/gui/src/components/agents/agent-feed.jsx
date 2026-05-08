@@ -320,13 +320,12 @@ function ActivityGroup({ entries, isLive }) {
   }
 
   const current = entries[Math.min(cycleIdx, entries.length - 1)];
-  const display = current.text?.length > 60 ? current.text.slice(0, 60) + '...' : current.text;
 
   return (
-    <div className="inline-flex items-center gap-2 px-3 py-2 max-w-[280px] rounded-md bg-surface-3/50 border border-border-subtle/30">
+    <div className="flex items-center gap-2 px-3 py-2 w-full rounded-md bg-surface-3/50 border border-border-subtle/30">
       <Loader2 size={11} className="text-accent animate-spin flex-shrink-0" />
-      <span className="text-[11px] text-text-2 font-mono truncate transition-opacity duration-300">
-        {display}
+      <span className="text-[11px] text-text-2 font-mono truncate min-w-0 flex-1 transition-opacity duration-300">
+        {current.text}
       </span>
       {entries.length > 1 && (
         <span className="text-[10px] text-text-4 font-mono flex-shrink-0">{entries.length}</span>
@@ -485,6 +484,17 @@ export function AgentFeed({ agent }) {
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const isAtBottomRef = useRef(true);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    function handleScroll() {
+      isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    }
+    el.addEventListener('scroll', handleScroll);
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const onDragStart = useCallback((e) => {
     e.preventDefault();
@@ -542,7 +552,7 @@ export function AgentFeed({ agent }) {
   }, [chatHistory, activityLog]);
 
   useEffect(() => {
-    if (scrollRef.current) {
+    if (isAtBottomRef.current && scrollRef.current) {
       requestAnimationFrame(() => {
         if (scrollRef.current) {
           scrollRef.current.scrollTop = scrollRef.current.scrollHeight;

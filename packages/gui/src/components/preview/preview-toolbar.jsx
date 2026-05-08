@@ -15,6 +15,7 @@ export function PreviewToolbar({ onRefresh }) {
   const setPreviewDevice = useGrooveStore((s) => s.setPreviewDevice);
   const toggleScreenshotMode = useGrooveStore((s) => s.toggleScreenshotMode);
   const closePreview = useGrooveStore((s) => s.closePreview);
+  const stopPreview = useGrooveStore((s) => s.stopPreview);
 
   const [confirming, setConfirming] = useState(false);
   const timerRef = useRef(null);
@@ -27,7 +28,7 @@ export function PreviewToolbar({ onRefresh }) {
     if (confirming) {
       if (timerRef.current) clearTimeout(timerRef.current);
       setConfirming(false);
-      closePreview();
+      stopPreview();
     } else {
       setConfirming(true);
       timerRef.current = setTimeout(() => setConfirming(false), 2000);
@@ -87,19 +88,20 @@ export function PreviewToolbar({ onRefresh }) {
         <Camera size={14} />
       </button>
 
-      {/* Close preview — two-click confirmation */}
+      {/* Hide preview (first click) / Stop server (second click) */}
       <button
-        onClick={handleClose}
+        onClick={confirming ? handleClose : closePreview}
+        onContextMenu={(e) => { e.preventDefault(); setConfirming(true); timerRef.current = setTimeout(() => setConfirming(false), 3000); }}
         className={cn(
           'h-7 flex items-center justify-center rounded-md transition-all cursor-pointer',
           confirming
             ? 'px-2 gap-1.5 bg-danger/15 text-danger border border-danger/25'
-            : 'w-7 text-text-3 hover:text-danger hover:bg-danger/10',
+            : 'w-7 text-text-3 hover:text-text-1 hover:bg-surface-4',
         )}
-        title="Close Preview"
+        title={confirming ? 'Click to stop server' : 'Hide preview'}
       >
         {confirming ? (
-          <span className="text-2xs font-semibold font-sans whitespace-nowrap">Close?</span>
+          <span className="text-2xs font-semibold font-sans whitespace-nowrap">Stop server?</span>
         ) : (
           <X size={14} />
         )}

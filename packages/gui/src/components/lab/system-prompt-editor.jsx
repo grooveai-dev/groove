@@ -6,8 +6,8 @@ import { cn } from '../../lib/cn';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-import { syntaxHighlighting } from '@codemirror/language';
-import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark';
+import { syntaxHighlighting, HighlightStyle } from '@codemirror/language';
+import { tags as t } from '@lezer/highlight';
 import { markdown } from '@codemirror/lang-markdown';
 
 const editorTheme = EditorView.theme({
@@ -19,6 +19,20 @@ const editorTheme = EditorView.theme({
   '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.03)' },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'rgba(51, 175, 188, 0.15)' },
 });
+
+const promptHighlightStyle = HighlightStyle.define([
+  { tag: t.keyword, color: '#b07fd5' },
+  { tag: [t.name, t.deleted, t.character, t.macroName], color: '#d4d8e0' },
+  { tag: [t.function(t.variableName), t.labelName], color: '#7ab0df' },
+  { tag: [t.meta, t.comment], color: '#6e7681', fontStyle: 'italic' },
+  { tag: t.strong, fontWeight: 'bold' },
+  { tag: t.emphasis, fontStyle: 'italic' },
+  { tag: t.link, color: '#7ab0df', textDecoration: 'underline' },
+  { tag: t.heading, fontWeight: '400', color: '#bcc2cd' },
+  { tag: [t.processingInstruction, t.string, t.inserted], color: '#73c991' },
+  { tag: [t.atom, t.bool], color: '#c4956a' },
+  { tag: t.invalid, color: '#d4736e' },
+]);
 
 export function SystemPromptEditor() {
   const systemPrompt = useGrooveStore((s) => s.labSystemPrompt);
@@ -48,7 +62,7 @@ export function SystemPromptEditor() {
       extensions: [
         lineNumbers(),
         history(),
-        syntaxHighlighting(oneDarkHighlightStyle),
+        syntaxHighlighting(promptHighlightStyle),
         markdown(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         editorTheme,

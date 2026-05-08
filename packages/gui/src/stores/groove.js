@@ -70,6 +70,7 @@ export const useGrooveStore = create((set, get) => ({
   showPreviewInAgents: false,
   previewChat: [],
   previewIterating: false,
+  teamPreviews: {},  // teamId -> { url, kind, active } — survives team switches
 
   // ── Team Launch Config (set during planner spawn, cascades to team) ──
   teamLaunchConfig: null, // { provider, model, reasoningEffort, temperature, verbosity, mode }
@@ -553,15 +554,20 @@ export const useGrooveStore = create((set, get) => ({
           get().addToast('info', `QC agent ${msg.name} auto-spawned`, 'Auditing phase 1 work');
           break;
 
-        case 'preview:ready':
+        case 'preview:ready': {
+          const proxyUrl = msg.teamId ? `/api/preview/${msg.teamId}/proxy/` : msg.url;
+          set((s) => ({
+            teamPreviews: { ...s.teamPreviews, [msg.teamId]: { url: proxyUrl, kind: msg.kind, active: true } },
+          }));
           get().addToast(
             'success',
             'Project ready to preview',
             msg.url,
-            { label: 'Open Preview', onClick: () => get().openPreview(msg.url, msg.teamId, msg.kind) },
+            { label: 'Open Preview', onClick: () => get().openPreview(proxyUrl, msg.teamId, msg.kind) },
             { persistent: true },
           );
           break;
+        }
 
         case 'preview:failed': {
           const failKind = msg.kind || '';
@@ -576,9 +582,11 @@ export const useGrooveStore = create((set, get) => ({
         }
 
         case 'preview:stopped': {
-          const ps = get().previewState;
-          if (ps.teamId && ps.teamId === msg.teamId) {
-            set({ previewState: { url: null, teamId: null, kind: null, deviceSize: 'desktop', screenshotMode: false }, previewChat: [], previewIterating: false });
+          const tp = get().teamPreviews[msg.teamId];
+          if (tp) {
+            set((s) => ({
+              teamPreviews: { ...s.teamPreviews, [msg.teamId]: { ...tp, active: false } },
+            }));
           }
           break;
         }
@@ -1235,11 +1243,15 @@ export const useGrooveStore = create((set, get) => ({
   },
 
   switchTeam(id) {
-    const { activeTeamId, detailPanel, teamDetailPanels } = get();
+    const { activeTeamId, detailPanel, teamDetailPanels, teamPreviews } = get();
     const updated = { ...teamDetailPanels };
     if (activeTeamId) updated[activeTeamId] = detailPanel;
     const restored = updated[id] || null;
-    set({ activeTeamId: id, detailPanel: restored, teamDetailPanels: updated });
+    const tp = teamPreviews[id];
+    const previewUpdate = tp
+      ? { previewState: { url: tp.url, teamId: id, kind: tp.kind, deviceSize: 'desktop', screenshotMode: false } }
+      : {};
+    set({ activeTeamId: id, detailPanel: restored, teamDetailPanels: updated, ...previewUpdate });
     localStorage.setItem('groove:activeTeamId', id);
   },
 
@@ -1421,24 +1433,60 @@ export const useGrooveStore = create((set, get) => ({
       const data = await api.get('/preview');
       const previews = data.previews || [];
       if (previews.length > 0) {
-        const p = previews.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
-        set({
-          previewState: { url: `/api/preview/${p.teamId}/proxy/`, teamId: p.teamId, kind: p.kind, deviceSize: 'desktop', screenshotMode: false },
+        const updates = {};
+        for (const p of previews) {
+          updates[p.teamId] = { url: `/api/preview/${p.teamId}/proxy/`, kind: p.kind, active: true };
+        }
+        const most = previews.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
+        set((s) => ({
+          teamPreviews: { ...s.teamPreviews, ...updates },
+          previewState: { url: `/api/preview/${most.teamId}/proxy/`, teamId: most.teamId, kind: most.kind, deviceSize: 'desktop', screenshotMode: false },
           showPreviewInAgents: true,
-        });
+        }));
       }
     } catch {}
   },
 
   openPreview(url, teamId, kind) {
-    set({ previewState: { url, teamId, kind, deviceSize: 'desktop', screenshotMode: false }, previewChat: [], showPreviewInAgents: true });
+    set((s) => ({
+      previewState: { url, teamId, kind, deviceSize: 'desktop', screenshotMode: false },
+      teamPreviews: { ...s.teamPreviews, [teamId]: { url, kind, active: true } },
+      previewChat: [],
+      showPreviewInAgents: true,
+    }));
   },
   closePreview() {
+    set({ showPreviewInAgents: false });
+  },
+  stopPreview() {
     const { previewState } = get();
     if (previewState.teamId) {
       api.delete(`/preview/${previewState.teamId}`).catch(() => {});
+      set((s) => ({
+        teamPreviews: {
+          ...s.teamPreviews,
+          [previewState.teamId]: { ...s.teamPreviews[previewState.teamId], active: false },
+        },
+        showPreviewInAgents: false,
+      }));
     }
-    set({ previewState: { url: null, teamId: null, kind: null, deviceSize: 'desktop', screenshotMode: false }, previewChat: [], previewIterating: false, showPreviewInAgents: false, activeView: 'agents' });
+  },
+  async relaunchPreview(teamId) {
+    try {
+      const result = await api.post(`/preview/${teamId}/launch`);
+      if (result.launched) {
+        const proxyUrl = `/api/preview/${teamId}/proxy/`;
+        set((s) => ({
+          previewState: { url: proxyUrl, teamId, kind: result.kind, deviceSize: 'desktop', screenshotMode: false },
+          teamPreviews: { ...s.teamPreviews, [teamId]: { url: proxyUrl, kind: result.kind, active: true } },
+          showPreviewInAgents: true,
+        }));
+      } else {
+        get().addToast('warning', 'Preview could not launch', result.reason ? String(result.reason).slice(0, 200) : 'Build or server failed');
+      }
+    } catch (err) {
+      get().addToast('error', 'Failed to launch preview', err.message);
+    }
   },
   togglePreviewInAgents() {
     set((s) => ({ showPreviewInAgents: !s.showPreviewInAgents }));

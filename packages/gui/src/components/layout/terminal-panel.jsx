@@ -48,14 +48,12 @@ export function TerminalPanel({
     document.addEventListener('mouseup', onMouseUp);
   }, [height, onHeightChange, fullHeight]);
 
-  if (!visible) return null;
-
   const tabList = tabs || [{ id: 'default', label: 'Terminal' }];
 
   return (
     <div
-      className="flex flex-col border-t border-border bg-surface-0 relative"
-      style={fullHeight ? { flex: 1, minHeight: 0 } : { height, flexShrink: 0 }}
+      className={cn('flex flex-col border-t border-border bg-surface-0 relative', !visible && 'hidden')}
+      style={visible ? (fullHeight ? { flex: 1, minHeight: 0 } : { height, flexShrink: 0 }) : { height: 0 }}
     >
       {/* Resize handle */}
       {!fullHeight && (

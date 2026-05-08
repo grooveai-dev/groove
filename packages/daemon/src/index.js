@@ -373,7 +373,9 @@ export class Daemon {
               if (msg.rows !== undefined && (typeof msg.rows !== 'number' || msg.rows < 1 || msg.rows > 200)) break;
               try {
                 const id = this.terminalManager.spawn(ws, { cwd: msg.cwd, cols: msg.cols, rows: msg.rows });
-                ws.send(JSON.stringify({ type: 'terminal:spawned', id }));
+                const spawned = { type: 'terminal:spawned', id };
+                if (msg.requestId) spawned.requestId = msg.requestId;
+                ws.send(JSON.stringify(spawned));
               } catch (err) {
                 console.error('[terminal] spawn error:', err);
                 ws.send(JSON.stringify({ type: 'terminal:error', message: err.message }));

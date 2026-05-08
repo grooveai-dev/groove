@@ -20,14 +20,24 @@ const THEME = {
 };
 
 let tabCounter = 0;
+let spawnSeq = 0;
 
-function TerminalInstance({ tabId, visible }) {
+function TerminalInstance({ tabId, visible, registerKill }) {
   const containerRef = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);
   const termIdRef = useRef(null);
   const handlerRef = useRef(null);
   const mountedRef = useRef(false);
+
+  useEffect(() => {
+    registerKill?.(tabId, () => {
+      const ws = useGrooveStore.getState().ws;
+      if (ws?.readyState === WebSocket.OPEN && termIdRef.current) {
+        ws.send(JSON.stringify({ type: 'terminal:kill', id: termIdRef.current }));
+      }
+    });
+  }, [tabId, registerKill]);
 
   useEffect(() => {
     if (!containerRef.current || mountedRef.current) return;
@@ -67,13 +77,14 @@ function TerminalInstance({ tabId, visible }) {
         return;
       }
 
-      ws.send(JSON.stringify({ type: 'terminal:spawn', cols: term.cols, rows: term.rows }));
+      const requestId = `spawn-${++spawnSeq}`;
+      ws.send(JSON.stringify({ type: 'terminal:spawn', cols: term.cols, rows: term.rows, requestId }));
 
       function onMessage(event) {
         let msg;
         try { msg = JSON.parse(event.data); } catch { return; }
 
-        if (msg.type === 'terminal:spawned' && !termIdRef.current) {
+        if (msg.type === 'terminal:spawned' && msg.requestId === requestId && !termIdRef.current) {
           termIdRef.current = msg.id;
         } else if (msg.type === 'terminal:output' && msg.id === termIdRef.current) {
           term.write(msg.data);
@@ -114,10 +125,6 @@ function TerminalInstance({ tabId, visible }) {
 
     return () => {
       observer.disconnect();
-      const ws = useGrooveStore.getState().ws;
-      if (ws?.readyState === WebSocket.OPEN && termIdRef.current) {
-        ws.send(JSON.stringify({ type: 'terminal:kill', id: termIdRef.current }));
-      }
       if (handlerRef.current) {
         handlerRef.current.ws.removeEventListener('message', handlerRef.current.handler);
       }
@@ -155,6 +162,9 @@ export function TerminalManager() {
 
   const [tabs, setTabs] = useState([{ id: 'term-0', label: 'Terminal' }]);
   const [activeTab, setActiveTab] = useState('term-0');
+  const killFns = useRef({});
+
+  const registerKill = useCallback((tabId, fn) => { killFns.current[tabId] = fn; }, []);
 
   const addTab = useCallback(() => {
     tabCounter++;
@@ -168,6 +178,8 @@ export function TerminalManager() {
   }, []);
 
   const closeTab = useCallback((id) => {
+    killFns.current[id]?.();
+    delete killFns.current[id];
     setTabs((prev) => {
       const next = prev.filter((t) => t.id !== id);
       if (next.length === 0) {
@@ -199,7 +211,7 @@ export function TerminalManager() {
       onMinimize={() => setFullHeight(false)}
     >
       {tabs.map((tab) => (
-        <TerminalInstance key={tab.id} tabId={tab.id} visible={tab.id === activeTab} />
+        <TerminalInstance key={tab.id} tabId={tab.id} visible={tab.id === activeTab} registerKill={registerKill} />
       ))}
     </TerminalPanel>
   );

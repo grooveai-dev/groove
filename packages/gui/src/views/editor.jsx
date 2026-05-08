@@ -117,17 +117,19 @@ export default function EditorView() {
         />
       </div>
 
+      {/* Sidebar expand rail */}
+      {sidebarCollapsed && (
+        <button
+          onClick={() => setSidebarCollapsed(false)}
+          className="flex-shrink-0 w-6 flex items-center justify-center border-r border-border bg-surface-2 text-text-4 hover:text-text-0 hover:bg-surface-3 transition-colors cursor-pointer"
+          title="Show sidebar"
+        >
+          <PanelLeftOpen size={14} />
+        </button>
+      )}
+
       {/* Editor area */}
       <div className="flex-1 flex flex-col min-w-0 bg-surface-1">
-        {sidebarCollapsed && (
-          <button
-            onClick={() => setSidebarCollapsed(false)}
-            className="absolute top-2 left-2 z-10 w-7 h-7 flex items-center justify-center rounded-md text-text-3 hover:text-text-0 hover:bg-surface-3 transition-colors cursor-pointer"
-            title="Show sidebar"
-          >
-            <PanelLeftOpen size={15} />
-          </button>
-        )}
 
         {/* Tab bar */}
         <EditorTabs />

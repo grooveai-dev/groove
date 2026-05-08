@@ -10,12 +10,11 @@ import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Layers, Archive, Box, HardDrive, LayoutGrid, ArrowUpCircle } from 'lucide-react';
+import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Layers, Box, HardDrive, LayoutGrid } from 'lucide-react';
 import { PreviewWorkspace } from '../components/preview/preview-workspace';
 import { WorkspaceMode } from '../components/agents/workspace-mode';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../components/ui/context-menu';
 import { Dialog, DialogContent } from '../components/ui/dialog';
-import { TeamRemovalDialog } from '../components/teams/team-removal-dialog';
 import { Select, SelectTrigger, SelectContent, SelectItem } from '../components/ui/select';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Tooltip } from '../components/ui/tooltip';
@@ -97,11 +96,9 @@ export function TeamTabBar() {
   const agents = useGrooveStore((s) => s.agents);
   const switchTeam = useGrooveStore((s) => s.switchTeam);
   const createTeam = useGrooveStore((s) => s.createTeam);
-  const archiveTeam = useGrooveStore((s) => s.archiveTeam);
   const deleteTeamPermanently = useGrooveStore((s) => s.deleteTeamPermanently);
   const renameTeam = useGrooveStore((s) => s.renameTeam);
   const cloneTeam = useGrooveStore((s) => s.cloneTeam);
-  const promoteTeam = useGrooveStore((s) => s.promoteTeam);
   const reorderTeams = useGrooveStore((s) => s.reorderTeams);
   const addToast = useGrooveStore((s) => s.addToast);
 
@@ -109,7 +106,6 @@ export function TeamTabBar() {
   const [newName, setNewName] = useState('');
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
-  const [archiveConfirm, setArchiveConfirm] = useState(null);
   const submitting = useRef(false);
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
@@ -263,11 +259,6 @@ export function TeamTabBar() {
               <ContextMenuItem onSelect={() => cloneTeam(team.id)}>
                 <Copy size={12} /> Clone
               </ContextMenuItem>
-              {team.mode !== 'production' && (
-                <ContextMenuItem onSelect={() => promoteTeam(team.id)}>
-                  <ArrowUpCircle size={12} /> Promote to Production
-                </ContextMenuItem>
-              )}
               <ContextMenuSeparator />
               <ContextMenuItem danger onSelect={() => {
                 const teamAgents = agents.filter((a) => a.teamId === team.id);
@@ -275,9 +266,9 @@ export function TeamTabBar() {
                   addToast('error', 'Stop running agents first');
                   return;
                 }
-                setArchiveConfirm(team);
+                deleteTeamPermanently(team.id);
               }}>
-                <Trash2 size={12} /> {team.isDefault ? 'Wipe' : 'Archive'}
+                <Trash2 size={12} /> Delete
               </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
@@ -325,14 +316,6 @@ export function TeamTabBar() {
         </button>
       )}
 
-      <TeamRemovalDialog
-        team={archiveConfirm}
-        open={!!archiveConfirm}
-        onOpenChange={(open) => !open && setArchiveConfirm(null)}
-        onArchive={archiveTeam}
-        onDeletePermanently={deleteTeamPermanently}
-        mode={archiveConfirm?.mode || 'sandbox'}
-      />
     </div>
   );
 }
@@ -1500,6 +1483,9 @@ export default function AgentsView() {
   const showPreviewInAgents = useGrooveStore((s) => s.showPreviewInAgents);
   const previewState = useGrooveStore((s) => s.previewState);
   const togglePreviewInAgents = useGrooveStore((s) => s.togglePreviewInAgents);
+  const teamPreviews = useGrooveStore((s) => s.teamPreviews);
+  const relaunchPreview = useGrooveStore((s) => s.relaunchPreview);
+  const openPreview = useGrooveStore((s) => s.openPreview);
   const workspaceMode = useGrooveStore((s) => s.workspaceMode);
   const setWorkspaceMode = useGrooveStore((s) => s.setWorkspaceMode);
   const openTeamBuilder = useGrooveStore((s) => s.openTeamBuilder);
@@ -1569,7 +1555,7 @@ export default function AgentsView() {
           <EmptyState onPlanner={openPlannerConfig} onSpawn={() => openDetail({ type: 'spawn' })} onTeamBuilder={openTeamBuilder} />
         ) : workspaceMode ? (
           <WorkspaceMode />
-        ) : showPreviewInAgents && previewState.url && previewState.teamId === activeTeamId ? (
+        ) : showPreviewInAgents && previewState.url && previewState.teamId === activeTeamId && teamPreviews[activeTeamId]?.active ? (
           <PreviewWorkspace embedded />
         ) : (
           <ReactFlowProvider key={activeTeamId}>
@@ -1579,59 +1565,81 @@ export default function AgentsView() {
       </div>
       {!workspaceMode && <RecommendedTeamCard />}
       {!isLoading && teamAgents.length > 0 && !workspaceMode && (
-        <button
-          onClick={() => openDetail({ type: 'spawn' })}
-          className="absolute bottom-4 left-4 z-40 flex items-center gap-1.5 h-8 px-4 rounded-md bg-accent/15 text-accent text-xs font-semibold font-sans hover:bg-accent/25 transition-colors cursor-pointer select-none shadow-lg shadow-black/10"
-        >
-          <Plus size={14} />
-          Spawn
-        </button>
-      )}
-      {!isLoading && teamAgents.length > 0 && !workspaceMode && (
-        <button
-          onClick={() => {
-            const positions = loadPositions(activeTeamId);
-            const layout = {};
-            const roleCounts = new Map();
-            [...teamAgents].sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)).forEach((agent) => {
-              const key = agent.name || agent.id;
-              const pos = positions[key];
-              if (!pos) return;
-              const role = agent.role || 'agent';
-              const count = roleCounts.get(role) || 0;
-              roleCounts.set(role, count + 1);
-              const roleKey = count === 0 ? role : `${role}-${count}`;
-              layout[roleKey] = pos;
-            });
-            if (positions[ROOT_ID]) layout[ROOT_ID] = positions[ROOT_ID];
-            saveRoleLayout(layout);
-            addToast('success', 'Layout saved', 'Future spawns will use these positions');
-          }}
-          className="absolute bottom-4 left-28 z-40 flex items-center gap-1.5 h-8 px-4 rounded-md bg-accent/15 text-accent text-xs font-semibold font-sans hover:bg-accent/25 transition-colors cursor-pointer select-none shadow-lg shadow-black/10"
-        >
-          <LayoutGrid size={14} />
-          {Object.keys(loadRoleLayout()).length > 0 ? 'Update Layout' : 'Save Layout'}
-        </button>
-      )}
-      {!isLoading && teamAgents.length > 0 && !workspaceMode && (
-        <button
-          onClick={() => setWorkspaceMode(true)}
-          className={cn(
-            'absolute bottom-4 z-40 flex items-center gap-1.5 h-8 px-4 rounded-md text-xs font-semibold font-sans transition-colors cursor-pointer select-none shadow-lg shadow-black/10',
-            previewState.url && previewState.teamId === activeTeamId ? 'right-32' : 'right-4',
-            'bg-accent/15 text-accent hover:bg-accent/25',
-          )}
-        >
-          <Code2 size={14} /> Workspace
-        </button>
-      )}
-      {!isLoading && teamAgents.length > 0 && !workspaceMode && previewState.url && previewState.teamId === activeTeamId && (
-        <button
-          onClick={togglePreviewInAgents}
-          className="absolute bottom-4 right-4 z-40 flex items-center gap-1.5 h-8 px-4 rounded-md bg-info/15 text-info text-xs font-semibold font-sans hover:bg-info/25 transition-colors cursor-pointer select-none shadow-lg shadow-black/10"
-        >
-          {showPreviewInAgents ? <><Users size={14} /> Team</> : <><Eye size={14} /> Preview</>}
-        </button>
+        <div className="absolute bottom-3 left-3 z-40 flex items-center gap-1">
+          <Tooltip content="Spawn agent" side="top">
+            <button
+              onClick={() => openDetail({ type: 'spawn' })}
+              className="flex items-center justify-center w-7 h-7 rounded-md text-text-3 hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+            >
+              <Plus size={15} />
+            </button>
+          </Tooltip>
+          <Tooltip content={Object.keys(loadRoleLayout()).length > 0 ? 'Update layout' : 'Save layout'} side="top">
+            <button
+              onClick={() => {
+                const positions = loadPositions(activeTeamId);
+                const layout = {};
+                const roleCounts = new Map();
+                [...teamAgents].sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)).forEach((agent) => {
+                  const key = agent.name || agent.id;
+                  const pos = positions[key];
+                  if (!pos) return;
+                  const role = agent.role || 'agent';
+                  const count = roleCounts.get(role) || 0;
+                  roleCounts.set(role, count + 1);
+                  const roleKey = count === 0 ? role : `${role}-${count}`;
+                  layout[roleKey] = pos;
+                });
+                if (positions[ROOT_ID]) layout[ROOT_ID] = positions[ROOT_ID];
+                saveRoleLayout(layout);
+                addToast('success', 'Layout saved', 'Future spawns will use these positions');
+              }}
+              className="flex items-center justify-center w-7 h-7 rounded-md text-text-3 hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+            >
+              <LayoutGrid size={15} />
+            </button>
+          </Tooltip>
+          <Tooltip content="Workspace" side="top">
+            <button
+              onClick={() => setWorkspaceMode(true)}
+              className="flex items-center justify-center w-7 h-7 rounded-md text-text-3 hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+            >
+              <Code2 size={15} />
+            </button>
+          </Tooltip>
+          {(() => {
+            const tp = teamPreviews[activeTeamId];
+            if (!tp) return null;
+            const isActive = tp.active && previewState.url && previewState.teamId === activeTeamId;
+            const isShowing = isActive && showPreviewInAgents;
+            const tooltip = isShowing ? 'Show team' : isActive ? 'Show preview' : 'Relaunch preview';
+            return (
+              <Tooltip content={tooltip} side="top">
+                <button
+                  onClick={() => {
+                    if (isActive) {
+                      if (showPreviewInAgents) {
+                        togglePreviewInAgents();
+                      } else {
+                        openPreview(tp.url, activeTeamId, tp.kind);
+                      }
+                    } else {
+                      relaunchPreview(activeTeamId);
+                    }
+                  }}
+                  className={cn(
+                    'flex items-center justify-center w-7 h-7 rounded-md transition-colors cursor-pointer',
+                    isActive
+                      ? 'text-text-3 hover:text-info hover:bg-info/10'
+                      : 'text-text-4 hover:text-warning hover:bg-warning/10',
+                  )}
+                >
+                  {isShowing ? <Users size={15} /> : <Eye size={15} />}
+                </button>
+              </Tooltip>
+            );
+          })()}
+        </div>
       )}
       <PlannerConfigDialog open={plannerConfigOpen} onOpenChange={setPlannerConfigOpen} onLaunch={handlePlannerLaunch} />
       <TeamBuilder />

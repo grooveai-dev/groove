@@ -37,6 +37,10 @@ signal.signal(signal.SIGWINCH, resize)
 flags = fcntl.fcntl(0, fcntl.F_GETFL)
 fcntl.fcntl(0, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
+ESC_START = b'\\x1b]7;'
+ESC_END = b'\\x07'
+stdin_buf = b''
+
 try:
     while True:
         rlist = select.select([0, master], [], [], 0.05)[0]
@@ -44,22 +48,28 @@ try:
             try:
                 data = os.read(0, 4096)
                 if not data: break
-                # Resize command: ESC ] 7 ; <rows> ; <cols> BEL
-                if b'\\x1b]7;' in data:
-                    idx = data.index(b'\\x1b]7;')
-                    end = data.index(b'\\x07', idx)
-                    params = data[idx+4:end].decode().split(';')
-                    if len(params) == 2:
-                        r, c = int(params[0]), int(params[1])
-                        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', r, c, 0, 0))
-                        os.kill(pid, signal.SIGWINCH)
-                    rest = data[:idx] + data[end+1:]
-                    if rest:
-                        os.write(master, rest)
-                else:
-                    os.write(master, data)
+                stdin_buf += data
             except OSError as e:
                 if e.errno != errno.EAGAIN: break
+        # Process buffered stdin — extract resize commands, forward the rest
+        while stdin_buf:
+            esc_pos = stdin_buf.find(ESC_START)
+            if esc_pos == -1:
+                os.write(master, stdin_buf)
+                stdin_buf = b''
+                break
+            if esc_pos > 0:
+                os.write(master, stdin_buf[:esc_pos])
+                stdin_buf = stdin_buf[esc_pos:]
+            bel_pos = stdin_buf.find(ESC_END)
+            if bel_pos == -1:
+                break
+            params = stdin_buf[4:bel_pos].decode().split(';')
+            if len(params) == 2:
+                r, c = int(params[0]), int(params[1])
+                fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', r, c, 0, 0))
+                os.kill(pid, signal.SIGWINCH)
+            stdin_buf = stdin_buf[bel_pos+1:]
         if master in rlist:
             try:
                 data = os.read(master, 4096)

@@ -147,11 +147,19 @@ export class Rotator extends EventEmitter {
     const signals = signalsEarly;
     let score = this.daemon.adaptive.scoreSession(signals);
 
-    if (ageSec > 1800) score -= 5;
-    if (ageSec > 3600) score -= 10;
-    if (ageSec > 7200) score -= 15;
-    if (ageSec > 14400) score -= 20;
-    if (ageSec > 28800) score -= 25;
+    // Age penalties: only for providers that don't manage their own context.
+    // Claude Code handles context internally via compaction — long sessions
+    // are normal and productive. Penalizing age causes premature rotation
+    // that destroys active debugging context and creates restart loops.
+    const providerForAge = getProvider(agent.provider);
+    const selfManagesForAge = providerForAge?.constructor?.managesOwnContext ?? false;
+    if (!selfManagesForAge) {
+      if (ageSec > 1800) score -= 5;
+      if (ageSec > 3600) score -= 10;
+      if (ageSec > 7200) score -= 15;
+      if (ageSec > 14400) score -= 20;
+      if (ageSec > 28800) score -= 25;
+    }
 
     score = Math.max(0, Math.min(100, score));
 
@@ -240,16 +248,23 @@ export class Rotator extends EventEmitter {
         }
       }
 
-      // --- Change 4: Truncation-triggered immediate rotation (all providers) ---
-      if (agent.consecutiveTruncations >= 2) {
+      // --- Change 4: Truncation-triggered rotation ---
+      // Self-managing providers need more consecutive truncations — single
+      // truncations can be transient API issues, not session degradation.
+      const truncationThreshold = selfManagesContext ? 4 : 2;
+      if (agent.consecutiveTruncations >= truncationThreshold) {
         console.log(`  Rotator: ${agent.name} consecutiveTruncations=${agent.consecutiveTruncations} — FORCE rotating (incomplete_response)`);
         await this.rotate(agent.id, { reason: 'incomplete_response', qualityScore: 0 });
         continue;
       }
 
-      // --- Change 3: Compaction-aware rotation for self-managing providers ---
+      // --- Change 3: Compaction-aware rotation ---
+      // Only for non-self-managing providers. Claude Code compacts internally
+      // as part of normal operation — it's healthy, not degradation. Counting
+      // compactions toward a ceiling causes premature rotation that destroys
+      // active debugging sessions and creates restart loops.
       const compactions = this.compactionCounts.get(agent.id) || 0;
-      if (compactions >= 5) {
+      if (!selfManagesContext && compactions >= 5) {
         console.log(`  Rotator: ${agent.name} compactions=${compactions} — FORCE rotating (compaction_ceiling)`);
         await this.rotate(agent.id, { reason: 'compaction_ceiling' });
         continue;
@@ -259,18 +274,25 @@ export class Rotator extends EventEmitter {
       // agents don't persist producing bad output for 8-10 minutes
       if (this._isOnCooldown(agent.id, QUALITY_COOLDOWN_MS)) continue;
 
-      // Effective quality threshold: lower for agents showing degradation signals
+      // Effective quality threshold: lower for agents showing degradation signals.
+      // For self-managing providers, don't raise threshold based on compaction
+      // count — compactions are normal healthy behavior for Claude Code.
       let effectiveQualityThreshold = QUALITY_THRESHOLD;
-      if (compactions >= 3 || agent.truncationSuspected || agent.cacheResetDetected) {
+      if (!selfManagesContext && compactions >= 3) {
         effectiveQualityThreshold = 55;
       }
+      if (agent.truncationSuspected || agent.cacheResetDetected) {
+        effectiveQualityThreshold = Math.max(effectiveQualityThreshold, 55);
+      }
 
-      // All providers: quality-based rotation — detects degradation before tokens are wasted
+      // All providers: quality-based rotation — detects degradation before tokens are wasted.
+      // Self-managing providers get a much lower severe-degradation threshold
+      // because they handle their own context — only truly catastrophic scores
+      // warrant destroying an active session.
       const quality = this.scoreLiveSession(agent);
       if (quality.hasEnoughData && quality.score < effectiveQualityThreshold) {
-        // Severe degradation (score < 25): rotate immediately regardless of idle state.
-        // The agent is producing bad output — waiting for idle is counterproductive.
-        if (quality.score < 25) {
+        const severeThreshold = selfManagesContext ? 15 : 25;
+        if (quality.score < severeThreshold) {
           console.log(`  Rotator: ${agent.name} quality=${quality.score} — FORCE rotating (severe degradation)`);
           await this.rotate(agent.id, {
             reason: 'quality_degradation',
@@ -279,7 +301,7 @@ export class Rotator extends EventEmitter {
           });
           continue;
         }
-        // Moderate degradation (25-40): rotate when idle
+        // Moderate degradation: rotate when idle
         if (this._idleMs(agent) > 10_000) {
           console.log(`  Rotator: ${agent.name} quality=${quality.score} — rotating (quality)`);
           await this.rotate(agent.id, {

@@ -343,7 +343,7 @@ export class Rotator extends EventEmitter {
           reason: options.reason || 'manual',
           oldTokens: agent.tokensUsed,
           contextUsage: agent.contextUsage,
-          brief: brief.slice(0, 4000),
+          brief: brief.slice(0, 6000),
         }, agent.workingDir, agent.teamId);
       }
 

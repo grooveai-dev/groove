@@ -853,9 +853,8 @@ export class Journalist {
     const agentLog = filteredLogs[agent.id];
     const entries = agentLog?.entries || [];
 
-    // Layer 7 memory: discoveries (pointer only), constraints, specializations
-    const hasDiscoveries = this.daemon.memory?.getDiscoveriesMarkdown(agent.role, 1, 100);
-    const discoveryPointer = hasDiscoveries ? 'See .groove/memory/agent-discoveries.jsonl for error→fix pairs.' : '';
+    // Layer 7 memory: discoveries (inline, not pointer — agents lose context with pointers), constraints, specializations
+    const discoveries = this.daemon.memory?.getDiscoveriesMarkdown(agent.role, 10, 1500) || '';
     const constraints = this.daemon.memory?.getConstraintsMarkdown(2000) || '';
     const specialization = this.daemon.memory?.getSpecialization(agent.id);
     const specLine = specialization?.avgQualityScore != null
@@ -872,7 +871,7 @@ export class Journalist {
     const recentTools = entries
       .filter((e) => e.type === 'tool' || e.type === 'error')
       .slice(-5)
-      .map((e) => `- ${e.type === 'error' ? 'ERROR ' : ''}${e.tool}: ${(e.input || e.text || '').slice(0, 80)}`)
+      .map((e) => `- ${e.type === 'error' ? 'ERROR ' : ''}${e.tool}: ${(e.input || e.text || '').slice(0, 200)}`)
       .join('\n');
 
     // Try AI-synthesized session summary
@@ -909,7 +908,7 @@ export class Journalist {
       const fallbackRecentTools = entries
         .filter((e) => e.type === 'tool' || e.type === 'error')
         .slice(-5)
-        .map((e) => `- ${e.type === 'error' ? 'ERROR ' : ''}${e.tool}: ${(e.input || '').slice(0, 80)}`)
+        .map((e) => `- ${e.type === 'error' ? 'ERROR ' : ''}${e.tool}: ${(e.input || '').slice(0, 200)}`)
         .join('\n');
 
       const fallbackParts = [];
@@ -923,8 +922,8 @@ export class Journalist {
     // For quality_degradation rotations, drop user messages (already in session summary)
     const includeUserMessages = options.reason !== 'quality_degradation';
 
-    // Cap Original Task to 500 chars
-    const originalTask = agent.prompt ? agent.prompt.slice(0, 500) + (agent.prompt.length > 500 ? '…' : '') : '';
+    // Cap Original Task to 1000 chars — task descriptions for debugging can be long
+    const originalTask = agent.prompt ? agent.prompt.slice(0, 1000) + (agent.prompt.length > 1000 ? '…' : '') : '';
 
     let brief = [
       `# Handoff Brief — ${agent.name} (${agent.role})`,
@@ -934,10 +933,13 @@ export class Journalist {
       `Rotation: ${options.reason || 'manual'}${options.qualityScore ? ` (quality: ${options.qualityScore}/100)` : ''} | Tokens: ${agent.tokensUsed}`,
       specLine,
       ``,
-      discoveryPointer ? `## Known Issues & Fixes\n\n${discoveryPointer}\n` : '',
-      constraints ? `## Project Constraints (must follow)\n\n${constraints}\n` : '',
-      recentTools ? `## Last 5 Tool Calls\n\n${recentTools}\n` : '',
+      // Priority order: session summary (contains unresolved errors) first,
+      // then constraints, then discoveries, then tools — so the most critical
+      // debugging context survives even if the brief hits the hard cap.
       sessionSummary ? `## Session Summary\n\n${sessionSummary}\n` : '',
+      constraints ? `## Project Constraints (must follow)\n\n${constraints}\n` : '',
+      discoveries ? `## Known Issues & Fixes\n\n${discoveries}\n` : '',
+      recentTools ? `## Last 5 Tool Calls\n\n${recentTools}\n` : '',
       includeUserMessages && conversationSummary ? `## Recent User Messages\n\n${conversationSummary}\n` : '',
       recentChain ? `## Rotation History\n\n${recentChain}\n` : '',
       originalTask ? `## Original Task\n\n${originalTask}\n` : '',
@@ -946,9 +948,9 @@ export class Journalist {
       `Continue seamlessly — finish the work and deliver the output.`,
     ].filter(Boolean).join('\n');
 
-    // Hard cap: total brief must not exceed 5000 chars
-    if (brief.length > 5000) {
-      brief = brief.slice(0, 4950) + '\n\n[Brief truncated — see session logs for full context]';
+    // Hard cap: 8000 chars — enough for debugging context without overwhelming the new agent
+    if (brief.length > 8000) {
+      brief = brief.slice(0, 7950) + '\n\n[Brief truncated — see session logs for full context]';
     }
 
     return brief;

@@ -274,24 +274,29 @@ export class Rotator extends EventEmitter {
       // agents don't persist producing bad output for 8-10 minutes
       if (this._isOnCooldown(agent.id, QUALITY_COOLDOWN_MS)) continue;
 
-      // Effective quality threshold: lower for agents showing degradation signals.
-      // For self-managing providers, don't raise threshold based on compaction
-      // count — compactions are normal healthy behavior for Claude Code.
-      let effectiveQualityThreshold = QUALITY_THRESHOLD;
-      if (!selfManagesContext && compactions >= 3) {
-        effectiveQualityThreshold = 55;
-      }
-      if (agent.truncationSuspected || agent.cacheResetDetected) {
-        effectiveQualityThreshold = Math.max(effectiveQualityThreshold, 55);
+      // Effective quality threshold depends on provider type.
+      // Self-managing providers (Claude Code): threshold = 15. Only rotate on
+      // truly catastrophic degradation. Normal debugging naturally produces
+      // errors, retries, and bash repetitions — the scoring model treats these
+      // as degradation but they're expected behavior during investigation.
+      // A threshold of 40 (the default) kills debugging sessions at ~8 minutes.
+      let effectiveQualityThreshold;
+      if (selfManagesContext) {
+        effectiveQualityThreshold = 15;
+      } else {
+        effectiveQualityThreshold = QUALITY_THRESHOLD;
+        if (compactions >= 3) effectiveQualityThreshold = 55;
+        if (agent.truncationSuspected || agent.cacheResetDetected) {
+          effectiveQualityThreshold = Math.max(effectiveQualityThreshold, 55);
+        }
       }
 
-      // All providers: quality-based rotation — detects degradation before tokens are wasted.
-      // Self-managing providers get a much lower severe-degradation threshold
-      // because they handle their own context — only truly catastrophic scores
-      // warrant destroying an active session.
       const quality = this.scoreLiveSession(agent);
       if (quality.hasEnoughData && quality.score < effectiveQualityThreshold) {
-        const severeThreshold = selfManagesContext ? 15 : 25;
+        // For self-managing providers, effectiveQualityThreshold IS the severe
+        // threshold (15) — any score below it is catastrophic, rotate immediately.
+        // For others, severe = < 25, moderate = 25-40/55.
+        const severeThreshold = selfManagesContext ? effectiveQualityThreshold : 25;
         if (quality.score < severeThreshold) {
           console.log(`  Rotator: ${agent.name} quality=${quality.score} — FORCE rotating (severe degradation)`);
           await this.rotate(agent.id, {
@@ -301,8 +306,10 @@ export class Rotator extends EventEmitter {
           });
           continue;
         }
-        // Moderate degradation: rotate when idle
-        if (this._idleMs(agent) > 10_000) {
+        // Moderate degradation (25-40): only for non-self-managing providers.
+        // Claude Code sessions should never be killed for "moderate" quality —
+        // errors during debugging are expected, not degradation.
+        if (!selfManagesContext && this._idleMs(agent) > 10_000) {
           console.log(`  Rotator: ${agent.name} quality=${quality.score} — rotating (quality)`);
           await this.rotate(agent.id, {
             reason: 'quality_degradation',

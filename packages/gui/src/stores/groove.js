@@ -220,6 +220,7 @@ export const useGrooveStore = create((set, get) => ({
   }),
   labSystemPrompt: localStorage.getItem('groove:labSystemPrompt') || '',
   labStreaming: false,
+  labAbortController: null,
   labLocalModels: [],
   labLaunching: null,
   labLlamaInstalled: null,
@@ -3501,6 +3502,9 @@ export const useGrooveStore = create((set, get) => ({
       return { labSessions: sessions };
     });
 
+    const abortController = new AbortController();
+    set({ labAbortController: abortController });
+
     const startTime = performance.now();
     let firstTokenTime = null;
     let tokenCount = 0;
@@ -3536,6 +3540,7 @@ export const useGrooveStore = create((set, get) => ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: abortController.signal,
       });
 
       if (!res.ok) {
@@ -3639,18 +3644,27 @@ export const useGrooveStore = create((set, get) => ({
         });
       }
     } catch (err) {
-      set((s) => {
-        const sessions = s.labSessions.map((sess) => {
-          if (sess.id !== sessionId) return sess;
-          const msgs = [...sess.messages];
-          msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: `Error: ${err.message}`, error: true };
-          return { ...sess, messages: msgs };
+      if (err.name === 'AbortError') {
+        // User cancelled — keep whatever content was already streamed
+      } else {
+        set((s) => {
+          const sessions = s.labSessions.map((sess) => {
+            if (sess.id !== sessionId) return sess;
+            const msgs = [...sess.messages];
+            msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: `Error: ${err.message}`, error: true };
+            return { ...sess, messages: msgs };
+          });
+          return { labSessions: sessions };
         });
-        return { labSessions: sessions };
-      });
+      }
     } finally {
-      set({ labStreaming: false });
+      set({ labStreaming: false, labAbortController: null });
     }
+  },
+
+  stopLabInference() {
+    const ctrl = get().labAbortController;
+    if (ctrl) ctrl.abort();
   },
 
   saveLabPreset(name) {

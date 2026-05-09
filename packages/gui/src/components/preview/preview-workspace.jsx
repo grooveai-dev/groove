@@ -6,34 +6,74 @@ import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
 import { PreviewToolbar } from './preview-toolbar';
 import { ScreenshotOverlay } from './screenshot-overlay';
+import { TableTree } from '../ui/table-tree';
+
+function parsePreviewSegments(text) {
+  const lines = text.split('\n');
+  const segments = [];
+  let i = 0;
+  let textLines = [];
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.includes('|') && i + 1 < lines.length && /^\|?\s*[-:]+/.test(lines[i + 1])) {
+      if (textLines.length > 0) {
+        segments.push({ type: 'text', content: textLines.join('\n') });
+        textLines = [];
+      }
+      const headers = line.split('|').map((c) => c.trim()).filter(Boolean);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].includes('|')) {
+        rows.push(lines[i].split('|').map((c) => c.trim()).filter(Boolean));
+        i++;
+      }
+      segments.push({ type: 'table', headers, rows });
+    } else {
+      textLines.push(line);
+      i++;
+    }
+  }
+  if (textLines.length > 0) segments.push({ type: 'text', content: textLines.join('\n') });
+  return segments;
+}
 
 function RenderedMarkdown({ text }) {
   if (!text) return null;
-  const parts = text.split(/(```[\s\S]*?```|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g);
+  const segments = parsePreviewSegments(text);
   return (
     <>
-      {parts.map((part, i) => {
-        if (!part) return null;
-        if (part.startsWith('```') && part.endsWith('```')) {
-          const inner = part.slice(3, -3);
-          const nl = inner.indexOf('\n');
-          const code = nl >= 0 ? inner.slice(nl + 1) : inner;
-          return (
-            <pre key={i} className="my-2 px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle overflow-x-auto">
-              <code className="text-xs font-mono text-text-1 whitespace-pre">{code}</code>
-            </pre>
-          );
+      {segments.map((seg, idx) => {
+        if (seg.type === 'table') {
+          return <TableTree key={idx} headers={seg.headers} rows={seg.rows} />;
         }
-        if (part.startsWith('`') && part.endsWith('`')) {
-          return <code key={i} className="px-1.5 py-0.5 rounded bg-surface-0 text-xs font-mono text-accent">{part.slice(1, -1)}</code>;
-        }
-        if (part.startsWith('**') && part.endsWith('**')) {
-          return <strong key={i} className="font-semibold text-text-0">{part.slice(2, -2)}</strong>;
-        }
-        if (part.startsWith('*') && part.endsWith('*')) {
-          return <em key={i} className="italic">{part.slice(1, -1)}</em>;
-        }
-        return <span key={i}>{part}</span>;
+        const parts = seg.content.split(/(```[\s\S]*?```|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g);
+        return (
+          <span key={idx}>
+            {parts.map((part, i) => {
+              if (!part) return null;
+              if (part.startsWith('```') && part.endsWith('```')) {
+                const inner = part.slice(3, -3);
+                const nl = inner.indexOf('\n');
+                const code = nl >= 0 ? inner.slice(nl + 1) : inner;
+                return (
+                  <pre key={i} className="my-2 px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle overflow-x-auto">
+                    <code className="text-xs font-mono text-text-1 whitespace-pre">{code}</code>
+                  </pre>
+                );
+              }
+              if (part.startsWith('`') && part.endsWith('`')) {
+                return <code key={i} className="px-1.5 py-0.5 rounded bg-surface-0 text-xs font-mono text-accent">{part.slice(1, -1)}</code>;
+              }
+              if (part.startsWith('**') && part.endsWith('**')) {
+                return <strong key={i} className="font-semibold text-text-0">{part.slice(2, -2)}</strong>;
+              }
+              if (part.startsWith('*') && part.endsWith('*')) {
+                return <em key={i} className="italic">{part.slice(1, -1)}</em>;
+              }
+              return <span key={i}>{part}</span>;
+            })}
+          </span>
+        );
       })}
     </>
   );

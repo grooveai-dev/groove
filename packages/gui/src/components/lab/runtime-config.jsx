@@ -8,7 +8,7 @@ import { Dialog, DialogContent } from '../ui/dialog';
 import { Select, SelectTrigger, SelectContent, SelectItem } from '../ui/select';
 import { Tooltip } from '../ui/tooltip';
 import { ScrollArea } from '../ui/scroll-area';
-import { Plus, Trash2, Loader2, WifiOff, RotateCcw, HardDrive, Play, CheckCircle, AlertTriangle, Info, ChevronRight, Wrench } from 'lucide-react';
+import { Plus, Trash2, Loader2, WifiOff, RotateCcw, HardDrive, Play, CheckCircle, AlertTriangle, ChevronRight, Wrench } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
 const RUNTIME_TYPES = [
@@ -85,18 +85,16 @@ function AddRuntimeDialog({ open, onOpenChange }) {
 }
 
 function RuntimeItem({ runtime, active, onSelect, onTest, onRemove, testing }) {
-  const statusColor = runtime.status === 'connected' ? 'success' : runtime.status === 'error' ? 'danger' : 'default';
-
   return (
     <button
       onClick={() => onSelect(runtime.id)}
       className={cn(
-        'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left transition-colors cursor-pointer',
-        active ? 'bg-accent/10 text-text-0' : 'text-text-2 hover:bg-surface-5/50 hover:text-text-0',
+        'w-full flex items-center gap-2.5 px-2.5 py-2 text-left transition-colors cursor-pointer rounded-sm',
+        active ? 'bg-accent/8 text-text-0' : 'text-text-2 hover:bg-surface-3 hover:text-text-0',
       )}
     >
       <span className={cn(
-        'w-2 h-2 rounded-full flex-shrink-0',
+        'w-1.5 h-1.5 rounded-full flex-shrink-0',
         runtime.status === 'connected' ? 'bg-success' : runtime.status === 'error' ? 'bg-danger' : 'bg-text-4',
       )} />
       <div className="flex-1 min-w-0">
@@ -107,24 +105,24 @@ function RuntimeItem({ runtime, active, onSelect, onTest, onRemove, testing }) {
           {runtime.status === 'error' && <span className="text-danger">Unreachable</span>}
         </div>
       </div>
-      <div className="flex items-center gap-1 flex-shrink-0">
+      <div className="flex items-center gap-0.5 flex-shrink-0">
         {runtime.latency != null && (
-          <span className="text-2xs font-mono text-text-3">{Math.round(runtime.latency)}ms</span>
+          <span className="text-2xs font-mono text-text-4 mr-1">{Math.round(runtime.latency)}ms</span>
         )}
         <Tooltip content="Test connection">
           <button
             onClick={(e) => { e.stopPropagation(); onTest(runtime.id); }}
-            className="p-1 rounded text-text-4 hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+            className="p-1 text-text-4 hover:text-accent transition-colors cursor-pointer"
           >
-            {testing === runtime.id ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+            {testing === runtime.id ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
           </button>
         </Tooltip>
         <Tooltip content="Remove">
           <button
             onClick={(e) => { e.stopPropagation(); onRemove(runtime.id); }}
-            className="p-1 rounded text-text-4 hover:text-danger hover:bg-danger/10 transition-colors cursor-pointer"
+            className="p-1 text-text-4 hover:text-danger transition-colors cursor-pointer"
           >
-            <Trash2 size={12} />
+            <Trash2 size={11} />
           </button>
         </Tooltip>
       </div>
@@ -149,15 +147,15 @@ function LaunchStatus({ phase, error }) {
   if (!phase) return null;
   return (
     <div className={cn(
-      'flex items-center gap-2 px-3 py-2 rounded-md text-xs font-sans',
-      phase === 'ready' && 'bg-success/10 text-success',
-      phase === 'error' && 'bg-danger/10 text-danger',
-      (phase === 'starting' || phase === 'checking') && 'bg-accent/10 text-accent',
+      'flex items-center gap-2 px-2.5 py-1.5 text-2xs font-sans rounded-sm',
+      phase === 'ready' && 'bg-success/8 text-success',
+      phase === 'error' && 'bg-danger/8 text-danger',
+      (phase === 'starting' || phase === 'checking') && 'bg-accent/8 text-accent',
     )}>
-      {phase === 'starting' && <><Loader2 size={12} className="animate-spin" /> Starting server...</>}
-      {phase === 'checking' && <><Loader2 size={12} className="animate-spin" /> Checking...</>}
-      {phase === 'ready' && <><CheckCircle size={12} /> Server ready</>}
-      {phase === 'error' && <><AlertTriangle size={12} /> {error || 'Launch failed'}</>}
+      {phase === 'starting' && <><Loader2 size={11} className="animate-spin" /> Starting server...</>}
+      {phase === 'checking' && <><Loader2 size={11} className="animate-spin" /> Checking...</>}
+      {phase === 'ready' && <><CheckCircle size={11} /> Server ready</>}
+      {phase === 'error' && <><AlertTriangle size={11} /> {error || 'Launch failed'}</>}
     </div>
   );
 }
@@ -199,29 +197,28 @@ export function LaunchModel() {
 
   return (
     <div className="space-y-3">
-      <span className="text-xs font-semibold font-sans text-text-2 uppercase tracking-wider">Launch Model</span>
+      <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider">Launch Model</span>
 
       {localModels.length === 0 ? (
-        <div className="px-3 py-4 text-center">
-          <HardDrive size={20} className="mx-auto text-text-4 mb-1.5" />
+        <div className="py-5 text-center">
+          <HardDrive size={18} className="mx-auto text-text-4 mb-1.5" />
           <p className="text-xs text-text-3 font-sans">No downloaded models</p>
-          <p className="text-2xs text-text-4 font-sans mt-1">Download GGUFs from the Models tab</p>
+          <p className="text-2xs text-text-4 font-sans mt-0.5">Download GGUFs from the Models tab</p>
         </div>
       ) : (
         <>
-          {/* Model list */}
           <ScrollArea className="max-h-36">
-            <div className="space-y-0.5">
+            <div className="space-y-px">
               {localModels.map((m) => (
                 <button
                   key={m.id}
                   onClick={() => setSelectedModel(m.id)}
                   className={cn(
-                    'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors cursor-pointer',
-                    selectedModel === m.id ? 'bg-accent/10 text-text-0' : 'text-text-2 hover:bg-surface-5/50 hover:text-text-0',
+                    'w-full flex items-center gap-2 px-2.5 py-2 text-left transition-colors cursor-pointer rounded-sm',
+                    selectedModel === m.id ? 'bg-accent/8 text-text-0' : 'text-text-2 hover:bg-surface-3 hover:text-text-0',
                   )}
                 >
-                  <HardDrive size={12} className={cn('flex-shrink-0', selectedModel === m.id ? 'text-accent' : 'text-text-4')} />
+                  <HardDrive size={11} className={cn('flex-shrink-0', selectedModel === m.id ? 'text-accent' : 'text-text-4')} />
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-sans font-medium truncate">
                       {m.filename?.replace(/\.gguf$/i, '') || m.id}
@@ -232,28 +229,27 @@ export function LaunchModel() {
                       {m.sizeBytes && <span>{formatSize(m.sizeBytes)}</span>}
                     </div>
                   </div>
-                  {selectedModel === m.id && <ChevronRight size={12} className="text-accent flex-shrink-0" />}
+                  {selectedModel === m.id && <ChevronRight size={11} className="text-accent flex-shrink-0" />}
                 </button>
               ))}
             </div>
           </ScrollArea>
 
-          {/* Backend picker — show when model selected */}
           {selectedModel && (
             <div className="space-y-2">
-              <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider">Backend</span>
-              <div className="space-y-1">
+              <span className="text-2xs font-semibold font-sans text-text-4 uppercase tracking-wider">Backend</span>
+              <div className="space-y-px">
                 {BACKENDS.map((b) => (
                   <button
                     key={b.id}
                     onClick={() => setSelectedBackend(b.id)}
                     className={cn(
-                      'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left transition-colors cursor-pointer',
-                      selectedBackend === b.id ? 'bg-accent/10' : 'hover:bg-surface-5/50',
+                      'w-full flex items-center gap-2.5 px-2.5 py-2 text-left transition-colors cursor-pointer rounded-sm',
+                      selectedBackend === b.id ? 'bg-accent/8' : 'hover:bg-surface-3',
                     )}
                   >
                     <span className={cn(
-                      'w-2 h-2 rounded-full border-2 flex-shrink-0',
+                      'w-2 h-2 rounded-full border-[1.5px] flex-shrink-0',
                       selectedBackend === b.id ? 'border-accent bg-accent' : 'border-text-4',
                     )} />
                     <div className="flex-1 min-w-0">
@@ -269,9 +265,8 @@ export function LaunchModel() {
                 ))}
               </div>
 
-              {/* Binary status for llama.cpp */}
               {selectedBackend === 'llama-cpp' && (
-                <div className="px-3">
+                <div className="px-2.5">
                   {llamaInstalled === null && (
                     <div className="flex items-center gap-2 text-2xs text-text-3 font-sans">
                       <Loader2 size={10} className="animate-spin" /> Checking llama-server...
@@ -287,7 +282,7 @@ export function LaunchModel() {
                       <div className="flex items-center gap-2 text-2xs text-danger font-sans">
                         <AlertTriangle size={10} /> llama-server not found
                       </div>
-                      <code className="block text-2xs font-mono text-text-3 bg-surface-1 px-2 py-1 rounded">brew install llama.cpp</code>
+                      <code className="block text-2xs font-mono text-text-3 bg-surface-2 px-2 py-1 rounded-sm">brew install llama.cpp</code>
                       <button
                         onClick={checkLlama}
                         className="flex items-center gap-1.5 text-2xs font-sans text-accent hover:text-accent/80 transition-colors cursor-pointer"
@@ -299,37 +294,43 @@ export function LaunchModel() {
                 </div>
               )}
 
-              {/* Setup assistant for vLLM/TGI */}
               {!currentBackend?.autoLaunch && (
                 <div className="space-y-2">
-                  <Button variant="primary" size="sm" className="w-full" onClick={handleLaunchAssistant} disabled={assistantLaunching}>
+                  <button
+                    onClick={handleLaunchAssistant}
+                    disabled={assistantLaunching}
+                    className={cn(
+                      'w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-sans font-medium rounded-sm transition-colors cursor-pointer',
+                      assistantLaunching ? 'bg-accent/20 text-accent' : 'bg-accent text-surface-0 hover:bg-accent/90',
+                    )}
+                  >
                     {assistantLaunching
-                      ? <><Loader2 size={12} className="animate-spin mr-1.5" /> Starting Assistant...</>
-                      : <><Wrench size={12} className="mr-1.5" /> Setup {currentBackend?.label} with Assistant</>
+                      ? <><Loader2 size={12} className="animate-spin" /> Starting Assistant...</>
+                      : <><Wrench size={12} /> Setup {currentBackend?.label} with Assistant</>
                     }
-                  </Button>
-                  <p className="text-2xs text-text-4 font-sans px-1">
+                  </button>
+                  <p className="text-2xs text-text-4 font-sans">
                     An AI assistant will check your system and handle the installation, or start your server manually and add it as a Runtime below.
                   </p>
                 </div>
               )}
 
-              {/* Launch button + status */}
               {currentBackend?.autoLaunch && (
                 <div className="space-y-2">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    className="w-full"
+                  <button
                     disabled={!canLaunch}
                     onClick={handleLaunch}
+                    className={cn(
+                      'w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-sans font-medium rounded-sm transition-colors cursor-pointer',
+                      canLaunch ? 'bg-accent text-surface-0 hover:bg-accent/90' : 'bg-surface-3 text-text-4 cursor-not-allowed',
+                    )}
                   >
                     {launching ? (
-                      <><Loader2 size={12} className="animate-spin mr-1.5" /> Starting...</>
+                      <><Loader2 size={12} className="animate-spin" /> Starting...</>
                     ) : (
-                      <><Play size={12} className="mr-1.5" /> Launch</>
+                      <><Play size={12} /> Launch</>
                     )}
-                  </Button>
+                  </button>
                   <LaunchStatus phase={launchPhase} error={launchError} />
                 </div>
               )}
@@ -360,28 +361,31 @@ export function RuntimeConfig() {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold font-sans text-text-2 uppercase tracking-wider">Runtimes</span>
+        <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider">Runtimes</span>
         <Tooltip content="Add runtime">
           <button
             onClick={() => setDialogOpen(true)}
-            className="p-1 rounded text-text-3 hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+            className="p-1 text-text-4 hover:text-accent transition-colors cursor-pointer"
           >
-            <Plus size={14} />
+            <Plus size={13} />
           </button>
         </Tooltip>
       </div>
 
       {runtimes.length === 0 ? (
-        <div className="px-3 py-4 text-center">
-          <WifiOff size={20} className="mx-auto text-text-4 mb-1.5" />
+        <div className="py-5 text-center">
+          <WifiOff size={18} className="mx-auto text-text-4 mb-1.5" />
           <p className="text-xs text-text-3 font-sans">No runtimes configured</p>
-          <Button variant="ghost" size="sm" className="mt-2" onClick={() => setDialogOpen(true)}>
-            <Plus size={12} className="mr-1" /> Add Runtime
-          </Button>
+          <button
+            onClick={() => setDialogOpen(true)}
+            className="mt-2 flex items-center gap-1 mx-auto px-3 py-1.5 text-2xs font-sans text-text-3 hover:text-text-1 transition-colors cursor-pointer"
+          >
+            <Plus size={11} /> Add Runtime
+          </button>
         </div>
       ) : (
         <ScrollArea className="max-h-48">
-          <div className="space-y-0.5">
+          <div className="space-y-px">
             {runtimes.map((rt) => (
               <RuntimeItem
                 key={rt.id}

@@ -29,6 +29,8 @@ function TerminalInstance({ tabId, visible, registerKill }) {
   const termIdRef = useRef(null);
   const handlerRef = useRef(null);
   const mountedRef = useRef(false);
+  const visibleRef = useRef(visible);
+  const lastSizeRef = useRef({ cols: 0, rows: 0 });
 
   useEffect(() => {
     registerKill?.(tabId, () => {
@@ -105,6 +107,9 @@ function TerminalInstance({ tabId, visible, registerKill }) {
       });
 
       term.onResize(({ cols, rows }) => {
+        if (cols === lastSizeRef.current.cols && rows === lastSizeRef.current.rows) return;
+        if (cols < 2 || rows < 2) return;
+        lastSizeRef.current = { cols, rows };
         const ws = useGrooveStore.getState().ws;
         if (ws?.readyState === WebSocket.OPEN && termIdRef.current) {
           ws.send(JSON.stringify({ type: 'terminal:resize', id: termIdRef.current, rows, cols }));
@@ -119,6 +124,7 @@ function TerminalInstance({ tabId, visible, registerKill }) {
     });
 
     const observer = new ResizeObserver(() => {
+      if (!visibleRef.current) return;
       requestAnimationFrame(() => { try { fitAddon.fit(); } catch {} });
     });
     observer.observe(containerRef.current);
@@ -135,6 +141,7 @@ function TerminalInstance({ tabId, visible, registerKill }) {
   }, []);
 
   useEffect(() => {
+    visibleRef.current = visible;
     if (visible && fitRef.current) {
       requestAnimationFrame(() => {
         try { fitRef.current.fit(); } catch {}

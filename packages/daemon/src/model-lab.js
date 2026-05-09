@@ -208,7 +208,7 @@ export class ModelLab {
 
   // ─── Inference ──────────────────────────────────────────────
 
-  async *streamInference({ runtimeId, model, messages, parameters, sessionId }) {
+  async streamInference({ runtimeId, model, messages, parameters, sessionId }, onEvent) {
     const rt = this.runtimes.get(runtimeId);
     if (!rt) throw new Error('Runtime not found');
     if (!model) throw new Error('Model is required');
@@ -216,7 +216,6 @@ export class ModelLab {
       throw new Error('Messages array is required');
     }
 
-    // Build request body — all runtimes use OpenAI-compatible format
     const body = {
       model,
       messages,
@@ -224,9 +223,7 @@ export class ModelLab {
       ...this._buildParameterBody(parameters || {}),
     };
 
-    const endpoint = rt.type === 'ollama'
-      ? `${rt.endpoint}/v1/chat/completions`
-      : `${rt.endpoint}/v1/chat/completions`;
+    const endpoint = `${rt.endpoint}/v1/chat/completions`;
 
     const headers = { 'Content-Type': 'application/json' };
     if (rt.apiKey) headers['Authorization'] = `Bearer ${rt.apiKey}`;
@@ -280,7 +277,7 @@ export class ModelLab {
                 generationStart = Date.now();
               }
               completionTokens++;
-              yield { type: 'reasoning', content: delta.reasoning_content };
+              onEvent({ type: 'reasoning', content: delta.reasoning_content });
             }
             if (delta?.content) {
               if (ttft === null) {
@@ -289,9 +286,8 @@ export class ModelLab {
               }
               fullContent += delta.content;
               completionTokens++;
-              yield { type: 'token', content: delta.content };
+              onEvent({ type: 'token', content: delta.content });
             }
-            // Capture usage from final chunk if provided
             if (chunk.usage) {
               promptTokens = chunk.usage.prompt_tokens || 0;
               totalTokens = chunk.usage.total_tokens || 0;
@@ -309,13 +305,11 @@ export class ModelLab {
     const generationTime = generationStart ? Date.now() - generationStart : Date.now() - requestStart;
     const tokensPerSec = generationTime > 0 ? (completionTokens / (generationTime / 1000)) : 0;
 
-    // Ollama memory usage
     let memoryUsage = null;
     if (rt.type === 'ollama') {
       memoryUsage = await this.getOllamaMemoryUsage(rt.endpoint);
     }
 
-    // Persist to session if sessionId provided
     if (sessionId) {
       this._appendToSession(sessionId, messages, {
         role: 'assistant',
@@ -323,7 +317,7 @@ export class ModelLab {
       });
     }
 
-    yield {
+    onEvent({
       type: 'done',
       metrics: {
         ttft,
@@ -334,7 +328,7 @@ export class ModelLab {
         generationTime,
         memoryUsage,
       },
-    };
+    });
   }
 
   _buildParameterBody(params) {

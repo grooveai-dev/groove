@@ -4,6 +4,7 @@ import { Copy, Check, ArrowRight, Download, Maximize2, X, Image as ImageIcon, Re
 import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
 import { ThinkingIndicator } from '../ui/thinking-indicator';
+import { TableTree } from '../ui/table-tree';
 
 const API_STATUS_MESSAGES = [
   'Generating response...',
@@ -212,28 +213,7 @@ function RenderedMarkdown({ text }) {
               </ol>
             );
           case 'table':
-            return (
-              <div key={i} className="overflow-x-auto my-2">
-                <table className="text-xs font-sans border-collapse w-full">
-                  <thead>
-                    <tr className="border-b border-border">
-                      {block.headers.map((h, j) => (
-                        <th key={j} className="px-3 py-1.5 text-left font-semibold text-text-0">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {block.rows.map((row, j) => (
-                      <tr key={j} className="border-b border-border-subtle">
-                        {row.map((cell, k) => (
-                          <td key={k} className="px-3 py-1.5 text-text-0"><InlineMarkdown text={cell} /></td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            );
+            return <TableTree key={i} headers={block.headers} rows={block.rows} />;
           case 'paragraph':
             return <p key={i} className="text-sm text-text-0 font-sans leading-relaxed whitespace-pre-wrap break-words"><InlineMarkdown text={block.text} /></p>;
           default:

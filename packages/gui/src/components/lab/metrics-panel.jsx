@@ -1,8 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useGrooveStore } from '../../stores/groove';
-import { Button } from '../ui/button';
 import { Tooltip } from '../ui/tooltip';
-import { Badge } from '../ui/badge';
 import { cn } from '../../lib/cn';
 import { fmtNum } from '../../lib/format';
 import { HEX, hexAlpha } from '../../lib/theme-hex';
@@ -11,24 +9,24 @@ import { Zap, Clock, Cpu, Hash, Timer, Link } from 'lucide-react';
 function TtftGauge({ value }) {
   if (value == null) {
     return (
-      <div className="text-center py-3">
-        <div className="text-2xl font-mono font-bold text-text-4">—</div>
-        <div className="text-2xs text-text-4 font-sans mt-0.5">TTFT</div>
+      <div className="text-center py-4">
+        <div className="text-2xl font-mono font-bold text-text-4 tabular-nums">--</div>
+        <div className="text-2xs text-text-4 font-sans mt-1">TTFT</div>
       </div>
     );
   }
-  const color = value < 200 ? 'success' : value < 500 ? 'warning' : 'danger';
+  const color = value < 200 ? 'text-success' : value < 500 ? 'text-warning' : 'text-danger';
   return (
-    <div className="text-center py-3">
-      <div className={cn('text-2xl font-mono font-bold', `text-${color}`)}>
+    <div className="text-center py-4">
+      <div className={cn('text-2xl font-mono font-bold tabular-nums', color)}>
         {Math.round(value)}
       </div>
-      <div className="text-2xs text-text-3 font-sans mt-0.5">ms TTFT</div>
+      <div className="text-2xs text-text-3 font-sans mt-1">ms TTFT</div>
     </div>
   );
 }
 
-function Sparkline({ data, width = 120, height = 28, color = HEX.accent }) {
+function Sparkline({ data, width = 140, height = 32, color = HEX.accent }) {
   if (!data || data.length < 2) {
     return <div className="flex-shrink-0" style={{ width, height }} />;
   }
@@ -49,22 +47,22 @@ function Sparkline({ data, width = 120, height = 28, color = HEX.accent }) {
   const fillPoints = `0,${height} ${points} ${width},${height}`;
 
   return (
-    <svg width={width} height={height} className="flex-shrink-0">
-      <polyline points={fillPoints} fill={hexAlpha(color, 0.1)} stroke="none" />
-      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" strokeOpacity="0.8" />
+    <svg width={width} height={height} className="w-full">
+      <polyline points={fillPoints} fill={hexAlpha(color, 0.08)} stroke="none" />
+      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" strokeOpacity="0.7" />
     </svg>
   );
 }
 
 function MetricRow({ icon: Icon, label, value, unit, tooltip }) {
   const content = (
-    <div className="flex items-center justify-between py-1.5">
+    <div className="flex items-center justify-between py-2">
       <div className="flex items-center gap-2">
-        <Icon size={12} className="text-text-3 flex-shrink-0" />
-        <span className="text-xs text-text-2 font-sans">{label}</span>
+        <Icon size={11} className="text-text-4 flex-shrink-0" />
+        <span className="text-2xs text-text-3 font-sans">{label}</span>
       </div>
-      <span className="text-xs font-mono font-medium text-text-0">
-        {value != null ? value : '—'}{unit && value != null ? <span className="text-text-3 ml-0.5">{unit}</span> : ''}
+      <span className="text-xs font-mono font-medium text-text-1 tabular-nums">
+        {value != null ? value : '--'}{unit && value != null ? <span className="text-text-4 ml-0.5 text-2xs">{unit}</span> : ''}
       </span>
     </div>
   );
@@ -76,30 +74,30 @@ export function MetricsPanel() {
   const activeRuntime = useGrooveStore((s) => s.labActiveRuntime);
 
   return (
-    <div className="space-y-4">
-      <span className="text-xs font-semibold font-sans text-text-2 uppercase tracking-wider">Metrics</span>
-
+    <div className="space-y-5">
       {/* TTFT Gauge */}
-      <div className="bg-surface-1 rounded-lg border border-border-subtle px-4 py-2">
-        <TtftGauge value={metrics.ttft} />
-      </div>
+      <TtftGauge value={metrics.ttft} />
+
+      <div className="h-px bg-border-subtle" />
 
       {/* Tokens/sec with sparkline */}
-      <div className="bg-surface-1 rounded-lg border border-border-subtle px-4 py-3 space-y-2">
+      <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Zap size={12} className="text-accent" />
-            <span className="text-xs text-text-2 font-sans">Tokens/sec</span>
+          <div className="flex items-center gap-1.5">
+            <Zap size={11} className="text-accent" />
+            <span className="text-2xs text-text-3 font-sans">Tokens/sec</span>
           </div>
-          <span className="text-sm font-mono font-bold text-text-0">
-            {metrics.tokensPerSec != null ? metrics.tokensPerSec.toFixed(1) : '—'}
+          <span className="text-sm font-mono font-bold text-text-0 tabular-nums">
+            {metrics.tokensPerSec != null ? metrics.tokensPerSec.toFixed(1) : '--'}
           </span>
         </div>
-        <Sparkline data={metrics.tokensPerSecHistory} width={180} height={28} />
+        <Sparkline data={metrics.tokensPerSecHistory} />
       </div>
 
-      {/* Stats grid */}
-      <div className="bg-surface-1 rounded-lg border border-border-subtle px-4 py-2 divide-y divide-border-subtle">
+      <div className="h-px bg-border-subtle" />
+
+      {/* Stats */}
+      <div className="space-y-0">
         <MetricRow
           icon={Cpu}
           label="Memory"
@@ -124,11 +122,14 @@ export function MetricsPanel() {
 
       {/* Attach to agent */}
       {activeRuntime && (
-        <Tooltip content="Use current preset when spawning a new agent">
-          <Button variant="outline" size="sm" className="w-full">
-            <Link size={12} className="mr-1.5" /> Attach to Agent
-          </Button>
-        </Tooltip>
+        <>
+          <div className="h-px bg-border-subtle" />
+          <Tooltip content="Use current preset when spawning a new agent">
+            <button className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-2xs font-sans text-text-3 hover:text-text-1 border border-border-subtle rounded-sm hover:border-border transition-colors cursor-pointer">
+              <Link size={11} /> Attach to Agent
+            </button>
+          </Tooltip>
+        </>
       )}
     </div>
   );

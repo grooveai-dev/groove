@@ -1,7 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useGrooveStore } from '../../stores/groove';
 import { TuningSlider } from '../ui/slider';
-import { Button } from '../ui/button';
 import { Tooltip } from '../ui/tooltip';
 import { RotateCcw } from 'lucide-react';
 
@@ -32,14 +31,14 @@ export function ParameterPanel() {
 
   return (
     <div className="space-y-1">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold font-sans text-text-2 uppercase tracking-wider">Parameters</span>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider">Parameters</span>
         <Tooltip content="Reset to defaults">
           <button
             onClick={handleReset}
-            className="p-1 rounded text-text-3 hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+            className="p-1 text-text-4 hover:text-accent transition-colors cursor-pointer"
           >
-            <RotateCcw size={12} />
+            <RotateCcw size={11} />
           </button>
         </Tooltip>
       </div>

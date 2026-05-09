@@ -2,7 +2,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useGrooveStore } from '../stores/groove';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { Badge } from '../components/ui/badge';
 import { Tooltip } from '../components/ui/tooltip';
 import { Combobox } from '../components/ui/combobox';
 import { RuntimeConfig, LaunchModel } from '../components/lab/runtime-config';
@@ -13,7 +12,7 @@ import { LabAssistant } from '../components/lab/lab-assistant';
 import { MetricsPanel } from '../components/lab/metrics-panel';
 import { PresetManager } from '../components/lab/preset-manager';
 import { cn } from '../lib/cn';
-import { FlaskConical, PanelLeftOpen, PanelRightOpen, Box } from 'lucide-react';
+import { FlaskConical, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Box } from 'lucide-react';
 
 const LEFT_DEFAULT = 280;
 const LEFT_MIN = 220;
@@ -32,7 +31,7 @@ function ModelSelector() {
 
   return (
     <div className="space-y-1.5">
-      <span className="text-xs font-semibold font-sans text-text-2 uppercase tracking-wider">Model</span>
+      <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider">Model</span>
       <Combobox
         value={activeModel || ''}
         onChange={setActiveModel}
@@ -53,15 +52,38 @@ function ModelSelector() {
   );
 }
 
-function ResizeHandle({ onMouseDown, direction = 'vertical' }) {
+function ResizeHandle({ onMouseDown }) {
   return (
     <div
       onMouseDown={onMouseDown}
-      className={cn(
-        'flex-shrink-0 bg-border hover:bg-accent/40 transition-colors',
-        direction === 'vertical' ? 'w-px cursor-col-resize hover:w-0.5' : 'h-px cursor-row-resize hover:h-0.5',
-      )}
-    />
+      className="flex-shrink-0 w-[3px] cursor-col-resize group relative"
+    >
+      <div className="absolute inset-y-0 -left-1 -right-1" />
+      <div className="absolute inset-y-0 left-[1px] w-px bg-border group-hover:bg-accent/50 transition-colors" />
+    </div>
+  );
+}
+
+function PanelToggle({ collapsed, onClick, side }) {
+  const Icon = side === 'left'
+    ? (collapsed ? PanelLeftOpen : PanelLeftClose)
+    : (collapsed ? PanelRightOpen : PanelRightClose);
+  const label = side === 'left'
+    ? (collapsed ? 'Show config' : 'Hide config')
+    : (collapsed ? 'Show metrics' : 'Hide metrics');
+
+  return (
+    <Tooltip content={label}>
+      <button
+        onClick={onClick}
+        className={cn(
+          'p-1 transition-colors cursor-pointer',
+          collapsed ? 'text-text-4 hover:text-text-1' : 'text-text-3 hover:text-text-1',
+        )}
+      >
+        <Icon size={14} />
+      </button>
+    </Tooltip>
   );
 }
 
@@ -130,93 +152,79 @@ export default function ModelLabView() {
 
   return (
     <div className="h-full flex flex-col bg-surface-0">
-      {/* Header */}
-      <div className="flex-shrink-0 flex items-center justify-between px-5 py-2.5 border-b border-border">
-        <div className="flex items-center gap-2.5">
-          <FlaskConical size={16} className="text-accent" />
-          <h1 className="text-sm font-bold font-sans text-text-0">Model Lab</h1>
-          <Badge variant="accent">Beta</Badge>
-        </div>
-        <div className="flex items-center gap-1">
-          <Tooltip content={leftCollapsed ? 'Show config panel' : 'Hide config panel'}>
-            <button
-              onClick={() => setLeftCollapsed(!leftCollapsed)}
-              className={cn(
-                'p-1.5 rounded-md transition-colors cursor-pointer',
-                leftCollapsed ? 'text-text-3 hover:text-accent hover:bg-accent/10' : 'text-accent bg-accent/10',
-              )}
-            >
-              <PanelLeftOpen size={14} />
-            </button>
-          </Tooltip>
-          <Tooltip content={rightCollapsed ? 'Show metrics panel' : 'Hide metrics panel'}>
-            <button
-              onClick={() => setRightCollapsed(!rightCollapsed)}
-              className={cn(
-                'p-1.5 rounded-md transition-colors cursor-pointer',
-                rightCollapsed ? 'text-text-3 hover:text-accent hover:bg-accent/10' : 'text-accent bg-accent/10',
-              )}
-            >
-              <PanelRightOpen size={14} />
-            </button>
-          </Tooltip>
-        </div>
-      </div>
-
       {/* 3-panel layout */}
       <div className="flex-1 flex min-h-0">
         {/* Left panel — config */}
         <div
           className={cn(
-            'flex-shrink-0 border-r border-border transition-all duration-200 overflow-hidden',
-            leftCollapsed && 'w-0 border-r-0',
+            'flex-shrink-0 transition-all duration-200 overflow-hidden',
+            leftCollapsed && 'w-0',
           )}
           style={leftCollapsed ? undefined : { width: leftWidth }}
         >
-          <ScrollArea className="h-full">
-            <div className="px-4 py-4 space-y-5">
-              <LaunchModel />
-              <div className="border-t border-border-subtle" />
-              <RuntimeConfig />
-              <div className="border-t border-border-subtle" />
-              <ModelSelector />
-              <div className="border-t border-border-subtle" />
-              <ParameterPanel />
-              <div className="border-t border-border-subtle" />
-              <PresetManager />
-              <div className="border-t border-border-subtle" />
-              <SystemPromptEditor />
+          <div className="h-full flex flex-col">
+            <div className="flex-shrink-0 flex items-center justify-between px-4 h-10">
+              <div className="flex items-center gap-2">
+                <FlaskConical size={13} className="text-accent" />
+                <span className="text-xs font-semibold font-sans text-text-1">Model Lab</span>
+              </div>
+              <PanelToggle collapsed={false} onClick={() => setLeftCollapsed(true)} side="left" />
             </div>
-          </ScrollArea>
+            <ScrollArea className="flex-1 min-h-0">
+              <div className="px-4 pb-4 space-y-5">
+                <LaunchModel />
+                <div className="h-px bg-border-subtle" />
+                <RuntimeConfig />
+                <div className="h-px bg-border-subtle" />
+                <ModelSelector />
+                <div className="h-px bg-border-subtle" />
+                <ParameterPanel />
+                <div className="h-px bg-border-subtle" />
+                <PresetManager />
+                <div className="h-px bg-border-subtle" />
+                <SystemPromptEditor />
+              </div>
+            </ScrollArea>
+          </div>
         </div>
 
         {!leftCollapsed && <ResizeHandle onMouseDown={onLeftMouseDown} />}
 
         {/* Center panel — chat playground / assistant */}
         <div className="flex-1 min-w-0 flex flex-col">
-          {labAssistantAgentId && (
-            <div className="flex-shrink-0 flex items-center gap-1 px-3 pt-2">
-              <button
-                onClick={() => setLabAssistantMode(false)}
-                className={cn(
-                  'px-3 py-1.5 text-xs font-sans font-medium rounded-t-md transition-colors cursor-pointer',
-                  !labAssistantMode ? 'text-accent bg-accent/10' : 'text-text-3 hover:text-text-1',
-                )}
-              >
-                Playground
-              </button>
-              <button
-                onClick={() => setLabAssistantMode(true)}
-                className={cn(
-                  'px-3 py-1.5 text-xs font-sans font-medium rounded-t-md transition-colors cursor-pointer',
-                  labAssistantMode ? 'text-accent bg-accent/10' : 'text-text-3 hover:text-text-1',
-                )}
-              >
-                Assistant
-              </button>
-            </div>
-          )}
-          <div className="flex-1 min-h-0 p-3">
+          {/* Center header bar */}
+          <div className="flex-shrink-0 flex items-center h-10 px-3 gap-2">
+            {leftCollapsed && (
+              <PanelToggle collapsed onClick={() => setLeftCollapsed(false)} side="left" />
+            )}
+            {labAssistantAgentId && (
+              <div className="flex items-center gap-px bg-surface-2 rounded p-px">
+                <button
+                  onClick={() => setLabAssistantMode(false)}
+                  className={cn(
+                    'px-3 py-1 text-2xs font-sans font-medium rounded-sm transition-colors cursor-pointer',
+                    !labAssistantMode ? 'text-text-0 bg-surface-4' : 'text-text-3 hover:text-text-1',
+                  )}
+                >
+                  Playground
+                </button>
+                <button
+                  onClick={() => setLabAssistantMode(true)}
+                  className={cn(
+                    'px-3 py-1 text-2xs font-sans font-medium rounded-sm transition-colors cursor-pointer',
+                    labAssistantMode ? 'text-text-0 bg-surface-4' : 'text-text-3 hover:text-text-1',
+                  )}
+                >
+                  Assistant
+                </button>
+              </div>
+            )}
+            <div className="flex-1" />
+            {rightCollapsed && (
+              <PanelToggle collapsed onClick={() => setRightCollapsed(false)} side="right" />
+            )}
+          </div>
+          <div className="flex-1 min-h-0">
             {labAssistantMode && labAssistantAgentId ? <LabAssistant /> : <ChatPlayground />}
           </div>
         </div>
@@ -226,16 +234,22 @@ export default function ModelLabView() {
         {/* Right panel — metrics */}
         <div
           className={cn(
-            'flex-shrink-0 border-l border-border transition-all duration-200 overflow-hidden',
-            rightCollapsed && 'w-0 border-l-0',
+            'flex-shrink-0 transition-all duration-200 overflow-hidden',
+            rightCollapsed && 'w-0',
           )}
           style={rightCollapsed ? undefined : { width: rightWidth }}
         >
-          <ScrollArea className="h-full">
-            <div className="px-4 py-4">
-              <MetricsPanel />
+          <div className="h-full flex flex-col">
+            <div className="flex-shrink-0 flex items-center justify-between px-4 h-10">
+              <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider">Metrics</span>
+              <PanelToggle collapsed={false} onClick={() => setRightCollapsed(true)} side="right" />
             </div>
-          </ScrollArea>
+            <ScrollArea className="flex-1 min-h-0">
+              <div className="px-4 pb-4">
+                <MetricsPanel />
+              </div>
+            </ScrollArea>
+          </div>
         </div>
       </div>
     </div>

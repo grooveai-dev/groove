@@ -121,7 +121,7 @@ export default function EditorView() {
       {sidebarCollapsed && (
         <button
           onClick={() => setSidebarCollapsed(false)}
-          className="flex-shrink-0 w-6 flex items-center justify-center border-r border-border bg-surface-2 text-text-4 hover:text-text-0 hover:bg-surface-3 transition-colors cursor-pointer"
+          className="flex-shrink-0 w-6 flex items-start justify-center pt-2 border-r border-border bg-surface-2 text-text-4 hover:text-text-0 hover:bg-surface-3 transition-colors cursor-pointer"
           title="Show sidebar"
         >
           <PanelLeftOpen size={14} />

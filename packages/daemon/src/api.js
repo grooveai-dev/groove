@@ -6703,11 +6703,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
       let closed = false;
       req.on('close', () => { closed = true; });
 
-      const stream = daemon.modelLab.streamInference(params);
-      for await (const event of stream) {
-        if (closed) break;
-        res.write(`data: ${JSON.stringify(event)}\n\n`);
-      }
+      await daemon.modelLab.streamInference(params, (event) => {
+        if (!closed) res.write(`data: ${JSON.stringify(event)}\n\n`);
+      });
 
       if (!closed) {
         res.write('data: [DONE]\n\n');

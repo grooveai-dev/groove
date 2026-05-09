@@ -7,7 +7,7 @@ import { Dialog, DialogContent } from '../ui/dialog';
 import { Tooltip } from '../ui/tooltip';
 import { ScrollArea } from '../ui/scroll-area';
 import { cn } from '../../lib/cn';
-import { Save, Trash2, Download, BookmarkCheck } from 'lucide-react';
+import { Save, Trash2, BookmarkCheck } from 'lucide-react';
 
 function SavePresetDialog({ open, onOpenChange }) {
   const savePreset = useGrooveStore((s) => s.saveLabPreset);
@@ -56,31 +56,31 @@ export function PresetManager() {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold font-sans text-text-2 uppercase tracking-wider">Presets</span>
+        <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider">Presets</span>
         <Tooltip content="Save current settings as preset">
           <button
             onClick={() => setSaveOpen(true)}
-            className="p-1 rounded text-text-3 hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+            className="p-1 text-text-4 hover:text-accent transition-colors cursor-pointer"
           >
-            <Save size={14} />
+            <Save size={13} />
           </button>
         </Tooltip>
       </div>
 
       {presets.length === 0 ? (
-        <div className="px-3 py-3 text-center">
-          <BookmarkCheck size={16} className="mx-auto text-text-4 mb-1" />
-          <p className="text-2xs text-text-3 font-sans">No presets saved</p>
+        <div className="py-3 text-center">
+          <BookmarkCheck size={14} className="mx-auto text-text-4 mb-1" />
+          <p className="text-2xs text-text-4 font-sans">No presets saved</p>
         </div>
       ) : (
         <ScrollArea className="max-h-32">
-          <div className="space-y-0.5">
+          <div className="space-y-px">
             {presets.map((preset) => (
               <div
                 key={preset.id}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors',
-                  activePreset === preset.id ? 'bg-accent/10' : 'hover:bg-surface-5/50',
+                  'flex items-center gap-2 px-2.5 py-1.5 rounded-sm transition-colors',
+                  activePreset === preset.id ? 'bg-accent/8' : 'hover:bg-surface-3',
                 )}
               >
                 <button
@@ -97,7 +97,7 @@ export function PresetManager() {
                 <Tooltip content="Delete preset">
                   <button
                     onClick={() => deletePreset(preset.id)}
-                    className="p-0.5 rounded text-text-4 hover:text-danger hover:bg-danger/10 transition-colors cursor-pointer flex-shrink-0"
+                    className="p-0.5 text-text-4 hover:text-danger transition-colors cursor-pointer flex-shrink-0"
                   >
                     <Trash2 size={10} />
                   </button>

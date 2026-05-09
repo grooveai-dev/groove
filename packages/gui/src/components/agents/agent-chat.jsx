@@ -4,32 +4,70 @@ import { Send, Loader2, MessageSquare, HelpCircle, ArrowRight, Paperclip, Square
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { ThinkingIndicator } from '../ui/thinking-indicator';
+import { TableTree } from '../ui/table-tree';
 import { timeAgo } from '../../lib/format';
 
 const EMPTY = [];
 
+function parseSegments(text) {
+  const lines = text.split('\n');
+  const segments = [];
+  let i = 0;
+  let textLines = [];
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.includes('|') && i + 1 < lines.length && /^\|?\s*[-:]+/.test(lines[i + 1])) {
+      if (textLines.length > 0) {
+        segments.push({ type: 'text', content: textLines.join('\n') });
+        textLines = [];
+      }
+      const headers = line.split('|').map((c) => c.trim()).filter(Boolean);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].includes('|')) {
+        rows.push(lines[i].split('|').map((c) => c.trim()).filter(Boolean));
+        i++;
+      }
+      segments.push({ type: 'table', headers, rows });
+    } else {
+      textLines.push(line);
+      i++;
+    }
+  }
+  if (textLines.length > 0) segments.push({ type: 'text', content: textLines.join('\n') });
+  return segments;
+}
+
 function FormattedText({ text }) {
   if (!text) return null;
-  // Simple code block detection
-  const parts = text.split(/(```[\s\S]*?```|`[^`]+`)/g);
+  const segments = parseSegments(text);
   return (
-    <span>
-      {parts.map((part, i) => {
-        if (part.startsWith('```') && part.endsWith('```')) {
-          const code = part.slice(3, -3).replace(/^\w+\n/, '');
-          return <pre key={i} className="my-2 p-3 rounded-md bg-surface-0 text-xs font-mono text-text-1 overflow-x-auto whitespace-pre-wrap">{code}</pre>;
+    <>
+      {segments.map((seg, idx) => {
+        if (seg.type === 'table') {
+          return <TableTree key={idx} headers={seg.headers} rows={seg.rows} />;
         }
-        if (part.startsWith('`') && part.endsWith('`')) {
-          return <code key={i} className="px-1.5 py-0.5 rounded bg-surface-0 text-xs font-mono text-accent">{part.slice(1, -1)}</code>;
-        }
-        // Bold
-        return <span key={i}>{part.split(/(\*\*[^*]+\*\*)/g).map((s, j) =>
-          s.startsWith('**') && s.endsWith('**')
-            ? <strong key={j} className="font-semibold text-text-0">{s.slice(2, -2)}</strong>
-            : s
-        )}</span>;
+        const parts = seg.content.split(/(```[\s\S]*?```|`[^`]+`)/g);
+        return (
+          <span key={idx}>
+            {parts.map((part, i) => {
+              if (part.startsWith('```') && part.endsWith('```')) {
+                const code = part.slice(3, -3).replace(/^\w+\n/, '');
+                return <pre key={i} className="my-2 p-3 rounded-md bg-surface-0 text-xs font-mono text-text-1 overflow-x-auto whitespace-pre-wrap">{code}</pre>;
+              }
+              if (part.startsWith('`') && part.endsWith('`')) {
+                return <code key={i} className="px-1.5 py-0.5 rounded bg-surface-0 text-xs font-mono text-accent">{part.slice(1, -1)}</code>;
+              }
+              return <span key={i}>{part.split(/(\*\*[^*]+\*\*)/g).map((s, j) =>
+                s.startsWith('**') && s.endsWith('**')
+                  ? <strong key={j} className="font-semibold text-text-0">{s.slice(2, -2)}</strong>
+                  : s
+              )}</span>;
+            })}
+          </span>
+        );
       })}
-    </span>
+    </>
   );
 }
 
@@ -125,7 +163,7 @@ export function AgentChat({ agent }) {
     if (isAtBottomRef.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [chatHistory.length, activityLog.length]);
+  }, [chatHistory.length, activityLog.length, sending, isThinking]);
 
   function handleFileSelect(e) {
     const files = Array.from(e.target.files || []);
@@ -145,6 +183,10 @@ export function AgentChat({ agent }) {
     setInput('');
     setAttachedFiles([]);
     setSending(true);
+    isAtBottomRef.current = true;
+    requestAnimationFrame(() => {
+      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    });
     try {
       await instructAgent(agent.id, text);
     } catch { /* toast handles */ }

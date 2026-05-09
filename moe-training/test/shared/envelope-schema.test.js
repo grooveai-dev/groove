@@ -475,7 +475,7 @@ describe('envelope-schema', () => {
   it('accepts valid session_embedding object', () => {
     const env = validEnvelope();
     env.metadata.session_embedding = {
-      model: 'BAAI/bge-small-en-v1.5',
+      model: 'BAAI/bge-base-en-v1.5',
       vector: [0.0234, -0.0891, 0.1247, 0.0562],
       source_text: 'Write a Python decorator that caches function results',
     };
@@ -486,7 +486,7 @@ describe('envelope-schema', () => {
   it('rejects session_embedding with empty vector', () => {
     const env = validEnvelope();
     env.metadata.session_embedding = {
-      model: 'BAAI/bge-small-en-v1.5',
+      model: 'BAAI/bge-base-en-v1.5',
       vector: [],
       source_text: 'test',
     };
@@ -498,7 +498,7 @@ describe('envelope-schema', () => {
   it('rejects session_embedding with non-numeric vector values', () => {
     const env = validEnvelope();
     env.metadata.session_embedding = {
-      model: 'BAAI/bge-small-en-v1.5',
+      model: 'BAAI/bge-base-en-v1.5',
       vector: [0.1, 'bad', 0.3],
       source_text: 'test',
     };

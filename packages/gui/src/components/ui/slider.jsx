@@ -10,14 +10,13 @@ export function TuningSlider({
   const display = typeof fmt === 'function' ? fmt(value) : (typeof fmt === 'string' ? fmt : value);
 
   return (
-    <div className={cn('flex items-center gap-3 h-10', disabled && 'opacity-40 pointer-events-none', className)}>
-      <span className="text-xs text-text-2 font-sans w-28 shrink-0">{label}</span>
-      <span className="text-2xs text-text-4 font-mono w-6 text-right shrink-0">{min}</span>
-      <div className="relative flex-1 flex items-center group">
+    <div className={cn('group flex items-center gap-2 py-1.5', disabled && 'opacity-40 pointer-events-none', className)}>
+      <span className="text-2xs text-text-2 font-sans w-20 shrink-0 truncate">{label}</span>
+      <div className="relative flex-1 flex items-center h-5">
         <div className="absolute inset-y-0 flex items-center w-full pointer-events-none">
-          <div className="w-full h-1.5 rounded-full bg-surface-5 overflow-hidden">
+          <div className="w-full h-1 rounded-full bg-surface-5">
             <div
-              className="h-full rounded-full bg-accent transition-all"
+              className="h-full rounded-full bg-accent/70 group-hover:bg-accent transition-colors"
               style={{ width: `${pct}%` }}
             />
           </div>
@@ -30,21 +29,21 @@ export function TuningSlider({
           value={value}
           disabled={disabled}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="relative w-full h-4 appearance-none bg-transparent cursor-pointer
-            [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
-            [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent [&::-webkit-slider-thumb]:border-2
-            [&::-webkit-slider-thumb]:border-surface-1 [&::-webkit-slider-thumb]:shadow-[0_0_6px_rgba(51,175,188,0.4)]
-            [&::-webkit-slider-thumb]:hover:shadow-[0_0_10px_rgba(51,175,188,0.6)]
-            [&::-webkit-slider-thumb]:transition-shadow
-            [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full
-            [&::-moz-range-thumb]:bg-accent [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-surface-1
-            [&::-moz-range-thumb]:shadow-[0_0_6px_rgba(51,175,188,0.4)]
+          className="relative w-full h-5 appearance-none bg-transparent cursor-pointer
+            [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3
+            [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent
+            [&::-webkit-slider-thumb]:shadow-[0_0_0_2px_var(--color-surface-1)]
+            [&::-webkit-slider-thumb]:hover:bg-accent [&::-webkit-slider-thumb]:hover:shadow-[0_0_0_2px_var(--color-surface-1),0_0_8px_rgba(51,175,188,0.4)]
+            [&::-webkit-slider-thumb]:active:scale-110
+            [&::-webkit-slider-thumb]:transition-all
+            [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:rounded-full
+            [&::-moz-range-thumb]:bg-accent [&::-moz-range-thumb]:border-none
+            [&::-moz-range-thumb]:shadow-[0_0_0_2px_var(--color-surface-1)]
             [&::-moz-range-track]:bg-transparent
             disabled:cursor-not-allowed"
         />
       </div>
-      <span className="text-2xs text-text-4 font-mono w-6 shrink-0">{max}</span>
-      <span className="text-xs text-accent font-mono font-semibold w-10 text-right shrink-0">{display}</span>
+      <span className="text-2xs text-accent font-mono font-medium w-10 text-right shrink-0 tabular-nums">{display}</span>
     </div>
   );
 }

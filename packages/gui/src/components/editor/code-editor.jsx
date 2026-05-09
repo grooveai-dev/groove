@@ -27,11 +27,11 @@ const LANGS = {
 const grooveHighlightStyle = HighlightStyle.define([
   { tag: t.keyword, color: '#b07fd5' },
   { tag: [t.name, t.deleted, t.character, t.macroName], color: '#d4d8e0' },
-  { tag: [t.function(t.variableName), t.labelName], color: '#7ab0df' },
+  { tag: [t.function(t.variableName), t.labelName], color: '#d9a45c' },
   { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#c4956a' },
   { tag: [t.definition(t.name), t.separator], color: '#bcc2cd' },
   { tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace], color: '#cda869' },
-  { tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.special(t.string)], color: '#73c991' },
+  { tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.special(t.string)], color: '#89b4c4' },
   { tag: [t.meta, t.comment], color: '#6e7681', fontStyle: 'italic' },
   { tag: t.strong, fontWeight: 'bold' },
   { tag: t.emphasis, fontStyle: 'italic' },
@@ -39,12 +39,12 @@ const grooveHighlightStyle = HighlightStyle.define([
   { tag: t.link, color: '#7ab0df', textDecoration: 'underline' },
   { tag: t.heading, fontWeight: '400', color: '#bcc2cd' },
   { tag: [t.atom, t.bool, t.special(t.variableName)], color: '#c4956a' },
-  { tag: [t.processingInstruction, t.string, t.inserted], color: '#73c991' },
+  { tag: [t.processingInstruction, t.string, t.inserted], color: '#a3b18a' },
   { tag: t.invalid, color: '#d4736e' },
-  { tag: t.propertyName, color: '#7ab0df' },
+  { tag: t.propertyName, color: '#d9a45c' },
   { tag: [t.tagName], color: '#d4736e' },
   { tag: t.attributeName, color: '#cda869' },
-  { tag: t.attributeValue, color: '#73c991' },
+  { tag: t.attributeValue, color: '#a3b18a' },
 ]);
 
 // Custom theme overrides to match our design tokens

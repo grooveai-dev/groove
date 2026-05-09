@@ -12,6 +12,7 @@ import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
 import { api } from '../../lib/api';
 import { ThinkingIndicator } from '../ui/thinking-indicator';
+import { TableTree } from '../ui/table-tree';
 
 const EMPTY = [];
 
@@ -109,6 +110,19 @@ function StructuredMessage({ text }) {
       continue;
     }
 
+    // Table
+    if (line.includes('|') && i + 1 < lines.length && /^\|?\s*[-:]+/.test(lines[i + 1])) {
+      const headers = line.split('|').map((c) => c.trim()).filter(Boolean);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].includes('|')) {
+        rows.push(lines[i].split('|').map((c) => c.trim()).filter(Boolean));
+        i++;
+      }
+      blocks.push({ type: 'table', headers, rows });
+      continue;
+    }
+
     // Empty line — skip
     if (!line.trim()) { i++; continue; }
 
@@ -169,6 +183,8 @@ function StructuredMessage({ text }) {
                 {block.content}
               </pre>
             );
+          case 'table':
+            return <TableTree key={idx} headers={block.headers} rows={block.rows} />;
           case 'note':
             return (
               <div key={idx} className="flex items-start gap-1.5 px-2.5 py-1.5 rounded-md bg-warning/6 border border-warning/12">
@@ -748,31 +764,33 @@ export function AgentFeed({ agent }) {
             )}
             style={{ height: inputHeight }}
           />
-          {isThinking ? (
+          {isAlive && (
             <button
               onClick={() => useGrooveStore.getState().stopAgent(agent.id)}
               title="Stop agent"
-              className="w-9 h-9 flex items-center justify-center rounded-lg border border-danger/30 bg-danger/12 text-danger hover:bg-danger/20 transition-all cursor-pointer flex-shrink-0 mb-px"
+              className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-danger/10 transition-colors cursor-pointer flex-shrink-0 mb-px"
             >
-              <Square size={13} fill="currentColor" />
-            </button>
-          ) : (
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || sending}
-              className={cn(
-                'w-9 h-9 flex items-center justify-center rounded-lg transition-all cursor-pointer flex-shrink-0 mb-px',
-                'disabled:opacity-15 disabled:cursor-not-allowed',
-                input.trim()
-                  ? mode === 'query'
-                    ? 'bg-info/15 text-info hover:bg-info/25 border border-info/25'
-                    : 'bg-accent/15 text-accent hover:bg-accent/25 border border-accent/25'
-                  : 'bg-transparent text-text-4',
-              )}
-            >
-              {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+              <span className="relative flex items-center justify-center w-3.5 h-3.5">
+                <span className="absolute inset-0 rounded-full bg-danger/30 animate-ping" style={{ animationDuration: '2s' }} />
+                <span className="relative w-2.5 h-2.5 rounded-full bg-danger" />
+              </span>
             </button>
           )}
+          <button
+            onClick={handleSend}
+            disabled={!input.trim() || sending}
+            className={cn(
+              'w-9 h-9 flex items-center justify-center rounded-lg transition-all cursor-pointer flex-shrink-0 mb-px',
+              'disabled:opacity-15 disabled:cursor-not-allowed',
+              input.trim()
+                ? mode === 'query'
+                  ? 'bg-info/15 text-info hover:bg-info/25 border border-info/25'
+                  : 'bg-accent/15 text-accent hover:bg-accent/25 border border-accent/25'
+                : 'bg-transparent text-text-4',
+            )}
+          >
+            {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+          </button>
         </div>
         </div>
       </div>

@@ -460,7 +460,7 @@ export class Journalist {
       '(What was completed. Name files, functions, and line numbers.)',
       '',
       'Be specific. Name files, functions, and line numbers. Do not summarize vaguely.',
-      'Keep your response under 2000 characters.',
+      'Keep your response under 1500 characters.',
       '',
       '---',
       '',
@@ -469,7 +469,7 @@ export class Journalist {
     ];
 
     let totalChars = 0;
-    const cap = 30_000;
+    const cap = 15_000;
     for (const entry of entries.slice(-200)) {
       const line = this.formatEntry(entry);
       if (totalChars + line.length > cap) break;
@@ -853,15 +853,16 @@ export class Journalist {
     const agentLog = filteredLogs[agent.id];
     const entries = agentLog?.entries || [];
 
-    // Layer 7 memory: discoveries, constraints, specializations
-    const discoveries = this.daemon.memory?.getDiscoveriesMarkdown(agent.role, 10, 2000) || '';
+    // Layer 7 memory: discoveries (pointer only), constraints, specializations
+    const hasDiscoveries = this.daemon.memory?.getDiscoveriesMarkdown(agent.role, 1, 100);
+    const discoveryPointer = hasDiscoveries ? 'See .groove/memory/agent-discoveries.jsonl for error→fix pairs.' : '';
     const constraints = this.daemon.memory?.getConstraintsMarkdown(2000) || '';
     const specialization = this.daemon.memory?.getSpecialization(agent.id);
     const specLine = specialization?.avgQualityScore != null
       ? `- Quality profile: ${specialization.avgQualityScore}/100 across ${specialization.sessionCount} sessions`
       : '';
 
-    const recentChain = this.daemon.memory?.getRecentHandoffMarkdown(agent.role, 3, 3000, agent.workingDir, agent.teamId) || '';
+    const recentChain = this.daemon.memory?.getRecentHandoffMarkdown(agent.role, 1, 1500, agent.workingDir, agent.teamId) || '';
 
     const agentFeedback = this.getUserFeedback(agent.id).slice(-5);
     const conversationSummary = agentFeedback.length > 0
@@ -919,7 +920,13 @@ export class Journalist {
       sessionSummary = fallbackParts.join('\n\n');
     }
 
-    return [
+    // For quality_degradation rotations, drop user messages (already in session summary)
+    const includeUserMessages = options.reason !== 'quality_degradation';
+
+    // Cap Original Task to 500 chars
+    const originalTask = agent.prompt ? agent.prompt.slice(0, 500) + (agent.prompt.length > 500 ? '…' : '') : '';
+
+    let brief = [
       `# Handoff Brief — ${agent.name} (${agent.role})`,
       ``,
       `Role: ${agent.role} | Scope: ${agent.scope?.join(', ') || 'unrestricted'} | Provider: ${agent.provider}`,
@@ -927,17 +934,24 @@ export class Journalist {
       `Rotation: ${options.reason || 'manual'}${options.qualityScore ? ` (quality: ${options.qualityScore}/100)` : ''} | Tokens: ${agent.tokensUsed}`,
       specLine,
       ``,
-      discoveries ? `## Known Issues & Fixes\n\n${discoveries}\n` : '',
+      discoveryPointer ? `## Known Issues & Fixes\n\n${discoveryPointer}\n` : '',
       constraints ? `## Project Constraints (must follow)\n\n${constraints}\n` : '',
       recentTools ? `## Last 5 Tool Calls\n\n${recentTools}\n` : '',
       sessionSummary ? `## Session Summary\n\n${sessionSummary}\n` : '',
-      conversationSummary ? `## Recent User Messages\n\n${conversationSummary}\n` : '',
+      includeUserMessages && conversationSummary ? `## Recent User Messages\n\n${conversationSummary}\n` : '',
       recentChain ? `## Rotation History\n\n${recentChain}\n` : '',
-      agent.prompt ? `## Original Task\n\n${agent.prompt}\n` : '',
+      originalTask ? `## Original Task\n\n${originalTask}\n` : '',
       ``,
       agent.role === 'planner' ? 'CRITICAL: You are a PLANNING ONLY agent. Do NOT implement code. Route all work to your team via .groove/recommended-team.json.\n' : '',
       `Continue seamlessly — finish the work and deliver the output.`,
     ].filter(Boolean).join('\n');
+
+    // Hard cap: total brief must not exceed 5000 chars
+    if (brief.length > 5000) {
+      brief = brief.slice(0, 4950) + '\n\n[Brief truncated — see session logs for full context]';
+    }
+
+    return brief;
   }
 
   // --- Workspace Grouping ---

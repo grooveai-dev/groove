@@ -11,25 +11,25 @@ import { tags as t } from '@lezer/highlight';
 import { markdown } from '@codemirror/lang-markdown';
 
 const editorTheme = EditorView.theme({
-  '&': { backgroundColor: '#13161b', color: '#d4d8e0', fontFamily: 'var(--font-mono)', fontSize: '12px', height: '100%', lineHeight: '1.6' },
+  '&': { backgroundColor: 'var(--color-surface-1)', color: '#d4d8e0', fontFamily: 'var(--font-mono)', fontSize: '11px', height: '100%', lineHeight: '1.6' },
   '.cm-scroller': { overflow: 'auto', padding: '4px 0' },
   '.cm-content': { caretColor: '#33afbc', padding: '0 8px' },
   '.cm-cursor': { borderLeftColor: '#33afbc', borderLeftWidth: '1.5px' },
-  '.cm-gutters': { backgroundColor: '#13161b', borderRight: '1px solid #1e2229', color: '#404852', minWidth: '32px' },
-  '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.03)' },
+  '.cm-gutters': { backgroundColor: 'var(--color-surface-1)', borderRight: 'none', color: '#404852', minWidth: '28px' },
+  '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.02)' },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'rgba(51, 175, 188, 0.15)' },
 });
 
 const promptHighlightStyle = HighlightStyle.define([
   { tag: t.keyword, color: '#b07fd5' },
   { tag: [t.name, t.deleted, t.character, t.macroName], color: '#d4d8e0' },
-  { tag: [t.function(t.variableName), t.labelName], color: '#7ab0df' },
+  { tag: [t.function(t.variableName), t.labelName], color: '#d9a45c' },
   { tag: [t.meta, t.comment], color: '#6e7681', fontStyle: 'italic' },
   { tag: t.strong, fontWeight: 'bold' },
   { tag: t.emphasis, fontStyle: 'italic' },
   { tag: t.link, color: '#7ab0df', textDecoration: 'underline' },
   { tag: t.heading, fontWeight: '400', color: '#bcc2cd' },
-  { tag: [t.processingInstruction, t.string, t.inserted], color: '#73c991' },
+  { tag: [t.processingInstruction, t.string, t.inserted], color: '#a3b18a' },
   { tag: [t.atom, t.bool], color: '#c4956a' },
   { tag: t.invalid, color: '#d4736e' },
 ]);
@@ -90,29 +90,29 @@ export function SystemPromptEditor() {
   }, [systemPrompt]);
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1.5">
       <button
         onClick={() => setCollapsed(!collapsed)}
         className="flex items-center gap-1.5 w-full cursor-pointer group"
       >
         {collapsed ? (
-          <ChevronRight size={12} className="text-text-3 group-hover:text-text-1 transition-colors" />
+          <ChevronRight size={11} className="text-text-4 group-hover:text-text-2 transition-colors" />
         ) : (
-          <ChevronDown size={12} className="text-text-3 group-hover:text-text-1 transition-colors" />
+          <ChevronDown size={11} className="text-text-4 group-hover:text-text-2 transition-colors" />
         )}
-        <span className="text-xs font-semibold font-sans text-text-2 uppercase tracking-wider group-hover:text-text-1 transition-colors">
+        <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider group-hover:text-text-2 transition-colors">
           System Prompt
         </span>
-        <span className="text-2xs font-mono text-text-4 ml-auto">{charCount > 0 ? `${charCount} chars` : ''}</span>
+        <span className="text-2xs font-mono text-text-4 ml-auto">{charCount > 0 ? `${charCount}` : ''}</span>
       </button>
 
       <div className={cn(
         'overflow-hidden transition-all duration-200',
-        collapsed ? 'h-0' : 'h-40',
+        collapsed ? 'h-0' : 'h-36',
       )}>
         <div
           ref={containerRef}
-          className="h-full rounded-md border border-border-subtle overflow-hidden"
+          className="h-full border border-border-subtle rounded-sm overflow-hidden"
         />
       </div>
     </div>

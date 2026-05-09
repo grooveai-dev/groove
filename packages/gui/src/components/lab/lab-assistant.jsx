@@ -2,21 +2,20 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { ScrollArea } from '../ui/scroll-area';
-import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { cn } from '../../lib/cn';
-import { Send, X, Bot, ArrowRight, Loader2 } from 'lucide-react';
+import { Send, X, Bot, ArrowRight } from 'lucide-react';
 
 function AssistantMessage({ msg }) {
   return (
-    <div>
-      <div className="text-2xs text-text-3 font-sans mb-0.5 font-medium flex items-center gap-1">
-        <Bot size={10} /> Lab Assistant
+    <div className="animate-chat-fade-in">
+      <div className="flex items-center gap-1.5 mb-1">
+        <div className="w-4 h-4 rounded-sm bg-surface-4 flex items-center justify-center">
+          <Bot size={10} className="text-text-3" />
+        </div>
+        <span className="text-2xs text-text-3 font-sans font-medium">Lab Assistant</span>
       </div>
-      <div className={cn(
-        'border-l-2 pl-3 py-0.5',
-        msg.error ? 'border-danger/40' : 'border-accent/40',
-      )}>
+      <div className="ml-5">
         <div className={cn(
           'text-xs font-sans whitespace-pre-wrap break-words leading-relaxed',
           msg.error ? 'text-danger' : 'text-text-1',
@@ -30,9 +29,9 @@ function AssistantMessage({ msg }) {
 
 function UserMessage({ msg }) {
   return (
-    <div className="flex justify-end">
-      <div className="max-w-[85%]">
-        <div className="px-3 py-2 rounded-xl rounded-br-sm bg-accent/10 border border-accent/15">
+    <div className="flex justify-end animate-chat-fade-in">
+      <div className="max-w-[80%]">
+        <div className="px-3.5 py-2 bg-accent/8 rounded rounded-br-none">
           <p className="text-xs text-text-0 font-sans whitespace-pre-wrap break-words leading-relaxed">{msg.text}</p>
         </div>
       </div>
@@ -84,13 +83,12 @@ export function LabAssistant() {
   if (!agentId) return null;
 
   return (
-    <div className="h-full flex flex-col bg-surface-0 rounded-lg border border-border overflow-hidden">
+    <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border-subtle bg-surface-1">
+      <div className="flex-shrink-0 flex items-center justify-between px-4 pb-2">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold font-sans text-text-1">Lab Assistant</span>
           {backend && (
-            <Badge variant="accent" className="text-2xs">{backend}</Badge>
+            <span className="text-2xs font-mono text-text-3">{backend}</span>
           )}
           {agent && (
             <Badge
@@ -103,7 +101,7 @@ export function LabAssistant() {
         </div>
         <button
           onClick={dismissLabAssistant}
-          className="p-1 rounded text-text-4 hover:text-text-1 hover:bg-surface-5/50 transition-colors cursor-pointer"
+          className="p-1 text-text-4 hover:text-text-1 transition-colors cursor-pointer"
         >
           <X size={14} />
         </button>
@@ -111,12 +109,14 @@ export function LabAssistant() {
 
       {/* Messages */}
       <ScrollArea ref={scrollRef} className="flex-1 min-h-0">
-        <div className="px-4 py-4 space-y-4">
+        <div className="px-4 py-3 space-y-5">
           {messages.length === 0 && !isThinking ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <Bot size={32} className="text-text-4 mb-3" />
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="w-10 h-10 rounded bg-surface-2 flex items-center justify-center mb-3">
+                <Bot size={20} className="text-text-4" />
+              </div>
               <p className="text-sm text-text-2 font-sans font-medium">Setting up {backend}</p>
-              <p className="text-xs text-text-3 font-sans mt-1">The assistant is starting up...</p>
+              <p className="text-xs text-text-4 font-sans mt-1">The assistant is starting up...</p>
             </div>
           ) : (
             messages.map((msg, i) =>
@@ -128,18 +128,18 @@ export function LabAssistant() {
             )
           )}
 
-          {/* Thinking indicator */}
           {isThinking && (
-            <div>
-              <div className="text-2xs text-text-3 font-sans mb-0.5 font-medium flex items-center gap-1">
-                <Bot size={10} /> Lab Assistant
-              </div>
-              <div className="border-l-2 border-accent/40 pl-3 py-0.5">
-                <div className="flex items-center gap-1 py-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-text-3 animate-pulse" />
-                  <span className="w-1.5 h-1.5 rounded-full bg-text-3 animate-pulse" style={{ animationDelay: '150ms' }} />
-                  <span className="w-1.5 h-1.5 rounded-full bg-text-3 animate-pulse" style={{ animationDelay: '300ms' }} />
+            <div className="animate-chat-fade-in">
+              <div className="flex items-center gap-1.5 mb-1">
+                <div className="w-4 h-4 rounded-sm bg-surface-4 flex items-center justify-center">
+                  <Bot size={10} className="text-text-3" />
                 </div>
+                <span className="text-2xs text-text-3 font-sans font-medium">Lab Assistant</span>
+              </div>
+              <div className="ml-5 flex items-center gap-1.5 py-1">
+                <span className="w-1 h-1 rounded-full bg-text-4 animate-pulse" />
+                <span className="w-1 h-1 rounded-full bg-text-4 animate-pulse" style={{ animationDelay: '150ms' }} />
+                <span className="w-1 h-1 rounded-full bg-text-4 animate-pulse" style={{ animationDelay: '300ms' }} />
               </div>
             </div>
           )}
@@ -148,23 +148,22 @@ export function LabAssistant() {
 
       {/* Completion banner */}
       {isComplete && messages.length > 0 && (
-        <div className="flex-shrink-0 px-3 py-2 border-t border-border-subtle bg-success/5">
+        <div className="flex-shrink-0 px-4 py-2 bg-success/5 border-t border-success/10">
           <div className="flex items-center justify-between">
             <span className="text-xs font-sans text-success font-medium">Setup complete</span>
-            <Button
-              variant="primary"
-              size="sm"
+            <button
               onClick={() => setLabAssistantMode(false)}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs font-sans font-medium text-surface-0 bg-accent hover:bg-accent/90 rounded-sm transition-colors cursor-pointer"
             >
-              <ArrowRight size={12} className="mr-1" /> Switch to Playground
-            </Button>
+              <ArrowRight size={12} /> Playground
+            </button>
           </div>
         </div>
       )}
 
       {/* Input */}
-      <div className="flex-shrink-0 px-3 py-3 border-t border-border-subtle bg-surface-1">
-        <div className="flex items-end gap-2">
+      <div className="flex-shrink-0 px-4 py-3">
+        <div className="flex items-end gap-2 bg-surface-1 border border-border-subtle rounded-md p-1.5 focus-within:border-accent/30 transition-colors">
           <textarea
             ref={inputRef}
             value={input}
@@ -174,24 +173,25 @@ export function LabAssistant() {
             disabled={!isRunning}
             rows={1}
             className={cn(
-              'flex-1 resize-none bg-surface-0 border border-border rounded-lg px-3 py-2',
+              'flex-1 resize-none bg-transparent px-2 py-1.5',
               'text-xs text-text-0 font-sans placeholder:text-text-4',
-              'focus:outline-none focus:ring-1 focus:ring-accent',
+              'focus:outline-none',
               'disabled:opacity-40 disabled:cursor-not-allowed',
-              'min-h-[36px] max-h-32',
+              'min-h-[28px] max-h-32',
             )}
             style={{ height: 'auto', overflowY: input.split('\n').length > 4 ? 'auto' : 'hidden' }}
             onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`; }}
           />
-          <Button
-            variant="primary"
-            size="icon"
-            className="flex-shrink-0"
+          <button
             disabled={!input.trim() || !isRunning}
             onClick={handleSend}
+            className={cn(
+              'flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-sm transition-colors cursor-pointer',
+              input.trim() && isRunning ? 'bg-accent text-surface-0 hover:bg-accent/90' : 'bg-surface-3 text-text-4 cursor-not-allowed',
+            )}
           >
-            <Send size={14} />
-          </Button>
+            <Send size={12} />
+          </button>
         </div>
       </div>
     </div>

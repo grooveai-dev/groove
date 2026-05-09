@@ -2,7 +2,7 @@
 
 import { EMBEDDING_SERVICE_URL } from '../shared/constants.js';
 
-const DEFAULT_MODEL = 'BAAI/bge-small-en-v1.5';
+const DEFAULT_MODEL = 'BAAI/bge-base-en-v1.5';
 const DEFAULT_TOP_K = 3;
 
 // ~40 domains covering broad technical territory.

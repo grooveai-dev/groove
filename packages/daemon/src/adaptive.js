@@ -137,6 +137,20 @@ export class AdaptiveThresholds {
     const filesWritten = signals.filesWritten || 0;
     score += Math.min(filesWritten * 2, 10); // Cap at +10
 
+    // Output length decay: assistant responses shrinking dramatically
+    if (signals.outputLengthDecay) score -= 10;
+
+    // Tool output volume: bloated context from large tool results
+    const toolVol = signals.toolOutputVolume || 0;
+    if (toolVol === 2) score -= 10;
+    else if (toolVol === 1) score -= 5;
+
+    // Turn latency trend: agent slowing down significantly
+    if (signals.turnLatencyTrend) score -= 5;
+
+    // Bash repetition: agent stuck running identical commands
+    if (signals.bashRepetition) score -= 8;
+
     // Clamp to 0-100
     return Math.max(0, Math.min(100, score));
   }
@@ -165,19 +179,42 @@ export class AdaptiveThresholds {
       filesWritten: 0,
       fileChurn: 0,         // same file written 3+ times → possible circular refactoring
       errorTrend: 0,        // errors increasing in recent window → degradation signal
+      outputLengthDecay: 0, // last 5 assistant turns avg <50% of first 5 → declining output
+      toolOutputVolume: 0,  // cumulative tool result chars (>300KB = bloated context)
+      turnLatencyTrend: 0,  // avg gap in last 10 entries >2x first 10 → slowing down
+      bashRepetition: 0,    // 3+ identical consecutive Bash commands → stuck in loop
     };
 
     const writtenFiles = new Set();
     const fileWriteCounts = {};
     const writeEditOps = [];
+    const assistantOutputLengths = [];
+    let toolOutputBytes = 0;
+    const entryTimestamps = [];
+    const bashCommands = [];
 
     for (const entry of entries) {
+      if (entry.timestamp) entryTimestamps.push(new Date(entry.timestamp).getTime());
+
       if (entry.type === 'error') {
         signals.errorCount++;
       }
 
+      // Track assistant output lengths for decay detection
+      if (entry.type === 'thinking' && entry.text) {
+        assistantOutputLengths.push(entry.text.length);
+      }
+
       if (entry.type === 'tool') {
         signals.toolCalls++;
+
+        // Track tool result output volume
+        if (entry.output) toolOutputBytes += entry.output.length;
+
+        // Track Bash commands for repetition detection
+        if (entry.tool === 'Bash' && entry.input) {
+          bashCommands.push(entry.input);
+        }
 
         if (entry.tool === 'Write' || entry.tool === 'Edit') {
           if (entry.input) {
@@ -244,6 +281,46 @@ export class AdaptiveThresholds {
       // Positive = errors increasing (bad), negative = errors decreasing (good)
       signals.errorTrend = secondHalfErrors - firstHalfErrors;
     }
+
+    // Output length decay: if last 5 assistant outputs avg <50% of first 5
+    if (assistantOutputLengths.length >= 10) {
+      const first5 = assistantOutputLengths.slice(0, 5);
+      const last5 = assistantOutputLengths.slice(-5);
+      const firstAvg = first5.reduce((a, b) => a + b, 0) / 5;
+      const lastAvg = last5.reduce((a, b) => a + b, 0) / 5;
+      if (firstAvg > 0 && lastAvg < firstAvg * 0.5) signals.outputLengthDecay = 1;
+    }
+
+    // Tool output volume: cumulative tool result size
+    if (toolOutputBytes > 600_000) signals.toolOutputVolume = 2;
+    else if (toolOutputBytes > 300_000) signals.toolOutputVolume = 1;
+
+    // Turn latency trend: avg gap in last 10 entries >2x first 10
+    if (entryTimestamps.length >= 20) {
+      const gaps = (ts) => {
+        const g = [];
+        for (let i = 1; i < ts.length; i++) g.push(ts[i] - ts[i - 1]);
+        return g;
+      };
+      const firstGaps = gaps(entryTimestamps.slice(0, 11));
+      const lastGaps = gaps(entryTimestamps.slice(-11));
+      const avgFirst = firstGaps.reduce((a, b) => a + b, 0) / firstGaps.length;
+      const avgLast = lastGaps.reduce((a, b) => a + b, 0) / lastGaps.length;
+      if (avgFirst > 0 && avgLast > avgFirst * 2) signals.turnLatencyTrend = 1;
+    }
+
+    // Bash repetition: 3+ identical consecutive Bash commands
+    let maxConsecutive = 0;
+    let streak = 1;
+    for (let i = 1; i < bashCommands.length; i++) {
+      if (bashCommands[i] === bashCommands[i - 1]) {
+        streak++;
+        if (streak > maxConsecutive) maxConsecutive = streak;
+      } else {
+        streak = 1;
+      }
+    }
+    if (maxConsecutive >= 3) signals.bashRepetition = 1;
 
     return signals;
   }

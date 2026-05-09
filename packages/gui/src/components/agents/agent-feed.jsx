@@ -575,7 +575,7 @@ export function AgentFeed({ agent }) {
         }
       });
     }
-  }, [timeline.length]);
+  }, [timeline.length, sending, isThinking]);
 
   async function handleFileSelect(e) {
     const files = Array.from(e.target.files || []);
@@ -621,6 +621,10 @@ export function AgentFeed({ agent }) {
 
     setInput('');
     setSending(true);
+    isAtBottomRef.current = true;
+    requestAnimationFrame(() => {
+      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    });
     try {
       if (mode === 'query') {
         await queryAgent(agent.id, text);

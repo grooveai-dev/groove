@@ -153,7 +153,7 @@ export function BreadcrumbBar({
   return (
     <header
       className={cn(
-        'h-11 flex-shrink-0 flex items-center gap-3 px-4 pt-0.5 bg-surface-3 border-b border-border relative',
+        'h-12 flex-shrink-0 flex items-center gap-3 px-4 bg-surface-3 border-b border-border relative',
         darwinDrag && 'pl-24 electron-drag electron-no-drag-children',
       )}
     >

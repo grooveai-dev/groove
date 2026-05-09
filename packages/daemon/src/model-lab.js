@@ -4,6 +4,7 @@
 import { resolve } from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
 import { randomUUID } from 'crypto';
+import { Readable } from 'stream';
 
 const RUNTIME_TYPES = ['ollama', 'vllm', 'llama-cpp', 'tgi', 'openai-compatible'];
 const DEFAULT_OLLAMA_ENDPOINT = 'http://localhost:11434';
@@ -223,10 +224,9 @@ export class ModelLab {
       ...this._buildParameterBody(parameters || {}),
     };
 
-    const endpoint = `${rt.endpoint}/v1/chat/completions`;
-
-    const headers = { 'Content-Type': 'application/json' };
-    if (rt.apiKey) headers['Authorization'] = `Bearer ${rt.apiKey}`;
+    const endpoint = rt.endpoint.replace('localhost', '127.0.0.1');
+    const reqHeaders = { 'Content-Type': 'application/json' };
+    if (rt.apiKey) reqHeaders['Authorization'] = `Bearer ${rt.apiKey}`;
 
     const requestStart = Date.now();
     let ttft = null;
@@ -236,85 +236,61 @@ export class ModelLab {
     let generationStart = null;
     let fullContent = '';
 
-    const resp = await fetch(endpoint, {
+    const resp = await fetch(`${endpoint}/v1/chat/completions`, {
       method: 'POST',
-      headers,
+      headers: reqHeaders,
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(300000),
     });
 
     if (!resp.ok) {
-      let errorMsg;
-      try { errorMsg = (await resp.json()).error?.message || `HTTP ${resp.status}`; } catch { errorMsg = `HTTP ${resp.status}`; }
-      throw new Error(errorMsg);
+      let errMsg = `HTTP ${resp.status}`;
+      try { const e = await resp.json(); errMsg = e.error?.message || errMsg; } catch { /* ignore */ }
+      throw new Error(errMsg);
     }
 
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
+    const nodeStream = Readable.fromWeb(resp.body);
     let buffer = '';
 
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+    for await (const chunk of nodeStream) {
+      buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+        const data = trimmed.slice(6);
+        if (data === '[DONE]') continue;
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || !trimmed.startsWith('data: ')) continue;
-          const payload = trimmed.slice(6);
-          if (payload === '[DONE]') continue;
-
-          try {
-            const chunk = JSON.parse(payload);
-            const delta = chunk.choices?.[0]?.delta;
-            if (delta?.reasoning_content) {
-              if (ttft === null) {
-                ttft = Date.now() - requestStart;
-                generationStart = Date.now();
-              }
-              completionTokens++;
-              onEvent({ type: 'reasoning', content: delta.reasoning_content });
-            }
-            if (delta?.content) {
-              if (ttft === null) {
-                ttft = Date.now() - requestStart;
-                generationStart = Date.now();
-              }
-              fullContent += delta.content;
-              completionTokens++;
-              onEvent({ type: 'token', content: delta.content });
-            }
-            if (chunk.usage) {
-              promptTokens = chunk.usage.prompt_tokens || 0;
-              totalTokens = chunk.usage.total_tokens || 0;
-              if (chunk.usage.completion_tokens) {
-                completionTokens = chunk.usage.completion_tokens;
-              }
-            }
-          } catch { /* skip malformed chunk */ }
-        }
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed.choices?.[0]?.delta;
+          if (delta?.reasoning_content) {
+            if (ttft === null) { ttft = Date.now() - requestStart; generationStart = Date.now(); }
+            completionTokens++;
+            onEvent({ type: 'reasoning', content: delta.reasoning_content });
+          }
+          if (delta?.content) {
+            if (ttft === null) { ttft = Date.now() - requestStart; generationStart = Date.now(); }
+            fullContent += delta.content;
+            completionTokens++;
+            onEvent({ type: 'token', content: delta.content });
+          }
+          if (parsed.usage) {
+            promptTokens = parsed.usage.prompt_tokens || 0;
+            totalTokens = parsed.usage.total_tokens || 0;
+            if (parsed.usage.completion_tokens) completionTokens = parsed.usage.completion_tokens;
+          }
+        } catch { /* skip malformed chunk */ }
       }
-    } finally {
-      reader.releaseLock();
     }
 
     const generationTime = generationStart ? Date.now() - generationStart : Date.now() - requestStart;
     const tokensPerSec = generationTime > 0 ? (completionTokens / (generationTime / 1000)) : 0;
 
-    let memoryUsage = null;
-    if (rt.type === 'ollama') {
-      memoryUsage = await this.getOllamaMemoryUsage(rt.endpoint);
-    }
-
     if (sessionId) {
-      this._appendToSession(sessionId, messages, {
-        role: 'assistant',
-        content: fullContent,
-      });
+      this._appendToSession(sessionId, messages, { role: 'assistant', content: fullContent });
     }
 
     onEvent({
@@ -326,9 +302,16 @@ export class ModelLab {
         promptTokens,
         completionTokens,
         generationTime,
-        memoryUsage,
+        memoryUsage: null,
       },
     });
+
+    if (rt.type === 'ollama') {
+      try {
+        const mem = await this.getOllamaMemoryUsage(rt.endpoint);
+        if (mem) onEvent({ type: 'memory', usage: mem });
+      } catch { /* ignore */ }
+    }
   }
 
   _buildParameterBody(params) {

@@ -124,6 +124,38 @@ export function createApi(app, daemon) {
     res.json({ status: 'ok', uptime: process.uptime() });
   });
 
+  // Debug: test fetch to llama-server from daemon runtime
+  app.get('/api/lab/debug-fetch', async (req, res) => {
+    const target = req.query.url || 'http://localhost:8081/v1/chat/completions';
+    const log = [];
+    try {
+      log.push(`fetch → ${target}`);
+      log.push(`node ${process.version}, electron ${process.versions.electron || 'N/A'}`);
+      const start = Date.now();
+      const r = await fetch(target, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'Qwen3-0.6B-Q8_0.gguf', messages: [{ role: 'user', content: 'Say ok' }], stream: true, max_tokens: 10 }),
+        signal: AbortSignal.timeout(10000),
+      });
+      log.push(`status=${r.status} in ${Date.now() - start}ms`);
+      const reader = r.body.getReader();
+      let chunks = 0;
+      while (chunks < 5) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks++;
+        log.push(`chunk ${chunks}: ${new TextDecoder().decode(value).slice(0, 120)}`);
+      }
+      reader.cancel();
+      log.push(`total chunks read: ${chunks}`);
+      res.json({ ok: true, log });
+    } catch (err) {
+      log.push(`ERROR: ${err.message}`);
+      res.json({ ok: false, log, error: err.message });
+    }
+  });
+
   // List all agents
   app.get('/api/agents', (req, res) => {
     res.json(daemon.registry.getAll());

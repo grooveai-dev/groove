@@ -27,10 +27,10 @@ const LANGS = {
 const grooveHighlightStyle = HighlightStyle.define([
   { tag: t.keyword, color: '#b07fd5' },
   { tag: [t.name, t.deleted, t.character, t.macroName], color: '#d4d8e0' },
-  { tag: [t.function(t.variableName), t.labelName], color: '#d9a45c' },
-  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#c4956a' },
+  { tag: [t.function(t.variableName), t.labelName], color: '#dcc9a0' },
+  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#d4a07a' },
   { tag: [t.definition(t.name), t.separator], color: '#bcc2cd' },
-  { tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace], color: '#cda869' },
+  { tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace], color: '#e0c589' },
   { tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.special(t.string)], color: '#89b4c4' },
   { tag: [t.meta, t.comment], color: '#6e7681', fontStyle: 'italic' },
   { tag: t.strong, fontWeight: 'bold' },
@@ -38,13 +38,13 @@ const grooveHighlightStyle = HighlightStyle.define([
   { tag: t.strikethrough, textDecoration: 'line-through' },
   { tag: t.link, color: '#7ab0df', textDecoration: 'underline' },
   { tag: t.heading, fontWeight: '400', color: '#bcc2cd' },
-  { tag: [t.atom, t.bool, t.special(t.variableName)], color: '#c4956a' },
-  { tag: [t.processingInstruction, t.string, t.inserted], color: '#a3b18a' },
+  { tag: [t.atom, t.bool, t.special(t.variableName)], color: '#d4a07a' },
+  { tag: [t.processingInstruction, t.string, t.inserted], color: '#95b2b8' },
   { tag: t.invalid, color: '#d4736e' },
-  { tag: t.propertyName, color: '#d9a45c' },
+  { tag: t.propertyName, color: '#dcc9a0' },
   { tag: [t.tagName], color: '#d4736e' },
-  { tag: t.attributeName, color: '#cda869' },
-  { tag: t.attributeValue, color: '#a3b18a' },
+  { tag: t.attributeName, color: '#e0c589' },
+  { tag: t.attributeValue, color: '#95b2b8' },
 ]);
 
 // Custom theme overrides to match our design tokens

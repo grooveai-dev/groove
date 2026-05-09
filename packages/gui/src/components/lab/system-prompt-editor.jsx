@@ -23,14 +23,14 @@ const editorTheme = EditorView.theme({
 const promptHighlightStyle = HighlightStyle.define([
   { tag: t.keyword, color: '#b07fd5' },
   { tag: [t.name, t.deleted, t.character, t.macroName], color: '#d4d8e0' },
-  { tag: [t.function(t.variableName), t.labelName], color: '#d9a45c' },
+  { tag: [t.function(t.variableName), t.labelName], color: '#dcc9a0' },
   { tag: [t.meta, t.comment], color: '#6e7681', fontStyle: 'italic' },
   { tag: t.strong, fontWeight: 'bold' },
   { tag: t.emphasis, fontStyle: 'italic' },
   { tag: t.link, color: '#7ab0df', textDecoration: 'underline' },
   { tag: t.heading, fontWeight: '400', color: '#bcc2cd' },
-  { tag: [t.processingInstruction, t.string, t.inserted], color: '#a3b18a' },
-  { tag: [t.atom, t.bool], color: '#c4956a' },
+  { tag: [t.processingInstruction, t.string, t.inserted], color: '#95b2b8' },
+  { tag: [t.atom, t.bool], color: '#d4a07a' },
   { tag: t.invalid, color: '#d4736e' },
 ]);
 

@@ -135,7 +135,7 @@ function TreeEntry({ entry, depth, onOpen, expandedDirs, onToggleDir, onContextM
         onDoubleClick={handleCtxMenu}
         onContextMenu={handleCtxMenu}
         className={cn(
-          'w-full flex items-center gap-1.5 py-[3px] text-[13px] font-sans cursor-pointer',
+          'w-full flex items-center gap-1.5 py-[3px] text-xs font-sans cursor-pointer',
           'hover:bg-surface-4/50 transition-colors text-left',
           isDragging && 'opacity-50',
           isDragOver && 'bg-accent/15 ring-1 ring-accent/50 rounded',

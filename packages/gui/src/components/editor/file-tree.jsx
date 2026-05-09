@@ -130,7 +130,7 @@ function TreeNode({ entry, depth = 0, activePath, onFileClick, onDirToggle, expa
       onDoubleClick={handleContextMenu}
       onContextMenu={handleContextMenu}
       className={cn(
-        'w-full flex items-center gap-1.5 py-[3px] text-[13px] font-sans cursor-pointer',
+        'w-full flex items-center gap-1.5 py-[3px] text-xs font-sans cursor-pointer',
         'hover:bg-surface-5 transition-colors text-left select-none',
         isActive && 'bg-accent/10 text-text-0',
         !isActive && 'text-text-1',

@@ -1693,18 +1693,29 @@ export function createApi(app, daemon) {
   // Rotation = full handoff brief (only for degradation or no session)
   app.post('/api/agents/:id/instruct', async (req, res) => {
     try {
-      const { message } = req.body;
+      const { message, codeContext } = req.body;
       if (!message || typeof message !== 'string' || !message.trim()) {
         return res.status(400).json({ error: 'message is required' });
       }
       const agent = daemon.registry.get(req.params.id);
       if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
+      // Build the final instruction, optionally enriched with code context
+      let finalMessage = message.trim();
+      if (codeContext && typeof codeContext === 'object') {
+        const { filePath, lineStart, lineEnd, selectedCode } = codeContext;
+        if (filePath && typeof filePath === 'string' && selectedCode && typeof selectedCode === 'string') {
+          const start = Number.isFinite(lineStart) ? lineStart : '?';
+          const end = Number.isFinite(lineEnd) ? lineEnd : '?';
+          finalMessage = `${finalMessage}\n\nCode context from ${filePath} (lines ${start}-${end}):\n\`\`\`\n${selectedCode}\n\`\`\``;
+        }
+      }
+
       // Record user feedback so the journalist can include it in future agent context
-      if (daemon.journalist) daemon.journalist.recordUserFeedback(agent, message.trim());
+      if (daemon.journalist) daemon.journalist.recordUserFeedback(agent, finalMessage);
 
       // Agent loop path — send message directly to the running loop
-      const wrappedMessage = wrapWithRoleReminder(agent.role, message.trim());
+      const wrappedMessage = wrapWithRoleReminder(agent.role, finalMessage);
       if (daemon.processes.hasAgentLoop(req.params.id)) {
         const sent = await daemon.processes.sendMessage(req.params.id, wrappedMessage);
         if (sent) {
@@ -1731,7 +1742,7 @@ export function createApi(app, daemon) {
           scope: oldConfig.scope,
           provider: oldConfig.provider,
           model: oldConfig.model,
-          prompt: message.trim(),
+          prompt: finalMessage,
           permission: oldConfig.permission || 'full',
           workingDir: oldConfig.workingDir,
           name: oldConfig.name,
@@ -1754,7 +1765,7 @@ export function createApi(app, daemon) {
           scope: oldConfig.scope,
           provider: oldConfig.provider,
           model: oldConfig.model,
-          prompt: message.trim(),
+          prompt: finalMessage,
           introContext: oldConfig.introContext,
           permission: oldConfig.permission || 'full',
           workingDir: oldConfig.workingDir,
@@ -3340,11 +3351,118 @@ Keep responses concise. Help them think, don't lecture them about the system the
     });
   });
 
+  // Git line status — per-line modification status for editor gutter decorations
+  app.get('/api/files/git-line-status', (req, res) => {
+    const relPath = req.query.path;
+    if (!relPath || typeof relPath !== 'string') {
+      return res.status(400).json({ error: 'path parameter is required' });
+    }
+    if (relPath.includes('\0') || relPath.startsWith('/')) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+    const segments = relPath.split(/[/\\]/);
+    if (segments.some(s => s === '..')) {
+      return res.status(400).json({ error: 'Path traversal not allowed' });
+    }
+
+    const rootDir = getEditorRoot();
+    if (!rootDir) return res.status(400).json({ error: 'Editor root not set' });
+
+    const fullPath = resolve(rootDir, relPath);
+    if (!fullPath.startsWith(rootDir + sep) && fullPath !== rootDir) {
+      return res.status(400).json({ error: 'Path outside project' });
+    }
+
+    const result = { lines: { added: [], modified: [], deleted: [] } };
+
+    // Check if file is tracked by git
+    try {
+      execFileSync('git', ['ls-files', '--error-unmatch', '--', relPath], { cwd: rootDir, timeout: 5000, stdio: 'pipe' });
+    } catch {
+      // File not tracked — check if it exists (untracked = all lines added)
+      if (existsSync(fullPath)) {
+        try {
+          const content = readFileSync(fullPath, 'utf8');
+          const lineCount = content.split('\n').length;
+          for (let i = 1; i <= lineCount; i++) result.lines.added.push(i);
+        } catch { /* binary or unreadable */ }
+      }
+      return res.json(result);
+    }
+
+    try {
+      const diffOut = execFileSync('git', ['diff', '--unified=0', '--', relPath], {
+        cwd: rootDir, timeout: 10000, maxBuffer: 5 * 1024 * 1024,
+      }).toString();
+
+      if (!diffOut.trim()) return res.json(result);
+
+      // Check for binary
+      if (diffOut.includes('Binary files')) return res.json(result);
+
+      // Parse unified diff hunks: @@ -oldStart,oldCount +newStart,newCount @@
+      const hunkRe = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm;
+      let match;
+      while ((match = hunkRe.exec(diffOut)) !== null) {
+        const oldCount = parseInt(match[2] ?? '1', 10);
+        const newStart = parseInt(match[3], 10);
+        const newCount = parseInt(match[4] ?? '1', 10);
+
+        if (oldCount === 0 && newCount > 0) {
+          // Pure addition
+          for (let i = newStart; i < newStart + newCount; i++) result.lines.added.push(i);
+        } else if (newCount === 0 && oldCount > 0) {
+          // Pure deletion — mark the line where content was removed
+          result.lines.deleted.push(newStart);
+        } else {
+          // Modification
+          for (let i = newStart; i < newStart + newCount; i++) result.lines.modified.push(i);
+        }
+      }
+
+      res.json(result);
+    } catch (err) {
+      if (err.status !== undefined) return res.json(result);
+      res.status(500).json({ error: 'Failed to compute line status' });
+    }
+  });
+
+  // Git branches — list all local branches with current branch marked
+  app.get('/api/files/git-branches', (req, res) => {
+    const rootDir = getEditorRoot();
+    if (!rootDir) return res.status(400).json({ error: 'Editor root not set' });
+
+    const fallback = { current: null, branches: [] };
+
+    try {
+      let current = null;
+      try {
+        current = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+          cwd: rootDir, timeout: 5000, stdio: 'pipe',
+        }).toString().trim();
+      } catch { return res.json(fallback); }
+
+      const branchOut = execFileSync('git', ['branch', '--list', '--format=%(refname:short)'], {
+        cwd: rootDir, timeout: 5000, stdio: 'pipe',
+      }).toString();
+
+      const branches = branchOut.split('\n').map(b => b.trim()).filter(Boolean);
+      res.json({ current, branches });
+    } catch {
+      res.json(fallback);
+    }
+  });
+
   // Files touched by an agent during its session
   app.get('/api/agents/:id/files-touched', (req, res) => {
     const agent = daemon.registry.get(req.params.id);
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
-    const files = daemon.registry.getFilesTouched(req.params.id);
+    const rawFiles = daemon.registry.getFilesTouched(req.params.id);
+    const rootDir = agent.workingDir || daemon.projectDir;
+    const files = rawFiles.map(f => {
+      const fullPath = isAbsolute(f.path) ? f.path : resolve(rootDir, f.path);
+      return { ...f, exists: existsSync(fullPath) };
+    });
     res.json({ files, total: files.length });
   });
 

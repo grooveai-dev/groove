@@ -205,6 +205,16 @@ export const useGrooveStore = create((set, get) => ({
   workspaceReviewMode: false,
   workspaceReviewFiles: [],
 
+  // ── Editor (Cursor-style) ────────────────────────────────
+  editorSelectedAgent: null,
+  editorViewMode: 'code',
+  editorAiPanelOpen: false,
+  editorAiPanelWidth: Number(localStorage.getItem('groove:editorAiPanelWidth')) || 360,
+  editorGitStatus: null,
+  editorGitBranch: null,
+  editorGitDiff: null,
+  editorQuickSearchOpen: false,
+
   // ── Model Lab ──────────────────────────────────────────────
   labRuntimes: loadJSON('groove:labRuntimes', []),
   labActiveRuntime: null,
@@ -2983,6 +2993,63 @@ export const useGrooveStore = create((set, get) => ({
         f.path === path ? { ...f, comment } : f,
       ),
     }));
+  },
+
+  // ── Editor (Cursor-style) ──────────────────────────────────
+
+  setEditorAgent(id) {
+    set({ editorSelectedAgent: id });
+  },
+
+  setEditorViewMode(mode) {
+    set({ editorViewMode: mode });
+  },
+
+  toggleAiPanel() {
+    set((s) => {
+      const open = !s.editorAiPanelOpen;
+      return { editorAiPanelOpen: open };
+    });
+  },
+
+  setEditorAiPanelWidth(width) {
+    set({ editorAiPanelWidth: width });
+    localStorage.setItem('groove:editorAiPanelWidth', String(width));
+  },
+
+  setEditorQuickSearchOpen(open) {
+    set({ editorQuickSearchOpen: open });
+  },
+
+  async sendCodeToAgent(agentId, instruction, filePath, lineStart, lineEnd, selectedCode) {
+    if (!agentId) return;
+    const message = `Instruction: ${instruction}\nFile: ${filePath}\nLines ${lineStart}-${lineEnd}:\n\`\`\`\n${selectedCode}\n\`\`\``;
+    await get().instructAgent(agentId, message);
+  },
+
+  async fetchGitStatus() {
+    try {
+      const data = await api.get('/files/git-status');
+      set({ editorGitStatus: data });
+      return data;
+    } catch { return null; }
+  },
+
+  async fetchGitBranch() {
+    try {
+      const data = await api.get('/files/git-branch');
+      set({ editorGitBranch: data });
+      return data;
+    } catch { return null; }
+  },
+
+  async fetchGitDiff(path) {
+    try {
+      const url = path ? `/files/git-diff?path=${encodeURIComponent(path)}` : '/files/git-diff';
+      const data = await api.get(url);
+      set({ editorGitDiff: data });
+      return data;
+    } catch { return null; }
   },
 
   // ── Federation ────────────────────────────────────────────

@@ -37,6 +37,10 @@ function ToastItem({ toast }) {
   const removeToast = useGrooveStore((s) => s.removeToast);
   const Icon = ICONS[toast.type] || Info;
   const duration = toast.persistent ? 0 : (toast.duration ?? DURATIONS[toast.type]);
+  const allActions = [
+    ...(toast.actions || []),
+    ...(toast.action?.url || toast.action?.onClick ? [toast.action] : []),
+  ];
 
   useEffect(() => {
     if (!duration) return;
@@ -52,7 +56,7 @@ function ToastItem({ toast }) {
       exit={{ opacity: 0, x: 80, scale: 0.95 }}
       transition={{ duration: 0.2 }}
       className={cn(
-        'w-80 border border-border bg-surface-1 shadow-xl',
+        'min-w-80 max-w-md border border-border bg-surface-1 shadow-xl',
         'border-l-2 flex items-center gap-3 px-4 py-3',
         BORDER_COLORS[toast.type],
       )}
@@ -64,22 +68,23 @@ function ToastItem({ toast }) {
           <p className="text-xs text-text-3 font-sans mt-0.5">{toast.detail}</p>
         )}
       </div>
-      {(toast.action?.url || toast.action?.onClick) && (
+      {allActions.length > 0 && allActions.map((act, i) => (
         <button
+          key={i}
           onClick={(e) => {
             e.stopPropagation();
-            if (toast.action.onClick) {
-              toast.action.onClick();
-            } else if (toast.action.url) {
-              try { window.open(toast.action.url, '_blank', 'noopener'); } catch {}
+            if (act.onClick) {
+              act.onClick();
+            } else if (act.url) {
+              try { window.open(act.url, '_blank', 'noopener'); } catch {}
             }
             removeToast(toast.id);
           }}
           className="text-xs font-medium text-accent hover:text-accent-hover bg-surface-5 hover:bg-surface-6 px-3 py-1.5 rounded transition-colors cursor-pointer flex-shrink-0 whitespace-nowrap"
         >
-          {toast.action.label || 'Open'}
+          {act.label || 'Open'}
         </button>
-      )}
+      ))}
       <button
         onClick={(e) => { e.stopPropagation(); removeToast(toast.id); }}
         className="p-1.5 text-text-4 hover:text-text-1 hover:bg-surface-5 rounded transition-colors cursor-pointer flex-shrink-0 z-10"

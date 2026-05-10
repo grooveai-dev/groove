@@ -16,6 +16,7 @@ export function TerminalPanel({
   onCloseTab,
   onToggleFullHeight,
   onMinimize,
+  onClose,
   onRenameTab,
 }) {
   const dragging = useRef(false);
@@ -134,6 +135,13 @@ export function TerminalPanel({
               <Maximize2 size={12} />
             </button>
           )}
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded text-text-3 hover:text-text-0 hover:bg-surface-5 cursor-pointer transition-colors"
+            title="Close terminal"
+          >
+            <X size={12} />
+          </button>
         </div>
       </div>
 

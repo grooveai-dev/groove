@@ -1565,11 +1565,11 @@ export default function AgentsView() {
       </div>
       {!workspaceMode && <RecommendedTeamCard />}
       {!isLoading && teamAgents.length > 0 && !workspaceMode && (
-        <div className="absolute bottom-3 left-3 z-40 flex items-center gap-1">
+        <div className="absolute bottom-3 left-3 z-40 flex items-center gap-1.5">
           <Tooltip content="Spawn agent" side="top">
             <button
               onClick={() => openDetail({ type: 'spawn' })}
-              className="flex items-center justify-center w-7 h-7 rounded-md text-text-3 hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+              className="flex items-center justify-center w-7 h-7 rounded border border-text-3/25 bg-surface-0/80 text-text-3 hover:text-accent hover:border-accent/40 hover:bg-accent/10 transition-colors cursor-pointer"
             >
               <Plus size={15} />
             </button>
@@ -1594,7 +1594,7 @@ export default function AgentsView() {
                 saveRoleLayout(layout);
                 addToast('success', 'Layout saved', 'Future spawns will use these positions');
               }}
-              className="flex items-center justify-center w-7 h-7 rounded-md text-text-3 hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+              className="flex items-center justify-center w-7 h-7 rounded border border-text-3/25 bg-surface-0/80 text-text-3 hover:text-accent hover:border-accent/40 hover:bg-accent/10 transition-colors cursor-pointer"
             >
               <LayoutGrid size={15} />
             </button>
@@ -1602,7 +1602,7 @@ export default function AgentsView() {
           <Tooltip content="Workspace" side="top">
             <button
               onClick={() => setWorkspaceMode(true)}
-              className="flex items-center justify-center w-7 h-7 rounded-md text-text-3 hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+              className="flex items-center justify-center w-7 h-7 rounded border border-text-3/25 bg-surface-0/80 text-text-3 hover:text-accent hover:border-accent/40 hover:bg-accent/10 transition-colors cursor-pointer"
             >
               <Code2 size={15} />
             </button>
@@ -1628,10 +1628,10 @@ export default function AgentsView() {
                     }
                   }}
                   className={cn(
-                    'flex items-center justify-center w-7 h-7 rounded-md transition-colors cursor-pointer',
+                    'flex items-center justify-center w-7 h-7 rounded border bg-surface-0/80 transition-colors cursor-pointer',
                     isActive
-                      ? 'text-text-3 hover:text-info hover:bg-info/10'
-                      : 'text-text-4 hover:text-warning hover:bg-warning/10',
+                      ? 'border-text-3/25 text-text-3 hover:text-info hover:border-info/40 hover:bg-info/10'
+                      : 'border-text-4/25 text-text-4 hover:text-warning hover:border-warning/40 hover:bg-warning/10',
                   )}
                 >
                   {isShowing ? <Users size={15} /> : <Eye size={15} />}

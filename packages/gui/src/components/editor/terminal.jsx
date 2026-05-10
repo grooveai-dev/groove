@@ -216,6 +216,7 @@ export function TerminalManager() {
       onRenameTab={renameTab}
       onToggleFullHeight={() => setFullHeight(true)}
       onMinimize={() => setFullHeight(false)}
+      onClose={() => setTerminalVisible(false)}
     >
       {tabs.map((tab) => (
         <TerminalInstance key={tab.id} tabId={tab.id} visible={tab.id === activeTab} registerKill={registerKill} />

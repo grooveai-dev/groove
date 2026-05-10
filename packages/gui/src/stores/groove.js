@@ -576,7 +576,7 @@ export const useGrooveStore = create((set, get) => ({
             'Project ready to preview',
             msg.url,
             { label: 'Open Preview', onClick: () => get().openPreview(proxyUrl, msg.teamId, msg.kind) },
-            { persistent: true },
+            { persistent: true, actions: [{ label: 'View in Browser', url: msg.url }] },
           );
           break;
         }
@@ -1541,7 +1541,8 @@ export const useGrooveStore = create((set, get) => ({
     const id = ++toastCounter;
     const persistent = !!options.persistent;
     const duration = options.duration;
-    set((s) => ({ toasts: [...s.toasts, { id, type, message, detail, action, persistent, duration }] }));
+    const actions = options.actions;
+    set((s) => ({ toasts: [...s.toasts, { id, type, message, detail, action, actions, persistent, duration }] }));
   },
   removeToast(id) {
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));

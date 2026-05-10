@@ -173,12 +173,17 @@ export class Introducer {
         }
       }
 
-      // Project files section — tell the new agent what exists and what to read
+      // Project files section — tell the new agent what exists
+      // When no task is assigned, list files as reference only (not an action prompt)
       if (allTeamFiles.length > 0) {
         lines.push('');
         lines.push(`## Project Files`);
         lines.push('');
-        lines.push(`Your team has created the following files. **Read relevant ones before starting work** to understand what's been built and planned:`);
+        if (hasTask || isRotation) {
+          lines.push(`Your team has created the following files. **Read relevant ones before starting work** to understand what's been built and planned:`);
+        } else {
+          lines.push(`Your team has created the following files (for reference — do NOT read or act on these until you receive a task):`);
+        }
         lines.push('');
 
         // Group by agent for clarity

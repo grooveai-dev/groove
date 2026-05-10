@@ -34,6 +34,19 @@ export function SelectionMenu({ x, y, filePath, lineStart, lineEnd, selectedCode
     };
   }, [onClose]);
 
+  // Viewport boundary correction
+  useEffect(() => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const el = ref.current;
+    if (rect.right > window.innerWidth - 8) {
+      el.style.left = `${window.innerWidth - rect.width - 8}px`;
+    }
+    if (rect.bottom > window.innerHeight - 8) {
+      el.style.top = `${window.innerHeight - rect.height - 8}px`;
+    }
+  });
+
   function handleAction(action) {
     if (!agentId) return;
     sendCodeToAgent(agentId, action.instruction, filePath, lineStart, lineEnd, selectedCode);

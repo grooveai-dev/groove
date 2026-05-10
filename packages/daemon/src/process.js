@@ -887,23 +887,26 @@ export class ProcessManager {
       }
     }
 
-    // Pre-spawn task negotiation — if same-role agents are running,
-    // query them about current work so the new agent gets a clear assignment
-    const sameRole = registry.getAll().filter(
-      (a) => a.role === config.role && a.id !== agent.id &&
-        (a.status === 'running' || a.status === 'starting')
-    );
-    let taskNegotiation = '';
-    if (sameRole.length > 0) {
-      taskNegotiation = await this.negotiateTaskSplit(agent, sameRole);
-    }
-
     // Compute hasTask from actual prompt content — agents spawned without a
     // prompt should NOT receive handoff history (prevents cross-team contamination).
     // Discoveries + constraints are always injected (project knowledge).
     // Handoffs are injected only when the agent has a real task or is a rotation.
     const hasTask = !!(config.prompt && config.prompt.trim().length > 0);
     const isRotation = !!(config.isRotation);
+
+    // Pre-spawn task negotiation — if same-role agents are running,
+    // query them about current work so the new agent gets a clear assignment.
+    // Only negotiate when the agent has a task — otherwise the negotiator
+    // output acts as an implicit task and the agent starts working immediately.
+    const sameRole = registry.getAll().filter(
+      (a) => a.role === config.role && a.id !== agent.id &&
+        (a.status === 'running' || a.status === 'starting')
+    );
+    let taskNegotiation = '';
+    if (sameRole.length > 0 && (hasTask || isRotation)) {
+      taskNegotiation = await this.negotiateTaskSplit(agent, sameRole);
+    }
+
     let introContext = introducer.generateContext(agent, { taskNegotiation, hasTask, isRotation });
 
     // Intro context size warning and optional truncation (Change 7)

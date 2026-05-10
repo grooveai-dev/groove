@@ -1,6 +1,29 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # GROOVE — Agent Orchestration Layer
 
 > Spawn fast. Stay aware. Never lose context.
+
+## Build & Development Commands
+
+```bash
+# Build GUI (required after any GUI changes — daemon serves built assets)
+npm run build                    # or: cd packages/gui && npx vite build
+
+# Run all tests (265 tests, 24 suites)
+npm test                         # or: node --test packages/daemon/test/*.test.js
+
+# Run a single test file
+node --test packages/daemon/test/registry.test.js
+
+# Dev servers (not for agents — agents use npm run build)
+npm run dev:gui                  # Vite dev server (HMR)
+npm run dev:daemon               # Daemon in dev mode
+```
+
+**Important:** GUI changes require `npm run build` to take effect (daemon serves static build from `packages/gui/dist/`). Daemon changes require a manual daemon restart — agents must NEVER restart the daemon themselves.
 
 ## What This Is
 
@@ -92,7 +115,7 @@ Bundled starter teams: `fullstack.json`, `api-builder.json`, `monorepo.json`
 - Tailwind CSS v4 + Radix UI (GUI styling + accessible primitives)
 - Zustand 5 (GUI state + WebSocket sync)
 - React Flow / @xyflow/react (agent tree visualization)
-- CodeMirror 6 (code editor, 7 languages)
+- CodeMirror 6 + @uiw/codemirror-themes-all (code editor, 7 languages, 38 selectable themes)
 - xterm.js (terminal emulation)
 - Framer Motion (animations)
 - Lucide React (icons)
@@ -201,7 +224,7 @@ React app served by daemon at `http://localhost:31415`. VS Code-style layout. Ta
 - Log files created with 0o600 permissions
 - Command injection prevention (execFileSync with array args in tmux)
 - Scope patterns validated (no absolute paths, no traversal)
-- 137 automated tests across 14 suites
+- 265 automated tests across 24 suites
 
 ## Conventions
 
@@ -210,6 +233,15 @@ React app served by daemon at `http://localhost:31415`. VS Code-style layout. Ta
 - Port 31415 for daemon (REST + WebSocket + GUI)
 - `.groove/` directory in project root for runtime state (gitignored)
 - Generated markdown files: `AGENTS_REGISTRY.md`, `GROOVE_PROJECT_MAP.md`, `GROOVE_DECISIONS.md`
+
+## GUI Styling Rules
+
+- **Tailwind CSS v4 only** — zero inline styles (no `style={{}}` except dynamic values like `width`, `height`)
+- **No absolute-positioned floating buttons** over content — use flex layout rails instead
+- **File tree icons** must be neutral/muted (`text-text-2`/`text-text-3`) — no rainbow colors
+- **Editor themes** are user-selectable via status bar picker — do not hardcode syntax highlight colors
+- **Font sizes:** file trees use `text-xs` (12px), editor uses 12px via theme
+- **No inline styles for colors** — use design token CSS variables (`--color-accent`, `--color-danger`, etc.)
 
 ## Compliance (CRITICAL)
 

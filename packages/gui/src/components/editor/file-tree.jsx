@@ -6,7 +6,7 @@ import { api } from '../../lib/api';
 import {
   ChevronRight, ChevronDown, File, Folder, FolderOpen,
   Plus, FolderPlus, Search, RefreshCw, Trash2, Pencil, FilePlus,
-  ChevronsDownUp, PanelLeftClose,
+  ChevronsDownUp, PanelLeftClose, GitBranch, Activity,
 } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
 
@@ -101,13 +101,20 @@ function InlineInput({ defaultValue = '', placeholder, onSubmit, onCancel, depth
 
 // ── Tree Node ────────────────────────────────────────────────
 
-function TreeNode({ entry, depth = 0, activePath, onFileClick, onDirToggle, expanded, onContextMenu, dragState, onDragStartEntry, onDragEndEntry, onSetDragOver, onDropOnDir }) {
+function GitDot({ status }) {
+  if (!status) return null;
+  const color = status === 'A' || status === '?' ? 'bg-success' : status === 'D' ? 'bg-danger' : 'bg-warning';
+  return <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', color)} />;
+}
+
+function TreeNode({ entry, depth = 0, activePath, onFileClick, onDirToggle, expanded, onContextMenu, dragState, onDragStartEntry, onDragEndEntry, onSetDragOver, onDropOnDir, gitStatusMap }) {
   const isDir = entry.type === 'dir';
   const isActive = activePath === entry.path;
   const isOpen = expanded.has(entry.path);
   const indent = depth * 16 + 8;
   const isDragging = dragState?.draggingPath === entry.path;
   const isDragOver = isDir && dragState?.dragOverPath === entry.path;
+  const fileGitStatus = !isDir ? gitStatusMap?.[entry.path] : null;
 
   function handleContextMenu(e) {
     e.preventDefault();
@@ -150,12 +157,13 @@ function TreeNode({ entry, depth = 0, activePath, onFileClick, onDirToggle, expa
           <File size={14} className={cn('flex-shrink-0', getFileColor(entry.name))} />
         </>
       )}
-      <span className="truncate">{entry.name}</span>
+      <span className="truncate flex-1">{entry.name}</span>
+      {fileGitStatus && <GitDot status={fileGitStatus} />}
     </button>
   );
 }
 
-function TreeDir({ dirPath, depth, activePath, onFileClick, expanded, onDirToggle, treeCache, fetchTreeDir, onContextMenu, inlineInput, dragState, onDragStartEntry, onDragEndEntry, onSetDragOver, onDropOnDir }) {
+function TreeDir({ dirPath, depth, activePath, onFileClick, expanded, onDirToggle, treeCache, fetchTreeDir, onContextMenu, inlineInput, dragState, onDragStartEntry, onDragEndEntry, onSetDragOver, onDropOnDir, gitStatusMap }) {
   const entries = treeCache[dirPath] || [];
 
   useEffect(() => {
@@ -201,6 +209,7 @@ function TreeDir({ dirPath, depth, activePath, onFileClick, expanded, onDirToggl
               onDragEndEntry={onDragEndEntry}
               onSetDragOver={onSetDragOver}
               onDropOnDir={onDropOnDir}
+              gitStatusMap={gitStatusMap}
             />
           )}
           {entry.type === 'dir' && (
@@ -220,6 +229,7 @@ function TreeDir({ dirPath, depth, activePath, onFileClick, expanded, onDirToggl
               onDragEndEntry={onDragEndEntry}
               onSetDragOver={onSetDragOver}
               onDropOnDir={onDropOnDir}
+              gitStatusMap={gitStatusMap}
             />
           )}
         </div>
@@ -230,22 +240,63 @@ function TreeDir({ dirPath, depth, activePath, onFileClick, expanded, onDirToggl
 
 // ── Main FileTree ────────────────────────────────────────────
 
+// ── Collapsible Section ──────────────────────────────────────
+function CollapsibleSection({ title, icon: Icon, count, defaultOpen = true, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-b border-border-subtle">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-2xs font-sans font-medium text-text-2 uppercase tracking-wide hover:bg-surface-4 transition-colors cursor-pointer"
+      >
+        {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+        <Icon size={11} className="text-text-3" />
+        <span className="flex-1 text-left">{title}</span>
+        {count > 0 && <span className="text-text-4">{count}</span>}
+      </button>
+      {open && children}
+    </div>
+  );
+}
+
 export function FileTree({ rootDir, onCollapse }) {
   const treeCache = useGrooveStore((s) => s.editorTreeCache);
   const activeFile = useGrooveStore((s) => s.editorActiveFile);
   const openFile = useGrooveStore((s) => s.openFile);
   const fetchTreeDir = useGrooveStore((s) => s.fetchTreeDir);
   const addToast = useGrooveStore((s) => s.addToast);
+  const agents = useGrooveStore((s) => s.agents);
+  const editorSelectedAgent = useGrooveStore((s) => s.editorSelectedAgent);
 
   const [expanded, setExpanded] = useState(new Set(['']));
   const [filter, setFilter] = useState('');
   const [contextMenu, setContextMenu] = useState(null);
   const [inlineInput, setInlineInput] = useState(null);
   const [dragState, setDragState] = useState({ draggingPath: null, dragOverPath: null });
+  const [gitChanges, setGitChanges] = useState([]);
+  const [agentFiles, setAgentFiles] = useState([]);
 
   useEffect(() => {
     fetchTreeDir('');
   }, [fetchTreeDir, rootDir]);
+
+  useEffect(() => {
+    api.get('/files/git-status').then((data) => {
+      setGitChanges(data.entries || []);
+    }).catch(() => setGitChanges([]));
+  }, [rootDir]);
+
+  useEffect(() => {
+    if (!editorSelectedAgent) { setAgentFiles([]); return; }
+    api.get(`/agents/${editorSelectedAgent}/files-touched`).then((data) => {
+      setAgentFiles((data.files || []).filter((f) => f.exists !== false));
+    }).catch(() => setAgentFiles([]));
+  }, [editorSelectedAgent]);
+
+  const gitStatusMap = {};
+  for (const entry of gitChanges) {
+    gitStatusMap[entry.path] = entry.status;
+  }
 
   function onDirToggle(path) {
     setExpanded((prev) => {
@@ -468,6 +519,60 @@ export function FileTree({ rootDir, onCollapse }) {
 
       {/* Tree */}
       <ScrollArea className="flex-1">
+        {/* Git Changes section */}
+        {gitChanges.length > 0 && (
+          <CollapsibleSection title="Git Changes" icon={GitBranch} count={gitChanges.length} defaultOpen={true}>
+            <div className="py-0.5">
+              {gitChanges.map((entry) => {
+                const name = entry.path.split('/').pop();
+                const statusColor = entry.status === 'A' || entry.status === '?' ? 'text-success' : entry.status === 'D' ? 'text-danger' : 'text-warning';
+                return (
+                  <button
+                    key={entry.path}
+                    onClick={() => openFile(entry.path)}
+                    className={cn(
+                      'w-full flex items-center gap-1.5 px-3 py-[3px] text-xs font-sans cursor-pointer',
+                      'hover:bg-surface-5 transition-colors text-left',
+                      activeFile === entry.path ? 'bg-accent/10 text-text-0' : 'text-text-1',
+                    )}
+                  >
+                    <File size={12} className={cn('flex-shrink-0', getFileColor(name))} />
+                    <span className="truncate flex-1">{name}</span>
+                    <span className={cn('text-2xs font-mono flex-shrink-0', statusColor)}>{entry.status}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </CollapsibleSection>
+        )}
+
+        {/* Agent Activity section */}
+        {agentFiles.length > 0 && (
+          <CollapsibleSection title="Agent Activity" icon={Activity} count={agentFiles.length} defaultOpen={true}>
+            <div className="py-0.5">
+              {agentFiles.slice(0, 20).map((f) => {
+                const name = f.path.split('/').pop();
+                return (
+                  <button
+                    key={f.path}
+                    onClick={() => openFile(f.path)}
+                    className={cn(
+                      'w-full flex items-center gap-1.5 px-3 py-[3px] text-xs font-sans cursor-pointer',
+                      'hover:bg-surface-5 transition-colors text-left',
+                      activeFile === f.path ? 'bg-accent/10 text-text-0' : 'text-text-1',
+                    )}
+                  >
+                    <File size={12} className={cn('flex-shrink-0', getFileColor(name))} />
+                    <span className="truncate flex-1">{name}</span>
+                    <span className="text-2xs text-text-4">{f.writes || 0}w</span>
+                  </button>
+                );
+              })}
+            </div>
+          </CollapsibleSection>
+        )}
+
+        {/* File Explorer */}
         <div
           className="py-1"
           onDragOver={(e) => { if (!dragState.draggingPath) return; e.preventDefault(); setDragOverDir(null); }}
@@ -507,6 +612,7 @@ export function FileTree({ rootDir, onCollapse }) {
                     onDragEndEntry={handleDragEndEntry}
                     onSetDragOver={setDragOverDir}
                     onDropOnDir={handleDropOnDir}
+                    gitStatusMap={gitStatusMap}
                   />
                 )}
                 {entry.type === 'dir' && (
@@ -526,6 +632,7 @@ export function FileTree({ rootDir, onCollapse }) {
                     onDragEndEntry={handleDragEndEntry}
                     onSetDragOver={setDragOverDir}
                     onDropOnDir={handleDropOnDir}
+                    gitStatusMap={gitStatusMap}
                   />
                 )}
               </div>

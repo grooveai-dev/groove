@@ -11,6 +11,7 @@ import { EditorToolbar } from '../components/editor/editor-toolbar';
 import { AiPanel } from '../components/editor/ai-panel';
 import { QuickSearch } from '../components/editor/quick-search';
 import { SelectionMenu } from '../components/editor/selection-menu';
+import { InlinePrompt } from '../components/editor/inline-prompt';
 import { DiffViewer } from '../components/agents/diff-viewer';
 import { CodeReview } from '../components/agents/code-review';
 import { Code2, Eye, FileCode, PanelLeftOpen } from 'lucide-react';
@@ -47,6 +48,7 @@ export default function EditorView() {
   const [showGotoLine, setShowGotoLine] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selection, setSelection] = useState(null);
+  const [inlinePrompt, setInlinePrompt] = useState(null);
 
   const editorViewRef = useRef(null);
   const editorContainerRef = useRef(null);
@@ -121,6 +123,26 @@ export default function EditorView() {
         selectedCode: text,
       });
     }
+  }, []);
+
+  // Right-click on a selection opens the AI selection menu
+  const handleEditorContextMenu = useCallback((e) => {
+    const view = editorViewRef.current;
+    if (!view) return;
+    const sel = view.state.selection.main;
+    if (sel.empty) return;
+    const text = view.state.sliceDoc(sel.from, sel.to);
+    if (!text.trim()) return;
+    e.preventDefault();
+    const fromLine = view.state.doc.lineAt(sel.from);
+    const toLine = view.state.doc.lineAt(sel.to);
+    setSelection({
+      x: Math.min(e.clientX, window.innerWidth - 220),
+      y: e.clientY + 4,
+      lineStart: fromLine.number,
+      lineEnd: toLine.number,
+      selectedCode: text,
+    });
   }, []);
 
   // Sidebar resize handlers
@@ -210,13 +232,15 @@ export default function EditorView() {
             />
           ) : (
             file && (
-              <div className="w-full h-full" onMouseUp={handleEditorMouseUp}>
+              <div className="w-full h-full" onMouseUp={handleEditorMouseUp} onContextMenu={handleEditorContextMenu}>
                 <CodeEditor
                   content={file.content}
                   language={file.language}
+                  filePath={activeFile}
                   onChange={(content) => updateFileContent(activeFile, content)}
                   onSave={() => saveFile(activeFile)}
                   onCursorChange={setCursorPos}
+                  onCmdK={({ line, coords }) => setInlinePrompt({ line, coords })}
                   viewRef={editorViewRef}
                 />
               </div>
@@ -228,13 +252,15 @@ export default function EditorView() {
 
     if (file) {
       return (
-        <div className="w-full h-full" onMouseUp={handleEditorMouseUp}>
+        <div className="w-full h-full" onMouseUp={handleEditorMouseUp} onContextMenu={handleEditorContextMenu}>
           <CodeEditor
             content={file.content}
             language={file.language}
+            filePath={activeFile}
             onChange={(content) => updateFileContent(activeFile, content)}
             onSave={() => saveFile(activeFile)}
             onCursorChange={setCursorPos}
+            onCmdK={({ line, coords }) => setInlinePrompt({ line, coords })}
             viewRef={editorViewRef}
           />
         </div>
@@ -280,7 +306,7 @@ export default function EditorView() {
         {/* Toolbar (replaces breadcrumbs) */}
         <EditorToolbar
           onCmdP={() => setQuickSearchOpen(true)}
-          onCmdK={() => {}}
+          onCmdK={() => setInlinePrompt({ line: cursorPos.line, coords: null })}
         />
 
         {/* Content */}
@@ -316,6 +342,16 @@ export default function EditorView() {
               lineEnd={selection.lineEnd}
               selectedCode={selection.selectedCode}
               onClose={() => setSelection(null)}
+            />
+          )}
+
+          {/* Inline prompt (Cmd+K) */}
+          {inlinePrompt && viewMode === 'code' && (
+            <InlinePrompt
+              line={inlinePrompt.line}
+              coords={inlinePrompt.coords}
+              filePath={activeFile}
+              onClose={() => setInlinePrompt(null)}
             />
           )}
         </div>

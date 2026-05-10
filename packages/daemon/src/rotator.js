@@ -145,15 +145,12 @@ export class Rotator extends EventEmitter {
     }
 
     const signals = signalsEarly;
-    let score = this.daemon.adaptive.scoreSession(signals);
+    const providerForScore = getProvider(agent.provider);
+    const selfManages = providerForScore?.constructor?.managesOwnContext ?? false;
+    let score = this.daemon.adaptive.scoreSession(signals, { selfManagesContext: selfManages });
 
     // Age penalties: only for providers that don't manage their own context.
-    // Claude Code handles context internally via compaction — long sessions
-    // are normal and productive. Penalizing age causes premature rotation
-    // that destroys active debugging context and creates restart loops.
-    const providerForAge = getProvider(agent.provider);
-    const selfManagesForAge = providerForAge?.constructor?.managesOwnContext ?? false;
-    if (!selfManagesForAge) {
+    if (!selfManages) {
       if (ageSec > 1800) score -= 5;
       if (ageSec > 3600) score -= 10;
       if (ageSec > 7200) score -= 15;
@@ -385,6 +382,7 @@ export class Rotator extends EventEmitter {
         contextUsage: agent.contextUsage,
         reason: options.reason || 'manual',
         qualityScore: options.qualityScore || null,
+        qualitySignals: options.signals || null,
         timestamp: new Date().toISOString(),
       };
 

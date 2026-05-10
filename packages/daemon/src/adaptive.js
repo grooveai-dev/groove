@@ -98,15 +98,21 @@ export class AdaptiveThresholds {
     return { score, threshold: newThreshold, converged: profile.converged };
   }
 
-  scoreSession(signals) {
+  scoreSession(signals, options = {}) {
     // Score 0-100 based on quality signals.
     // Low score → rotate sooner (threshold decreases)
     // High score → allow more context (threshold increases)
+    //
+    // Self-managing providers (Claude Code) get reduced penalties because
+    // their normal debugging patterns — polling, retrying commands, hitting
+    // errors during investigation — look identical to degradation signals
+    // but are expected productive behavior.
+    const selfManages = options.selfManagesContext ?? false;
     let score = 70; // Baseline: decent session
 
-    // Error rate: each error costs 5 points
+    // Error rate: -5 per error normally, -2 for self-managing (errors during debugging are expected)
     const errorCount = signals.errorCount || 0;
-    score -= errorCount * 5;
+    score -= errorCount * (selfManages ? 2 : 5);
 
     // Repetitions: 3+ Write/Edit to the same file in a sliding window
     const repetitions = signals.repetitions || 0;
@@ -121,7 +127,7 @@ export class AdaptiveThresholds {
     const toolFailures = signals.toolFailures || 0;
     if (toolCalls > 0) {
       const successRate = (toolCalls - toolFailures) / toolCalls;
-      score += Math.round((successRate - 0.8) * 20);
+      score += Math.round((successRate - 0.8) * (selfManages ? 10 : 20));
     }
 
     // File churn: same file written 5+ times — genuine circular refactoring
@@ -130,26 +136,30 @@ export class AdaptiveThresholds {
 
     // Error trend: increasing errors in second half = degradation
     const errorTrend = signals.errorTrend || 0;
-    if (errorTrend > 0) score -= errorTrend * 6;  // getting worse
-    if (errorTrend < 0) score += 3;                // getting better (small bonus)
+    if (errorTrend > 0) score -= errorTrend * (selfManages ? 3 : 6);
+    if (errorTrend < 0) score += 3;
 
     // Files written: productivity signal
     const filesWritten = signals.filesWritten || 0;
     score += Math.min(filesWritten * 2, 10); // Cap at +10
 
-    // Output length decay: assistant responses shrinking dramatically
-    if (signals.outputLengthDecay) score -= 10;
+    // The following signals are skipped for self-managing providers because
+    // they're false positives during debugging:
+    // - outputLengthDecay: shorter responses = narrowing in on a problem
+    // - toolOutputVolume: reading logs/large files is expected
+    // - turnLatencyTrend: thinking longer about hard problems is fine
+    // - bashRepetition: polling (sleep + check) is a normal pattern
+    if (!selfManages) {
+      if (signals.outputLengthDecay) score -= 10;
 
-    // Tool output volume: bloated context from large tool results
-    const toolVol = signals.toolOutputVolume || 0;
-    if (toolVol === 2) score -= 10;
-    else if (toolVol === 1) score -= 5;
+      const toolVol = signals.toolOutputVolume || 0;
+      if (toolVol === 2) score -= 10;
+      else if (toolVol === 1) score -= 5;
 
-    // Turn latency trend: agent slowing down significantly
-    if (signals.turnLatencyTrend) score -= 5;
+      if (signals.turnLatencyTrend) score -= 5;
 
-    // Bash repetition: agent stuck running identical commands
-    if (signals.bashRepetition) score -= 8;
+      if (signals.bashRepetition) score -= 8;
+    }
 
     // Clamp to 0-100
     return Math.max(0, Math.min(100, score));

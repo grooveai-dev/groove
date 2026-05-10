@@ -4,8 +4,6 @@
 import { resolve } from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
 import { randomUUID } from 'crypto';
-import { Readable } from 'stream';
-
 const RUNTIME_TYPES = ['ollama', 'vllm', 'llama-cpp', 'tgi', 'openai-compatible'];
 const DEFAULT_OLLAMA_ENDPOINT = 'http://localhost:11434';
 
@@ -249,11 +247,14 @@ export class ModelLab {
       throw new Error(errMsg);
     }
 
-    const nodeStream = Readable.fromWeb(resp.body);
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
     let buffer = '';
 
-    for await (const chunk of nodeStream) {
-      buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 

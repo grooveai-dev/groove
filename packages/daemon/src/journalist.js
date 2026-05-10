@@ -443,24 +443,47 @@ export class Journalist {
       `Scope: ${agent.scope?.join(', ') || 'unrestricted'}${dir}`,
       `Rotation reason: ${reason}`,
       '',
-      'Analyze the session log below and produce a structured handoff brief.',
+      'Analyze the FULL session log below and produce a structured handoff brief.',
+      'The next agent must be able to continue this work without repeating anything.',
       '',
       'Output EXACTLY these sections, in this priority order:',
       '',
+      '## Investigation Path',
+      '(Chronological narrative of what was explored and why. For each major step:',
+      ' what was tried, what the result was, and whether it was ruled out or remains viable.',
+      ' The next agent must know the full path taken to avoid retreading ground.)',
+      '',
+      '## Current State',
+      '(Where things stand right now. What is the current hypothesis or approach?',
+      ' What was the agent actively working on when rotated? What is the next step?)',
+      '',
+      '## What Was Ruled Out',
+      '(Approaches, files, or theories that were investigated and eliminated.',
+      ' Include WHY each was ruled out so the next agent does not retry them.)',
+      '',
+      '## Key Findings',
+      '(Important discoveries: root causes identified, relevant code locations,',
+      ' configuration details, error patterns, dependencies found. Name files,',
+      ' functions, and line numbers.)',
+      '',
       '## Unresolved Errors',
-      '(What failed, what was tried, and what to avoid repeating.)',
+      '(Errors still occurring. Include exact error messages and context.)',
+      '',
+      '## User Messages',
+      '(EVERY message the user typed, verbatim or near-verbatim. These are critical —',
+      ' the user must never have to repeat themselves after a rotation. Include all',
+      ' instructions, questions, corrections, and context the user provided.)',
       '',
       '## User Constraints',
       '(Explicit user directives, must/never/avoid/use instructions.)',
       '',
-      '## Last 5 Tool Calls',
+      '## Last 15 Tool Calls',
       '(Compact list of the most recent meaningful tool calls and outcomes.)',
       '',
-      '## Accomplishments',
-      '(What was completed. Name files, functions, and line numbers.)',
-      '',
       'Be specific. Name files, functions, and line numbers. Do not summarize vaguely.',
-      'Keep your response under 1500 characters.',
+      'Preserve the investigation narrative — the next agent needs to understand the',
+      'journey, not just the destination.',
+      'Keep your response under 4000 characters.',
       '',
       '---',
       '',
@@ -469,8 +492,8 @@ export class Journalist {
     ];
 
     let totalChars = 0;
-    const cap = 15_000;
-    for (const entry of entries.slice(-200)) {
+    const cap = 40_000;
+    for (const entry of entries.slice(-500)) {
       const line = this.formatEntry(entry);
       if (totalChars + line.length > cap) break;
       parts.push(line);
@@ -861,7 +884,14 @@ export class Journalist {
       ? `- Quality profile: ${specialization.avgQualityScore}/100 across ${specialization.sessionCount} sessions`
       : '';
 
-    const recentChain = this.daemon.memory?.getRecentHandoffMarkdown(agent.role, 1, 1500, agent.workingDir, agent.teamId) || '';
+    const recentChain = this.daemon.memory?.getRecentHandoffMarkdown(agent.role, 3, 3000, agent.workingDir, agent.teamId) || '';
+
+    // User messages from the session log — these are the actual things the user typed.
+    // They must always be preserved: if a user said it, the next agent needs to see it.
+    const userMessages = entries
+      .filter((e) => e.type === 'user' && e.text)
+      .map((e) => `- "${e.text.slice(0, 500)}"`)
+      .join('\n');
 
     const agentFeedback = this.getUserFeedback(agent.id).slice(-5);
     const conversationSummary = agentFeedback.length > 0
@@ -870,7 +900,7 @@ export class Journalist {
 
     const recentTools = entries
       .filter((e) => e.type === 'tool' || e.type === 'error')
-      .slice(-5)
+      .slice(-15)
       .map((e) => `- ${e.type === 'error' ? 'ERROR ' : ''}${e.tool}: ${(e.input || e.text || '').slice(0, 200)}`)
       .join('\n');
 
@@ -907,23 +937,31 @@ export class Journalist {
 
       const fallbackRecentTools = entries
         .filter((e) => e.type === 'tool' || e.type === 'error')
-        .slice(-5)
+        .slice(-15)
         .map((e) => `- ${e.type === 'error' ? 'ERROR ' : ''}${e.tool}: ${(e.input || '').slice(0, 200)}`)
         .join('\n');
 
+      // Build investigation timeline from thinking entries — these capture reasoning and decisions
+      const thinkingEntries = entries
+        .filter((e) => e.type === 'thinking' && e.text && e.text.length > 80)
+        .slice(-10)
+        .map((e) => `- ${e.text.slice(0, 400)}`)
+        .join('\n');
+
       const fallbackParts = [];
+      if (thinkingEntries) fallbackParts.push(`## Investigation Path\n\n${thinkingEntries}`);
       if (errorSummary) fallbackParts.push(`## Unresolved Errors\n\n${errorSummary}`);
-      if (fallbackRecentTools) fallbackParts.push(`## Last 5 Tool Calls\n\n${fallbackRecentTools}`);
+      if (fallbackRecentTools) fallbackParts.push(`## Last 15 Tool Calls\n\n${fallbackRecentTools}`);
       if (fileChangesSummary) fallbackParts.push(`## Files Modified\n\n${fileChangesSummary}`);
       if (resultSummary) fallbackParts.push(`## Accomplishments\n\n${resultSummary}`);
       sessionSummary = fallbackParts.join('\n\n');
     }
 
-    // For quality_degradation rotations, drop user messages (already in session summary)
-    const includeUserMessages = options.reason !== 'quality_degradation';
-
     // Cap Original Task to 1000 chars — task descriptions for debugging can be long
     const originalTask = agent.prompt ? agent.prompt.slice(0, 1000) + (agent.prompt.length > 1000 ? '…' : '') : '';
+
+    // Combine user messages from session log and feedback API — never drop these
+    const allUserMessages = [userMessages, conversationSummary].filter(Boolean).join('\n');
 
     let brief = [
       `# Handoff Brief — ${agent.name} (${agent.role})`,
@@ -933,14 +971,14 @@ export class Journalist {
       `Rotation: ${options.reason || 'manual'}${options.qualityScore ? ` (quality: ${options.qualityScore}/100)` : ''} | Tokens: ${agent.tokensUsed}`,
       specLine,
       ``,
-      // Priority order: session summary (contains unresolved errors) first,
-      // then constraints, then discoveries, then tools — so the most critical
-      // debugging context survives even if the brief hits the hard cap.
+      // Priority order: session summary first, then user messages (never drop —
+      // if the user typed it, the next agent must see it), then constraints,
+      // then discoveries, then tools. Most critical context survives truncation.
       sessionSummary ? `## Session Summary\n\n${sessionSummary}\n` : '',
+      allUserMessages ? `## User Messages (do not ask user to repeat these)\n\n${allUserMessages}\n` : '',
       constraints ? `## Project Constraints (must follow)\n\n${constraints}\n` : '',
       discoveries ? `## Known Issues & Fixes\n\n${discoveries}\n` : '',
-      recentTools ? `## Last 5 Tool Calls\n\n${recentTools}\n` : '',
-      includeUserMessages && conversationSummary ? `## Recent User Messages\n\n${conversationSummary}\n` : '',
+      recentTools ? `## Last 15 Tool Calls\n\n${recentTools}\n` : '',
       recentChain ? `## Rotation History\n\n${recentChain}\n` : '',
       originalTask ? `## Original Task\n\n${originalTask}\n` : '',
       ``,
@@ -948,9 +986,9 @@ export class Journalist {
       `Continue seamlessly — finish the work and deliver the output.`,
     ].filter(Boolean).join('\n');
 
-    // Hard cap: 8000 chars — enough for debugging context without overwhelming the new agent
-    if (brief.length > 8000) {
-      brief = brief.slice(0, 7950) + '\n\n[Brief truncated — see session logs for full context]';
+    // Hard cap: 16000 chars — investigation context needs room to preserve the full narrative
+    if (brief.length > 16000) {
+      brief = brief.slice(0, 15950) + '\n\n[Brief truncated — see session logs for full context]';
     }
 
     return brief;

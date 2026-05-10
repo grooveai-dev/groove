@@ -196,6 +196,7 @@ export const useGrooveStore = create((set, get) => ({
   editorChangedFiles: {},
   editorRecentSaves: {},
   editorSidebarWidth: Number(localStorage.getItem('groove:editorSidebarWidth')) || 240,
+  editorTheme: localStorage.getItem('groove:editorTheme') || 'vscodeDark',
 
   // ── Workspace Mode ────────────────────────────────────────
   workspaceMode: localStorage.getItem('groove:workspaceMode') === 'true',
@@ -2809,6 +2810,10 @@ export const useGrooveStore = create((set, get) => ({
   setEditorSidebarWidth(width) {
     set({ editorSidebarWidth: width });
     localStorage.setItem('groove:editorSidebarWidth', String(width));
+  },
+  setEditorTheme(theme) {
+    set({ editorTheme: theme });
+    localStorage.setItem('groove:editorTheme', theme);
   },
 
   updateFileContent(path, content) {

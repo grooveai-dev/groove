@@ -156,7 +156,7 @@ const TpsChart = memo(function TpsChart() {
           {latestTps > 0 ? `${latestTps.toFixed(1)} t/s` : '\u2014'}
         </span>
       </div>
-      <div ref={containerRef} className="relative flex-1 min-h-0" style={{ minHeight: 120 }}>
+      <div ref={containerRef} className="relative flex-1 min-h-[120px]">
         {chartData.length < 2 ? (
           <div className="absolute inset-0 flex items-center justify-center">
             <span className="text-xs font-mono text-text-3">Collecting performance data\u2026</span>
@@ -353,8 +353,8 @@ function GaugeBar({ value, max, peakValue, color, label, unit }) {
         />
         {peakPct != null && (
           <div
-            className="absolute top-0 h-full w-px"
-            style={{ left: `${peakPct}%`, background: HEX.danger, opacity: 0.7 }}
+            className="absolute top-0 h-full w-px opacity-70"
+            style={{ left: `${peakPct}%`, background: HEX.danger }}
             title={`Peak: ${Math.round(peakValue)} ${unit || ''}`}
           />
         )}
@@ -548,7 +548,7 @@ export const PerformanceDashboard = memo(function PerformanceDashboard({ active 
       <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
         {/* Left column */}
         <div className="flex flex-col gap-3">
-          <div className="rounded-md border border-border-subtle bg-surface-0 overflow-hidden" style={{ minHeight: 200 }}>
+          <div className="rounded-md border border-border-subtle bg-surface-0 overflow-hidden min-h-[200px]">
             <TpsChart />
           </div>
 

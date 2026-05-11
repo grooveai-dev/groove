@@ -4,7 +4,7 @@
 import { resolve } from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
 import { randomUUID } from 'crypto';
-const RUNTIME_TYPES = ['ollama', 'vllm', 'llama-cpp', 'tgi', 'openai-compatible'];
+const RUNTIME_TYPES = ['ollama', 'vllm', 'llama-cpp', 'mlx', 'tgi', 'openai-compatible'];
 const DEFAULT_OLLAMA_ENDPOINT = 'http://localhost:11434';
 
 export class ModelLab {

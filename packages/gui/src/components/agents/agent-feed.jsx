@@ -382,7 +382,7 @@ function StreamingBar({ agent }) {
     <div className="flex items-center gap-3 px-4 h-8 border-b border-border-subtle bg-surface-1/80 flex-shrink-0">
       <div className="flex items-center gap-2 flex-1 min-w-0">
         <div className="relative flex items-center justify-center w-4 h-4">
-          <span className="absolute inset-0 rounded-full bg-accent/15 animate-ping" style={{ animationDuration: '2s' }} />
+          <span className="absolute inset-0 rounded-full bg-accent/15 animate-ping [animation-duration:2s]" />
           <span className="relative w-1.5 h-1.5 rounded-full bg-accent" />
         </div>
         {isRecent ? (
@@ -445,8 +445,8 @@ function BootSequence({ agent }) {
       {/* Agent identity */}
       <div className="flex items-center gap-3 mb-5">
         <div className="relative w-9 h-9">
-          <span className="absolute inset-0 rounded-full border-2 border-accent/20 animate-ping" style={{ animationDuration: '2s' }} />
-          <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-accent animate-spin" style={{ animationDuration: '1s' }} />
+          <span className="absolute inset-0 rounded-full border-2 border-accent/20 animate-ping [animation-duration:2s]" />
+          <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-accent animate-spin [animation-duration:1s]" />
           <span className="absolute inset-[5px] rounded-full bg-accent/8" />
         </div>
         <div>
@@ -480,9 +480,9 @@ function BootSequence({ agent }) {
               </span>
               {isLast && visible && (
                 <span className="flex gap-0.5 ml-1">
-                  <span className="w-1 h-1 rounded-full bg-accent animate-pulse" style={{ animationDelay: '0ms' }} />
-                  <span className="w-1 h-1 rounded-full bg-accent animate-pulse" style={{ animationDelay: '200ms' }} />
-                  <span className="w-1 h-1 rounded-full bg-accent animate-pulse" style={{ animationDelay: '400ms' }} />
+                  <span className="w-1 h-1 rounded-full bg-accent animate-pulse [animation-delay:0ms]" />
+                  <span className="w-1 h-1 rounded-full bg-accent animate-pulse [animation-delay:200ms]" />
+                  <span className="w-1 h-1 rounded-full bg-accent animate-pulse [animation-delay:400ms]" />
                 </span>
               )}
             </div>
@@ -877,7 +877,7 @@ export function AgentFeed({ agent }) {
               className="group w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer flex-shrink-0 mb-px"
             >
               <span className="relative flex items-center justify-center w-3.5 h-3.5">
-                <span className="absolute inset-0 rounded-full bg-accent/30 group-hover:bg-red-500/30 animate-ping transition-colors" style={{ animationDuration: '2s' }} />
+                <span className="absolute inset-0 rounded-full bg-accent/30 group-hover:bg-red-500/30 animate-ping [animation-duration:2s] transition-colors" />
                 <span className="relative w-2.5 h-2.5 rounded-full bg-accent group-hover:bg-red-500 transition-colors" />
               </span>
             </button>

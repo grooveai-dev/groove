@@ -11,10 +11,13 @@ import { ScrollArea } from '../ui/scroll-area';
 import { Plus, Trash2, Loader2, WifiOff, RotateCcw, HardDrive, Play, CheckCircle, AlertTriangle, ChevronRight, Wrench } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
+const IS_APPLE = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '');
+
 const RUNTIME_TYPES = [
   { value: 'ollama', label: 'Ollama' },
   { value: 'vllm', label: 'vLLM' },
   { value: 'llama-cpp', label: 'llama.cpp' },
+  { value: 'mlx', label: 'MLX', suffix: 'Apple Silicon', appleOnly: true },
   { value: 'tgi', label: 'TGI' },
   { value: 'openai-compatible', label: 'OpenAI Compatible' },
 ];
@@ -23,6 +26,7 @@ const DEFAULT_ENDPOINTS = {
   ollama: 'http://localhost:11434',
   vllm: 'http://localhost:8000',
   'llama-cpp': 'http://localhost:8080',
+  mlx: 'http://localhost:8080',
   tgi: 'http://localhost:8080',
   'openai-compatible': 'http://localhost:8000',
 };
@@ -64,8 +68,8 @@ function AddRuntimeDialog({ open, onOpenChange }) {
             <Select value={type} onValueChange={handleTypeChange}>
               <SelectTrigger placeholder="Select type" />
               <SelectContent>
-                {RUNTIME_TYPES.map((rt) => (
-                  <SelectItem key={rt.value} value={rt.value}>{rt.label}</SelectItem>
+                {RUNTIME_TYPES.filter(rt => !rt.appleOnly || IS_APPLE).map((rt) => (
+                  <SelectItem key={rt.value} value={rt.value}>{rt.label}{rt.suffix ? ` (${rt.suffix})` : ''}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -138,7 +142,8 @@ function formatSize(bytes) {
 }
 
 const BACKENDS = [
-  { id: 'llama-cpp', label: 'llama.cpp', subtitle: 'CPU + GPU, auto-managed', recommended: true, autoLaunch: true },
+  ...(IS_APPLE ? [{ id: 'mlx', label: 'MLX', subtitle: 'Apple Silicon optimized, guided setup', recommended: true, autoLaunch: false, appleOnly: true }] : []),
+  { id: 'llama-cpp', label: 'llama.cpp', subtitle: 'CPU + GPU, auto-managed', recommended: !IS_APPLE, autoLaunch: true },
   { id: 'vllm', label: 'vLLM', subtitle: 'GPU-optimized, guided setup', autoLaunch: false },
   { id: 'tgi', label: 'TGI', subtitle: 'HuggingFace, guided setup', autoLaunch: false },
 ];
@@ -172,7 +177,7 @@ export function LaunchModel() {
   const launchLabAssistant = useGrooveStore((s) => s.launchLabAssistant);
 
   const [selectedModel, setSelectedModel] = useState(null);
-  const [selectedBackend, setSelectedBackend] = useState('llama-cpp');
+  const [selectedBackend, setSelectedBackend] = useState(IS_APPLE ? 'mlx' : 'llama-cpp');
   const [assistantLaunching, setAssistantLaunching] = useState(false);
 
   useEffect(() => { fetchLocalModels(); checkLlama(); }, [fetchLocalModels, checkLlama]);

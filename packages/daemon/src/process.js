@@ -1058,7 +1058,7 @@ For normal file edits within your scope, proceed without review.
     // ─── Agent Loop path (local models with built-in agentic runtime) ───
     if (provider.constructor.useAgentLoop) {
       provider.normalizeConfig(spawnConfig);
-      const loopConfig = provider.getLoopConfig(spawnConfig);
+      const loopConfig = provider.getLoopConfig(spawnConfig, this.daemon);
       logStream.write(`[${new Date().toISOString()}] GROOVE agent-loop: model=${loopConfig.model} api=${loopConfig.apiBase}\n`);
 
       const loop = new AgentLoop({ daemon: this.daemon, agent, loopConfig, logStream });
@@ -2245,7 +2245,7 @@ For normal file edits within your scope, proceed without review.
       if (storedKey) spawnConfig.apiKey = storedKey;
     }
 
-    const loopConfig = provider.getLoopConfig(spawnConfig);
+    const loopConfig = provider.getLoopConfig(spawnConfig, this.daemon);
     const loop = new AgentLoop({ daemon: this.daemon, agent: newAgent, loopConfig, logStream });
 
     this.handles.set(newAgent.id, { loop, logStream });

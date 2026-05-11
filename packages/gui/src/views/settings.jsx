@@ -6,7 +6,7 @@ import { Badge } from '../components/ui/badge';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Skeleton } from '../components/ui/skeleton';
 import { StatusDot } from '../components/ui/status-dot';
-import { OllamaSetup } from '../components/agents/ollama-setup';
+
 import { FolderBrowser } from '../components/agents/folder-browser';
 import { ProviderSetupWizard } from '../components/settings/ProviderSetupWizard';
 import { Sheet, SheetContent } from '../components/ui/sheet';
@@ -56,7 +56,7 @@ function ProviderCard({ provider, onKeyChange }) {
   const [settingKey, setSettingKey] = useState(false);
   const [keyInput, setKeyInput] = useState('');
   const [showKey, setShowKey] = useState(false);
-  const [ollamaOpen, setOllamaOpen] = useState(false);
+
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
   const [customPathOpen, setCustomPathOpen] = useState(false);
@@ -112,67 +112,6 @@ function ProviderCard({ provider, onKeyChange }) {
   function openWizard(step = 0) {
     setWizardStep(step);
     setWizardOpen(true);
-  }
-
-  // Local models card
-  if (isLocal) {
-    const installedCount = provider.models?.filter(m => !m.disabled)?.length || 0;
-    const goToModels = () => useGrooveStore.getState().setActiveView('models');
-    return (
-      <div className="flex flex-col rounded-lg border border-border-subtle bg-surface-1 overflow-hidden min-w-[220px]">
-        <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border-subtle">
-          <StatusDot status={isReady && installedCount > 0 ? 'running' : 'crashed'} size="sm" />
-          <span className="text-[13px] font-semibold text-text-0 font-sans">{provider.name}</span>
-          <div className="flex-1" />
-          {isReady && installedCount > 0 ? (
-            <Badge variant="success" className="text-2xs gap-1"><Check size={8} /> {installedCount} models</Badge>
-          ) : isReady ? (
-            <Badge variant="warning" className="text-2xs">No models pulled</Badge>
-          ) : (
-            <Badge variant="default" className="text-2xs">Not set up</Badge>
-          )}
-        </div>
-        <div className="flex-1">
-          {ollamaOpen ? (
-            <>
-              <OllamaSetup isInstalled={isReady} onModelChange={onKeyChange} />
-              <div className="px-4 py-2 border-t border-border-subtle flex gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setOllamaOpen(false)} className="flex-1 h-7 text-2xs">
-                  Back
-                </Button>
-                <Button variant="secondary" size="sm" onClick={() => { setOllamaOpen(false); goToModels(); }} className="flex-1 h-7 text-2xs gap-1">
-                  Models Tab
-                </Button>
-              </div>
-            </>
-          ) : (
-            <div className="px-4 py-3 flex flex-col h-full">
-              <div className="text-xs text-text-3 font-sans flex-1">
-                {isReady && installedCount > 0
-                  ? 'Full agentic runtime — tool calling, context rotation, zero cloud cost'
-                  : isReady
-                    ? 'Ollama is running. Pull a model to start using local agents.'
-                    : 'Run any open-source model locally — free, private, fully offline. Requires Ollama.'}
-              </div>
-              <div className="flex gap-2 mt-3">
-                {!isReady ? (
-                  <Button variant="primary" size="sm" onClick={() => setOllamaOpen(true)} className="flex-1 h-7 text-2xs gap-1.5">
-                    <Cpu size={11} /> Set Up Ollama
-                  </Button>
-                ) : (
-                  <Button variant="primary" size="sm" onClick={() => setOllamaOpen(true)} className="flex-1 h-7 text-2xs gap-1.5">
-                    <Cpu size={11} /> {installedCount > 0 ? 'Manage' : 'Pull Models'}
-                  </Button>
-                )}
-                <Button variant="secondary" size="sm" onClick={goToModels} className="flex-1 h-7 text-2xs gap-1.5">
-                  Models Tab
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
   }
 
   const isInstalling = installProgress?.installing;
@@ -1693,8 +1632,8 @@ export default function SettingsView() {
   }
 
   const visibleProviders = providers.filter((p) => p.id !== 'groove-network');
-  const connectedCount = visibleProviders.filter((p) => {
-    if (p.authType === 'local') return p.installed;
+  const cardProviders = visibleProviders.filter((p) => p.id !== 'local');
+  const connectedCount = cardProviders.filter((p) => {
     if (p.authType === 'subscription') return p.installed && p.authStatus?.authenticated;
     return p.installed && p.hasKey;
   }).length;
@@ -1729,10 +1668,10 @@ export default function SettingsView() {
             <div className="flex items-center gap-2 mb-2.5 px-0.5">
               <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">Providers</span>
               <div className="flex-1 h-px bg-border-subtle" />
-              <span className="text-2xs text-text-4 font-sans">{connectedCount}/{visibleProviders.length} connected</span>
+              <span className="text-2xs text-text-4 font-sans">{connectedCount}/{cardProviders.length} connected</span>
             </div>
             <div className="grid grid-cols-4 gap-3">
-              {visibleProviders.map((p) => (
+              {cardProviders.map((p) => (
                 <ProviderCard key={p.id} provider={p} onKeyChange={loadProviders} />
               ))}
             </div>
@@ -1778,16 +1717,45 @@ export default function SettingsView() {
                 </ConfigCard>
 
                 <ConfigCard icon={Cpu} label="Default Model" description="Model used for new agents. Auto routes by role.">
-                  <select
-                    value={config.defaultModel || ''}
-                    onChange={(e) => updateConfig('defaultModel', e.target.value || null)}
-                    className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
-                  >
-                    <option value="">Auto (route by role)</option>
-                    {(providers.find((p) => p.id === (config.defaultProvider || 'claude-code'))?.models || []).map((m) => (
-                      <option key={m.id} value={m.id}>{m.name}</option>
-                    ))}
-                  </select>
+                  {(() => {
+                    const selectedProvider = providers.find((p) => p.id === (config.defaultProvider || 'claude-code'));
+                    const allModels = selectedProvider?.models || [];
+                    const isLocalProvider = (config.defaultProvider || 'claude-code') === 'local';
+                    const ollamaModels = isLocalProvider ? allModels.filter(m => m.source === 'ollama') : [];
+                    const ggufModels = isLocalProvider ? allModels.filter(m => m.source === 'gguf') : [];
+                    const runtimeModels = isLocalProvider ? allModels.filter(m => m.source === 'runtime') : [];
+                    const selectedModel = config.defaultModel || '';
+                    const selectedMeta = allModels.find(m => m.id === selectedModel);
+                    const needsRuntime = isLocalProvider && selectedMeta && !selectedMeta.hasRuntime;
+                    return (
+                      <>
+                        <select
+                          value={selectedModel}
+                          onChange={(e) => updateConfig('defaultModel', e.target.value || null)}
+                          className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
+                        >
+                          <option value="">Auto (route by role)</option>
+                          {isLocalProvider ? (
+                            <>
+                              {ollamaModels.length > 0 && <optgroup label="Ollama">{ollamaModels.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</optgroup>}
+                              {ggufModels.length > 0 && <optgroup label="Downloaded GGUFs">{ggufModels.map(m => <option key={m.id} value={m.id}>{m.name}{m.hasRuntime ? '' : ' (no runtime)'}</option>)}</optgroup>}
+                              {runtimeModels.length > 0 && <optgroup label="Runtime Models">{runtimeModels.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</optgroup>}
+                            </>
+                          ) : (
+                            allModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)
+                          )}
+                        </select>
+                        {needsRuntime && (
+                          <button
+                            onClick={() => useGrooveStore.getState().setActiveView('model-lab')}
+                            className="mt-1.5 w-full text-left text-2xs text-warning font-sans px-1 hover:underline cursor-pointer"
+                          >
+                            This model needs a runtime. Open Model Lab to launch one.
+                          </button>
+                        )}
+                      </>
+                    );
+                  })()}
                 </ConfigCard>
 
                 <ConfigCard icon={FolderOpen} label="Working Directory" description="Default root directory for new agents.">
@@ -1833,23 +1801,42 @@ export default function SettingsView() {
                         <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
                     </select>
-                    <select
-                      value={config.defaultChatModel || ''}
-                      onChange={(e) => updateConfig('defaultChatModel', e.target.value || null)}
-                      className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
-                    >
-                      <option value="">Auto (Sonnet)</option>
-                      {(providers.find((p) => p.id === (config.defaultChatProvider || config.defaultProvider || 'claude-code'))?.models || [])
-                        .filter((m) => {
-                          const id = (typeof m === 'string' ? m : m.id || '').toLowerCase();
-                          return !id.includes('dall-e') && !id.includes('imagen') && !id.includes('image');
-                        })
-                        .map((m) => {
-                          const id = typeof m === 'string' ? m : m.id;
-                          const name = typeof m === 'string' ? m : m.name || m.id;
-                          return <option key={id} value={id}>{name}</option>;
-                        })}
-                    </select>
+                    {(() => {
+                      const chatProv = providers.find((p) => p.id === (config.defaultChatProvider || config.defaultProvider || 'claude-code'));
+                      const chatModels = (chatProv?.models || []).filter((m) => {
+                        const id = (typeof m === 'string' ? m : m.id || '').toLowerCase();
+                        return !id.includes('dall-e') && !id.includes('imagen') && !id.includes('image');
+                      });
+                      const isChatLocal = (config.defaultChatProvider || config.defaultProvider || 'claude-code') === 'local';
+                      return (
+                        <select
+                          value={config.defaultChatModel || ''}
+                          onChange={(e) => updateConfig('defaultChatModel', e.target.value || null)}
+                          className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
+                        >
+                          <option value="">Auto (Sonnet)</option>
+                          {isChatLocal ? (
+                            <>
+                              {chatModels.filter(m => m.source === 'ollama').length > 0 && (
+                                <optgroup label="Ollama">{chatModels.filter(m => m.source === 'ollama').map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</optgroup>
+                              )}
+                              {chatModels.filter(m => m.source === 'gguf').length > 0 && (
+                                <optgroup label="Downloaded GGUFs">{chatModels.filter(m => m.source === 'gguf').map(m => <option key={m.id} value={m.id}>{m.name}{m.hasRuntime ? '' : ' (no runtime)'}</option>)}</optgroup>
+                              )}
+                              {chatModels.filter(m => m.source === 'runtime').length > 0 && (
+                                <optgroup label="Runtime Models">{chatModels.filter(m => m.source === 'runtime').map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</optgroup>
+                              )}
+                            </>
+                          ) : (
+                            chatModels.map((m) => {
+                              const id = typeof m === 'string' ? m : m.id;
+                              const name = typeof m === 'string' ? m : m.name || m.id;
+                              return <option key={id} value={id}>{name}</option>;
+                            })
+                          )}
+                        </select>
+                      );
+                    })()}
                   </div>
                 </ConfigCard>
 

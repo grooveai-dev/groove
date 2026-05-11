@@ -415,9 +415,9 @@ function NetworkOverview() {
   return (
     <div className="flex flex-col h-full">
       <ComputeHeader />
-      <div className="flex-1 min-h-0 grid" style={{ gridTemplateColumns: '2.5fr 1fr', gap: '1px', background: HEX.surface3 }}>
+      <div className="flex-1 min-h-0 grid [grid-template-columns:2.5fr_1fr] gap-px" style={{ background: HEX.surface3 }}>
         {/* Left column */}
-        <div className="flex flex-col min-w-0 min-h-0" style={{ gap: '1px' }}>
+        <div className="flex flex-col min-w-0 min-h-0 gap-px">
           <div className="flex-1 min-h-0 overflow-hidden bg-surface-1">
             <ActivityChart />
           </div>
@@ -426,7 +426,7 @@ function NetworkOverview() {
           </div>
         </div>
         {/* Right column */}
-        <div className="flex flex-col min-w-0 min-h-0" style={{ gap: '1px' }}>
+        <div className="flex flex-col min-w-0 min-h-0 gap-px">
           <div className="min-h-0 overflow-hidden bg-surface-1">
             <NodeCard />
           </div>

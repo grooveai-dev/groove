@@ -8,7 +8,6 @@ import { fmtNum, fmtDollar, fmtUptime } from '../../lib/format';
 
 const EMPTY = [];
 const ERROR_RE = /error|crash|fail/i;
-const BAR_BG = 'rgba(51, 175, 188, 0.15)';
 const BAR_H = 'h-[2px]';
 
 function shortModel(id) {
@@ -98,13 +97,9 @@ const AgentNode = memo(({ data, selected }) => {
 
         {/* Scan line — running only */}
         {isAlive && (
-          <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ borderRadius: 3 }}>
+          <div className="absolute inset-0 overflow-hidden pointer-events-none rounded-[3px]">
             <div
-              className="absolute left-0 right-0 h-px"
-              style={{
-                background: 'linear-gradient(90deg, transparent 0%, rgba(97,175,239,0.25) 50%, transparent 100%)',
-                animation: 'node-scan 3s ease-in-out infinite',
-              }}
+              className="absolute left-0 right-0 h-px [background:linear-gradient(90deg,transparent_0%,rgba(97,175,239,0.25)_50%,transparent_100%)] [animation:node-scan_3s_ease-in-out_infinite]"
             />
           </div>
         )}
@@ -116,8 +111,8 @@ const AgentNode = memo(({ data, selected }) => {
               <span className="absolute inset-0 rounded-sm" style={{ background: sColor }} />
               {isAlive && (
                 <span
-                  className="absolute inset-[-2px] rounded-sm"
-                  style={{ background: sColor, opacity: 0.15, animation: 'node-pulse-bar 2s ease-in-out infinite' }}
+                  className="absolute inset-[-2px] rounded-sm opacity-[0.15] [animation:node-pulse-bar_2s_ease-in-out_infinite]"
+                  style={{ background: sColor }}
                 />
               )}
             </span>
@@ -155,7 +150,7 @@ const AgentNode = memo(({ data, selected }) => {
           </div>
 
           {/* Context bar */}
-          <div className={`mt-1.5 ${BAR_H} rounded-sm overflow-hidden`} style={{ background: BAR_BG }}>
+          <div className={`mt-1.5 ${BAR_H} rounded-sm overflow-hidden bg-[rgba(51,175,188,0.15)]`}>
             <div
               className="h-full rounded-sm transition-all duration-700"
               style={{
@@ -185,7 +180,7 @@ const AgentNode = memo(({ data, selected }) => {
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <div className={`flex-1 ${BAR_H} rounded-sm overflow-hidden`} style={{ background: BAR_BG }}>
+                <div className={`flex-1 ${BAR_H} rounded-sm overflow-hidden bg-[rgba(51,175,188,0.15)]`}>
                   <div className="h-full rounded-sm transition-all duration-500" style={{ width: `${Math.max(contextPct, 1)}%`, background: ctxColor }} />
                 </div>
                 <span className="text-[9px] font-mono font-medium" style={{ color: ctxColor }}>{contextPct}%</span>
@@ -196,7 +191,7 @@ const AgentNode = memo(({ data, selected }) => {
             <div className="px-3 pt-1 pb-1">
               <span className="text-[9px] font-mono text-[#505862] uppercase tracking-wider">Quality</span>
               <div className="flex items-center gap-2 mt-1">
-                <div className={`flex-1 ${BAR_H} rounded-sm overflow-hidden`} style={{ background: BAR_BG }}>
+                <div className={`flex-1 ${BAR_H} rounded-sm overflow-hidden bg-[rgba(51,175,188,0.15)]`}>
                   <div className="h-full rounded-sm transition-all duration-500" style={{ width: `${qScore != null ? Math.max(qScore, 1) : 0}%`, background: qColor || '#505862' }} />
                 </div>
                 <span className="text-[9px] font-mono font-medium" style={{ color: qColor || '#505862' }}>{qScore != null ? qScore : '—'}</span>
@@ -207,7 +202,7 @@ const AgentNode = memo(({ data, selected }) => {
             <div className="px-3 pt-1 pb-1">
               <span className="text-[9px] font-mono text-[#505862] uppercase tracking-wider">Efficiency</span>
               <div className="flex items-center gap-2 mt-1">
-                <div className={`flex-1 ${BAR_H} rounded-sm overflow-hidden`} style={{ background: BAR_BG }}>
+                <div className={`flex-1 ${BAR_H} rounded-sm overflow-hidden bg-[rgba(51,175,188,0.15)]`}>
                   <div className="h-full rounded-sm transition-all duration-500" style={{ width: `${effPct != null ? Math.max(effPct, 1) : 0}%`, background: effColor || '#505862' }} />
                 </div>
                 <span className="text-[9px] font-mono font-medium" style={{ color: effColor || '#505862' }}>{effPct != null ? `${effPct}%` : '—'}</span>

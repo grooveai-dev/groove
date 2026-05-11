@@ -172,7 +172,7 @@ function AdaptiveProfiles({ adaptive }) {
                   <span className="text-2xs font-semibold flex-shrink-0" style={{ color: HEX.accent }}>Converged</span>
                 ) : (
                   <span className="text-2xs text-text-3 flex-shrink-0 flex items-center gap-1">
-                    <span className="w-1 h-1 rounded-full" style={{ background: HEX.text3, animation: 'node-pulse-bar 1.5s ease-in-out infinite' }} />
+                    <span className="w-1 h-1 rounded-full [animation:node-pulse-bar_1.5s_ease-in-out_infinite]" style={{ background: HEX.text3 }} />
                     Learning
                   </span>
                 )}

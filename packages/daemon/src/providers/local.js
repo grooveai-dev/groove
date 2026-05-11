@@ -133,17 +133,45 @@ export class LocalProvider extends Provider {
     return config;
   }
 
-  getLoopConfig(agent) {
-    const model = agent.model || 'qwen2.5-coder:7b';
-    const contextWindow = this.getContextWindow(model);
+  getLoopConfig(agent, daemon) {
+    let model = agent.model || 'qwen2.5-coder:7b';
+    let apiBase = 'http://localhost:11434/v1';
+    let apiKey = agent.apiKey || null;
 
-    // Determine API endpoint
-    let apiBase = 'http://localhost:11434/v1'; // Ollama's OpenAI-compatible endpoint (default)
-
-    // Custom endpoint override from agent config or daemon config
     if (agent.apiBase) {
       apiBase = agent.apiBase;
     }
+
+    // Resolve GGUF models (gguf:<id>) — find the lab runtime serving this model
+    if (model.startsWith('gguf:') && daemon?.modelLab) {
+      const ggufId = model.slice(5);
+      const runtimes = daemon.modelLab.listRuntimes();
+      const rt = runtimes.find(r =>
+        r._localModelId === ggufId ||
+        r.models?.some(rm => rm.id === ggufId || rm.name === ggufId)
+      );
+      if (rt) {
+        apiBase = rt.endpoint.includes('/v1') ? rt.endpoint : `${rt.endpoint}/v1`;
+        if (rt.apiKey) apiKey = rt.apiKey;
+        const rtModel = rt.models?.[0];
+        model = rtModel?.id || rtModel?.name || ggufId;
+      }
+    }
+
+    // Resolve runtime models (runtime:<runtimeId>:<modelId>)
+    if (model.startsWith('runtime:') && daemon?.modelLab) {
+      const parts = model.split(':');
+      const runtimeId = parts[1];
+      const modelId = parts.slice(2).join(':');
+      const rt = daemon.modelLab.getRuntime(runtimeId);
+      if (rt) {
+        apiBase = rt.endpoint.includes('/v1') ? rt.endpoint : `${rt.endpoint}/v1`;
+        if (rt.apiKey) apiKey = rt.apiKey;
+        model = modelId;
+      }
+    }
+
+    const contextWindow = this.getContextWindow(model);
 
     return {
       apiBase,
@@ -153,7 +181,7 @@ export class LocalProvider extends Provider {
       maxResponseTokens: 4096,
       stream: true,
       headers: {},
-      apiKey: agent.apiKey || null,
+      apiKey,
       introContext: agent.introContext || '',
     };
   }

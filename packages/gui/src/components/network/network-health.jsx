@@ -43,8 +43,8 @@ export const NetworkHealth = memo(function NetworkHealth() {
                 <span className="absolute inset-0 rounded-sm" style={{ background: signalReachable ? HEX.success : HEX.danger }} />
                 {signalReachable && (
                   <span
-                    className="absolute inset-[-2px] rounded-sm"
-                    style={{ background: HEX.success, opacity: 0.15, animation: 'node-pulse-bar 2s ease-in-out infinite' }}
+                    className="absolute inset-[-2px] rounded-sm opacity-15 [animation:node-pulse-bar_2s_ease-in-out_infinite]"
+                    style={{ background: HEX.success }}
                   />
                 )}
               </span>

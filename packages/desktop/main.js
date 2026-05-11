@@ -6,7 +6,7 @@ import { createHash, randomBytes } from 'crypto';
 import { fork, spawn, execFileSync } from 'child_process';
 import { basename, dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { writeFileSync, readFileSync, unlinkSync, existsSync, renameSync, readdirSync, rmSync } from 'fs';
+import { writeFileSync, readFileSync, unlinkSync, existsSync, renameSync, readdirSync, rmSync, mkdirSync } from 'fs';
 import { execSync } from 'child_process';
 import { createServer, createConnection } from 'net';
 
@@ -1173,6 +1173,154 @@ body {
   height: 100%; width: 0%; border-radius: 2px;
   background: #33afbc; transition: width 0.4s ease-out;
 }
+
+/* --- Wizard styles --- */
+.wizard-panel {
+  width: 100%; max-width: 520px;
+  padding: 24px; border-radius: 12px;
+  background: #1a1e24; border: 1px solid #3e4451;
+}
+.step-bar {
+  display: flex; align-items: center; justify-content: center;
+  gap: 0; margin-bottom: 28px;
+}
+.step-item { display: flex; align-items: center; gap: 0; }
+.step-circle {
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600;
+  border: 2px solid #3e4451; color: #6e7681; background: transparent;
+  transition: all 0.2s; flex-shrink: 0;
+}
+.step-circle.active { border-color: #33afbc; background: rgba(51,175,188,0.15); color: #33afbc; }
+.step-circle.completed { border-color: #22c55e; background: rgba(34,197,94,0.15); color: #22c55e; }
+.step-line { width: 32px; height: 2px; background: #3e4451; transition: background 0.2s; }
+.step-line.completed { background: #22c55e; }
+.step-label { font-size: 10px; color: #6e7681; margin-top: 4px; text-align: center; white-space: nowrap; }
+.step-col { display: flex; flex-direction: column; align-items: center; }
+
+.wizard-field { margin-bottom: 14px; }
+.wizard-field label {
+  display: block; font-size: 11px; font-weight: 600;
+  color: #b0b8c4; margin-bottom: 5px; letter-spacing: 0.3px;
+}
+.wizard-input {
+  width: 100%; padding: 9px 12px; border-radius: 7px;
+  background: #1e2127; border: 1px solid #3e4451;
+  color: #e6e6e6; font-size: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+  outline: none; transition: border-color 0.15s;
+}
+.wizard-input:focus { border-color: #33afbc; }
+.wizard-input::placeholder { color: #505862; }
+.wizard-input-mono {
+  width: 100%; padding: 9px 12px; border-radius: 7px;
+  background: #1e2127; border: 1px solid #3e4451;
+  color: #e6e6e6; font-size: 13px;
+  font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+  outline: none; transition: border-color 0.15s;
+}
+.wizard-input-mono:focus { border-color: #33afbc; }
+.wizard-input-mono::placeholder { color: #505862; }
+
+.wizard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.wizard-card {
+  padding: 16px; border-radius: 10px;
+  background: #1e2127; border: 1px solid #2c313a;
+}
+.wizard-btn-primary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 9px 20px; border-radius: 8px;
+  background: linear-gradient(135deg, rgba(51,175,188,0.3) 0%, rgba(51,175,188,0.15) 100%);
+  border: 1px solid rgba(51,175,188,0.5);
+  color: #33afbc; font-size: 13px; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+.wizard-btn-primary:hover { background: linear-gradient(135deg, rgba(51,175,188,0.4) 0%, rgba(51,175,188,0.2) 100%); border-color: rgba(51,175,188,0.7); }
+.wizard-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.wizard-btn-secondary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 9px 20px; border-radius: 8px;
+  background: transparent; border: 1px solid #3e4451;
+  color: #b0b8c4; font-size: 13px; font-weight: 500;
+  cursor: pointer; font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+.wizard-btn-secondary:hover { background: #24282f; border-color: #6e7681; }
+.wizard-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+.test-result {
+  margin-top: 14px; padding: 12px 14px; border-radius: 8px;
+  background: #1e2127; border: 1px solid #2c313a; font-size: 12px;
+}
+.test-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 8px; vertical-align: middle;
+}
+.test-dot.green { background: #22c55e; }
+.test-dot.red { background: #ef4444; }
+.test-dot.yellow { background: #fbbf24; }
+.test-row { padding: 3px 0; color: #b0b8c4; }
+
+.toggle-track {
+  width: 40px; height: 22px; border-radius: 11px;
+  background: #3e4451; cursor: pointer;
+  position: relative; transition: background 0.2s;
+  flex-shrink: 0; border: none;
+}
+.toggle-track.on { background: #33afbc; }
+.toggle-track::after {
+  content: ''; position: absolute;
+  top: 3px; left: 3px; width: 16px; height: 16px;
+  border-radius: 50%; background: #e6e6e6;
+  transition: transform 0.2s;
+}
+.toggle-track.on::after { transform: translateX(18px); }
+.toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 0; border-bottom: 1px solid #2c313a;
+}
+.toggle-row:last-child { border-bottom: none; }
+.toggle-label { font-size: 13px; color: #b0b8c4; }
+
+.success-panel {
+  text-align: center; padding: 32px 16px;
+  border-radius: 10px;
+  background: rgba(34,197,94,0.06); border: 1px solid rgba(34,197,94,0.2);
+}
+.success-check {
+  width: 48px; height: 48px; border-radius: 50%;
+  background: rgba(34,197,94,0.12);
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-bottom: 14px;
+}
+.success-title { font-size: 16px; font-weight: 600; color: #e6e6e6; margin-bottom: 6px; }
+.success-sub { font-size: 12px; color: #6e7681; margin-bottom: 20px; }
+
+.wizard-summary {
+  margin-top: 14px; padding: 12px 14px; border-radius: 8px;
+  background: #1a1e24; border: 1px solid #2c313a; font-size: 12px;
+}
+.wizard-summary-row { display: flex; justify-content: space-between; padding: 4px 0; color: #b0b8c4; }
+.wizard-summary-label { color: #6e7681; }
+.wizard-summary-val {
+  font-family: ui-monospace, 'SF Mono', Monaco, monospace; color: #e6e6e6;
+}
+.browse-row { display: flex; gap: 8px; align-items: center; }
+.browse-row .wizard-input-mono { flex: 1; }
+
+.create-project-panel {
+  width: 100%; max-width: 520px;
+  padding: 24px; border-radius: 12px;
+  background: #1a1e24; border: 1px solid #3e4451;
+}
+.create-title { font-size: 15px; font-weight: 600; color: #e6e6e6; margin-bottom: 20px; }
+.selected-path {
+  margin-top: 6px; font-size: 11px; color: #6e7681;
+  font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+  word-break: break-all;
+}
 </style>
 </head>
 <body>
@@ -1201,6 +1349,26 @@ body {
         <div class="ap-tag" id="kbd-open">\u2318O</div>
       </button>
 
+      <button class="action-card" id="btn-ssh-wizard">
+        <div class="ac-ic">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="m7 10 2 2-2 2"/><path d="M13 14h4"/></svg>
+        </div>
+        <div class="ac-text">
+          <div class="ac-title">New SSH Connection</div>
+          <div class="ac-sub">Connect to a remote server</div>
+        </div>
+      </button>
+
+      <button class="action-card" id="btn-create-project">
+        <div class="ac-ic">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <div class="ac-text">
+          <div class="ac-title">Create Project</div>
+          <div class="ac-sub">Create a new project directory</div>
+        </div>
+      </button>
+
       <button class="action-card" id="btn-docs">
         <div class="ac-ic">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>
@@ -1226,6 +1394,119 @@ body {
 
     <div id="empty-state" style="display:none">
       <div class="empty-text">No recent activity</div>
+    </div>
+
+    <!-- SSH Wizard -->
+    <div id="ssh-wizard" style="display:none">
+      <div class="wizard-panel">
+        <div class="step-bar" id="step-bar">
+          <div class="step-col"><div class="step-circle active" id="sc-0">1</div><div class="step-label">Server</div></div>
+          <div class="step-item"><div class="step-line" id="sl-0"></div></div>
+          <div class="step-col"><div class="step-circle" id="sc-1">2</div><div class="step-label">Auth</div></div>
+          <div class="step-item"><div class="step-line" id="sl-1"></div></div>
+          <div class="step-col"><div class="step-circle" id="sc-2">3</div><div class="step-label">Setup</div></div>
+          <div class="step-item"><div class="step-line" id="sl-2"></div></div>
+          <div class="step-col"><div class="step-circle" id="sc-3">4</div><div class="step-label">Connected</div></div>
+        </div>
+
+        <div class="wizard-step" id="ws-0">
+          <div class="wizard-field">
+            <label>Connection Name</label>
+            <input type="text" class="wizard-input" id="wiz-name" placeholder="My Server">
+          </div>
+          <div class="wizard-grid">
+            <div class="wizard-field">
+              <label>Host</label>
+              <input type="text" class="wizard-input-mono" id="wiz-host" placeholder="192.168.1.100">
+            </div>
+            <div class="wizard-field">
+              <label>User</label>
+              <input type="text" class="wizard-input-mono" id="wiz-user" placeholder="root">
+            </div>
+          </div>
+          <div class="wizard-field">
+            <label>SSH Port</label>
+            <input type="number" class="wizard-input-mono" id="wiz-port" value="22" min="1" max="65535" style="width:120px">
+          </div>
+          <div class="wizard-actions">
+            <button class="wizard-btn-secondary" id="wiz-cancel-0">Cancel</button>
+            <button class="wizard-btn-primary" id="wiz-next-0" disabled>Next</button>
+          </div>
+        </div>
+
+        <div class="wizard-step" id="ws-1" style="display:none">
+          <div class="wizard-field">
+            <label>SSH Key Path</label>
+            <div class="browse-row">
+              <input type="text" class="wizard-input-mono" id="wiz-key" placeholder="~/.ssh/id_ed25519" readonly>
+              <button class="wizard-btn-secondary" id="wiz-browse">Browse</button>
+            </div>
+          </div>
+          <div class="wizard-actions" style="justify-content:space-between">
+            <button class="wizard-btn-primary" id="wiz-test">Test Connection</button>
+            <div style="display:flex;gap:10px">
+              <button class="wizard-btn-secondary" id="wiz-back-1">Back</button>
+              <button class="wizard-btn-primary" id="wiz-next-1">Next</button>
+            </div>
+          </div>
+          <div id="wiz-test-result"></div>
+        </div>
+
+        <div class="wizard-step" id="ws-2" style="display:none">
+          <div class="wizard-card">
+            <div class="toggle-row">
+              <span class="toggle-label">Auto-start daemon</span>
+              <button class="toggle-track" id="wiz-toggle-autostart"></button>
+            </div>
+            <div class="toggle-row">
+              <span class="toggle-label">Auto-connect on launch</span>
+              <button class="toggle-track" id="wiz-toggle-autoconnect"></button>
+            </div>
+          </div>
+          <div class="wizard-summary" id="wiz-summary"></div>
+          <div class="wizard-actions">
+            <button class="wizard-btn-secondary" id="wiz-back-2">Back</button>
+            <button class="wizard-btn-primary" id="wiz-connect">Connect</button>
+          </div>
+        </div>
+
+        <div class="wizard-step" id="ws-3" style="display:none">
+          <div class="success-panel">
+            <div class="success-check">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            </div>
+            <div class="success-title" id="wiz-success-title">Connected!</div>
+            <div class="success-sub" id="wiz-success-sub"></div>
+            <div style="display:flex;gap:10px;justify-content:center">
+              <button class="wizard-btn-primary" id="wiz-open-remote">Open Remote GUI</button>
+              <button class="wizard-btn-secondary" id="wiz-done">Done</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create Project -->
+    <div id="create-project" style="display:none">
+      <div class="create-project-panel">
+        <div class="create-title">Create New Project</div>
+        <div class="wizard-field">
+          <label>Location</label>
+          <div class="browse-row">
+            <input type="text" class="wizard-input-mono" id="cp-path" placeholder="Choose a folder..." readonly>
+            <button class="wizard-btn-secondary" id="cp-browse">Choose Location</button>
+          </div>
+          <div class="selected-path" id="cp-path-display"></div>
+        </div>
+        <div class="wizard-field">
+          <label>Project Name</label>
+          <input type="text" class="wizard-input" id="cp-name" placeholder="my-project">
+        </div>
+        <div class="wizard-actions">
+          <button class="wizard-btn-secondary" id="cp-cancel">Cancel</button>
+          <button class="wizard-btn-primary" id="cp-create" disabled>Create &amp; Open</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -1300,6 +1581,59 @@ body {
     if (k2) k2.textContent = 'Ctrl+O';
   }
 
+  // --- Main menu navigation ---
+  var actionsEl = document.querySelector('.actions');
+  var recentsArea = document.querySelector('.recents-area');
+  var emptyState = document.getElementById('empty-state');
+  var sshWizardEl = document.getElementById('ssh-wizard');
+  var createProjectEl = document.getElementById('create-project');
+
+  function showMainMenu() {
+    actionsEl.style.display = '';
+    recentsArea.style.display = '';
+    sshWizardEl.style.display = 'none';
+    createProjectEl.style.display = 'none';
+    hideError();
+    checkEmpty();
+  }
+
+  function showSSHWizard() {
+    actionsEl.style.display = 'none';
+    recentsArea.style.display = 'none';
+    emptyState.style.display = 'none';
+    sshWizardEl.style.display = '';
+    createProjectEl.style.display = 'none';
+    hideError();
+    wizardStep = 0;
+    wizardData = { name: '', host: '', user: '', port: 22, sshKeyPath: '', autoStart: false, autoConnect: false };
+    testResult = null;
+    savedId = null;
+    localPort = null;
+    document.getElementById('wiz-name').value = '';
+    document.getElementById('wiz-host').value = '';
+    document.getElementById('wiz-user').value = '';
+    document.getElementById('wiz-port').value = '22';
+    document.getElementById('wiz-key').value = '';
+    document.getElementById('wiz-test-result').innerHTML = '';
+    document.getElementById('wiz-toggle-autostart').className = 'toggle-track';
+    document.getElementById('wiz-toggle-autoconnect').className = 'toggle-track';
+    setWizardStep(0);
+  }
+
+  function showCreateProject() {
+    actionsEl.style.display = 'none';
+    recentsArea.style.display = 'none';
+    emptyState.style.display = 'none';
+    sshWizardEl.style.display = 'none';
+    createProjectEl.style.display = '';
+    hideError();
+    cpParentPath = '';
+    document.getElementById('cp-path').value = '';
+    document.getElementById('cp-path-display').textContent = '';
+    document.getElementById('cp-name').value = '';
+    document.getElementById('cp-create').disabled = true;
+  }
+
   document.getElementById('open-folder').addEventListener('click', function() {
     hideError();
     window.groove.home.openFolder().then(function(dir) {
@@ -1308,6 +1642,9 @@ body {
       showError(err.message || 'Failed to open folder');
     });
   });
+
+  document.getElementById('btn-ssh-wizard').addEventListener('click', showSSHWizard);
+  document.getElementById('btn-create-project').addEventListener('click', showCreateProject);
 
   document.getElementById('btn-docs').addEventListener('click', function() {
     if (window.groove.openExternal) {
@@ -1457,6 +1794,194 @@ body {
 
   window.groove.home.getSSH().then(renderSSH).catch(function() { renderSSH([]); });
 
+  // --- SSH Wizard Logic ---
+  var wizardStep = 0;
+  var wizardData = { name: '', host: '', user: '', port: 22, sshKeyPath: '', autoStart: false, autoConnect: false };
+  var testResult = null;
+  var savedId = null;
+  var localPort = null;
+
+  function setWizardStep(n) {
+    wizardStep = n;
+    for (var i = 0; i < 4; i++) {
+      var circle = document.getElementById('sc-' + i);
+      circle.className = 'step-circle' + (i === n ? ' active' : (i < n ? ' completed' : ''));
+      if (i < 3) {
+        document.getElementById('sl-' + i).className = 'step-line' + (i < n ? ' completed' : '');
+      }
+      document.getElementById('ws-' + i).style.display = i === n ? '' : 'none';
+    }
+    if (n === 2) {
+      var summary = document.getElementById('wiz-summary');
+      summary.innerHTML =
+        '<div class="wizard-summary-row"><span class="wizard-summary-label">Name</span><span class="wizard-summary-val">' + esc(wizardData.name) + '</span></div>' +
+        '<div class="wizard-summary-row"><span class="wizard-summary-label">Server</span><span class="wizard-summary-val">' + esc(wizardData.user + '@' + wizardData.host + ':' + wizardData.port) + '</span></div>' +
+        (wizardData.sshKeyPath ? '<div class="wizard-summary-row"><span class="wizard-summary-label">Key</span><span class="wizard-summary-val">' + esc(wizardData.sshKeyPath) + '</span></div>' : '');
+    }
+  }
+
+  function checkStep0Valid() {
+    var valid = document.getElementById('wiz-name').value.trim() &&
+                document.getElementById('wiz-host').value.trim() &&
+                document.getElementById('wiz-user').value.trim();
+    document.getElementById('wiz-next-0').disabled = !valid;
+  }
+
+  document.getElementById('wiz-name').addEventListener('input', checkStep0Valid);
+  document.getElementById('wiz-host').addEventListener('input', checkStep0Valid);
+  document.getElementById('wiz-user').addEventListener('input', checkStep0Valid);
+
+  document.getElementById('wiz-next-0').addEventListener('click', function() {
+    wizardData.name = document.getElementById('wiz-name').value.trim();
+    wizardData.host = document.getElementById('wiz-host').value.trim();
+    wizardData.user = document.getElementById('wiz-user').value.trim();
+    wizardData.port = parseInt(document.getElementById('wiz-port').value, 10) || 22;
+    setWizardStep(1);
+  });
+
+  document.getElementById('wiz-cancel-0').addEventListener('click', showMainMenu);
+
+  document.getElementById('wiz-browse').addEventListener('click', function() {
+    window.groove.home.pickKeyFile().then(function(path) {
+      if (path) {
+        document.getElementById('wiz-key').value = path;
+        wizardData.sshKeyPath = path;
+      }
+    });
+  });
+
+  document.getElementById('wiz-test').addEventListener('click', function() {
+    var btn = document.getElementById('wiz-test');
+    btn.disabled = true;
+    btn.textContent = 'Testing…';
+    wizardData.sshKeyPath = document.getElementById('wiz-key').value.trim();
+    window.groove.home.testSSH({
+      host: wizardData.host,
+      user: wizardData.user,
+      port: wizardData.port,
+      sshKeyPath: wizardData.sshKeyPath
+    }).then(function(result) {
+      testResult = result;
+      btn.disabled = false;
+      btn.textContent = 'Test Connection';
+      var el = document.getElementById('wiz-test-result');
+      if (!result.reachable) {
+        el.innerHTML = '<div class="test-result"><div class="test-row"><span class="test-dot red"></span>Connection failed: ' + esc(result.error || 'Unknown error') + '</div></div>';
+        return;
+      }
+      var html = '<div class="test-result">';
+      html += '<div class="test-row"><span class="test-dot green"></span>SSH connection successful</div>';
+      html += '<div class="test-row"><span class="test-dot ' + (result.grooveInstalled ? 'green' : 'yellow') + '"></span>Groove ' + (result.grooveInstalled ? 'installed' : 'not found') + '</div>';
+      html += '<div class="test-row"><span class="test-dot ' + (result.daemonRunning ? 'green' : 'yellow') + '"></span>Daemon ' + (result.daemonRunning ? 'running' : 'not running') + '</div>';
+      html += '</div>';
+      el.innerHTML = html;
+    }).catch(function(err) {
+      btn.disabled = false;
+      btn.textContent = 'Test Connection';
+      document.getElementById('wiz-test-result').innerHTML = '<div class="test-result"><div class="test-row"><span class="test-dot red"></span>' + esc(err.message || 'Test failed') + '</div></div>';
+    });
+  });
+
+  document.getElementById('wiz-next-1').addEventListener('click', function() {
+    wizardData.sshKeyPath = document.getElementById('wiz-key').value.trim();
+    setWizardStep(2);
+  });
+  document.getElementById('wiz-back-1').addEventListener('click', function() { setWizardStep(0); });
+
+  document.getElementById('wiz-toggle-autostart').addEventListener('click', function() {
+    wizardData.autoStart = !wizardData.autoStart;
+    this.className = 'toggle-track' + (wizardData.autoStart ? ' on' : '');
+  });
+  document.getElementById('wiz-toggle-autoconnect').addEventListener('click', function() {
+    wizardData.autoConnect = !wizardData.autoConnect;
+    this.className = 'toggle-track' + (wizardData.autoConnect ? ' on' : '');
+  });
+
+  document.getElementById('wiz-connect').addEventListener('click', function() {
+    var btn = document.getElementById('wiz-connect');
+    btn.disabled = true;
+    btn.textContent = 'Connecting…';
+    setLoading(true, 'Connecting to ' + wizardData.name + '…');
+    var config = {
+      name: wizardData.name,
+      host: wizardData.host,
+      user: wizardData.user,
+      port: wizardData.port,
+      sshKeyPath: wizardData.sshKeyPath,
+      autoStart: wizardData.autoStart,
+      autoConnect: wizardData.autoConnect
+    };
+    window.groove.home.addSSH(config).then(function(entry) {
+      savedId = entry.id;
+      return window.groove.home.connectSSH(entry.id);
+    }).then(function(result) {
+      localPort = result.localPort;
+      setLoading(false);
+      btn.disabled = false;
+      btn.textContent = 'Connect';
+      document.getElementById('wiz-success-title').textContent = 'Connected to ' + wizardData.name;
+      document.getElementById('wiz-success-sub').textContent = wizardData.user + '@' + wizardData.host + ':' + wizardData.port;
+      setWizardStep(3);
+      window.groove.home.getSSH().then(renderSSH).catch(function() {});
+    }).catch(function(err) {
+      setLoading(false);
+      btn.disabled = false;
+      btn.textContent = 'Connect';
+      showError(err.message || 'Failed to connect');
+    });
+  });
+
+  document.getElementById('wiz-back-2').addEventListener('click', function() { setWizardStep(1); });
+
+  document.getElementById('wiz-open-remote').addEventListener('click', function() {
+    if (localPort) {
+      window.groove.remote.openWindow(localPort, wizardData.name);
+    }
+  });
+
+  document.getElementById('wiz-done').addEventListener('click', showMainMenu);
+
+  // --- Create Project Logic ---
+  var cpParentPath = '';
+
+  function checkCreateValid() {
+    var name = document.getElementById('cp-name').value.trim();
+    var valid = cpParentPath && name && !/[/\\\\]/.test(name);
+    document.getElementById('cp-create').disabled = !valid;
+  }
+
+  document.getElementById('cp-browse').addEventListener('click', function() {
+    window.groove.home.openFolder().then(function(dir) {
+      if (dir) {
+        cpParentPath = dir;
+        document.getElementById('cp-path').value = dir.split(/[\\/]/).pop();
+        document.getElementById('cp-path-display').textContent = dir;
+        checkCreateValid();
+      }
+    });
+  });
+
+  document.getElementById('cp-name').addEventListener('input', checkCreateValid);
+
+  document.getElementById('cp-create').addEventListener('click', function() {
+    var name = document.getElementById('cp-name').value.trim();
+    if (!name || !cpParentPath) return;
+    if (/[/\\\\]/.test(name)) {
+      showError('Project name cannot contain / or \\\\');
+      return;
+    }
+    setLoading(true, 'Creating ' + name + '…');
+    window.groove.home.createDir(cpParentPath, name).then(function(fullPath) {
+      openProject(fullPath);
+    }).catch(function(err) {
+      setLoading(false);
+      showError(err.message || 'Failed to create directory');
+    });
+  });
+
+  document.getElementById('cp-cancel').addEventListener('click', showMainMenu);
+
+  // --- Keyboard shortcut ---
   document.addEventListener('keydown', function(e) {
     var mod = e.metaKey || e.ctrlKey;
     if (mod && (e.key === 'o' || e.key === 'O')) {
@@ -1836,6 +2361,52 @@ ipcMain.handle('home-pick-key', async () => {
   });
   if (result.canceled || !result.filePaths.length) return null;
   return result.filePaths[0];
+});
+
+ipcMain.handle('home-test-ssh', async (_event, config) => {
+  if (!config?.host || !config?.user) return { reachable: false, error: 'Invalid config' };
+  const target = `${config.user}@${config.host}`;
+  let sshKey = config.sshKeyPath || null;
+  if (sshKey) {
+    sshKey = sshKey.replace(/^~(?=[/\\]|$)/, app.getPath('home'));
+    if (!existsSync(sshKey)) return { reachable: false, error: `SSH key not found: ${sshKey}` };
+  }
+  const keyArgs = sshKey ? ['-i', sshKey] : [];
+  const command = "bash -lc 'S=$(curl -sf http://localhost:31415/api/status 2>/dev/null); if [ -n \"$S\" ]; then echo __GROOVE_RUNNING__; else which groove >/dev/null 2>&1 && echo __GROOVE_INSTALLED__ || echo __GROOVE_NOT_FOUND__; fi'";
+  try {
+    const result = execFileSync('ssh', [
+      ...keyArgs,
+      '-p', String(config.port || 22),
+      '-o', 'ConnectTimeout=5',
+      '-o', 'StrictHostKeyChecking=accept-new',
+      '-o', 'BatchMode=yes',
+      target,
+      command,
+    ], { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] });
+    if (result.includes('__GROOVE_RUNNING__')) {
+      return { reachable: true, daemonRunning: true, grooveInstalled: true };
+    }
+    if (result.includes('__GROOVE_INSTALLED__')) {
+      return { reachable: true, daemonRunning: false, grooveInstalled: true };
+    }
+    return { reachable: true, daemonRunning: false, grooveInstalled: false };
+  } catch (err) {
+    const stderr = err.stderr?.toString() || '';
+    if (stderr.includes('Permission denied')) {
+      return { reachable: false, error: 'SSH authentication failed' };
+    }
+    return { reachable: false, error: stderr || 'Connection failed' };
+  }
+});
+
+ipcMain.handle('home-create-dir', async (_event, parentPath, name) => {
+  if (!name || typeof name !== 'string') throw new Error('Name is required');
+  if (/[/\\]/.test(name)) throw new Error('Name cannot contain / or \\');
+  if (name === '.' || name === '..') throw new Error('Invalid directory name');
+  if (name.length > 255) throw new Error('Name too long');
+  const fullPath = join(parentPath, name);
+  mkdirSync(fullPath, { recursive: true });
+  return fullPath;
 });
 
 ipcMain.handle('home-get-cached-sub', async () => {

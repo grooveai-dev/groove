@@ -66,41 +66,51 @@ function ModelCard({
 
   return (
     <div className={cn(
-      'group flex flex-col p-4 rounded-md border border-border-subtle bg-surface-1',
-      'hover:border-accent/30 hover:bg-surface-2 transition-all',
+      'group flex flex-col p-5 rounded-md border border-border-subtle bg-surface-1',
+      'hover:border-accent/30 hover:bg-surface-2 transition-all duration-150 min-h-[180px]',
     )}>
-      {/* Header: status dot + name + source */}
-      <div className="flex items-center gap-2 mb-1">
-        <span className="relative flex-shrink-0 w-1.5 h-1.5">
-          <span className={cn(
-            'absolute inset-0 rounded-full',
-            model.status === 'running' ? 'bg-success' : model.status === 'downloading' ? 'bg-text-3' : 'bg-text-4',
-          )} />
-          {(model.status === 'running' || model.status === 'downloading') && (
-            <span className={cn(
-              'absolute inset-[-2px] rounded-full opacity-30 animate-pulse',
-              model.status === 'running' ? 'bg-success' : 'bg-text-3',
-            )} />
-          )}
-        </span>
-        <span className="text-xs font-mono font-semibold text-text-0 truncate flex-1">{model.name}</span>
-        <span className="text-2xs font-mono text-text-4 flex-shrink-0">{STATUS_LABEL[model.status]}</span>
+      {/* Header: icon + name + status */}
+      <div className="flex items-center gap-3 mb-3">
+        <div
+          className="w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0 text-base font-bold font-sans"
+          style={{
+            background: `hsl(${(model.name || '').charCodeAt(0) * 37 % 360}, 40%, 18%)`,
+            color: `hsl(${(model.name || '').charCodeAt(0) * 37 % 360}, 60%, 65%)`,
+          }}
+        >
+          {(model.name || '?')[0].toUpperCase()}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[14px] font-semibold text-text-0 font-sans truncate">{model.name}</span>
+            {model.status === 'running' && (
+              <span className="relative flex-shrink-0 w-2 h-2">
+                <span className="absolute inset-0 rounded-full bg-success" />
+                <span className="absolute inset-[-2px] rounded-full bg-success opacity-30 animate-pulse" />
+              </span>
+            )}
+            {model.status === 'downloading' && (
+              <Loader2 size={12} className="animate-spin text-text-3 flex-shrink-0" />
+            )}
+          </div>
+          <span className="text-2xs text-text-3 font-sans">
+            {model.source === 'gguf' ? 'GGUF' : 'Ollama'} · {STATUS_LABEL[model.status]}
+          </span>
+        </div>
       </div>
 
       {/* Specs */}
-      {specs.length > 0 && (
-        <div className="text-2xs font-mono text-text-4 truncate mb-1">{specs.join(' · ')}</div>
-      )}
-      {model.vramGb && (
-        <div className="text-2xs font-mono text-text-4">{model.vramGb} GB VRAM</div>
-      )}
+      <p className="text-xs text-text-2 font-sans leading-relaxed">
+        {specs.length > 0 ? specs.join(' · ') : 'Local model'}
+        {model.vramGb ? ` · ${model.vramGb} GB VRAM` : ''}
+      </p>
 
       {/* Download progress */}
       {model.status === 'downloading' && model.download && (
         <div className="mt-2">
           <div className="flex items-center gap-2 mb-1">
-            <div className="flex-1 h-1 rounded-sm overflow-hidden bg-surface-4">
-              <div className="h-full rounded-sm bg-text-2 transition-all" style={{ width: `${Math.round((model.download.percent || 0) * 100)}%` }} />
+            <div className="flex-1 h-1.5 rounded-full overflow-hidden bg-surface-4">
+              <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${Math.round((model.download.percent || 0) * 100)}%` }} />
             </div>
             <span className="text-2xs font-mono text-text-3 tabular-nums">
               {Math.round((model.download.percent || 0) * 100)}%
@@ -114,7 +124,7 @@ function ModelCard({
       {model.status === 'downloading' && model.pullProgress && (
         <div className="flex items-center gap-2 mt-2">
           <Loader2 size={10} className="animate-spin text-text-3" />
-          <span className="text-2xs font-mono text-text-3">pulling</span>
+          <span className="text-2xs font-sans text-text-3">Pulling…</span>
         </div>
       )}
 
@@ -123,10 +133,10 @@ function ModelCard({
       {/* Divider + Actions */}
       {model.status !== 'downloading' && (
         <>
-          <div className="h-px bg-border-subtle mt-3 mb-2" />
-          <div className="flex items-center gap-1.5">
-            <span className="text-2xs font-mono text-text-4 flex-shrink-0">
-              {model.source === 'gguf' ? 'GGUF' : 'ollama'}
+          <div className="h-px bg-border-subtle my-2" />
+          <div className="flex items-center gap-2">
+            <span className="text-2xs font-sans text-text-3 flex-shrink-0">
+              {model.source === 'gguf' ? 'GGUF' : 'Ollama'}
             </span>
             <div className="flex-1" />
 
@@ -142,7 +152,7 @@ function ModelCard({
                 </button>
                 <button
                   onClick={() => onSpawn(model.name)}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono font-semibold text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded text-2xs font-sans font-semibold text-accent hover:bg-accent/10 transition-colors cursor-pointer"
                 >
                   <Rocket size={10} /> Spawn
                 </button>
@@ -162,7 +172,7 @@ function ModelCard({
                 )}
                 <button
                   onClick={() => onSpawn(model.id)}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono font-semibold text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded text-2xs font-sans font-semibold text-accent hover:bg-accent/10 transition-colors cursor-pointer"
                 >
                   <Rocket size={10} /> Spawn
                 </button>
@@ -172,7 +182,7 @@ function ModelCard({
               <button
                 onClick={() => onImport(model.id)}
                 disabled={isImporting}
-                className="flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono font-semibold text-text-2 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded text-2xs font-sans font-semibold text-text-2 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40"
               >
                 {isImporting ? <Loader2 size={10} className="animate-spin" /> : <Rocket size={10} />}
                 {isImporting ? 'Importing' : 'Import'}
@@ -582,9 +592,9 @@ export default function ModelsView() {
   const hw = ollamaStatus.hardware;
 
   return (
-    <div className="h-full flex flex-col bg-surface-0">
+    <div className="h-full flex flex-col">
       {/* Toolbar */}
-      <div className="flex-shrink-0 px-4 pt-3 pb-2.5 border-b border-border space-y-2.5">
+      <div className="flex-shrink-0 px-5 pt-3 pb-2.5 bg-surface-1 border-b border-border-subtle space-y-2.5">
 
         {/* Server status */}
         {!ollamaStatus.installed ? (
@@ -696,12 +706,12 @@ export default function ModelsView() {
             </div>
           </div>
         ) : filteredModels.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-xs font-mono text-text-3">No models match this filter</div>
+          <div className="text-center py-16">
+            <div className="text-sm font-sans text-text-4">No models match this filter</div>
           </div>
         ) : (
           /* Model grid */
-          <div className="p-4 grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+          <div className="px-5 py-4 grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
             {filteredModels.map((model) => (
               <ModelCard
                 key={model.id}
@@ -725,7 +735,7 @@ export default function ModelsView() {
         <div ref={discoveryRef} className="border-t border-border mt-2">
           <button
             onClick={() => setDiscoveryOpen(!discoveryOpen)}
-            className="flex items-center gap-2 px-4 py-2.5 cursor-pointer group w-full text-left"
+            className="flex items-center gap-2 px-5 py-2.5 cursor-pointer group w-full text-left"
           >
             {discoveryOpen
               ? <ChevronDown size={12} className="text-text-4 group-hover:text-text-2 transition-colors" />
@@ -734,7 +744,7 @@ export default function ModelsView() {
           </button>
 
           {discoveryOpen && (
-            <div className="px-4 pb-4 space-y-3">
+            <div className="px-5 pb-4 space-y-3">
               <div className="flex gap-0.5">
                 {[
                   { id: 'recommended', label: `Recommended (${recommended.length})` },

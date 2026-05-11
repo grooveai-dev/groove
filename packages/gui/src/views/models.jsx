@@ -1,6 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { ScrollArea } from '../components/ui/scroll-area';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
@@ -749,7 +748,7 @@ export default function ModelsView() {
       </div>
 
       {/* ════ ZONE 2 + 3: Scrollable Content ════ */}
-      <ScrollArea className="flex-1">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="p-5 space-y-6">
 
           {/* Empty State */}
@@ -965,7 +964,7 @@ export default function ModelsView() {
             )}
           </div>
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

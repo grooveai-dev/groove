@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, MessageSquare, HelpCircle, ArrowRight, Paperclip, Square } from 'lucide-react';
+import { Send, Loader2, MessageSquare, HelpCircle, ArrowRight, Paperclip, Square, FileCode, Terminal as TerminalIcon, X } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { ThinkingIndicator } from '../ui/thinking-indicator';
@@ -145,11 +145,39 @@ function TypingIndicator() {
   );
 }
 
+function SnippetTag({ snippet, onRemove }) {
+  const isCode = snippet.type === 'code';
+  const Icon = isCode ? FileCode : TerminalIcon;
+  const lines = snippet.code.split('\n').length;
+  let label;
+  if (isCode && snippet.filePath) {
+    const fileName = snippet.filePath.split('/').pop();
+    label = `${fileName}:${snippet.lineStart}-${snippet.lineEnd}`;
+  } else {
+    label = `${isCode ? '' : 'Terminal · '}${lines} line${lines !== 1 ? 's' : ''}`;
+  }
+  return (
+    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-accent/10 border border-accent/20 text-accent">
+      <Icon size={11} className="flex-shrink-0" />
+      <span className="text-2xs font-sans font-medium truncate max-w-[160px]">{label}</span>
+      {snippet.instruction && (
+        <span className="text-2xs text-accent/60 truncate max-w-[100px]">· {snippet.instruction}</span>
+      )}
+      <button onClick={onRemove} className="p-0.5 rounded hover:bg-accent/20 cursor-pointer flex-shrink-0">
+        <X size={9} />
+      </button>
+    </div>
+  );
+}
+
 export function AgentChat({ agent }) {
   const chatHistory = useGrooveStore((s) => s.chatHistory[agent.id]) || EMPTY;
   const activityLog = useGrooveStore((s) => s.activityLog[agent.id]) || EMPTY;
   const instructAgent = useGrooveStore((s) => s.instructAgent);
   const isThinking = useGrooveStore((s) => s.thinkingAgents?.has(agent.id));
+
+  const pendingSnippet = useGrooveStore((s) => s.editorPendingSnippet);
+  const clearSnippet = useGrooveStore((s) => s.clearSnippet);
 
   const storeInput = useGrooveStore((s) => s.chatInputs[agent.id] || '');
   const setStoreInput = (val) => useGrooveStore.setState((s) => ({ chatInputs: { ...s.chatInputs, [agent.id]: val } }));
@@ -161,6 +189,10 @@ export function AgentChat({ agent }) {
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
   const isAtBottomRef = useRef(true);
+
+  useEffect(() => {
+    if (pendingSnippet) inputRef.current?.focus();
+  }, [pendingSnippet]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -192,16 +224,30 @@ export function AgentChat({ agent }) {
 
   async function handleSend() {
     const text = input.trim();
-    if (!text || sending) return;
+    if ((!text && !pendingSnippet) || sending) return;
+    const parts = [];
+    if (text) parts.push(text);
+    if (pendingSnippet) {
+      const s = pendingSnippet;
+      if (s.type === 'code' && s.filePath) {
+        if (s.instruction && !text) parts.push(s.instruction);
+        parts.push(`File: ${s.filePath} (lines ${s.lineStart}-${s.lineEnd})`);
+        parts.push('```\n' + s.code + '\n```');
+      } else if (s.code) {
+        parts.push('```\n' + s.code + '\n```');
+      }
+    }
+    const message = parts.join('\n\n');
     setInput('');
     setAttachedFiles([]);
+    clearSnippet();
     setSending(true);
     isAtBottomRef.current = true;
     requestAnimationFrame(() => {
       if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     });
     try {
-      await instructAgent(agent.id, text);
+      await instructAgent(agent.id, message);
     } catch { /* toast handles */ }
     setSending(false);
     inputRef.current?.focus();
@@ -251,6 +297,22 @@ export function AgentChat({ agent }) {
 
       {/* ── Input area ──────────────────────────────────── */}
       <div className="border-t border-border-subtle px-3 py-2 bg-surface-1">
+        {pendingSnippet && (
+          <div className="mb-1.5">
+            <SnippetTag snippet={pendingSnippet} onRemove={clearSnippet} />
+          </div>
+        )}
+        {input && /\[(?:save|append|update|delete|view|doc|link|read|instruct)\]/i.test(input) && (() => {
+          const cmdMatch = input.match(/\[(save|append|update|delete|view|doc|link|read|instruct)\]/i);
+          const tags = (input.match(/#[\w/.-]+/g) || []);
+          return (
+            <div className="flex items-center gap-1.5 px-3 py-1 mb-1.5 rounded-md bg-accent/5 border border-accent/10">
+              <span className="px-1.5 py-0.5 rounded bg-accent/15 text-accent font-semibold font-mono text-2xs">{cmdMatch[0]}</span>
+              {tags.map((tag, i) => <span key={i} className="text-accent font-medium text-2xs">{tag}</span>)}
+              <span className="text-2xs text-text-4 ml-auto">memory command</span>
+            </div>
+          );
+        })()}
         <div className="flex items-end gap-1.5">
           <input
             ref={fileInputRef}
@@ -267,28 +329,23 @@ export function AgentChat({ agent }) {
           >
             <Paperclip size={14} />
           </button>
-          <div className="flex-1 relative bg-surface-0 rounded-lg border border-border focus-within:ring-1 focus-within:ring-accent/40">
-            <div
-              aria-hidden
-              className="absolute inset-0 px-3 py-1.5 text-xs font-sans pointer-events-none whitespace-pre-wrap break-words overflow-hidden min-h-[32px] max-h-[120px] leading-[1.625]"
-            >
-              {input ? highlightKeeper(input) : null}
-            </div>
+          <div className="flex-1">
             <textarea
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder={isAlive ? 'Instruct this agent...' : 'Continue conversation...'}
+              placeholder={pendingSnippet ? 'Add a message (optional)...' : isAlive ? 'Instruct this agent...' : 'Continue conversation...'}
               rows={1}
               className={cn(
                 'w-full resize-none rounded-lg px-3 py-1.5 text-xs',
-                'bg-transparent font-sans relative z-10',
+                'bg-surface-0 border font-sans',
                 'placeholder:text-text-4',
-                'focus:outline-none',
+                'focus:outline-none focus:ring-1',
                 'min-h-[32px] max-h-[120px]',
-                input && /(\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|#[\w/.-]+)/i.test(input)
-                  ? 'text-transparent caret-text-0'
+                'border-border focus:ring-accent/40',
+                input && /\[(?:save|append|update|delete|view|doc|link|read|instruct)\]/i.test(input)
+                  ? 'text-accent'
                   : 'text-text-0',
               )}
             />
@@ -304,11 +361,11 @@ export function AgentChat({ agent }) {
           )}
           <button
             onClick={handleSend}
-            disabled={!input.trim() || sending}
+            disabled={(!input.trim() && !pendingSnippet) || sending}
             className={cn(
               'w-8 h-8 flex items-center justify-center rounded-lg transition-all cursor-pointer flex-shrink-0',
               'disabled:opacity-20 disabled:cursor-not-allowed',
-              input.trim()
+              (input.trim() || pendingSnippet)
                 ? 'bg-accent/15 text-accent hover:bg-accent/25 border border-accent/25'
                 : 'bg-surface-4 text-text-4',
             )}

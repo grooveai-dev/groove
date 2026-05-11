@@ -18,6 +18,7 @@ export function SelectionMenu({ x, y, filePath, lineStart, lineEnd, selectedCode
   const sendCodeToAgent = useGrooveStore((s) => s.sendCodeToAgent);
   const toggleAiPanel = useGrooveStore((s) => s.toggleAiPanel);
   const aiPanelOpen = useGrooveStore((s) => s.editorAiPanelOpen);
+  const selectAgent = useGrooveStore((s) => s.selectAgent);
 
   useEffect(() => {
     function handleClick(e) {
@@ -51,6 +52,7 @@ export function SelectionMenu({ x, y, filePath, lineStart, lineEnd, selectedCode
     if (!agentId) return;
     sendCodeToAgent(agentId, action.instruction, filePath, lineStart, lineEnd, selectedCode);
     if (!aiPanelOpen) toggleAiPanel();
+    selectAgent(agentId);
     onClose();
   }
 

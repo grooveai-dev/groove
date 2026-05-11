@@ -1,6 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
 import { useToast } from '../lib/hooks/use-toast';
@@ -9,7 +8,7 @@ import {
   Search, Download, Trash2, HardDrive, Cpu, MemoryStick,
   Check, Loader2, Box, ChevronDown, ChevronRight,
   RefreshCw, Play, Square, Rocket, MoreHorizontal,
-  Sparkles, FlaskConical, ExternalLink,
+  ExternalLink,
 } from 'lucide-react';
 import { cn } from '../lib/cn';
 
@@ -33,16 +32,16 @@ const FILTERS = [
   { id: 'downloaded', label: 'Downloaded' },
 ];
 
-const STATUS_CONFIG = {
-  running:     { label: 'Running',     variant: 'success', dot: 'pulse' },
-  ready:       { label: 'Ready',       variant: 'info',    dot: true },
-  downloaded:  { label: 'Downloaded',  variant: 'purple',  dot: true },
-  downloading: { label: 'Downloading', variant: 'accent',  dot: 'pulse' },
+const STATUS_LABEL = {
+  running: 'running',
+  ready: 'ready',
+  downloaded: 'downloaded',
+  downloading: 'pulling',
 };
 
-// ── Unified Model Card ──────────────────────────────────────────
+// ── Model Row ──────────────────────────────────────────────────
 
-function UnifiedModelCard({
+function ModelRow({
   model, serverRunning,
   onStart, onStop, onSpawn, onDelete, onImport,
   isLoading, isUnloading, isDeleting, isImporting,
@@ -59,172 +58,144 @@ function UnifiedModelCard({
     return () => document.removeEventListener('mousedown', close);
   }, [menuOpen]);
 
-  const status = STATUS_CONFIG[model.status] || STATUS_CONFIG.ready;
+  const specs = [
+    model.parameters,
+    model.quantization,
+    model.size && model.size !== '—' && model.size,
+    model.vramGb && `${model.vramGb} GB`,
+    model.repoId,
+  ].filter(Boolean);
 
   return (
-    <div className={cn(
-      'group rounded-xl border p-4 transition-all',
-      model.status === 'running'
-        ? 'bg-success/5 border-success/20 hover:border-success/40'
-        : 'bg-surface-1 border-border-subtle hover:border-accent/30',
-    )}>
-      {/* Header: name + badges + menu */}
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="min-w-0 flex-1">
-          <span className="text-sm font-mono font-bold text-text-0 truncate block">{model.name}</span>
-          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            <Badge variant={model.source === 'ollama' ? 'info' : 'purple'} className="text-2xs">
-              {model.source === 'ollama' ? 'Ollama' : 'GGUF'}
-            </Badge>
-            <Badge variant={status.variant} dot={status.dot} className="text-2xs">
-              {status.label}
-            </Badge>
-            {model.isInLab && (
-              <Badge variant="accent" className="text-2xs gap-0.5">
-                <FlaskConical size={8} /> Lab
-              </Badge>
-            )}
-          </div>
-        </div>
+    <div className="group flex items-center gap-3 px-3 py-2 border-b border-border last:border-0 hover:bg-surface-2/50 transition-colors">
+      {/* Status dot */}
+      <span className="relative flex-shrink-0 w-1.5 h-1.5">
+        <span className={cn(
+          'absolute inset-0 rounded-full',
+          model.status === 'running' ? 'bg-success' : model.status === 'downloading' ? 'bg-text-3' : 'bg-text-4',
+        )} />
+        {(model.status === 'running' || model.status === 'downloading') && (
+          <span className={cn(
+            'absolute inset-[-2px] rounded-full opacity-30 animate-pulse',
+            model.status === 'running' ? 'bg-success' : 'bg-text-3',
+          )} />
+        )}
+      </span>
 
-        {model.status !== 'downloading' && (
-          <div ref={menuRef} className="relative flex-shrink-0">
+      {/* Name + specs */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-mono font-semibold text-text-1 truncate">{model.name}</span>
+          <span className="text-2xs font-mono text-text-4 flex-shrink-0">{model.source === 'gguf' ? 'GGUF' : 'ollama'}</span>
+        </div>
+        {specs.length > 0 && (
+          <div className="text-2xs font-mono text-text-4 truncate mt-0.5">
+            {specs.join(' · ')}
+          </div>
+        )}
+      </div>
+
+      {/* Download progress */}
+      {model.status === 'downloading' && model.download && (
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="w-20 h-0.5 rounded-sm overflow-hidden bg-surface-4">
+            <div className="h-full rounded-sm bg-text-2 transition-all" style={{ width: `${Math.round((model.download.percent || 0) * 100)}%` }} />
+          </div>
+          <span className="text-2xs font-mono text-text-3 tabular-nums w-8 text-right">
+            {Math.round((model.download.percent || 0) * 100)}%
+          </span>
+        </div>
+      )}
+      {model.status === 'downloading' && model.pullProgress && (
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Loader2 size={10} className="animate-spin text-text-3" />
+          <span className="text-2xs font-mono text-text-3">pulling</span>
+        </div>
+      )}
+
+      {/* Actions */}
+      {model.status !== 'downloading' && (
+        <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          {model.status === 'running' && (
+            <>
+              <button
+                onClick={() => onStop(model.name)}
+                disabled={isUnloading}
+                className="p-1 rounded text-text-4 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40"
+                title="Stop"
+              >
+                {isUnloading ? <Loader2 size={12} className="animate-spin" /> : <Square size={12} />}
+              </button>
+              <button
+                onClick={() => onSpawn(model.name)}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-mono font-medium text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+              >
+                <Rocket size={10} /> Spawn
+              </button>
+            </>
+          )}
+          {model.status === 'ready' && (
+            <>
+              {serverRunning && (
+                <button
+                  onClick={() => onStart(model.id)}
+                  disabled={isLoading}
+                  className="p-1 rounded text-text-4 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40"
+                  title="Run"
+                >
+                  {isLoading ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                </button>
+              )}
+              <button
+                onClick={() => onSpawn(model.id)}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-mono font-medium text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+              >
+                <Rocket size={10} /> Spawn
+              </button>
+            </>
+          )}
+          {model.status === 'downloaded' && (
+            <button
+              onClick={() => onImport(model.id)}
+              disabled={isImporting}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-mono font-medium text-text-2 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40"
+            >
+              {isImporting ? <Loader2 size={10} className="animate-spin" /> : <Rocket size={10} />}
+              {isImporting ? 'Importing' : 'Import'}
+            </button>
+          )}
+
+          {/* Overflow menu */}
+          <div ref={menuRef} className="relative">
             <button
               onClick={() => setMenuOpen(!menuOpen)}
-              className="p-1.5 rounded-md text-text-4 hover:text-text-2 hover:bg-surface-3 transition-colors cursor-pointer"
+              className="p-1 rounded text-text-4 hover:text-text-2 transition-colors cursor-pointer"
             >
-              <MoreHorizontal size={14} />
+              <MoreHorizontal size={12} />
             </button>
             {menuOpen && (
-              <div className="absolute right-0 top-full mt-1 z-50 min-w-[160px] bg-surface-3 border border-border rounded-lg shadow-lg py-1">
+              <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] bg-surface-2 border border-border rounded shadow-lg py-1">
                 {model.source === 'gguf' && (
                   <button
                     onClick={() => { onImport(model.id); setMenuOpen(false); }}
                     disabled={isImporting}
-                    className="w-full text-left px-3 py-1.5 text-xs font-sans text-text-1 hover:bg-surface-4 transition-colors cursor-pointer flex items-center gap-2 disabled:opacity-40"
+                    className="w-full text-left px-3 py-1 text-xs font-mono text-text-2 hover:bg-surface-3 transition-colors cursor-pointer flex items-center gap-2 disabled:opacity-40"
                   >
-                    <Rocket size={12} /> Import to Ollama
+                    <Rocket size={10} /> Import to Ollama
                   </button>
                 )}
                 <button
                   onClick={() => { onDelete(model); setMenuOpen(false); }}
                   disabled={isDeleting}
-                  className="w-full text-left px-3 py-1.5 text-xs font-sans text-danger hover:bg-danger/10 transition-colors cursor-pointer flex items-center gap-2 disabled:opacity-40"
+                  className="w-full text-left px-3 py-1 text-xs font-mono text-danger hover:bg-danger/5 transition-colors cursor-pointer flex items-center gap-2 disabled:opacity-40"
                 >
-                  <Trash2 size={12} /> Delete
+                  <Trash2 size={10} /> Delete
                 </button>
               </div>
             )}
           </div>
-        )}
-      </div>
-
-      {/* Specs */}
-      <div className="text-2xs text-text-3 font-sans mb-3 flex items-center gap-1.5 flex-wrap min-w-0">
-        {model.parameters && <span>{model.parameters}</span>}
-        {model.parameters && model.quantization && <span className="text-text-4">&middot;</span>}
-        {model.quantization && <span>{model.quantization}</span>}
-        {(model.parameters || model.quantization) && model.size && model.size !== '—' && (
-          <span className="text-text-4">&middot;</span>
-        )}
-        {model.size && model.size !== '—' && <span>{model.size}</span>}
-        {model.vramGb && (
-          <>
-            <span className="text-text-4">&middot;</span>
-            <span className="text-green-400">{model.vramGb} GB VRAM</span>
-          </>
-        )}
-        {model.repoId && (
-          <>
-            <span className="text-text-4">&middot;</span>
-            <span className="truncate max-w-[140px]">{model.repoId}</span>
-          </>
-        )}
-      </div>
-
-      {/* Download progress inline */}
-      {model.status === 'downloading' && model.download && (
-        <div className="mb-3 space-y-1">
-          <div className="flex items-center justify-between text-2xs font-sans text-text-3">
-            <span className="truncate">{model.download.filename}</span>
-            <span>{Math.round((model.download.percent || 0) * 100)}% {formatSpeed(model.download.speed)}</span>
-          </div>
-          <div className="h-1.5 bg-surface-3 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-accent rounded-full transition-all"
-              style={{ width: `${Math.round((model.download.percent || 0) * 100)}%` }}
-            />
-          </div>
-          <div className="text-2xs text-text-4">
-            {formatBytes(model.download.downloaded)} / {formatBytes(model.download.totalBytes)}
-          </div>
         </div>
       )}
-      {model.status === 'downloading' && model.pullProgress && (
-        <div className="mb-3">
-          <div className="flex items-center gap-2">
-            <Loader2 size={12} className="animate-spin text-accent flex-shrink-0" />
-            <span className="text-2xs text-text-3 font-sans truncate">
-              {model.pullProgress.progress || 'Pulling...'}
-            </span>
-          </div>
-          <div className="mt-1.5 h-1.5 bg-surface-3 rounded-full overflow-hidden">
-            <div className="h-full bg-accent rounded-full animate-pulse w-full" />
-          </div>
-        </div>
-      )}
-
-      {/* Action buttons */}
-      <div className="flex items-center gap-2 mt-auto">
-        {model.status === 'running' && (
-          <>
-            <button
-              onClick={() => onStop(model.name)}
-              disabled={isUnloading}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-2xs font-sans font-medium text-text-2 hover:text-warning hover:bg-warning/10 transition-colors cursor-pointer disabled:opacity-40"
-            >
-              {isUnloading ? <Loader2 size={11} className="animate-spin" /> : <Square size={11} />}
-              Stop
-            </button>
-            <button
-              onClick={() => onSpawn(model.name)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-2xs font-sans font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer"
-            >
-              <Rocket size={11} /> Spawn Agent
-            </button>
-          </>
-        )}
-        {model.status === 'ready' && (
-          <>
-            {serverRunning && (
-              <button
-                onClick={() => onStart(model.id)}
-                disabled={isLoading}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-2xs font-sans font-medium text-text-2 hover:text-success hover:bg-success/10 transition-colors cursor-pointer disabled:opacity-40"
-              >
-                {isLoading ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
-                Run
-              </button>
-            )}
-            <button
-              onClick={() => onSpawn(model.id)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-2xs font-sans font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer"
-            >
-              <Rocket size={11} /> Spawn Agent
-            </button>
-          </>
-        )}
-        {model.status === 'downloaded' && (
-          <button
-            onClick={() => onImport(model.id)}
-            disabled={isImporting}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-2xs font-sans font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer disabled:opacity-40"
-          >
-            {isImporting ? <Loader2 size={11} className="animate-spin" /> : <Rocket size={11} />}
-            {isImporting ? 'Importing...' : 'Launch'}
-          </button>
-        )}
-      </div>
     </div>
   );
 }
@@ -258,47 +229,35 @@ function FilePicker({ repoId, onDownload, systemRamGb }) {
   }
 
   if (loading) {
-    return <div className="py-3 px-4 text-2xs text-text-4 font-sans">Loading quantization variants...</div>;
+    return <div className="py-2 px-4 text-2xs text-text-4 font-mono">Loading variants...</div>;
   }
   if (!files?.length) {
-    return <div className="py-3 px-4 text-2xs text-text-4 font-sans">No GGUF files found in this repo.</div>;
+    return <div className="py-2 px-4 text-2xs text-text-4 font-mono">No GGUF files found.</div>;
   }
 
   return (
-    <div className="pl-4 pr-4 pb-2 space-y-1.5">
+    <div className="pl-8 pr-4 pb-1 space-y-0">
       {files.map((f) => {
         const canRun = !f.estimatedRamGb || !systemRamGb || f.estimatedRamGb <= systemRamGb;
-        const tight = f.estimatedRamGb && systemRamGb && f.estimatedRamGb > systemRamGb * 0.8 && canRun;
         return (
           <div key={f.filename} className={cn(
-            'flex items-center gap-2 py-1.5 px-3 rounded-md text-xs font-sans flex-wrap',
-            canRun ? 'bg-surface-2' : 'bg-red-500/5 border border-red-500/15',
+            'flex items-center gap-2 py-1 text-xs font-mono',
+            !canRun && 'opacity-40',
           )}>
-            <span className="font-mono text-text-1 truncate flex-1 min-w-0">{f.filename}</span>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {f.quantization && <Badge variant="default" className="text-2xs">{f.quantization}</Badge>}
-              <span className="text-text-2 text-2xs">{formatBytes(f.size)}</span>
-              {f.estimatedRamGb && (
-                <span className={cn(
-                  'text-2xs font-medium',
-                  !canRun ? 'text-red-400' : tight ? 'text-yellow-400' : 'text-green-400',
-                )}>
-                  ~{f.estimatedRamGb} GB
-                </span>
-              )}
-              {!canRun && <span className="text-2xs text-red-400 font-medium">too large</span>}
-              <button
-                onClick={() => handleDownload(f)}
-                disabled={downloading === f.filename || !canRun}
-                className={cn(
-                  'p-1 rounded transition-colors cursor-pointer',
-                  canRun ? 'text-accent hover:bg-accent/10' : 'text-text-4 cursor-not-allowed',
-                  'disabled:opacity-40',
-                )}
-              >
-                {downloading === f.filename ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-              </button>
-            </div>
+            <span className="text-text-2 truncate flex-1 min-w-0">{f.filename}</span>
+            {f.quantization && <span className="text-text-4 flex-shrink-0">{f.quantization}</span>}
+            <span className="text-text-3 flex-shrink-0 tabular-nums">{formatBytes(f.size)}</span>
+            {f.estimatedRamGb && (
+              <span className="text-text-4 flex-shrink-0 tabular-nums">~{f.estimatedRamGb} GB</span>
+            )}
+            {!canRun && <span className="text-2xs text-text-4">too large</span>}
+            <button
+              onClick={() => handleDownload(f)}
+              disabled={downloading === f.filename || !canRun}
+              className="p-0.5 rounded text-text-3 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {downloading === f.filename ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+            </button>
           </div>
         );
       })}
@@ -347,14 +306,12 @@ export default function ModelsView() {
 
   const pollingRef = useRef(null);
 
-  // Poll Ollama status
   useEffect(() => {
     fetchOllamaStatus();
     pollingRef.current = setInterval(fetchOllamaStatus, 10000);
     return () => clearInterval(pollingRef.current);
   }, [fetchOllamaStatus]);
 
-  // Fetch recommended + GGUF on mount
   useEffect(() => {
     api.get('/models/recommended').then((data) => {
       setRecommended(data.models || []);
@@ -364,7 +321,6 @@ export default function ModelsView() {
     }).catch(() => {});
   }, []);
 
-  // Poll active downloads
   useEffect(() => {
     const poll = setInterval(() => {
       api.get('/models/downloads').then(setDownloads).catch(() => {});
@@ -372,7 +328,6 @@ export default function ModelsView() {
     return () => clearInterval(poll);
   }, []);
 
-  // WebSocket events for GGUF downloads
   useEffect(() => {
     function handleWs(event) {
       try {
@@ -405,8 +360,6 @@ export default function ModelsView() {
     if (ws) ws.addEventListener('message', handleWs);
     return () => { if (ws) ws.removeEventListener('message', handleWs); };
   }, [toast]);
-
-  // ── Handlers ──────────────────────────────────────────────────
 
   async function handleServerStart() {
     setServerAction('starting');
@@ -448,7 +401,7 @@ export default function ModelsView() {
     setImportingGguf(modelId);
     try {
       const result = await api.post(`/models/${encodeURIComponent(modelId)}/import-to-ollama`);
-      toast.success(`Imported as "${result.ollamaName}" — now available in Ollama`);
+      toast.success(`Imported as "${result.ollamaName}"`);
       fetchOllamaStatus();
       setGgufModels((prev) => prev.filter((m) => m.id !== modelId));
     } catch (err) {
@@ -488,8 +441,6 @@ export default function ModelsView() {
     setSearching(false);
   }
 
-  // ── Computed: catalog lookup ───────────────────────────────────
-
   const catalogByBase = useMemo(() => {
     const map = {};
     for (const c of catalog) {
@@ -505,15 +456,11 @@ export default function ModelsView() {
     return catalogByBase[modelId.split(':')[0]] || null;
   }
 
-  // ── Computed: lab model check ──────────────────────────────────
-
   function isModelInLab(modelId) {
     if (!labActiveModel) return false;
     if (typeof labActiveModel === 'string') return labActiveModel === modelId;
     return labActiveModel.name === modelId || labActiveModel.id === modelId;
   }
-
-  // ── Computed: unified model list ──────────────────────────────
 
   const unifiedModels = useMemo(() => {
     const models = [];
@@ -597,8 +544,6 @@ export default function ModelsView() {
     return models;
   }, [runningModels, installedModels, ggufModels, downloads, pullProgress, labActiveModel, catalog]);
 
-  // ── Computed: filter + search ──────────────────────────────────
-
   const filteredModels = useMemo(() => {
     let list = unifiedModels;
     if (filter === 'running') list = list.filter((m) => m.status === 'running');
@@ -619,127 +564,91 @@ export default function ModelsView() {
   }), [unifiedModels]);
 
   const hasNoModels = unifiedModels.length === 0;
-
-  // ── Render ─────────────────────────────────────────────────────
+  const hw = ollamaStatus.hardware;
 
   return (
     <div className="h-full flex flex-col bg-surface-0">
-      {/* ════ ZONE 1: Sticky Toolbar ════ */}
-      <div className="flex-shrink-0 px-4 pt-4 pb-3 border-b border-border space-y-3">
+      {/* Toolbar */}
+      <div className="flex-shrink-0 px-4 pt-3 pb-2.5 border-b border-border space-y-2.5">
 
-        {/* Server status row */}
+        {/* Server status */}
         {!ollamaStatus.installed ? (
-          <div className="flex items-center gap-2 bg-surface-1 border border-border-subtle rounded-lg px-3 py-2">
+          <div className="flex items-center gap-2 text-xs font-mono">
             <span className="w-1.5 h-1.5 rounded-full bg-text-4 flex-shrink-0" />
-            <span className="text-xs font-sans text-text-3 font-medium">Ollama Not Installed</span>
+            <span className="text-text-3">Ollama not installed</span>
             <div className="flex-1" />
-            <a
-              href="https://ollama.ai/download"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-2xs font-sans text-accent hover:underline flex items-center gap-1"
-            >
-              Install <ExternalLink size={10} />
+            <a href="https://ollama.ai/download" target="_blank" rel="noopener noreferrer"
+              className="text-2xs text-text-3 hover:text-text-1 flex items-center gap-1 transition-colors">
+              Install <ExternalLink size={9} />
             </a>
           </div>
         ) : (
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 text-xs font-mono flex-wrap">
             <span className="relative flex-shrink-0 w-1.5 h-1.5">
               <span className={cn('absolute inset-0 rounded-full', ollamaStatus.serverRunning ? 'bg-success' : 'bg-text-4')} />
               {ollamaStatus.serverRunning && <span className="absolute inset-[-2px] rounded-full bg-success opacity-20 animate-pulse" />}
             </span>
-            <span className="text-xs font-sans text-text-1 font-medium">Ollama</span>
-            <span className={cn('text-2xs font-mono', ollamaStatus.serverRunning ? 'text-text-4' : 'text-text-4')}>
-              {ollamaStatus.serverRunning ? ':11434' : 'stopped'}
-            </span>
+            <span className="text-text-1 font-semibold">Ollama</span>
+            <span className="text-text-4">{ollamaStatus.serverRunning ? ':11434' : 'stopped'}</span>
 
-            {ollamaStatus.serverRunning && ollamaStatus.hardware && (
-              <div className="flex items-center gap-1.5 ml-1 flex-wrap">
-                <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-2 text-2xs font-sans text-text-2">
-                  <MemoryStick size={10} className="text-text-3" />
-                  {ollamaStatus.hardware.totalRamGb} GB
-                </div>
-                <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-2 text-2xs font-sans text-text-2">
-                  <Cpu size={10} className="text-text-3" />
-                  {ollamaStatus.hardware.cores} cores
-                </div>
-                {ollamaStatus.hardware.gpu && (
-                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-2 text-2xs font-sans text-text-2">
-                    <HardDrive size={10} className="text-text-3" />
-                    {ollamaStatus.hardware.gpu.name}
-                    {ollamaStatus.hardware.gpu.vram ? ` (${ollamaStatus.hardware.gpu.vram} GB)` : ''}
-                  </div>
-                )}
-                {ollamaStatus.hardware.isAppleSilicon && (
-                  <Badge variant="accent" className="text-2xs">Unified Memory</Badge>
-                )}
-              </div>
+            {ollamaStatus.serverRunning && hw && (
+              <span className="text-text-4 ml-1">
+                {hw.totalRamGb} GB · {hw.cores} cores
+                {hw.gpu ? ` · ${hw.gpu.name}${hw.gpu.vram ? ` ${hw.gpu.vram} GB` : ''}` : ''}
+                {hw.isAppleSilicon ? ' · unified' : ''}
+              </span>
             )}
 
             <div className="flex-1" />
             {ollamaStatus.serverRunning ? (
-              <>
-                <button
-                  onClick={handleServerRestart}
-                  disabled={!!serverAction}
-                  className="flex items-center gap-1 text-2xs font-sans text-text-3 hover:text-accent cursor-pointer transition-colors disabled:opacity-40"
-                >
-                  <RefreshCw size={10} className={serverAction === 'restarting' ? 'animate-spin' : ''} />
-                  {serverAction === 'restarting' ? 'Restarting...' : 'Restart'}
+              <div className="flex items-center gap-2">
+                <button onClick={handleServerRestart} disabled={!!serverAction}
+                  className="text-2xs text-text-4 hover:text-text-2 transition-colors cursor-pointer disabled:opacity-40 flex items-center gap-1">
+                  <RefreshCw size={9} className={serverAction === 'restarting' ? 'animate-spin' : ''} />
+                  {serverAction === 'restarting' ? 'Restarting' : 'Restart'}
                 </button>
-                <button
-                  onClick={handleServerStop}
-                  disabled={!!serverAction}
-                  className="flex items-center gap-1 text-2xs font-sans text-text-3 hover:text-danger cursor-pointer transition-colors disabled:opacity-40"
-                >
-                  <Square size={10} />
-                  {serverAction === 'stopping' ? 'Stopping...' : 'Stop'}
+                <button onClick={handleServerStop} disabled={!!serverAction}
+                  className="text-2xs text-text-4 hover:text-text-2 transition-colors cursor-pointer disabled:opacity-40 flex items-center gap-1">
+                  <Square size={9} />
+                  {serverAction === 'stopping' ? 'Stopping' : 'Stop'}
                 </button>
-              </>
+              </div>
             ) : (
-              <button
-                onClick={handleServerStart}
-                disabled={!!serverAction}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-md text-2xs font-sans font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer disabled:opacity-40"
-              >
-                {serverAction === 'starting' ? <Loader2 size={10} className="animate-spin" /> : <Play size={10} />}
-                {serverAction === 'starting' ? 'Starting...' : 'Start Server'}
+              <button onClick={handleServerStart} disabled={!!serverAction}
+                className="text-2xs text-text-2 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40 flex items-center gap-1">
+                {serverAction === 'starting' ? <Loader2 size={9} className="animate-spin" /> : <Play size={9} />}
+                {serverAction === 'starting' ? 'Starting' : 'Start'}
               </button>
             )}
           </div>
         )}
 
-        {/* Search + Filter row */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 min-w-[180px]">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-4" />
+        {/* Search + Filters */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 min-w-[160px]">
+            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-4" />
             <input
               ref={searchInputRef}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="Search models or HuggingFace..."
-              className="w-full h-8 pl-9 pr-3 text-sm rounded-md bg-surface-1 border border-border text-text-0 font-sans placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+              className="w-full h-7 pl-8 pr-3 text-xs font-mono rounded bg-surface-1 border border-border text-text-1 placeholder:text-text-4 focus:outline-none focus:border-text-3"
             />
           </div>
-
-          <div className="flex items-center gap-1 flex-shrink-0 overflow-x-auto">
+          <div className="flex items-center gap-0.5 flex-shrink-0">
             {FILTERS.map((f) => (
               <button
                 key={f.id}
                 onClick={() => setFilter(f.id)}
                 className={cn(
-                  'px-2.5 py-1 rounded-md text-2xs font-sans font-medium transition-colors cursor-pointer whitespace-nowrap',
-                  filter === f.id
-                    ? 'bg-accent/12 text-accent'
-                    : 'text-text-3 hover:text-text-1 hover:bg-surface-3',
+                  'px-2 py-1 rounded text-2xs font-mono transition-colors cursor-pointer',
+                  filter === f.id ? 'text-text-1 bg-surface-3' : 'text-text-4 hover:text-text-2',
                 )}
               >
                 {f.label}
                 {filterCounts[f.id] > 0 && (
-                  <span className={cn('ml-1', filter === f.id ? 'text-accent/60' : 'text-text-4')}>
-                    {filterCounts[f.id]}
-                  </span>
+                  <span className="ml-1 text-text-4 tabular-nums">{filterCounts[f.id]}</span>
                 )}
               </button>
             ))}
@@ -747,222 +656,182 @@ export default function ModelsView() {
         </div>
       </div>
 
-      {/* ════ ZONE 2 + 3: Scrollable Content ════ */}
+      {/* Content */}
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-        <div className="px-4 py-5 space-y-6">
 
-          {/* Empty State */}
-          {hasNoModels && !searchQuery.trim() && filter === 'all' ? (
-            <div className="flex flex-col items-center justify-center py-16 px-8">
-              <Box size={48} className="text-text-4 mb-4" />
-              <h2 className="text-lg font-sans font-bold text-text-0 mb-1">Get started with local models</h2>
-              <p className="text-sm text-text-3 font-sans text-center max-w-md mb-6">
-                Run AI models locally for privacy, speed, and zero API costs.
-                Pull popular models from Ollama or download GGUF files from HuggingFace.
-              </p>
-              <div className="flex gap-3">
-                <Button
-                  variant="primary"
-                  onClick={() => {
-                    setDiscoveryOpen(true);
-                    setDiscoveryTab('recommended');
-                    discoveryRef.current?.scrollIntoView({ behavior: 'smooth' });
-                  }}
-                  className="gap-2"
-                >
-                  <Download size={14} /> Pull from Ollama
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    searchInputRef.current?.focus();
-                  }}
-                  className="gap-2"
-                >
-                  <Search size={14} /> Search HuggingFace
-                </Button>
+        {/* Empty state */}
+        {hasNoModels && !searchQuery.trim() && filter === 'all' ? (
+          <div className="flex flex-col items-center justify-center py-16 px-8">
+            <Box size={28} className="text-text-4 mb-3" />
+            <div className="text-sm font-mono font-semibold text-text-1 mb-1">No local models</div>
+            <div className="text-xs font-mono text-text-3 text-center max-w-sm mb-5">
+              Pull from Ollama or search HuggingFace for GGUF models to run locally.
+            </div>
+            <div className="flex gap-2">
+              <Button variant="primary" onClick={() => {
+                setDiscoveryOpen(true);
+                setDiscoveryTab('recommended');
+                discoveryRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }} className="gap-1.5 text-xs">
+                <Download size={12} /> Pull from Ollama
+              </Button>
+              <Button variant="secondary" onClick={() => searchInputRef.current?.focus()} className="gap-1.5 text-xs">
+                <Search size={12} /> Search HuggingFace
+              </Button>
+            </div>
+          </div>
+        ) : filteredModels.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="text-xs font-mono text-text-3">No models match this filter</div>
+          </div>
+        ) : (
+          /* Model list */
+          <div>
+            {filteredModels.map((model) => (
+              <ModelRow
+                key={model.id}
+                model={model}
+                serverRunning={ollamaStatus.serverRunning}
+                onStart={handleLoadModel}
+                onStop={handleUnloadModel}
+                onSpawn={spawnFromModel}
+                onDelete={handleDeleteUnified}
+                onImport={handleImportToOllama}
+                isLoading={loadingModel === model.id}
+                isUnloading={unloadingModel === model.id || unloadingModel === model.name}
+                isDeleting={deletingModel === model.id || deletingGguf === model.id}
+                isImporting={importingGguf === model.id}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Discovery section */}
+        <div ref={discoveryRef} className="border-t border-border mt-2">
+          <button
+            onClick={() => setDiscoveryOpen(!discoveryOpen)}
+            className="flex items-center gap-2 px-4 py-2.5 cursor-pointer group w-full text-left"
+          >
+            {discoveryOpen
+              ? <ChevronDown size={12} className="text-text-4 group-hover:text-text-2 transition-colors" />
+              : <ChevronRight size={12} className="text-text-4 group-hover:text-text-2 transition-colors" />}
+            <span className="text-2xs font-mono text-text-3 uppercase tracking-wider">Discover Models</span>
+          </button>
+
+          {discoveryOpen && (
+            <div className="px-4 pb-4 space-y-3">
+              <div className="flex gap-0.5">
+                {[
+                  { id: 'recommended', label: `Recommended (${recommended.length})` },
+                  { id: 'search', label: `Search (${searchResults.length})` },
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setDiscoveryTab(t.id)}
+                    className={cn(
+                      'px-2 py-1 rounded text-2xs font-mono transition-colors cursor-pointer',
+                      discoveryTab === t.id ? 'text-text-1 bg-surface-3' : 'text-text-4 hover:text-text-2',
+                    )}
+                  >
+                    {t.label}
+                  </button>
+                ))}
               </div>
-            </div>
-          ) : filteredModels.length === 0 ? (
-            <div className="text-center py-12">
-              <Search size={32} className="mx-auto text-text-4 mb-2" />
-              <p className="text-sm text-text-2 font-sans font-medium">No models match your filter</p>
-              <p className="text-xs text-text-3 font-sans mt-1">
-                Try changing the filter or clearing your search.
-              </p>
-            </div>
-          ) : (
-            /* ── Card Grid ── */
-            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 260px), 1fr))' }}>
-              {filteredModels.map((model) => (
-                <UnifiedModelCard
-                  key={model.id}
-                  model={model}
-                  serverRunning={ollamaStatus.serverRunning}
-                  onStart={handleLoadModel}
-                  onStop={handleUnloadModel}
-                  onSpawn={spawnFromModel}
-                  onDelete={handleDeleteUnified}
-                  onImport={handleImportToOllama}
-                  isLoading={loadingModel === model.id}
-                  isUnloading={unloadingModel === model.id || unloadingModel === model.name}
-                  isDeleting={deletingModel === model.id || deletingGguf === model.id}
-                  isImporting={importingGguf === model.id}
-                />
-              ))}
+
+              {/* Recommended */}
+              {discoveryTab === 'recommended' && (
+                <>
+                  {recommended.length === 0 ? (
+                    <div className="py-6 text-center">
+                      <div className="text-xs font-mono text-text-3">Detecting hardware...</div>
+                      <div className="text-2xs font-mono text-text-4 mt-1">Make sure Ollama is installed.</div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-2xs font-mono text-text-4">
+                        For your system ({hw?.totalRamGb || '?'} GB RAM)
+                      </div>
+                      <div className="space-y-0">
+                        {recommended.map((m) => {
+                          const baseId = m.id.split(':')[0];
+                          const isInstalled = installedModels.some((im) =>
+                            im.id === m.id || im.id.startsWith(baseId + ':') || im.id === baseId
+                          );
+                          const isPulling = !!pullProgress[m.id];
+
+                          return (
+                            <div key={m.id} className="flex items-center gap-3 py-1.5 border-b border-border last:border-0">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-mono font-semibold text-text-1 truncate">{m.name}</span>
+                                  {isInstalled && <Check size={10} className="text-success flex-shrink-0" />}
+                                </div>
+                                <div className="text-2xs font-mono text-text-4 truncate">{m.description}</div>
+                              </div>
+                              <span className="text-2xs font-mono text-text-3 tabular-nums flex-shrink-0">{m.sizeGb} GB</span>
+                              <span className="text-2xs font-mono text-text-4 tabular-nums flex-shrink-0">{m.ramGb} GB RAM</span>
+                              {isInstalled ? (
+                                <span className="text-2xs font-mono text-text-4 w-12 text-right">installed</span>
+                              ) : (
+                                <button
+                                  onClick={() => pullModel(m.id)}
+                                  disabled={isPulling}
+                                  className="text-2xs font-mono text-text-2 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40 flex items-center gap-1 w-12 justify-end"
+                                >
+                                  {isPulling ? <Loader2 size={10} className="animate-spin" /> : <Download size={10} />}
+                                  Pull
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* Search results */}
+              {discoveryTab === 'search' && (
+                <>
+                  {searching ? (
+                    <div className="py-6 text-center">
+                      <Loader2 size={16} className="mx-auto text-text-3 animate-spin mb-2" />
+                      <div className="text-xs font-mono text-text-3">Searching HuggingFace...</div>
+                    </div>
+                  ) : searchResults.length === 0 ? (
+                    <div className="py-6 text-center">
+                      <div className="text-xs font-mono text-text-3">Search for GGUF models</div>
+                      <div className="text-2xs font-mono text-text-4 mt-1">
+                        Try "qwen coder", "deepseek", "codestral", "llama"
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-0">
+                      {searchResults.map((r) => (
+                        <div key={r.id}>
+                          <button
+                            onClick={() => setExpandedResult(expandedResult === r.id ? null : r.id)}
+                            className="w-full text-left flex items-center gap-2 py-1.5 border-b border-border hover:bg-surface-2/50 transition-colors cursor-pointer"
+                          >
+                            <span className="text-xs font-mono font-semibold text-text-1 truncate flex-1">{r.name}</span>
+                            <span className="text-2xs font-mono text-text-4">{r.author}</span>
+                            <span className="text-2xs font-mono text-text-4 tabular-nums">{r.downloads?.toLocaleString()}</span>
+                            {expandedResult === r.id
+                              ? <ChevronDown size={10} className="text-text-4" />
+                              : <ChevronRight size={10} className="text-text-4" />}
+                          </button>
+                          {expandedResult === r.id && (
+                            <FilePicker repoId={r.id} systemRamGb={hw?.totalRamGb} />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
-
-          {/* ════ ZONE 3: Discovery ════ */}
-          <div ref={discoveryRef} className="border-t border-border-subtle pt-4">
-            <button
-              onClick={() => setDiscoveryOpen(!discoveryOpen)}
-              className="flex items-center gap-2 mb-3 cursor-pointer group"
-            >
-              {discoveryOpen
-                ? <ChevronDown size={14} className="text-text-3 group-hover:text-text-1 transition-colors" />
-                : <ChevronRight size={14} className="text-text-3 group-hover:text-text-1 transition-colors" />}
-              <Sparkles size={14} className="text-text-3" />
-              <span className="text-xs font-semibold font-sans text-text-2 uppercase tracking-wider">
-                Discover Models
-              </span>
-            </button>
-
-            {discoveryOpen && (
-              <div className="space-y-4">
-                {/* Discovery tabs */}
-                <div className="flex gap-1">
-                  {[
-                    { id: 'recommended', label: `Recommended (${recommended.length})` },
-                    { id: 'search', label: `Search Results (${searchResults.length})` },
-                  ].map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => setDiscoveryTab(t.id)}
-                      className={cn(
-                        'px-3 py-1 rounded-md text-xs font-sans font-medium transition-colors cursor-pointer',
-                        discoveryTab === t.id ? 'bg-accent/12 text-accent' : 'text-text-3 hover:text-text-1 hover:bg-surface-3',
-                      )}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Recommended — horizontal scroll */}
-                {discoveryTab === 'recommended' && (
-                  <>
-                    {recommended.length === 0 ? (
-                      <div className="text-center py-8">
-                        <Cpu size={32} className="mx-auto text-text-4 mb-2" />
-                        <p className="text-sm text-text-2 font-sans font-medium">Detecting hardware...</p>
-                        <p className="text-xs text-text-3 font-sans mt-1">Make sure Ollama is installed so we can check your system.</p>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="text-xs text-text-3 font-sans">
-                          Top models for your system ({ollamaStatus.hardware?.totalRamGb || '?'} GB RAM). Click Pull to download via Ollama.
-                        </div>
-                        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 200px), 1fr))' }}>
-                          {recommended.map((m) => {
-                            const baseId = m.id.split(':')[0];
-                            const isInstalled = installedModels.some((im) =>
-                              im.id === m.id || im.id.startsWith(baseId + ':') || im.id === baseId
-                            );
-                            const headroom = ollamaStatus.hardware?.totalRamGb
-                              ? Math.round((1 - m.ramGb / ollamaStatus.hardware.totalRamGb) * 100)
-                              : null;
-                            const isPulling = !!pullProgress[m.id];
-
-                            return (
-                              <div
-                                key={m.id}
-                                className={cn(
-                                  'p-3 rounded-xl border transition-colors',
-                                  isInstalled
-                                    ? 'bg-success/5 border-success/20'
-                                    : 'bg-surface-1 border-border-subtle hover:border-accent/30',
-                                )}
-                              >
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="text-sm font-mono font-bold text-text-0 truncate">{m.name}</span>
-                                  {isInstalled && <Check size={12} className="text-success flex-shrink-0" />}
-                                </div>
-                                <div className="text-2xs text-text-3 font-sans line-clamp-1 mb-2">{m.description}</div>
-                                <div className="flex items-center gap-2 text-2xs font-sans mb-2 flex-wrap">
-                                  <span className="text-text-2">{m.sizeGb} GB</span>
-                                  <span className="text-green-400 font-medium">{m.ramGb} GB RAM</span>
-                                  {headroom !== null && <span className="text-text-4">{headroom}%</span>}
-                                </div>
-                                {isInstalled ? (
-                                  <Badge variant="success" className="text-2xs">Installed</Badge>
-                                ) : (
-                                  <button
-                                    onClick={() => pullModel(m.id)}
-                                    disabled={isPulling}
-                                    className="w-full flex items-center justify-center gap-1.5 h-7 rounded-md text-xs font-sans font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer disabled:opacity-40"
-                                  >
-                                    {isPulling ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-                                    Pull
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </>
-                    )}
-                  </>
-                )}
-
-                {/* Search results */}
-                {discoveryTab === 'search' && (
-                  <>
-                    {searching ? (
-                      <div className="text-center py-8">
-                        <Loader2 size={24} className="mx-auto text-accent animate-spin mb-2" />
-                        <p className="text-sm text-text-3 font-sans">Searching HuggingFace...</p>
-                      </div>
-                    ) : searchResults.length === 0 ? (
-                      <div className="text-center py-8">
-                        <Search size={32} className="mx-auto text-text-4 mb-2" />
-                        <p className="text-sm text-text-2 font-sans font-medium">Search for GGUF models</p>
-                        <p className="text-xs text-text-3 font-sans mt-1">
-                          Type a query above and press Enter — try "qwen coder", "deepseek", "codestral", "llama"
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {searchResults.map((r) => (
-                          <div key={r.id} className="space-y-1">
-                            <button
-                              onClick={() => setExpandedResult(expandedResult === r.id ? null : r.id)}
-                              className="w-full text-left px-4 py-3 bg-surface-1 border border-border-subtle rounded-lg hover:border-accent/30 transition-colors cursor-pointer"
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-mono font-bold text-text-0 truncate flex-1">{r.name}</span>
-                                <span className="text-2xs text-text-4 font-sans">{r.author}</span>
-                                {expandedResult === r.id
-                                  ? <ChevronDown size={14} className="text-text-3" />
-                                  : <ChevronRight size={14} className="text-text-3" />}
-                              </div>
-                              <div className="text-2xs text-text-3 font-sans mt-0.5 flex gap-3">
-                                <span>{r.downloads?.toLocaleString()} downloads</span>
-                                <span>{r.likes} likes</span>
-                              </div>
-                            </button>
-                            {expandedResult === r.id && (
-                              <FilePicker repoId={r.id} systemRamGb={ollamaStatus.hardware?.totalRamGb} />
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>

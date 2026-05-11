@@ -39,9 +39,9 @@ const STATUS_LABEL = {
   downloading: 'pulling',
 };
 
-// ── Model Row ──────────────────────────────────────────────────
+// ── Model Card ─────────────────────────────────────────────────
 
-function ModelRow({
+function ModelCard({
   model, serverRunning,
   onStart, onStop, onSpawn, onDelete, onImport,
   isLoading, isUnloading, isDeleting, isImporting,
@@ -62,139 +62,154 @@ function ModelRow({
     model.parameters,
     model.quantization,
     model.size && model.size !== '—' && model.size,
-    model.vramGb && `${model.vramGb} GB`,
-    model.repoId,
   ].filter(Boolean);
 
   return (
-    <div className="group flex items-center gap-3 px-3 py-2 border-b border-border last:border-0 hover:bg-surface-2/50 transition-colors">
-      {/* Status dot */}
-      <span className="relative flex-shrink-0 w-1.5 h-1.5">
-        <span className={cn(
-          'absolute inset-0 rounded-full',
-          model.status === 'running' ? 'bg-success' : model.status === 'downloading' ? 'bg-text-3' : 'bg-text-4',
-        )} />
-        {(model.status === 'running' || model.status === 'downloading') && (
+    <div className={cn(
+      'group flex flex-col p-4 rounded-md border border-border-subtle bg-surface-1',
+      'hover:border-accent/30 hover:bg-surface-2 transition-all',
+    )}>
+      {/* Header: status dot + name + source */}
+      <div className="flex items-center gap-2 mb-1">
+        <span className="relative flex-shrink-0 w-1.5 h-1.5">
           <span className={cn(
-            'absolute inset-[-2px] rounded-full opacity-30 animate-pulse',
-            model.status === 'running' ? 'bg-success' : 'bg-text-3',
+            'absolute inset-0 rounded-full',
+            model.status === 'running' ? 'bg-success' : model.status === 'downloading' ? 'bg-text-3' : 'bg-text-4',
           )} />
-        )}
-      </span>
-
-      {/* Name + specs */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-mono font-semibold text-text-1 truncate">{model.name}</span>
-          <span className="text-2xs font-mono text-text-4 flex-shrink-0">{model.source === 'gguf' ? 'GGUF' : 'ollama'}</span>
-        </div>
-        {specs.length > 0 && (
-          <div className="text-2xs font-mono text-text-4 truncate mt-0.5">
-            {specs.join(' · ')}
-          </div>
-        )}
+          {(model.status === 'running' || model.status === 'downloading') && (
+            <span className={cn(
+              'absolute inset-[-2px] rounded-full opacity-30 animate-pulse',
+              model.status === 'running' ? 'bg-success' : 'bg-text-3',
+            )} />
+          )}
+        </span>
+        <span className="text-xs font-mono font-semibold text-text-0 truncate flex-1">{model.name}</span>
+        <span className="text-2xs font-mono text-text-4 flex-shrink-0">{STATUS_LABEL[model.status]}</span>
       </div>
+
+      {/* Specs */}
+      {specs.length > 0 && (
+        <div className="text-2xs font-mono text-text-4 truncate mb-1">{specs.join(' · ')}</div>
+      )}
+      {model.vramGb && (
+        <div className="text-2xs font-mono text-text-4">{model.vramGb} GB VRAM</div>
+      )}
 
       {/* Download progress */}
       {model.status === 'downloading' && model.download && (
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="w-20 h-0.5 rounded-sm overflow-hidden bg-surface-4">
-            <div className="h-full rounded-sm bg-text-2 transition-all" style={{ width: `${Math.round((model.download.percent || 0) * 100)}%` }} />
+        <div className="mt-2">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="flex-1 h-1 rounded-sm overflow-hidden bg-surface-4">
+              <div className="h-full rounded-sm bg-text-2 transition-all" style={{ width: `${Math.round((model.download.percent || 0) * 100)}%` }} />
+            </div>
+            <span className="text-2xs font-mono text-text-3 tabular-nums">
+              {Math.round((model.download.percent || 0) * 100)}%
+            </span>
           </div>
-          <span className="text-2xs font-mono text-text-3 tabular-nums w-8 text-right">
-            {Math.round((model.download.percent || 0) * 100)}%
-          </span>
+          {model.download.speed && (
+            <div className="text-2xs font-mono text-text-4">{formatSpeed(model.download.speed)}</div>
+          )}
         </div>
       )}
       {model.status === 'downloading' && model.pullProgress && (
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 mt-2">
           <Loader2 size={10} className="animate-spin text-text-3" />
           <span className="text-2xs font-mono text-text-3">pulling</span>
         </div>
       )}
 
-      {/* Actions */}
-      {model.status !== 'downloading' && (
-        <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-          {model.status === 'running' && (
-            <>
-              <button
-                onClick={() => onStop(model.name)}
-                disabled={isUnloading}
-                className="p-1 rounded text-text-4 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40"
-                title="Stop"
-              >
-                {isUnloading ? <Loader2 size={12} className="animate-spin" /> : <Square size={12} />}
-              </button>
-              <button
-                onClick={() => onSpawn(model.name)}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-mono font-medium text-accent hover:bg-accent/10 transition-colors cursor-pointer"
-              >
-                <Rocket size={10} /> Spawn
-              </button>
-            </>
-          )}
-          {model.status === 'ready' && (
-            <>
-              {serverRunning && (
-                <button
-                  onClick={() => onStart(model.id)}
-                  disabled={isLoading}
-                  className="p-1 rounded text-text-4 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40"
-                  title="Run"
-                >
-                  {isLoading ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-                </button>
-              )}
-              <button
-                onClick={() => onSpawn(model.id)}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-mono font-medium text-accent hover:bg-accent/10 transition-colors cursor-pointer"
-              >
-                <Rocket size={10} /> Spawn
-              </button>
-            </>
-          )}
-          {model.status === 'downloaded' && (
-            <button
-              onClick={() => onImport(model.id)}
-              disabled={isImporting}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-mono font-medium text-text-2 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40"
-            >
-              {isImporting ? <Loader2 size={10} className="animate-spin" /> : <Rocket size={10} />}
-              {isImporting ? 'Importing' : 'Import'}
-            </button>
-          )}
+      <div className="flex-1" />
 
-          {/* Overflow menu */}
-          <div ref={menuRef} className="relative">
-            <button
-              onClick={() => setMenuOpen(!menuOpen)}
-              className="p-1 rounded text-text-4 hover:text-text-2 transition-colors cursor-pointer"
-            >
-              <MoreHorizontal size={12} />
-            </button>
-            {menuOpen && (
-              <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] bg-surface-2 border border-border rounded shadow-lg py-1">
-                {model.source === 'gguf' && (
+      {/* Divider + Actions */}
+      {model.status !== 'downloading' && (
+        <>
+          <div className="h-px bg-border-subtle mt-3 mb-2" />
+          <div className="flex items-center gap-1.5">
+            <span className="text-2xs font-mono text-text-4 flex-shrink-0">
+              {model.source === 'gguf' ? 'GGUF' : 'ollama'}
+            </span>
+            <div className="flex-1" />
+
+            {model.status === 'running' && (
+              <>
+                <button
+                  onClick={() => onStop(model.name)}
+                  disabled={isUnloading}
+                  className="p-1 rounded text-text-4 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40"
+                  title="Stop"
+                >
+                  {isUnloading ? <Loader2 size={12} className="animate-spin" /> : <Square size={12} />}
+                </button>
+                <button
+                  onClick={() => onSpawn(model.name)}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono font-semibold text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+                >
+                  <Rocket size={10} /> Spawn
+                </button>
+              </>
+            )}
+            {model.status === 'ready' && (
+              <>
+                {serverRunning && (
                   <button
-                    onClick={() => { onImport(model.id); setMenuOpen(false); }}
-                    disabled={isImporting}
-                    className="w-full text-left px-3 py-1 text-xs font-mono text-text-2 hover:bg-surface-3 transition-colors cursor-pointer flex items-center gap-2 disabled:opacity-40"
+                    onClick={() => onStart(model.id)}
+                    disabled={isLoading}
+                    className="p-1 rounded text-text-4 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40"
+                    title="Run"
                   >
-                    <Rocket size={10} /> Import to Ollama
+                    {isLoading ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
                   </button>
                 )}
                 <button
-                  onClick={() => { onDelete(model); setMenuOpen(false); }}
-                  disabled={isDeleting}
-                  className="w-full text-left px-3 py-1 text-xs font-mono text-danger hover:bg-danger/5 transition-colors cursor-pointer flex items-center gap-2 disabled:opacity-40"
+                  onClick={() => onSpawn(model.id)}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono font-semibold text-accent hover:bg-accent/10 transition-colors cursor-pointer"
                 >
-                  <Trash2 size={10} /> Delete
+                  <Rocket size={10} /> Spawn
                 </button>
-              </div>
+              </>
             )}
+            {model.status === 'downloaded' && (
+              <button
+                onClick={() => onImport(model.id)}
+                disabled={isImporting}
+                className="flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono font-semibold text-text-2 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40"
+              >
+                {isImporting ? <Loader2 size={10} className="animate-spin" /> : <Rocket size={10} />}
+                {isImporting ? 'Importing' : 'Import'}
+              </button>
+            )}
+
+            {/* Overflow menu */}
+            <div ref={menuRef} className="relative">
+              <button
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="p-1 rounded text-text-4 hover:text-text-2 transition-colors cursor-pointer"
+              >
+                <MoreHorizontal size={12} />
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] bg-surface-2 border border-border rounded-md shadow-lg py-1">
+                  {model.source === 'gguf' && (
+                    <button
+                      onClick={() => { onImport(model.id); setMenuOpen(false); }}
+                      disabled={isImporting}
+                      className="w-full text-left px-3 py-1.5 text-xs font-mono text-text-2 hover:bg-surface-3 transition-colors cursor-pointer flex items-center gap-2 disabled:opacity-40"
+                    >
+                      <Rocket size={10} /> Import to Ollama
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { onDelete(model); setMenuOpen(false); }}
+                    disabled={isDeleting}
+                    className="w-full text-left px-3 py-1.5 text-xs font-mono text-danger hover:bg-danger/5 transition-colors cursor-pointer flex items-center gap-2 disabled:opacity-40"
+                  >
+                    <Trash2 size={10} /> Delete
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
@@ -685,10 +700,10 @@ export default function ModelsView() {
             <div className="text-xs font-mono text-text-3">No models match this filter</div>
           </div>
         ) : (
-          /* Model list */
-          <div>
+          /* Model grid */
+          <div className="p-4 grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
             {filteredModels.map((model) => (
-              <ModelRow
+              <ModelCard
                 key={model.id}
                 model={model}
                 serverRunning={ollamaStatus.serverRunning}

@@ -34,6 +34,7 @@ import { Scheduler } from './scheduler.js';
 import { FileWatcher } from './filewatcher.js';
 import { TimelineTracker } from './timeline.js';
 import { MemoryStore } from './memory.js';
+import { Keeper } from './keeper.js';
 import { TerminalManager } from './terminal-pty.js';
 import { GatewayManager } from './gateways/manager.js';
 import { McpManager } from './mcp-manager.js';
@@ -124,6 +125,7 @@ export class Daemon {
     this.locks = new LockManager(this.grooveDir);
     this.tokens = new TokenTracker(this.grooveDir);
     this.memory = new MemoryStore(this.grooveDir);
+    this.keeper = new Keeper(this.grooveDir);
     this.timeline = new TimelineTracker(this);
     this.processes = new ProcessManager(this);
     this.introducer = new Introducer(this);

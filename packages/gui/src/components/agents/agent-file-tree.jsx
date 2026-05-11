@@ -202,7 +202,9 @@ export function AgentFileTree({ agentId, onCollapse }) {
     async function poll() {
       try {
         const data = await api.get(`/agents/${encodeURIComponent(agentId)}/files-touched`);
-        if (!cancelled && data.files) setTouchedFiles(data.files);
+        if (!cancelled && data.files) {
+          setTouchedFiles(data.files.filter((f) => f.exists !== false && f.writes > 0));
+        }
       } catch { /* agent may not exist yet */ }
     }
     poll();

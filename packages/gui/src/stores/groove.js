@@ -115,6 +115,12 @@ export const useGrooveStore = create((set, get) => ({
   conversationReasoningEffort: loadJSON('groove:conversationReasoningEffort'),
   conversationVerbosity: loadJSON('groove:conversationVerbosity'),
 
+  // ── Keeper (tagged memory) ─────────────────────────────────
+  keeperItems: [],
+  keeperTree: [],
+  keeperEditing: null,  // { tag, content, isNew, readOnly } — drives the editor modal
+  keeperInstructOpen: false,
+
   // ── Approvals ─────────────────────────────────────────────
   pendingApprovals: [],
   resolvedApprovals: [],
@@ -1212,6 +1218,12 @@ export const useGrooveStore = create((set, get) => ({
           set((s) => ({ networkBenchmarks: [...s.networkBenchmarks, sd].slice(-100) }));
           break;
         }
+
+        case 'keeper:saved':
+        case 'keeper:updated':
+        case 'keeper:deleted':
+          get().fetchKeeperItems();
+          break;
       }
     };
 
@@ -1229,6 +1241,191 @@ export const useGrooveStore = create((set, get) => ({
   // ── Navigation ────────────────────────────────────────────
 
   setActiveView(view) { set({ activeView: view }); },
+
+  // ── Keeper (tagged memory) ────────────────────────────────
+
+  async fetchKeeperItems() {
+    try {
+      const data = await api.get('/keeper');
+      const treeData = await api.get('/keeper/tree');
+      set({ keeperItems: data.items || [], keeperTree: treeData.tree || [] });
+    } catch { /* ignore */ }
+  },
+
+  async saveKeeperItem(tag, content) {
+    try {
+      const item = await api.post('/keeper', { tag, content });
+      get().fetchKeeperItems();
+      get().addToast('success', `Saved #${item.tag}`);
+      return item;
+    } catch (err) {
+      get().addToast('error', 'Failed to save memory', err.message);
+      throw err;
+    }
+  },
+
+  async appendKeeperItem(tag, content) {
+    try {
+      const item = await api.post('/keeper/append', { tag, content });
+      get().fetchKeeperItems();
+      get().addToast('success', `Appended to #${item.tag}`);
+      return item;
+    } catch (err) {
+      get().addToast('error', 'Failed to append', err.message);
+      throw err;
+    }
+  },
+
+  async updateKeeperItem(tag, content) {
+    try {
+      const item = await api.patch(`/keeper/${tag}`, { content });
+      get().fetchKeeperItems();
+      get().addToast('success', `Updated #${item.tag}`);
+      return item;
+    } catch (err) {
+      get().addToast('error', 'Failed to update memory', err.message);
+      throw err;
+    }
+  },
+
+  async deleteKeeperItem(tag) {
+    try {
+      await api.delete(`/keeper/${tag}`);
+      get().fetchKeeperItems();
+      get().addToast('success', `Deleted #${tag}`);
+    } catch (err) {
+      get().addToast('error', 'Failed to delete memory', err.message);
+    }
+  },
+
+  async getKeeperItem(tag) {
+    try {
+      return await api.get(`/keeper/${tag}`);
+    } catch {
+      return null;
+    }
+  },
+
+  async searchKeeper(query) {
+    try {
+      const data = await api.get(`/keeper/search?q=${encodeURIComponent(query)}`);
+      return data.results || [];
+    } catch {
+      return [];
+    }
+  },
+
+  setKeeperEditing(editing) {
+    set({ keeperEditing: editing });
+  },
+
+  async _handleKeeperCommand(agentId, message, command) {
+    const rest = message.replace(/\[\w+[-\w]*\]/i, '').trim();
+    const tags = (rest.match(/#[\w/.-]+/g) || []).map(t => t.replace(/^#/, ''));
+
+    const addSystemMsg = (text) => {
+      get().addChatMessage(agentId, 'system', text);
+    };
+
+    try {
+      switch (command) {
+        case 'instruct': {
+          set({ keeperInstructOpen: true });
+          return true;
+        }
+
+        case 'save': {
+          if (tags.length === 0) { addSystemMsg('Usage: [save] #tag your message here'); return true; }
+          const content = rest.replace(/#[\w/.-]+/g, '').trim();
+          if (!content) { addSystemMsg('Usage: [save] #tag your message here'); return true; }
+          get().addChatMessage(agentId, 'user', message, false);
+          await get().saveKeeperItem(tags[0], content);
+          addSystemMsg(`Saved to #${tags[0]}`);
+          return true;
+        }
+
+        case 'append': {
+          if (tags.length === 0) { addSystemMsg('Usage: [append] #tag content to add'); return true; }
+          const content = rest.replace(/#[\w/.-]+/g, '').trim();
+          if (!content) { addSystemMsg('Usage: [append] #tag content to add'); return true; }
+          get().addChatMessage(agentId, 'user', message, false);
+          await get().appendKeeperItem(tags[0], content);
+          addSystemMsg(`Appended to #${tags[0]}`);
+          return true;
+        }
+
+        case 'update': {
+          if (tags.length === 0) { addSystemMsg('Usage: [update] #tag'); return true; }
+          get().addChatMessage(agentId, 'user', message, false);
+          const existing = await get().getKeeperItem(tags[0]);
+          set({ keeperEditing: { tag: tags[0], content: existing?.content || '', isNew: !existing } });
+          return true;
+        }
+
+        case 'delete': {
+          if (tags.length === 0) { addSystemMsg('Usage: [delete] #tag'); return true; }
+          get().addChatMessage(agentId, 'user', message, false);
+          await get().deleteKeeperItem(tags[0]);
+          addSystemMsg(`Deleted #${tags[0]}`);
+          return true;
+        }
+
+        case 'view': {
+          if (tags.length === 0) { addSystemMsg('Usage: [view] #tag'); return true; }
+          get().addChatMessage(agentId, 'user', message, false);
+          const item = await get().getKeeperItem(tags[0]);
+          if (item) {
+            set({ keeperEditing: { tag: tags[0], content: item.content, isNew: false, readOnly: true } });
+          } else {
+            addSystemMsg(`#${tags[0]} not found`);
+          }
+          return true;
+        }
+
+        case 'read': {
+          if (tags.length === 0) { addSystemMsg('Usage: [read] #tag1 #tag2 ...'); return true; }
+          get().addChatMessage(agentId, 'user', message, false);
+          const readBrief = await api.post('/keeper/pull', { tags });
+          if (readBrief?.brief) {
+            await api.post(`/agents/${encodeURIComponent(agentId)}/instruct`, {
+              message: `Here is context from my tagged memories:\n\n${readBrief.brief}`,
+            });
+            addSystemMsg(`Sent ${tags.map(t => '#' + t).join(', ')} to agent`);
+          } else {
+            addSystemMsg(`No memories found for ${tags.map(t => '#' + t).join(', ')}`);
+          }
+          return true;
+        }
+
+        case 'doc': {
+          if (tags.length === 0) { addSystemMsg('Usage: [doc] #tag'); return true; }
+          get().addChatMessage(agentId, 'user', message, false);
+          addSystemMsg(`Generating doc for #${tags[0]}...`);
+          const history = get().chatHistory[agentId] || [];
+          const result = await api.post('/keeper/doc', { tag: tags[0], chatHistory: history, agentId });
+          if (result?.content) {
+            addSystemMsg(`Doc #${tags[0]} generated (${result.size}B)`);
+            set({ keeperEditing: { tag: tags[0], content: result.content, isNew: false } });
+          }
+          return true;
+        }
+
+        case 'link': {
+          const linkMatch = rest.match(/^((?:#[\w/.-]+\s*)+)\s+(.+)$/);
+          if (!linkMatch || tags.length === 0) { addSystemMsg('Usage: [link] #tag path/to/doc'); return true; }
+          const docPath = linkMatch[2].trim();
+          get().addChatMessage(agentId, 'user', message, false);
+          await api.post('/keeper/link', { tag: tags[0], docPath });
+          addSystemMsg(`Linked #${tags[0]} → ${docPath}`);
+          return true;
+        }
+      }
+    } catch (err) {
+      addSystemMsg(`Keeper error: ${err.message}`);
+      return true;
+    }
+    return false;
+  },
 
   // ── Teams ─────────────────────────────────────────────────
 
@@ -2487,6 +2684,13 @@ export const useGrooveStore = create((set, get) => ({
   },
 
   async instructAgent(id, message) {
+    // ── Keeper command interception ─────────────────────────
+    const keeperCmd = message.match(/\[(save|append|update|delete|view|doc|link|read|instruct)\]/i);
+    if (keeperCmd) {
+      const handled = await get()._handleKeeperCommand(id, message, keeperCmd[1].toLowerCase());
+      if (handled) return { status: 'keeper_handled' };
+    }
+
     get().addChatMessage(id, 'user', message, false);
     set((s) => ({ thinkingAgents: new Set([...s.thinkingAgents, id]) }));
 

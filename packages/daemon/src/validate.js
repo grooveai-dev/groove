@@ -132,6 +132,7 @@ export function validateAgentConfig(config) {
     temperature,
     verbosity,
     labPresetId: (typeof config.labPresetId === 'string' && config.labPresetId.length <= 64) ? config.labPresetId : undefined,
+    keeperTags: Array.isArray(config.keeperTags) ? config.keeperTags.filter(t => typeof t === 'string').slice(0, 20) : undefined,
   };
 }
 

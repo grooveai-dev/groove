@@ -1,16 +1,21 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Network, Code2, ChartSpline, Puzzle, Users, Newspaper, Settings, Globe, Eye } from 'lucide-react';
+import { Network, Code2, ChartSpline, Puzzle, Gamepad2, Users, Box, FlaskConical, Newspaper, Settings, Globe, MessageCircle, Eye, BookOpen } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Tooltip } from '../ui/tooltip';
 import { useGrooveStore } from '../../stores/groove';
 import { isElectron, getPlatform } from '../../lib/electron';
 
 const BASE_NAV_ITEMS = [
-  { id: 'agents',      icon: Network,     label: 'Agents' },
-  { id: 'editor',      icon: Code2,       label: 'Editor' },
-  { id: 'dashboard',   icon: ChartSpline, label: 'Dashboard' },
-  { id: 'teams',       icon: Users,       label: 'Teams' },
-  { id: 'marketplace', icon: Puzzle,      label: 'Marketplace' },
+  { id: 'agents',      icon: Network,       label: 'Agents' },
+  { id: 'chat',        icon: MessageCircle, label: 'Chat' },
+  { id: 'editor',      icon: Code2,         label: 'Editor' },
+  { id: 'dashboard',   icon: ChartSpline,   label: 'Dashboard' },
+  { id: 'memory',      icon: BookOpen,      label: 'Memory' },
+  { id: 'teams',       icon: Users,         label: 'Teams' },
+  { id: 'marketplace', icon: Puzzle,        label: 'Marketplace' },
+  { id: 'toys',        icon: Gamepad2,      label: 'Toys' },
+  { id: 'models',      icon: Box,           label: 'Models' },
+  { id: 'model-lab',   icon: FlaskConical,  label: 'Model Lab' },
 ];
 
 const NETWORK_NAV_ITEM = { id: 'network', icon: Globe, label: 'Network' };

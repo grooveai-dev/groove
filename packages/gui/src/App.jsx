@@ -25,11 +25,13 @@ import ModelLabView from './views/model-lab';
 import NetworkView from './views/network';
 import ChatView from './views/chat';
 import PreviewView from './views/preview';
+import MemoryView from './views/memory';
 
 // Agent components
 import { AgentPanel } from './components/agents/agent-panel';
 import { SpawnWizard } from './components/agents/spawn-wizard';
 import { JournalistPanel } from './components/agents/journalist-panel';
+import { KeeperGlobalModals } from './components/keeper/global-modals';
 
 // Terminal
 import { TerminalManager } from './components/editor/terminal';
@@ -79,6 +81,7 @@ function ViewRouter() {
     case 'settings':    content = <SettingsView />;    break;
     case 'chat':        content = <ChatView />;        break;
     case 'preview':     content = <PreviewView />;     break;
+    case 'memory':      content = <MemoryView />;      break;
     case 'network':     content = networkUnlocked ? <NetworkView /> : <AgentsView />; break;
     default:            content = <AgentsView />;
   }
@@ -186,6 +189,7 @@ export default function App() {
       <ViewRouter />
       <UpgradeModal />
       <DataSharingModal />
+      <KeeperGlobalModals />
     </ErrorBoundary>
   );
 }

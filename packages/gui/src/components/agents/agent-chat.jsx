@@ -38,6 +38,19 @@ function parseSegments(text) {
   return segments;
 }
 
+function highlightKeeper(text) {
+  const parts = text.split(/(\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|#[\w/.-]+)/gi);
+  return parts.map((part, i) => {
+    if (/^\[(?:save|append|update|delete|view|doc|link|read|instruct)\]$/i.test(part)) {
+      return <span key={i} className="px-1 py-0.5 rounded bg-accent/15 text-accent font-semibold font-mono text-2xs">{part}</span>;
+    }
+    if (/^#[\w/.-]+$/.test(part)) {
+      return <span key={i} className="text-accent font-medium">{part}</span>;
+    }
+    return part;
+  });
+}
+
 function FormattedText({ text }) {
   if (!text) return null;
   const segments = parseSegments(text);
@@ -61,7 +74,7 @@ function FormattedText({ text }) {
               return <span key={i}>{part.split(/(\*\*[^*]+\*\*)/g).map((s, j) =>
                 s.startsWith('**') && s.endsWith('**')
                   ? <strong key={j} className="font-semibold text-text-0">{s.slice(2, -2)}</strong>
-                  : s
+                  : <span key={j}>{highlightKeeper(s)}</span>
               )}</span>;
             })}
           </span>
@@ -254,22 +267,33 @@ export function AgentChat({ agent }) {
           >
             <Paperclip size={14} />
           </button>
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={isAlive ? 'Instruct this agent...' : 'Continue conversation...'}
-            rows={1}
-            className={cn(
-              'flex-1 resize-none rounded-lg px-3 py-1.5 text-xs',
-              'bg-surface-0 border text-text-0 font-sans',
-              'placeholder:text-text-4',
-              'focus:outline-none focus:ring-1',
-              'min-h-[32px] max-h-[120px]',
-              'border-border focus:ring-accent/40',
-            )}
-          />
+          <div className="flex-1 relative">
+            <div
+              aria-hidden
+              className="absolute inset-0 px-3 py-1.5 text-xs font-sans pointer-events-none whitespace-pre-wrap break-words overflow-hidden min-h-[32px] max-h-[120px] leading-[1.625]"
+            >
+              {input ? highlightKeeper(input) : null}
+            </div>
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder={isAlive ? 'Instruct this agent...' : 'Continue conversation...'}
+              rows={1}
+              className={cn(
+                'w-full resize-none rounded-lg px-3 py-1.5 text-xs',
+                'bg-surface-0 border font-sans',
+                'placeholder:text-text-4',
+                'focus:outline-none focus:ring-1',
+                'min-h-[32px] max-h-[120px]',
+                'border-border focus:ring-accent/40',
+                input && /(\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|#[\w/.-]+)/i.test(input)
+                  ? 'text-transparent caret-text-0'
+                  : 'text-text-0',
+              )}
+            />
+          </div>
           {isAlive && (
             <button
               onClick={() => useGrooveStore.getState().stopAgent(agent.id)}

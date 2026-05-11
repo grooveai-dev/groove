@@ -18,6 +18,7 @@ import { supportsSignalFlag, compareSemver, parseSemver } from './providers/groo
 import { ConsentManager } from '../../../moe-training/client/index.js';
 import { validateAgentConfig, validateReasoningEffort, validateVerbosity, validateTeamMode, validateLabRuntimeConfig, validateLabInferenceParams, validateLabPresetConfig } from './validate.js';
 import { ROLE_INTEGRATIONS, wrapWithRoleReminder } from './process.js';
+import { Keeper, KEEPER_COMMANDS } from './keeper.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkgVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -485,6 +486,148 @@ export function createApi(app, daemon) {
     const spec = daemon.memory.getSpecialization(req.params.agentId);
     if (!spec) return res.status(404).json({ error: 'No specialization data for this agent' });
     res.json(spec);
+  });
+
+  // ── Keeper (tagged memory) ──────────────────────────────────
+
+  app.get('/api/keeper', (req, res) => {
+    res.json({ items: daemon.keeper.list() });
+  });
+
+  app.get('/api/keeper/tree', (req, res) => {
+    res.json({ tree: daemon.keeper.tree() });
+  });
+
+  app.get('/api/keeper/search', (req, res) => {
+    const q = req.query.q || '';
+    res.json({ results: daemon.keeper.search(q) });
+  });
+
+  app.get('/api/keeper/commands', (_req, res) => {
+    res.json({ commands: KEEPER_COMMANDS });
+  });
+
+  app.get('/api/keeper/:tag(*)', (req, res) => {
+    const item = daemon.keeper.get(req.params.tag);
+    if (!item) return res.status(404).json({ error: `Memory #${req.params.tag} not found` });
+    res.json(item);
+  });
+
+  app.post('/api/keeper', (req, res) => {
+    try {
+      const { tag, content } = req.body || {};
+      const item = daemon.keeper.save(tag, content);
+      daemon.audit.log('keeper.save', { tag: item.tag });
+      daemon.broadcast({ type: 'keeper:saved', item });
+      res.status(201).json(item);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/keeper/append', (req, res) => {
+    try {
+      const { tag, content } = req.body || {};
+      const item = daemon.keeper.append(tag, content);
+      daemon.audit.log('keeper.append', { tag: item.tag });
+      daemon.broadcast({ type: 'keeper:updated', item });
+      res.json(item);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/keeper/pull', (req, res) => {
+    try {
+      const { tags } = req.body || {};
+      if (!Array.isArray(tags) || tags.length === 0) {
+        return res.status(400).json({ error: 'Tags array is required' });
+      }
+      const brief = daemon.keeper.pull(tags);
+      if (!brief) return res.status(404).json({ error: 'No memories found for the given tags' });
+      res.json({ brief, tags });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/keeper/:tag(*)', (req, res) => {
+    try {
+      const { content } = req.body || {};
+      const item = daemon.keeper.update(req.params.tag, content);
+      daemon.audit.log('keeper.update', { tag: item.tag });
+      daemon.broadcast({ type: 'keeper:updated', item });
+      res.json(item);
+    } catch (err) {
+      res.status(err.message.includes('does not exist') ? 404 : 400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/keeper/link/:tag(*)', (req, res) => {
+    try {
+      const { docPath } = req.body || {};
+      daemon.keeper.unlink(req.params.tag, docPath);
+      daemon.audit.log('keeper.unlink', { tag: req.params.tag, docPath });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/keeper/:tag(*)', (req, res) => {
+    try {
+      const removed = daemon.keeper.delete(req.params.tag);
+      if (!removed) return res.status(404).json({ error: `Memory #${req.params.tag} not found` });
+      daemon.audit.log('keeper.delete', { tag: req.params.tag });
+      daemon.broadcast({ type: 'keeper:deleted', tag: req.params.tag });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/keeper/doc', async (req, res) => {
+    try {
+      const { tag, chatHistory, agentId } = req.body || {};
+      if (!tag) return res.status(400).json({ error: 'Tag is required' });
+      if (!chatHistory || !Array.isArray(chatHistory) || chatHistory.length === 0) {
+        return res.status(400).json({ error: 'Chat history is required' });
+      }
+      const transcript = chatHistory
+        .map(m => `**${m.from === 'user' ? 'User' : 'Agent'}:** ${m.text}`)
+        .join('\n\n');
+      const prompt = `You are a technical writer. Below is a conversation exploring an idea or feature. Write a comprehensive document that captures:\n\n1. The core idea and motivation\n2. Key decisions made during the discussion\n3. Architecture / design choices\n4. Implementation plan (if discussed)\n5. Open questions or next steps\n\nWrite in clear, structured markdown with headers. Be thorough — this document will be the reference for future work on this topic. Do not include a meta-summary about the conversation itself.\n\n---\n\nConversation:\n\n${transcript.slice(0, 40000)}`;
+      let doc;
+      if (daemon.journalist && typeof daemon.journalist.callHeadless === 'function') {
+        doc = await daemon.journalist.callHeadless(prompt, { trackAs: '__keeper_doc__' });
+      } else {
+        doc = `# ${tag}\n\n*Auto-generated document from conversation*\n\n${transcript.slice(0, 5000)}`;
+      }
+      const item = daemon.keeper.saveDoc(tag, doc);
+      daemon.audit.log('keeper.doc', { tag: item.tag, agentId });
+      daemon.broadcast({ type: 'keeper:saved', item });
+      res.status(201).json({ ...item, content: doc });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/keeper/link', (req, res) => {
+    try {
+      const { tag, docPath } = req.body || {};
+      const item = daemon.keeper.link(tag, docPath);
+      daemon.audit.log('keeper.link', { tag: item.tag, docPath });
+      daemon.broadcast({ type: 'keeper:updated', item });
+      res.json(item);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/keeper/parse', (req, res) => {
+    const { text } = req.body || {};
+    const parsed = Keeper.parseCommand(text || '');
+    res.json({ parsed });
   });
 
   // Token usage

@@ -7,13 +7,7 @@ import { CodeEditor } from '../components/editor/code-editor';
 import { MediaViewer, isMediaFile } from '../components/editor/media-viewer';
 import { EditorStatusBar } from '../components/editor/editor-status-bar';
 import { GotoLine } from '../components/editor/goto-line';
-import { EditorToolbar } from '../components/editor/editor-toolbar';
-import { AiPanel } from '../components/editor/ai-panel';
-import { QuickSearch } from '../components/editor/quick-search';
-import { SelectionMenu } from '../components/editor/selection-menu';
-import { InlinePrompt } from '../components/editor/inline-prompt';
-import { DiffViewer } from '../components/agents/diff-viewer';
-import { CodeReview } from '../components/agents/code-review';
+import { Breadcrumbs } from '../components/editor/breadcrumbs';
 import { Code2, Eye, FileCode, PanelLeftOpen } from 'lucide-react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
@@ -34,11 +28,6 @@ export default function EditorView() {
   const saveFile = useGrooveStore((s) => s.saveFile);
   const sidebarWidth = useGrooveStore((s) => s.editorSidebarWidth);
   const setSidebarWidth = useGrooveStore((s) => s.setEditorSidebarWidth);
-  const viewMode = useGrooveStore((s) => s.editorViewMode);
-  const aiPanelOpen = useGrooveStore((s) => s.editorAiPanelOpen);
-  const aiPanelWidth = useGrooveStore((s) => s.editorAiPanelWidth);
-  const setAiPanelWidth = useGrooveStore((s) => s.setEditorAiPanelWidth);
-  const setQuickSearchOpen = useGrooveStore((s) => s.setEditorQuickSearchOpen);
 
   const projectDir = useGrooveStore((s) => s.projectDir);
   const [rootDir, setRootDir] = useState('');
@@ -47,17 +36,11 @@ export default function EditorView() {
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
   const [showGotoLine, setShowGotoLine] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [selection, setSelection] = useState(null);
-  const [inlinePrompt, setInlinePrompt] = useState(null);
 
   const editorViewRef = useRef(null);
-  const editorContainerRef = useRef(null);
   const dragging = useRef(false);
   const startX = useRef(0);
   const startW = useRef(0);
-  const aiDragging = useRef(false);
-  const aiStartX = useRef(0);
-  const aiStartW = useRef(0);
 
   // Fetch root dir on mount and when project directory changes
   useEffect(() => {
@@ -77,72 +60,6 @@ export default function EditorView() {
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  // AI panel resize handler
-  const onAiPanelMouseDown = useCallback((e) => {
-    e.preventDefault();
-    aiDragging.current = true;
-    aiStartX.current = e.clientX;
-    aiStartW.current = aiPanelWidth;
-
-    function onMouseMove(e) {
-      if (!aiDragging.current) return;
-      const delta = aiStartX.current - e.clientX;
-      const newW = Math.min(Math.max(aiStartW.current + delta, 280), 600);
-      setAiPanelWidth(newW);
-    }
-
-    function onMouseUp() {
-      aiDragging.current = false;
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-    }
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  }, [aiPanelWidth, setAiPanelWidth]);
-
-  // Track text selection in the code editor
-  const handleEditorMouseUp = useCallback(() => {
-    const view = editorViewRef.current;
-    if (!view) return;
-    const sel = view.state.selection.main;
-    if (sel.empty) { setSelection(null); return; }
-    const text = view.state.sliceDoc(sel.from, sel.to);
-    if (!text.trim()) { setSelection(null); return; }
-    const fromLine = view.state.doc.lineAt(sel.from);
-    const toLine = view.state.doc.lineAt(sel.to);
-    const coords = view.coordsAtPos(sel.to);
-    if (coords) {
-      setSelection({
-        x: Math.min(coords.left + 10, window.innerWidth - 220),
-        y: coords.bottom + 4,
-        lineStart: fromLine.number,
-        lineEnd: toLine.number,
-        selectedCode: text,
-      });
-    }
-  }, []);
-
-  // Right-click on a selection opens the AI selection menu
-  const handleEditorContextMenu = useCallback((e) => {
-    const view = editorViewRef.current;
-    if (!view) return;
-    const sel = view.state.selection.main;
-    if (sel.empty) return;
-    const text = view.state.sliceDoc(sel.from, sel.to);
-    if (!text.trim()) return;
-    e.preventDefault();
-    const fromLine = view.state.doc.lineAt(sel.from);
-    const toLine = view.state.doc.lineAt(sel.to);
-    setSelection({
-      x: Math.min(e.clientX, window.innerWidth - 220),
-      y: e.clientY + 4,
-      lineStart: fromLine.number,
-      lineEnd: toLine.number,
-      selectedCode: text,
-    });
   }, []);
 
   // Sidebar resize handlers
@@ -184,92 +101,6 @@ export default function EditorView() {
   const isMedia = activeFile && isMediaFile(activeFile);
   const isHtml = activeFile && isHtmlFile(activeFile);
 
-  const renderCodeContent = () => {
-    if (!activeFile) {
-      return (
-        <div className="w-full h-full flex items-center justify-center text-text-4 font-sans">
-          <div className="text-center space-y-2">
-            <Code2 size={32} className="mx-auto" />
-            <p className="text-sm">Open a file from the tree</p>
-          </div>
-        </div>
-      );
-    }
-
-    if (isMedia) return <MediaViewer path={activeFile} />;
-
-    if (isHtml) {
-      return (
-        <>
-          <div className="absolute top-0 right-4 z-10 flex items-center gap-0.5 mt-2 bg-surface-2 border border-border-subtle rounded-md p-0.5">
-            <button
-              onClick={() => setPreviewMode(false)}
-              className={cn(
-                'flex items-center gap-1.5 px-2.5 py-1 text-xs font-sans rounded cursor-pointer transition-colors',
-                !previewMode ? 'bg-surface-4 text-text-0 font-medium' : 'text-text-3 hover:text-text-1',
-              )}
-            >
-              <FileCode size={12} /> Code
-            </button>
-            <button
-              onClick={() => { setPreviewMode(true); setPreviewKey((k) => k + 1); }}
-              className={cn(
-                'flex items-center gap-1.5 px-2.5 py-1 text-xs font-sans rounded cursor-pointer transition-colors',
-                previewMode ? 'bg-surface-4 text-text-0 font-medium' : 'text-text-3 hover:text-text-1',
-              )}
-            >
-              <Eye size={12} /> Preview
-            </button>
-          </div>
-
-          {previewMode ? (
-            <iframe
-              key={previewKey}
-              src={`/api/files/raw?path=${encodeURIComponent(activeFile)}`}
-              className="w-full h-full border-0"
-              sandbox="allow-scripts allow-same-origin"
-              title="HTML Preview"
-            />
-          ) : (
-            file && (
-              <div className="w-full h-full" onMouseUp={handleEditorMouseUp} onContextMenu={handleEditorContextMenu}>
-                <CodeEditor
-                  content={file.content}
-                  language={file.language}
-                  filePath={activeFile}
-                  onChange={(content) => updateFileContent(activeFile, content)}
-                  onSave={() => saveFile(activeFile)}
-                  onCursorChange={setCursorPos}
-                  onCmdK={({ line, coords }) => setInlinePrompt({ line, coords })}
-                  viewRef={editorViewRef}
-                />
-              </div>
-            )
-          )}
-        </>
-      );
-    }
-
-    if (file) {
-      return (
-        <div className="w-full h-full" onMouseUp={handleEditorMouseUp} onContextMenu={handleEditorContextMenu}>
-          <CodeEditor
-            content={file.content}
-            language={file.language}
-            filePath={activeFile}
-            onChange={(content) => updateFileContent(activeFile, content)}
-            onSave={() => saveFile(activeFile)}
-            onCursorChange={setCursorPos}
-            onCmdK={({ line, coords }) => setInlinePrompt({ line, coords })}
-            viewRef={editorViewRef}
-          />
-        </div>
-      );
-    }
-
-    return null;
-  };
-
   return (
     <div className="flex h-full">
       {/* File tree sidebar */}
@@ -303,14 +134,11 @@ export default function EditorView() {
         {/* Tab bar */}
         <EditorTabs />
 
-        {/* Toolbar (replaces breadcrumbs) */}
-        <EditorToolbar
-          onCmdP={() => setQuickSearchOpen(true)}
-          onCmdK={() => setInlinePrompt({ line: cursorPos.line, coords: null })}
-        />
+        {/* Breadcrumbs */}
+        {activeFile && !isMedia && <Breadcrumbs path={activeFile} />}
 
         {/* Content */}
-        <div className="flex-1 relative min-h-0" ref={editorContainerRef}>
+        <div className="flex-1 relative min-h-0">
           {/* Go to line dialog */}
           {showGotoLine && (
             <GotoLine
@@ -320,62 +148,82 @@ export default function EditorView() {
             />
           )}
 
-          {/* View mode content */}
-          {viewMode === 'code' && renderCodeContent()}
-          {viewMode === 'diff' && activeFile && (
-            <DiffViewer filePath={activeFile} />
-          )}
-          {viewMode === 'diff' && !activeFile && (
-            <div className="w-full h-full flex items-center justify-center text-text-4 font-sans text-sm">
-              Open a file to see diff
+          {/* Editor / Media / Empty */}
+          {!activeFile && (
+            <div className="w-full h-full flex items-center justify-center text-text-4 font-sans">
+              <div className="text-center space-y-2">
+                <Code2 size={32} className="mx-auto" />
+                <p className="text-sm">Open a file from the tree</p>
+              </div>
             </div>
           )}
-          {viewMode === 'review' && <CodeReview />}
 
-          {/* Selection menu */}
-          {selection && viewMode === 'code' && (
-            <SelectionMenu
-              x={selection.x}
-              y={selection.y}
-              filePath={activeFile}
-              lineStart={selection.lineStart}
-              lineEnd={selection.lineEnd}
-              selectedCode={selection.selectedCode}
-              onClose={() => setSelection(null)}
-            />
+          {activeFile && isMedia && <MediaViewer path={activeFile} />}
+
+          {activeFile && !isMedia && isHtml && (
+            <>
+              {/* Code / Preview toggle for HTML files */}
+              <div className="absolute top-0 right-4 z-10 flex items-center gap-0.5 mt-2 bg-surface-2 border border-border-subtle rounded-md p-0.5">
+                <button
+                  onClick={() => setPreviewMode(false)}
+                  className={cn(
+                    'flex items-center gap-1.5 px-2.5 py-1 text-xs font-sans rounded cursor-pointer transition-colors',
+                    !previewMode ? 'bg-surface-4 text-text-0 font-medium' : 'text-text-3 hover:text-text-1',
+                  )}
+                >
+                  <FileCode size={12} /> Code
+                </button>
+                <button
+                  onClick={() => { setPreviewMode(true); setPreviewKey((k) => k + 1); }}
+                  className={cn(
+                    'flex items-center gap-1.5 px-2.5 py-1 text-xs font-sans rounded cursor-pointer transition-colors',
+                    previewMode ? 'bg-surface-4 text-text-0 font-medium' : 'text-text-3 hover:text-text-1',
+                  )}
+                >
+                  <Eye size={12} /> Preview
+                </button>
+              </div>
+
+              {previewMode ? (
+                <iframe
+                  key={previewKey}
+                  src={`/api/files/raw?path=${encodeURIComponent(activeFile)}`}
+                  className="w-full h-full border-0"
+                  sandbox="allow-scripts allow-same-origin"
+                  title="HTML Preview"
+                />
+              ) : (
+                file && (
+                  <CodeEditor
+                    content={file.content}
+                    language={file.language}
+                    onChange={(content) => updateFileContent(activeFile, content)}
+                    onSave={() => saveFile(activeFile)}
+                    onCursorChange={setCursorPos}
+                    viewRef={editorViewRef}
+                  />
+                )
+              )}
+            </>
           )}
 
-          {/* Inline prompt (Cmd+K) */}
-          {inlinePrompt && viewMode === 'code' && (
-            <InlinePrompt
-              line={inlinePrompt.line}
-              coords={inlinePrompt.coords}
-              filePath={activeFile}
-              onClose={() => setInlinePrompt(null)}
+          {activeFile && !isMedia && !isHtml && file && (
+            <CodeEditor
+              content={file.content}
+              language={file.language}
+              onChange={(content) => updateFileContent(activeFile, content)}
+              onSave={() => saveFile(activeFile)}
+              onCursorChange={setCursorPos}
+              viewRef={editorViewRef}
             />
           )}
         </div>
 
         {/* Status bar */}
-        {activeFile && !isMedia && viewMode === 'code' && (
+        {activeFile && !isMedia && (
           <EditorStatusBar cursorPos={cursorPos} language={file?.language} />
         )}
       </div>
-
-      {/* AI Panel */}
-      {aiPanelOpen && (
-        <div className="relative flex-shrink-0" style={{ width: aiPanelWidth }}>
-          {/* Resize handle */}
-          <div
-            className="absolute top-0 left-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/30 transition-colors z-10"
-            onMouseDown={onAiPanelMouseDown}
-          />
-          <AiPanel />
-        </div>
-      )}
-
-      {/* Quick Search modal */}
-      <QuickSearch />
     </div>
   );
 }

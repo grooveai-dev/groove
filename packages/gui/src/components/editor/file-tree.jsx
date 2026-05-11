@@ -6,7 +6,7 @@ import { api } from '../../lib/api';
 import {
   ChevronRight, ChevronDown, File, Folder, FolderOpen,
   Plus, FolderPlus, Search, RefreshCw, Trash2, Pencil, FilePlus,
-  ChevronsDownUp, PanelLeftClose, GitBranch, Activity,
+  ChevronsDownUp, PanelLeftClose, GitBranch,
 } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
 
@@ -265,16 +265,12 @@ export function FileTree({ rootDir, onCollapse }) {
   const openFile = useGrooveStore((s) => s.openFile);
   const fetchTreeDir = useGrooveStore((s) => s.fetchTreeDir);
   const addToast = useGrooveStore((s) => s.addToast);
-  const agents = useGrooveStore((s) => s.agents);
-  const editorSelectedAgent = useGrooveStore((s) => s.editorSelectedAgent);
-
   const [expanded, setExpanded] = useState(new Set(['']));
   const [filter, setFilter] = useState('');
   const [contextMenu, setContextMenu] = useState(null);
   const [inlineInput, setInlineInput] = useState(null);
   const [dragState, setDragState] = useState({ draggingPath: null, dragOverPath: null });
   const [gitChanges, setGitChanges] = useState([]);
-  const [agentFiles, setAgentFiles] = useState([]);
 
   useEffect(() => {
     fetchTreeDir('');
@@ -285,13 +281,6 @@ export function FileTree({ rootDir, onCollapse }) {
       setGitChanges(data.entries || []);
     }).catch(() => setGitChanges([]));
   }, [rootDir]);
-
-  useEffect(() => {
-    if (!editorSelectedAgent) { setAgentFiles([]); return; }
-    api.get(`/agents/${editorSelectedAgent}/files-touched`).then((data) => {
-      setAgentFiles((data.files || []).filter((f) => f.exists !== false));
-    }).catch(() => setAgentFiles([]));
-  }, [editorSelectedAgent]);
 
   const gitStatusMap = {};
   for (const entry of gitChanges) {
@@ -539,32 +528,6 @@ export function FileTree({ rootDir, onCollapse }) {
                     <File size={12} className={cn('flex-shrink-0', getFileColor(name))} />
                     <span className="truncate flex-1">{name}</span>
                     <span className={cn('text-2xs font-mono flex-shrink-0', statusColor)}>{entry.status}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </CollapsibleSection>
-        )}
-
-        {/* Agent Activity section */}
-        {agentFiles.length > 0 && (
-          <CollapsibleSection title="Agent Activity" icon={Activity} count={agentFiles.length} defaultOpen={true}>
-            <div className="py-0.5">
-              {agentFiles.slice(0, 20).map((f) => {
-                const name = f.path.split('/').pop();
-                return (
-                  <button
-                    key={f.path}
-                    onClick={() => openFile(f.path)}
-                    className={cn(
-                      'w-full flex items-center gap-1.5 px-3 py-[3px] text-xs font-sans cursor-pointer',
-                      'hover:bg-surface-5 transition-colors text-left',
-                      activeFile === f.path ? 'bg-accent/10 text-text-0' : 'text-text-1',
-                    )}
-                  >
-                    <File size={12} className={cn('flex-shrink-0', getFileColor(name))} />
-                    <span className="truncate flex-1">{name}</span>
-                    <span className="text-2xs text-text-4">{f.writes || 0}w</span>
                   </button>
                 );
               })}

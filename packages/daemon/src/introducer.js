@@ -462,7 +462,23 @@ export class Introducer {
       memorySection = '';
     }
 
-    return lines.join('\n') + memorySection;
+    // --- Keeper: tagged memory injection via [pull] ---
+    let keeperSection = '';
+    try {
+      if (this.daemon.keeper && newAgent.keeperTags && Array.isArray(newAgent.keeperTags) && newAgent.keeperTags.length > 0) {
+        const brief = this.daemon.keeper.pull(newAgent.keeperTags);
+        if (brief) {
+          keeperSection = `\n## Keeper Context (user-tagged memories)\n\n${brief}\n`;
+          if (keeperSection.length > 5000) {
+            keeperSection = keeperSection.slice(0, 4997) + '...';
+          }
+        }
+      }
+    } catch {
+      keeperSection = '';
+    }
+
+    return lines.join('\n') + memorySection + keeperSection;
   }
 
   _loadClaudeMd(workingDir) {

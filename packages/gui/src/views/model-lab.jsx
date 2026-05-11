@@ -171,17 +171,12 @@ export default function ModelLabView() {
               <PanelToggle collapsed={false} onClick={() => setLeftCollapsed(true)} side="left" />
             </div>
             <ScrollArea className="flex-1 min-h-0">
-              <div className="px-4 pb-4 space-y-5">
+              <div className="px-4 pb-4 space-y-5 divide-y divide-border-subtle [&>*]:pt-5 [&>*:first-child]:pt-0">
                 <LaunchModel />
-                <div className="h-px bg-border-subtle" />
                 <RuntimeConfig />
-                <div className="h-px bg-border-subtle" />
                 <ModelSelector />
-                <div className="h-px bg-border-subtle" />
                 <ParameterPanel />
-                <div className="h-px bg-border-subtle" />
                 <PresetManager />
-                <div className="h-px bg-border-subtle" />
                 <SystemPromptEditor />
               </div>
             </ScrollArea>

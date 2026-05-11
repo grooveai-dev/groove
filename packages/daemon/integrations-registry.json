@@ -432,10 +432,10 @@
     "icon": "elevenlabs",
     "tags": ["voice", "tts", "audio", "speech"],
     "roles": ["creative", "cmo", "support"],
-    "npmPackage": "elevenlabs-mcp",
+    "npmPackage": "@angelogiacco/elevenlabs-mcp-server",
     "transport": "stdio",
     "command": "npx",
-    "args": ["-y", "elevenlabs-mcp"],
+    "args": ["-y", "@angelogiacco/elevenlabs-mcp-server"],
     "authType": "api-key",
     "envKeys": [
       { "key": "ELEVENLABS_API_KEY", "label": "API Key", "required": true }
@@ -701,10 +701,10 @@
     "icon": "mixpanel",
     "tags": ["analytics", "events", "funnels", "users"],
     "roles": ["analyst", "cmo", "cfo"],
-    "npmPackage": "mixpanel-mcp",
+    "npmPackage": "@mercuryml/mcp-mixpanel",
     "transport": "stdio",
     "command": "npx",
-    "args": ["-y", "mixpanel-mcp"],
+    "args": ["-y", "@mercuryml/mcp-mixpanel"],
     "authType": "api-key",
     "envKeys": [
       { "key": "MIXPANEL_API_SECRET", "label": "API Secret", "required": true }
@@ -761,10 +761,10 @@
     "icon": "airtable",
     "tags": ["database", "spreadsheet", "content", "crm"],
     "roles": ["ea", "cmo", "analyst"],
-    "npmPackage": "airtable-mcp",
+    "npmPackage": "airtable-mcp-server",
     "transport": "stdio",
     "command": "npx",
-    "args": ["-y", "airtable-mcp"],
+    "args": ["-y", "airtable-mcp-server"],
     "authType": "api-key",
     "envKeys": [
       { "key": "AIRTABLE_API_KEY", "label": "Personal Access Token", "required": true }
@@ -823,10 +823,10 @@
     "icon": "intercom",
     "tags": ["chat", "support", "messaging", "customers"],
     "roles": ["support", "cmo"],
-    "npmPackage": "intercom-mcp",
+    "npmPackage": "@pipeworx/mcp-intercom",
     "transport": "stdio",
     "command": "npx",
-    "args": ["-y", "intercom-mcp"],
+    "args": ["-y", "@pipeworx/mcp-intercom"],
     "authType": "api-key",
     "envKeys": [
       { "key": "INTERCOM_ACCESS_TOKEN", "label": "Access Token", "required": true }
@@ -934,38 +934,6 @@
     ],
     "requiresApproval": ["delete_object", "terminate_instance", "delete_function"],
     "agentInstructions": "## AWS Integration\n\nYou have AWS connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/aws/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `s3_list_buckets` — params: {}\n- `s3_list_objects` — params: {bucket, prefix}\n- `lambda_list_functions` — params: {}\n- `lambda_invoke` — params: {functionName, payload}\n\n### Rules\n- Never delete resources without explicit confirmation\n- Use least-privilege access keys",
-    "featured": false,
-    "downloads": 0,
-    "rating": 0,
-    "ratingCount": 0,
-    "verified": "community"
-  },
-  {
-    "id": "plaid",
-    "name": "Plaid",
-    "description": "Bank connections and financial data",
-    "category": "finance",
-    "icon": "plaid",
-    "tags": ["banking", "transactions", "finance", "accounts"],
-    "roles": ["cfo", "analyst"],
-    "npmPackage": "plaid-mcp",
-    "transport": "stdio",
-    "command": "npx",
-    "args": ["-y", "plaid-mcp"],
-    "authType": "api-key",
-    "envKeys": [
-      { "key": "PLAID_CLIENT_ID", "label": "Client ID", "required": true },
-      { "key": "PLAID_SECRET", "label": "Secret", "required": true },
-      { "key": "PLAID_ENV", "label": "Environment", "placeholder": "sandbox", "required": false }
-    ],
-    "setupUrl": "https://dashboard.plaid.com/team/keys",
-    "setupSteps": [
-      "Click the link below to open Plaid team keys",
-      "Copy your Client ID and Secret",
-      "Use 'sandbox' environment for testing"
-    ],
-    "requiresApproval": [],
-    "agentInstructions": "## Plaid Integration\n\nYou have Plaid connected via GROOVE.\n\n### API\n`POST http://localhost:31415/api/integrations/plaid/exec`\nBody: `{\"tool\": \"<tool>\", \"params\": {...}}`\n\n### Common Tools\n- `get_accounts` — params: {access_token}\n- `get_transactions` — params: {access_token, start_date, end_date}\n- `get_balance` — params: {access_token}\n\n### Rules\n- Use sandbox environment for testing\n- Never expose access_tokens in output",
     "featured": false,
     "downloads": 0,
     "rating": 0,

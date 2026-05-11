@@ -6,12 +6,16 @@ import { AgentFileTree } from './agent-file-tree';
 import { DiffViewer } from './diff-viewer';
 import { CodeReview } from './code-review';
 import { CodeEditor } from '../editor/code-editor';
+import { AiPanel } from '../editor/ai-panel';
+import { SelectionMenu } from '../editor/selection-menu';
+import { InlinePrompt } from '../editor/inline-prompt';
+import { QuickSearch } from '../editor/quick-search';
 import { Tooltip } from '../ui/tooltip';
 import { roleColor } from '../../lib/status';
 import { MediaViewer, isMediaFile } from '../editor/media-viewer';
 import {
   X, Code2, FileCode, GitCompareArrows,
-  ClipboardCheck, Users, PanelLeftOpen,
+  ClipboardCheck, Users, PanelLeftOpen, Sparkles, Search,
 } from 'lucide-react';
 
 const TREE_DEFAULT = 220;
@@ -57,11 +61,11 @@ function AgentRail({ agents, activeId, onSelect }) {
   );
 }
 
-function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggleDiff, workspaceSnapshots, onBackToTeam, onToggleReview, reviewMode }) {
+function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggleDiff, workspaceSnapshots, onBackToTeam, onToggleReview, reviewMode, onToggleAi, aiOpen, onCmdP }) {
   const hasSnapshot = activeFile && workspaceSnapshots[activeFile];
 
   return (
-    <div className="flex items-stretch h-8 bg-[#1a1e25] border-b border-[#1e2229] flex-shrink-0">
+    <div className="flex items-stretch h-8 bg-surface-2 border-b border-border flex-shrink-0">
       <div className="flex items-stretch flex-1 min-w-0 overflow-x-auto scrollbar-none">
         {tabs.map((path) => {
           const isActive = path === activeFile;
@@ -74,9 +78,9 @@ function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggle
               key={path}
               className={cn(
                 'flex items-center gap-1.5 px-3 text-2xs font-sans cursor-pointer select-none',
-                'border-r border-white/5 transition-colors duration-75 flex-shrink-0',
+                'border-r border-border-subtle transition-colors duration-75 flex-shrink-0',
                 isActive
-                  ? 'bg-surface-0 text-text-1 border-b border-b-accent'
+                  ? 'bg-surface-1 text-text-1 border-b border-b-accent'
                   : 'text-text-4 hover:text-text-2 hover:bg-surface-3 border-b border-b-transparent',
               )}
               onClick={() => onSelect(path)}
@@ -94,6 +98,14 @@ function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggle
         })}
       </div>
       <div className="flex items-center gap-0.5 px-2 border-l border-border-subtle flex-shrink-0">
+        <Tooltip content="Quick Search (Cmd+P)" side="bottom">
+          <button
+            onClick={onCmdP}
+            className="p-1.5 text-text-3 hover:text-text-1 hover:bg-surface-3 rounded cursor-pointer transition-colors"
+          >
+            <Search size={12} />
+          </button>
+        </Tooltip>
         {hasSnapshot && (
           <>
             <button
@@ -130,13 +142,25 @@ function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggle
             <ClipboardCheck size={12} />
           </button>
         </Tooltip>
+        <Tooltip content="AI Panel" side="bottom">
+          <button
+            onClick={onToggleAi}
+            className={cn(
+              'flex items-center gap-1 px-2 py-1 text-xs font-sans rounded cursor-pointer transition-colors',
+              aiOpen
+                ? 'bg-accent/15 text-accent'
+                : 'text-text-3 hover:text-text-1 hover:bg-surface-3',
+            )}
+          >
+            <Sparkles size={12} />
+          </button>
+        </Tooltip>
         <Tooltip content="Back to Team View" side="bottom">
           <button
             onClick={onBackToTeam}
             className="flex items-center gap-1 px-2 py-1 text-xs font-sans rounded cursor-pointer transition-colors text-text-3 hover:text-text-1 hover:bg-surface-3"
           >
             <Users size={12} />
-            <span className="text-2xs">Team</span>
           </button>
         </Tooltip>
       </div>
@@ -153,6 +177,11 @@ export function WorkspaceMode() {
   const toggleReviewMode = useGrooveStore((s) => s.toggleReviewMode);
   const workspaceSnapshots = useGrooveStore((s) => s.workspaceSnapshots);
   const setWorkspaceMode = useGrooveStore((s) => s.setWorkspaceMode);
+  const aiPanelOpen = useGrooveStore((s) => s.editorAiPanelOpen);
+  const toggleAiPanel = useGrooveStore((s) => s.toggleAiPanel);
+  const aiPanelWidth = useGrooveStore((s) => s.editorAiPanelWidth);
+  const setAiPanelWidth = useGrooveStore((s) => s.setEditorAiPanelWidth);
+  const setQuickSearchOpen = useGrooveStore((s) => s.setEditorQuickSearchOpen);
 
   const editorFiles = useGrooveStore((s) => s.editorFiles);
   const editorActiveFile = useGrooveStore((s) => s.editorActiveFile);
@@ -168,14 +197,28 @@ export function WorkspaceMode() {
   const [treeWidth, setTreeWidth] = useState(TREE_DEFAULT);
   const [diffMode, setDiffMode] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [selection, setSelection] = useState(null);
+  const [inlinePrompt, setInlinePrompt] = useState(null);
+  const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
 
+  const editorViewRef = useRef(null);
   const treeDragging = useRef(false);
   const startX = useRef(0);
   const startW = useRef(0);
+  const aiDragging = useRef(false);
+  const aiStartX = useRef(0);
+  const aiStartW = useRef(0);
 
   useEffect(() => {
     setDiffMode(false);
   }, [editorActiveFile]);
+
+  // Set the selected agent in the store so AI features use it
+  useEffect(() => {
+    if (agent?.id) {
+      useGrooveStore.setState({ editorSelectedAgent: agent.id });
+    }
+  }, [agent?.id]);
 
   const onTreeMouseDown = useCallback((e) => {
     e.preventDefault();
@@ -194,6 +237,65 @@ export function WorkspaceMode() {
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   }, [treeWidth]);
+
+  const onAiPanelMouseDown = useCallback((e) => {
+    e.preventDefault();
+    aiDragging.current = true;
+    aiStartX.current = e.clientX;
+    aiStartW.current = aiPanelWidth;
+    function onMove(e) {
+      if (!aiDragging.current) return;
+      const delta = aiStartX.current - e.clientX;
+      setAiPanelWidth(Math.min(Math.max(aiStartW.current + delta, 280), 600));
+    }
+    function onUp() {
+      aiDragging.current = false;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [aiPanelWidth, setAiPanelWidth]);
+
+  const handleEditorMouseUp = useCallback(() => {
+    const view = editorViewRef.current;
+    if (!view) return;
+    const sel = view.state.selection.main;
+    if (sel.empty) { setSelection(null); return; }
+    const text = view.state.sliceDoc(sel.from, sel.to);
+    if (!text.trim()) { setSelection(null); return; }
+    const fromLine = view.state.doc.lineAt(sel.from);
+    const toLine = view.state.doc.lineAt(sel.to);
+    const coords = view.coordsAtPos(sel.to);
+    if (coords) {
+      setSelection({
+        x: Math.min(coords.left + 10, window.innerWidth - 220),
+        y: coords.bottom + 4,
+        lineStart: fromLine.number,
+        lineEnd: toLine.number,
+        selectedCode: text,
+      });
+    }
+  }, []);
+
+  const handleEditorContextMenu = useCallback((e) => {
+    const view = editorViewRef.current;
+    if (!view) return;
+    const sel = view.state.selection.main;
+    if (sel.empty) return;
+    const text = view.state.sliceDoc(sel.from, sel.to);
+    if (!text.trim()) return;
+    e.preventDefault();
+    const fromLine = view.state.doc.lineAt(sel.from);
+    const toLine = view.state.doc.lineAt(sel.to);
+    setSelection({
+      x: Math.min(e.clientX, window.innerWidth - 220),
+      y: e.clientY + 4,
+      lineStart: fromLine.number,
+      lineEnd: toLine.number,
+      selectedCode: text,
+    });
+  }, []);
 
   if (!agent) {
     return (
@@ -240,7 +342,7 @@ export function WorkspaceMode() {
         {/* Editor Area */}
         <div className="flex-1 flex flex-col min-w-0 bg-surface-1">
           {workspaceReviewMode ? (
-            <CodeReview agentId={agent.id} />
+            <CodeReview agentId={agent.id} onBack={toggleReviewMode} />
           ) : (
             <>
               <TabBar
@@ -255,6 +357,9 @@ export function WorkspaceMode() {
                 onBackToTeam={() => setWorkspaceMode(false)}
                 onToggleReview={toggleReviewMode}
                 reviewMode={workspaceReviewMode}
+                onToggleAi={toggleAiPanel}
+                aiOpen={aiPanelOpen}
+                onCmdP={() => setQuickSearchOpen(true)}
               />
 
               <div className="flex-1 relative min-h-0">
@@ -277,18 +382,61 @@ export function WorkspaceMode() {
                 )}
 
                 {editorActiveFile && !diffMode && !isMedia && file && (
-                  <CodeEditor
-                    content={file.content}
-                    language={file.language}
-                    onChange={(content) => updateFileContent(editorActiveFile, content)}
-                    onSave={() => saveFile(editorActiveFile)}
+                  <div className="w-full h-full" onMouseUp={handleEditorMouseUp} onContextMenu={handleEditorContextMenu}>
+                    <CodeEditor
+                      content={file.content}
+                      language={file.language}
+                      filePath={editorActiveFile}
+                      onChange={(content) => updateFileContent(editorActiveFile, content)}
+                      onSave={() => saveFile(editorActiveFile)}
+                      onCursorChange={setCursorPos}
+                      onCmdK={({ line, coords }) => setInlinePrompt({ line, coords })}
+                      viewRef={editorViewRef}
+                    />
+                  </div>
+                )}
+
+                {/* Selection menu */}
+                {selection && !diffMode && (
+                  <SelectionMenu
+                    x={selection.x}
+                    y={selection.y}
+                    filePath={editorActiveFile}
+                    lineStart={selection.lineStart}
+                    lineEnd={selection.lineEnd}
+                    selectedCode={selection.selectedCode}
+                    onClose={() => setSelection(null)}
+                  />
+                )}
+
+                {/* Inline prompt (Cmd+K) */}
+                {inlinePrompt && !diffMode && (
+                  <InlinePrompt
+                    line={inlinePrompt.line}
+                    coords={inlinePrompt.coords}
+                    filePath={editorActiveFile}
+                    onClose={() => setInlinePrompt(null)}
                   />
                 )}
               </div>
             </>
           )}
         </div>
+
+        {/* AI Panel */}
+        {aiPanelOpen && !workspaceReviewMode && (
+          <div className="relative flex-shrink-0" style={{ width: aiPanelWidth }}>
+            <div
+              className="absolute top-0 left-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/30 transition-colors z-10"
+              onMouseDown={onAiPanelMouseDown}
+            />
+            <AiPanel />
+          </div>
+        )}
       </div>
+
+      {/* Quick Search modal */}
+      <QuickSearch />
     </div>
   );
 }

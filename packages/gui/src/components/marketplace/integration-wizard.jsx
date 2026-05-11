@@ -4,12 +4,15 @@ import { Dialog, DialogContent } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
+import { ScrollArea } from '../ui/scroll-area';
 import { api } from '../../lib/api';
 import { useToast } from '../../lib/hooks/use-toast';
+import { useGrooveStore } from '../../stores/groove';
 import { integrationOAuth } from '../../lib/electron';
 import {
   Check, CheckCircle, ExternalLink, Loader2, Eye, EyeOff,
-  Key, Shield, Trash2, ChevronRight, X, Copy, RefreshCw,
+  Key, Shield, Trash2, ChevronRight, Copy, RefreshCw,
+  Users, Rocket, Bot,
 } from 'lucide-react';
 
 import { INTEGRATION_LOGOS } from '../../lib/integration-logos';
@@ -215,6 +218,199 @@ function OverviewStep({ item, status, installing, onInstall, onUninstall, onNext
       {installing && (
         <p className="text-2xs text-text-4 font-sans text-center">This may take up to 30 seconds...</p>
       )}
+    </div>
+  );
+}
+
+// ── Step: Agent Setup ──────────────────────────────────
+function AgentSetupStep({ item, onClose }) {
+  const agents = useGrooveStore((s) => s.agents);
+  const teams = useGrooveStore((s) => s.teams);
+  const installViaExistingAgent = useGrooveStore((s) => s.installViaExistingAgent);
+  const spawnIntegrationTeam = useGrooveStore((s) => s.spawnIntegrationTeam);
+  const [mode, setMode] = useState(null); // null | 'existing' | 'spawn'
+  const [spawning, setSpawning] = useState(false);
+  const [selectedAgentId, setSelectedAgentId] = useState(null);
+
+  const runningAgents = agents.filter((a) => a.status === 'running' || a.status === 'idle');
+
+  const agentsByTeam = {};
+  for (const agent of runningAgents) {
+    const teamId = agent.teamId || '_none';
+    if (!agentsByTeam[teamId]) agentsByTeam[teamId] = [];
+    agentsByTeam[teamId].push(agent);
+  }
+
+  const teamMap = {};
+  for (const t of teams) teamMap[t.id] = t.name;
+
+  async function handleExistingAgent() {
+    if (!selectedAgentId) return;
+    await installViaExistingAgent(item, selectedAgentId);
+    onClose();
+  }
+
+  async function handleSpawnNew() {
+    setSpawning(true);
+    try {
+      await spawnIntegrationTeam(item);
+      onClose();
+    } catch {
+      setSpawning(false);
+    }
+  }
+
+  // Option picker when no mode selected
+  if (!mode) {
+    return (
+      <div className="px-5 py-5 space-y-5">
+        <div className="flex items-start gap-4">
+          <IntegrationIcon item={item} size={52} />
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-bold text-text-0 font-sans">Install {item.name}</h2>
+            <p className="text-xs text-text-3 font-sans mt-0.5">
+              Choose how to set up this integration
+            </p>
+          </div>
+        </div>
+
+        <div className="h-px bg-border-subtle" />
+
+        <div className="space-y-2.5">
+          <button
+            onClick={() => runningAgents.length > 0 ? setMode('existing') : null}
+            disabled={runningAgents.length === 0}
+            className="w-full text-left px-4 py-3.5 rounded-lg border border-border-subtle bg-surface-2 hover:bg-surface-3 hover:border-accent/30 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0 group-hover:bg-accent/15 transition-colors">
+                <Users size={18} className="text-accent" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-text-0 font-sans">Use Existing Agent</div>
+                <div className="text-2xs text-text-3 font-sans mt-0.5">
+                  {runningAgents.length > 0
+                    ? `Send setup instructions to one of ${runningAgents.length} running agent${runningAgents.length !== 1 ? 's' : ''}`
+                    : 'No agents running — spawn one first'}
+                </div>
+              </div>
+              {runningAgents.length > 0 && <ChevronRight size={14} className="text-text-4 group-hover:text-accent transition-colors" />}
+            </div>
+          </button>
+
+          <button
+            onClick={() => setMode('spawn')}
+            className="w-full text-left px-4 py-3.5 rounded-lg border border-border-subtle bg-surface-2 hover:bg-surface-3 hover:border-accent/30 transition-all cursor-pointer group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-purple/10 flex items-center justify-center flex-shrink-0 group-hover:bg-purple/15 transition-colors">
+                <Rocket size={18} className="text-purple" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-text-0 font-sans">Spawn New Agent</div>
+                <div className="text-2xs text-text-3 font-sans mt-0.5">
+                  Create a dedicated team and planner for this integration
+                </div>
+              </div>
+              <ChevronRight size={14} className="text-text-4 group-hover:text-accent transition-colors" />
+            </div>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Spawn new agent confirmation
+  if (mode === 'spawn') {
+    return (
+      <div className="px-5 py-5 space-y-5">
+        <div className="flex items-center gap-3">
+          <IntegrationIcon item={item} size={36} />
+          <div>
+            <h2 className="text-sm font-bold text-text-0 font-sans">Spawn Integration Agent</h2>
+            <p className="text-2xs text-text-3 font-sans">Creates a team and planner for {item.name}</p>
+          </div>
+        </div>
+
+        <div className="bg-surface-2 rounded-md px-4 py-3 space-y-2">
+          <span className="text-xs font-semibold text-text-1 font-sans">What happens next</span>
+          <ol className="space-y-1.5">
+            {[
+              `A new team "${item.name}" will be created`,
+              'A planner agent will spawn with full integration context',
+              'The agent will handle installation and configuration',
+            ].map((step, i) => (
+              <li key={i} className="flex gap-2 text-xs text-text-2 font-sans leading-relaxed">
+                <span className="text-accent font-mono flex-shrink-0 w-4 text-right">{i + 1}.</span>
+                <span>{step}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="flex gap-2">
+          <Button variant="secondary" size="lg" onClick={() => setMode(null)} className="flex-1" disabled={spawning}>
+            Back
+          </Button>
+          <Button variant="primary" size="lg" onClick={handleSpawnNew} disabled={spawning} className="flex-1 gap-2">
+            {spawning ? <><Loader2 size={14} className="animate-spin" /> Spawning...</> : <><Rocket size={14} /> Spawn Agent</>}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Pick existing agent
+  return (
+    <div className="px-5 py-5 space-y-4">
+      <div className="flex items-center gap-3">
+        <IntegrationIcon item={item} size={36} />
+        <div>
+          <h2 className="text-sm font-bold text-text-0 font-sans">Choose an Agent</h2>
+          <p className="text-2xs text-text-3 font-sans">Send {item.name} setup instructions to a running agent</p>
+        </div>
+      </div>
+
+      <ScrollArea className="max-h-64">
+        <div className="space-y-3">
+          {Object.entries(agentsByTeam).map(([teamId, teamAgents]) => (
+            <div key={teamId}>
+              <div className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider mb-1.5 px-1">
+                {teamMap[teamId] || 'Unassigned'}
+              </div>
+              <div className="space-y-1">
+                {teamAgents.map((agent) => (
+                  <button
+                    key={agent.id}
+                    onClick={() => setSelectedAgentId(agent.id)}
+                    className={`w-full text-left px-3 py-2.5 rounded-md border transition-all cursor-pointer flex items-center gap-3 ${
+                      selectedAgentId === agent.id
+                        ? 'border-accent bg-accent/8'
+                        : 'border-border-subtle bg-surface-2 hover:bg-surface-3 hover:border-border'
+                    }`}
+                  >
+                    <Bot size={14} className={selectedAgentId === agent.id ? 'text-accent' : 'text-text-4'} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-semibold text-text-0 font-sans truncate">{agent.name || agent.id}</div>
+                      <div className="text-2xs text-text-3 font-sans">{agent.role}</div>
+                    </div>
+                    {selectedAgentId === agent.id && <Check size={14} className="text-accent flex-shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </ScrollArea>
+
+      <div className="flex gap-2">
+        <Button variant="secondary" size="lg" onClick={() => { setMode(null); setSelectedAgentId(null); }} className="flex-1">
+          Back
+        </Button>
+        <Button variant="primary" size="lg" onClick={handleExistingAgent} disabled={!selectedAgentId} className="flex-1 gap-2">
+          <Bot size={14} /> Send Instructions
+        </Button>
+      </div>
     </div>
   );
 }
@@ -569,7 +765,7 @@ function DoneStep({ item, onClose }) {
 // ── Main Wizard ─────────────────────────────────────────
 export function IntegrationWizard({ integration, open, onClose }) {
   const toast = useToast();
-  const [step, setStep] = useState('overview'); // overview | configure | done
+  const [step, setStep] = useState('overview'); // overview | agent-setup | configure | done
   const [status, setStatus] = useState(null);
   const [installing, setInstalling] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(true);
@@ -595,17 +791,8 @@ export function IntegrationWizard({ integration, open, onClose }) {
     }
   }, [open, integration, fetchStatus]);
 
-  async function handleInstall() {
-    setInstalling(true);
-    try {
-      await api.post(`/integrations/${integration.id}/install`);
-      toast.success(`${integration.name} installed`);
-      await fetchStatus();
-      setStep('configure');
-    } catch (err) {
-      toast.error('Install failed', err.message);
-    }
-    setInstalling(false);
+  function handleInstall() {
+    setStep('agent-setup');
   }
 
   async function handleUninstall() {
@@ -628,10 +815,17 @@ export function IntegrationWizard({ integration, open, onClose }) {
 
   if (!integration) return null;
 
+  const stepTitle = {
+    overview: integration.name,
+    'agent-setup': 'Install',
+    configure: 'Configure',
+    done: 'Complete',
+  };
+
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent
-        title={step === 'overview' ? integration.name : step === 'configure' ? 'Configure' : 'Complete'}
+        title={stepTitle[step] || integration.name}
         description={`Setup wizard for ${integration.name}`}
         className="max-w-md"
       >
@@ -648,6 +842,8 @@ export function IntegrationWizard({ integration, open, onClose }) {
             onUninstall={handleUninstall}
             onNext={handleConfigureNext}
           />
+        ) : step === 'agent-setup' ? (
+          <AgentSetupStep item={integration} onClose={onClose} />
         ) : step === 'configure' ? (
           <ConfigureStep
             item={integration}

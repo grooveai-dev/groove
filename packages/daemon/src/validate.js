@@ -112,6 +112,12 @@ export function validateAgentConfig(config) {
     if (!isNaN(v) && v >= 0 && v <= 100) verbosity = Math.round(v);
   }
 
+  const validEffort = ['min', 'low', 'default', 'high', 'max'];
+  const effort = validEffort.includes(config.effort) ? config.effort : undefined;
+
+  const validRouting = ['fixed', 'auto', 'auto-floor'];
+  const routingMode = validRouting.includes(config.routingMode) ? config.routingMode : undefined;
+
   // Return sanitized config (only known fields)
   return {
     role: config.role,
@@ -131,6 +137,8 @@ export function validateAgentConfig(config) {
     reasoningEffort: numericReasoningEffort ?? reasoningEffort,
     temperature,
     verbosity,
+    effort,
+    routingMode,
     labPresetId: (typeof config.labPresetId === 'string' && config.labPresetId.length <= 64) ? config.labPresetId : undefined,
     keeperTags: Array.isArray(config.keeperTags) ? config.keeperTags.filter(t => typeof t === 'string').slice(0, 20) : undefined,
   };

@@ -39,9 +39,9 @@ function parseSegments(text) {
 }
 
 function highlightKeeper(text) {
-  const parts = text.split(/(\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|#[\w/.-]+)/gi);
+  const parts = text.split(/(\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|\b(?:save|append|update|delete|view|doc|link|read|instruct)\b(?=\s+#)|#[\w/.-]+)/gi);
   return parts.map((part, i) => {
-    if (/^\[(?:save|append|update|delete|view|doc|link|read|instruct)\]$/i.test(part)) {
+    if (/^\[?(?:save|append|update|delete|view|doc|link|read|instruct)\]?$/i.test(part)) {
       return <span key={i} className="px-1 py-0.5 rounded bg-accent/15 text-accent font-semibold font-mono text-2xs">{part}</span>;
     }
     if (/^#[\w/.-]+$/.test(part)) {
@@ -288,7 +288,7 @@ export function AgentChat({ agent }) {
                 'focus:outline-none focus:ring-1',
                 'min-h-[32px] max-h-[120px]',
                 'border-border focus:ring-accent/40',
-                input && /(\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|#[\w/.-]+)/i.test(input)
+                input && /(\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|\b(?:save|append|update|delete|view|doc|link|read|instruct)\b\s+#|#[\w/.-]+)/i.test(input)
                   ? 'text-transparent caret-text-0'
                   : 'text-text-0',
               )}

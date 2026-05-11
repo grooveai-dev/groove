@@ -5,8 +5,8 @@ import { cn } from '../../lib/cn';
 import { api } from '../../lib/api';
 import {
   ChevronRight, ChevronDown, File, Folder, FolderOpen,
-  Plus, FolderPlus, Search, RefreshCw, Trash2, Pencil, FilePlus,
-  ChevronsDownUp, PanelLeftClose, GitBranch,
+  FolderPlus, Search, RefreshCw, Trash2, Pencil, FilePlus,
+  ChevronsDownUp, PanelLeftClose,
 } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
 
@@ -239,25 +239,6 @@ function TreeDir({ dirPath, depth, activePath, onFileClick, expanded, onDirToggl
 }
 
 // ── Main FileTree ────────────────────────────────────────────
-
-// ── Collapsible Section ──────────────────────────────────────
-function CollapsibleSection({ title, icon: Icon, count, defaultOpen = true, children }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="border-b border-border-subtle">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-2xs font-sans font-medium text-text-2 uppercase tracking-wide hover:bg-surface-4 transition-colors cursor-pointer"
-      >
-        {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-        <Icon size={11} className="text-text-3" />
-        <span className="flex-1 text-left">{title}</span>
-        {count > 0 && <span className="text-text-4">{count}</span>}
-      </button>
-      {open && children}
-    </div>
-  );
-}
 
 export function FileTree({ rootDir, onCollapse }) {
   const treeCache = useGrooveStore((s) => s.editorTreeCache);
@@ -508,34 +489,6 @@ export function FileTree({ rootDir, onCollapse }) {
 
       {/* Tree */}
       <ScrollArea className="flex-1">
-        {/* Git Changes section */}
-        {gitChanges.length > 0 && (
-          <CollapsibleSection title="Git Changes" icon={GitBranch} count={gitChanges.length} defaultOpen={true}>
-            <div className="py-0.5">
-              {gitChanges.map((entry) => {
-                const name = entry.path.split('/').pop();
-                const statusColor = entry.status === 'A' || entry.status === '?' ? 'text-success' : entry.status === 'D' ? 'text-danger' : 'text-warning';
-                return (
-                  <button
-                    key={entry.path}
-                    onClick={() => openFile(entry.path)}
-                    className={cn(
-                      'w-full flex items-center gap-1.5 px-3 py-[3px] text-xs font-sans cursor-pointer',
-                      'hover:bg-surface-5 transition-colors text-left',
-                      activeFile === entry.path ? 'bg-accent/10 text-text-0' : 'text-text-1',
-                    )}
-                  >
-                    <File size={12} className={cn('flex-shrink-0', getFileColor(name))} />
-                    <span className="truncate flex-1">{name}</span>
-                    <span className={cn('text-2xs font-mono flex-shrink-0', statusColor)}>{entry.status}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </CollapsibleSection>
-        )}
-
-        {/* File Explorer */}
         <div
           className="py-1"
           onDragOver={(e) => { if (!dragState.draggingPath) return; e.preventDefault(); setDragOverDir(null); }}

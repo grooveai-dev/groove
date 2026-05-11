@@ -127,6 +127,16 @@ export class IntegrationStore {
     if (this._isInstalled(integrationId)) throw new Error(`Integration already installed: ${integrationId}`);
 
     if (entry.npmPackage) {
+      // Pre-validate: check the package exists on npm before attempting install
+      try {
+        execFileSync('npm', ['view', entry.npmPackage, 'version'], {
+          stdio: 'pipe',
+          timeout: 10_000,
+        });
+      } catch {
+        throw new Error(`Package ${entry.npmPackage} is not available on npm. Use the agent-assisted install flow instead.`);
+      }
+
       try {
         execFileSync('npm', ['install', '--legacy-peer-deps', entry.npmPackage], {
           cwd: this.integrationsDir,

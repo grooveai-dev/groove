@@ -11,8 +11,9 @@ import {
   XCircle, Send, FilePlus, FileMinus, FileEdit,
 } from 'lucide-react';
 
-export function CodeReview() {
-  const agentId = useGrooveStore((s) => s.editorSelectedAgent);
+export function CodeReview({ agentId: agentIdProp, onBack }) {
+  const storeAgentId = useGrooveStore((s) => s.editorSelectedAgent);
+  const agentId = agentIdProp || storeAgentId;
   const instructAgent = useGrooveStore((s) => s.instructAgent);
   const openFile = useGrooveStore((s) => s.openFile);
   const setViewMode = useGrooveStore((s) => s.setEditorViewMode);
@@ -84,7 +85,7 @@ export function CodeReview() {
     if (reviewComments.length > 0) {
       await instructAgent(agentId, `Code review feedback:\n${reviewComments.join('\n')}`);
     }
-    setViewMode('code');
+    if (onBack) onBack(); else setViewMode('code');
   }
 
   const approved = Object.values(statuses).filter((s) => s === 'approved').length;
@@ -112,7 +113,7 @@ export function CodeReview() {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-3 px-4 py-3 bg-surface-1 border-b border-border flex-shrink-0">
-        <button onClick={() => setViewMode('code')} className="p-1 rounded hover:bg-surface-4 text-text-3 hover:text-text-1 cursor-pointer" title="Back to Editor">
+        <button onClick={() => onBack ? onBack() : setViewMode('code')} className="p-1 rounded hover:bg-surface-4 text-text-3 hover:text-text-1 cursor-pointer" title="Back to Editor">
           <ChevronLeft size={16} />
         </button>
         <span className="text-sm font-semibold text-text-0 font-sans flex-1">Review Changes</span>

@@ -213,6 +213,7 @@ export const useGrooveStore = create((set, get) => ({
 
   // ── Editor (Cursor-style) ────────────────────────────────
   editorSelectedAgent: null,
+  editorPendingSnippet: null,
   editorViewMode: 'code',
   editorAiPanelOpen: false,
   editorAiPanelWidth: Number(localStorage.getItem('groove:editorAiPanelWidth')) || 360,
@@ -665,6 +666,7 @@ export const useGrooveStore = create((set, get) => ({
         case 'lab:runtime:added':
         case 'lab:runtime:updated':
         case 'lab:runtime:removed':
+        case 'llama:server:stopped':
           get().fetchLabRuntimes();
           break;
 
@@ -1320,7 +1322,7 @@ export const useGrooveStore = create((set, get) => ({
   },
 
   async _handleKeeperCommand(agentId, message, command) {
-    const rest = message.replace(/\[\w+[-\w]*\]/i, '').trim();
+    const rest = message.replace(/\[\w+[-\w]*\]|\b(?:save|append|update|delete|view|doc|link|read|instruct)\b/i, '').trim();
     const tags = (rest.match(/#[\w/.-]+/g) || []).map(t => t.replace(/^#/, ''));
 
     const addSystemMsg = (text) => {
@@ -1335,23 +1337,21 @@ export const useGrooveStore = create((set, get) => ({
         }
 
         case 'save': {
-          if (tags.length === 0) { addSystemMsg('Usage: [save] #tag your message here'); return true; }
+          if (tags.length === 0) { addSystemMsg('Usage: save #tag your message here'); return true; }
           const content = rest.replace(/#[\w/.-]+/g, '').trim();
-          if (!content) { addSystemMsg('Usage: [save] #tag your message here'); return true; }
-          get().addChatMessage(agentId, 'user', message, false);
+          if (!content) { addSystemMsg('Usage: save #tag your message here'); return true; }
           await get().saveKeeperItem(tags[0], content);
           addSystemMsg(`Saved to #${tags[0]}`);
-          return true;
+          return { passthrough: content };
         }
 
         case 'append': {
-          if (tags.length === 0) { addSystemMsg('Usage: [append] #tag content to add'); return true; }
+          if (tags.length === 0) { addSystemMsg('Usage: append #tag content to add'); return true; }
           const content = rest.replace(/#[\w/.-]+/g, '').trim();
-          if (!content) { addSystemMsg('Usage: [append] #tag content to add'); return true; }
-          get().addChatMessage(agentId, 'user', message, false);
+          if (!content) { addSystemMsg('Usage: append #tag content to add'); return true; }
           await get().appendKeeperItem(tags[0], content);
           addSystemMsg(`Appended to #${tags[0]}`);
-          return true;
+          return { passthrough: content };
         }
 
         case 'update': {
@@ -2031,7 +2031,6 @@ export const useGrooveStore = create((set, get) => ({
         ...(tlc?.reasoningEffort != null && { teamReasoningEffort: tlc.reasoningEffort }),
         ...(tlc?.temperature != null && { teamTemperature: tlc.temperature }),
         ...(tlc?.verbosity != null && { teamVerbosity: tlc.verbosity }),
-        ...(tlc?.mode && { mode: tlc.mode }),
       };
       const result = await api.post('/recommended-team/launch', body);
       const totalOk = (result.launched || 0) + (result.reused || 0);
@@ -2685,10 +2684,13 @@ export const useGrooveStore = create((set, get) => ({
 
   async instructAgent(id, message) {
     // ── Keeper command interception ─────────────────────────
-    const keeperCmd = message.match(/\[(save|append|update|delete|view|doc|link|read|instruct)\]/i);
+    const keeperCmd = message.match(/\[(save|append|update|delete|view|doc|link|read|instruct)\]|\b(save|append|update|delete|view|doc|link|read)\b(?=\s+#[\w/.-])/i);
     if (keeperCmd) {
-      const handled = await get()._handleKeeperCommand(id, message, keeperCmd[1].toLowerCase());
-      if (handled) return { status: 'keeper_handled' };
+      const handled = await get()._handleKeeperCommand(id, message, (keeperCmd[1] || keeperCmd[2]).toLowerCase());
+      if (handled === true) return { status: 'keeper_handled' };
+      if (handled?.passthrough) {
+        message = handled.passthrough;
+      }
     }
 
     get().addChatMessage(id, 'user', message, false);
@@ -3226,10 +3228,27 @@ export const useGrooveStore = create((set, get) => ({
     set({ editorQuickSearchOpen: open });
   },
 
+  attachSnippet(snippet) {
+    set({ editorPendingSnippet: snippet });
+    if (!get().editorAiPanelOpen) {
+      set({ editorAiPanelOpen: true });
+    }
+  },
+
+  clearSnippet() {
+    set({ editorPendingSnippet: null });
+  },
+
   async sendCodeToAgent(agentId, instruction, filePath, lineStart, lineEnd, selectedCode) {
     if (!agentId) return;
-    const message = `Instruction: ${instruction}\nFile: ${filePath}\nLines ${lineStart}-${lineEnd}:\n\`\`\`\n${selectedCode}\n\`\`\``;
-    await get().instructAgent(agentId, message);
+    get().attachSnippet({
+      type: 'code',
+      instruction,
+      filePath,
+      lineStart,
+      lineEnd,
+      code: selectedCode,
+    });
   },
 
   async fetchGitStatus() {
@@ -3844,11 +3863,17 @@ export const useGrooveStore = create((set, get) => ({
           const payload = line.slice(6);
           if (payload === '[DONE]') continue;
           try {
-            const chunk = JSON.parse(payload);
-            if (chunk.type === 'reasoning' && chunk.content) {
+            const parsed = JSON.parse(payload);
+
+            // Support both raw OpenAI format (piped) and legacy wrapper format
+            const delta = parsed.choices?.[0]?.delta;
+            const reasoningText = delta?.reasoning_content || (parsed.type === 'reasoning' ? parsed.content : null);
+            const contentText = delta?.content || (parsed.type === 'token' ? parsed.content : null);
+
+            if (reasoningText) {
               if (!firstTokenTime) firstTokenTime = performance.now();
               tokenCount++;
-              fullReasoning += chunk.content;
+              fullReasoning += reasoningText;
               set((s) => {
                 const sessions = s.labSessions.map((sess) => {
                   if (sess.id !== sessionId) return sess;
@@ -3859,10 +3884,10 @@ export const useGrooveStore = create((set, get) => ({
                 return { labSessions: sessions };
               });
             }
-            if (chunk.type === 'token' && chunk.content) {
+            if (contentText) {
               if (!firstTokenTime) firstTokenTime = performance.now();
               tokenCount++;
-              fullContent += chunk.content;
+              fullContent += contentText;
               set((s) => {
                 const sessions = s.labSessions.map((sess) => {
                   if (sess.id !== sessionId) return sess;
@@ -3873,11 +3898,13 @@ export const useGrooveStore = create((set, get) => ({
                 return { labSessions: sessions };
               });
             }
-            if (chunk.type === 'done' && chunk.metrics) {
+
+            // Handle done event (legacy wrapper) or finish_reason (raw OpenAI)
+            if (parsed.type === 'done' && parsed.metrics) {
               const elapsed = performance.now() - startTime;
               const ttft = firstTokenTime ? firstTokenTime - startTime : null;
               const tps = tokenCount > 0 && elapsed > 0 ? (tokenCount / (elapsed / 1000)) : null;
-              const msgMetrics = { ttft, tokensPerSec: tps, tokens: tokenCount, generationTime: elapsed, ...chunk.metrics };
+              const msgMetrics = { ttft, tokensPerSec: tps, tokens: tokenCount, generationTime: elapsed, ...parsed.metrics };
 
               set((s) => {
                 const tpsHist = [...s.labMetrics.tokensPerSecHistory, tps].slice(-10);
@@ -3891,15 +3918,15 @@ export const useGrooveStore = create((set, get) => ({
                   labSessions: sessions,
                   labMetrics: {
                     ttft, tokensPerSec: tps, tokensPerSecHistory: tpsHist,
-                    memory: chunk.metrics.memoryUsage || s.labMetrics.memory,
-                    totalTokens: s.labMetrics.totalTokens + (chunk.metrics.totalTokens || tokenCount),
-                    generationTime: chunk.metrics.generationTime || elapsed,
+                    memory: parsed.metrics.memoryUsage || s.labMetrics.memory,
+                    totalTokens: s.labMetrics.totalTokens + (parsed.metrics.totalTokens || tokenCount),
+                    generationTime: parsed.metrics.generationTime || elapsed,
                   },
                 };
               });
             }
-            if (chunk.type === 'error') {
-              throw new Error(chunk.error || 'Inference error');
+            if (parsed.type === 'error') {
+              throw new Error(parsed.error || 'Inference error');
             }
           } catch (e) {
             if (e.message && e.message !== 'Inference error' && !e.message.startsWith('HTTP ')) continue;
@@ -3908,14 +3935,24 @@ export const useGrooveStore = create((set, get) => ({
         }
       }
 
-      // Final metrics if no done event came
-      if (!get().labSessions.find((s) => s.id === sessionId)?.messages.slice(-1)[0]?.metrics) {
-        const elapsed = performance.now() - startTime;
-        const ttft = firstTokenTime ? firstTokenTime - startTime : null;
-        const tps = tokenCount > 0 && elapsed > 0 ? (tokenCount / (elapsed / 1000)) : null;
+      // Compute final metrics from client-side timing
+      const elapsed = performance.now() - startTime;
+      const ttft = firstTokenTime ? firstTokenTime - startTime : null;
+      const tps = tokenCount > 0 && elapsed > 0 ? (tokenCount / (elapsed / 1000)) : null;
+      if (tokenCount > 0) {
         set((s) => {
           const tpsHist = [...s.labMetrics.tokensPerSecHistory, tps].slice(-10);
+          const sessions = s.labSessions.map((sess) => {
+            if (sess.id !== sessionId) return sess;
+            const msgs = [...sess.messages];
+            const last = msgs[msgs.length - 1];
+            if (!last?.metrics) {
+              msgs[msgs.length - 1] = { ...last, metrics: { ttft, tokensPerSec: tps, tokens: tokenCount, generationTime: elapsed } };
+            }
+            return { ...sess, messages: msgs };
+          });
           return {
+            labSessions: sessions,
             labMetrics: { ...s.labMetrics, ttft, tokensPerSec: tps, tokensPerSecHistory: tpsHist, totalTokens: s.labMetrics.totalTokens + tokenCount, generationTime: elapsed },
           };
         });
@@ -4040,4 +4077,45 @@ export const useGrooveStore = create((set, get) => ({
       return false;
     }
   },
+
+  // ── Integration Agent Install ────────────────────────────
+
+  async installViaExistingAgent(integration, agentId) {
+    const message = buildIntegrationPrompt(integration);
+    await get().instructAgent(agentId, message);
+    get().setActiveView('agents');
+    get().selectAgent(agentId);
+  },
+
+  async spawnIntegrationTeam(integration) {
+    const team = await get().createTeam(integration.name);
+    const prompt = buildIntegrationPrompt(integration);
+    const agent = await get().spawnAgent({ role: 'planner', prompt, teamId: team.id });
+    get().setActiveView('agents');
+    get().selectAgent(agent.id);
+    return agent;
+  },
 }));
+
+function buildIntegrationPrompt(integration) {
+  const lines = [
+    `Set up the "${integration.name}" integration for this project.`,
+    '',
+  ];
+  if (integration.description) lines.push(`**Description:** ${integration.description}`);
+  if (integration.npmPackage) lines.push(`**npm package:** ${integration.npmPackage}`);
+  if (integration.authType) lines.push(`**Auth type:** ${integration.authType}`);
+  if (integration.envKeys?.length) {
+    lines.push('', '**Environment keys required:**');
+    for (const k of integration.envKeys) {
+      lines.push(`- \`${k.key}\` — ${k.label}${k.required ? ' (required)' : ''}`);
+    }
+  }
+  if (integration.setupSteps?.length) {
+    lines.push('', '**Setup steps:**');
+    integration.setupSteps.forEach((step, i) => lines.push(`${i + 1}. ${step}`));
+  }
+  if (integration.setupUrl) lines.push(``, `**Setup URL:** ${integration.setupUrl}`);
+  if (integration.agentInstructions) lines.push('', `**Agent instructions:** ${integration.agentInstructions}`);
+  return lines.join('\n');
+}

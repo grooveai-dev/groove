@@ -994,6 +994,175 @@ export class Journalist {
     return brief;
   }
 
+  // --- Conversation Thread Extraction (for idle resume) ---
+
+  /**
+   * Extract the actual user↔assistant conversation from stream-json logs.
+   * Returns the dialogue in chronological order — user messages interleaved
+   * with Claude's text responses. This preserves the "why" context that
+   * handoff briefs lose through summarization.
+   *
+   * Budget: keeps recent turns verbatim, summarizes oldest if over maxChars.
+   */
+  extractConversationThread(agent, { maxChars = 60000 } = {}) {
+    const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.name}.log`);
+    if (!existsSync(logPath)) return null;
+
+    let content;
+    try {
+      content = readFileSync(logPath, 'utf8');
+    } catch { return null; }
+
+    const lines = content.split('\n');
+    const turns = []; // { role: 'user'|'assistant', text, timestamp }
+
+    for (const line of lines) {
+      if (!line.trim() || line.startsWith('[')) continue;
+      try {
+        const data = JSON.parse(line);
+
+        // User messages
+        if (data.type === 'user' && data.message?.content) {
+          const msgContent = data.message.content;
+          let text = '';
+          if (typeof msgContent === 'string') {
+            text = msgContent;
+          } else if (Array.isArray(msgContent)) {
+            // Extract text blocks, skip tool_result blocks (noise)
+            text = msgContent
+              .filter((b) => b.type === 'text' && b.text)
+              .map((b) => b.text)
+              .join('\n');
+          }
+          if (text.trim().length > 5) {
+            turns.push({ role: 'user', text: text.trim(), timestamp: data.timestamp });
+          }
+        }
+
+        // Assistant text responses (what Claude said — the reasoning/explanations)
+        if (data.type === 'assistant' && data.message?.content) {
+          const blocks = Array.isArray(data.message.content) ? data.message.content : [];
+          const textParts = blocks
+            .filter((b) => b.type === 'text' && b.text && b.text.trim().length > 20)
+            .map((b) => b.text.trim());
+          if (textParts.length > 0) {
+            turns.push({ role: 'assistant', text: textParts.join('\n'), timestamp: data.timestamp });
+          }
+        }
+      } catch { /* skip non-JSON */ }
+    }
+
+    if (turns.length === 0) return null;
+
+    // Deduplicate consecutive same-role turns (merge them)
+    const merged = [];
+    for (const turn of turns) {
+      const last = merged[merged.length - 1];
+      if (last && last.role === turn.role) {
+        last.text += '\n' + turn.text;
+      } else {
+        merged.push({ ...turn });
+      }
+    }
+
+    // Build the thread — keep recent turns verbatim, truncate old ones if over budget
+    let thread = '';
+    const formatted = merged.map((t) => {
+      const label = t.role === 'user' ? 'USER' : 'CLAUDE';
+      return `[${label}]:\n${t.text}`;
+    });
+
+    // Start from the end (most recent) and work backwards to fill budget
+    const recentFirst = [...formatted].reverse();
+    const kept = [];
+    let totalLen = 0;
+
+    for (const entry of recentFirst) {
+      if (totalLen + entry.length > maxChars) {
+        // Truncate this entry to fit remaining budget
+        const remaining = maxChars - totalLen;
+        if (remaining > 200) {
+          kept.push(entry.slice(0, remaining) + '\n[...truncated]');
+        }
+        break;
+      }
+      kept.push(entry);
+      totalLen += entry.length;
+    }
+
+    // Reverse back to chronological order
+    kept.reverse();
+    thread = kept.join('\n\n---\n\n');
+
+    return thread;
+  }
+
+  /**
+   * Build a full context-resume prompt that preserves the conversation
+   * thread so a fresh agent picks up where the previous session left off.
+   */
+  buildConversationResumePrompt(agent, userMessage) {
+    const thread = this.extractConversationThread(agent);
+    if (!thread) return null;
+
+    const constraints = this.daemon.memory?.getConstraintsMarkdown(2000) || '';
+    const discoveries = this.daemon.memory?.getDiscoveriesMarkdown(agent.role, 5, 1000) || '';
+
+    let prompt = [
+      `# Session Context Resume`,
+      ``,
+      `You are continuing a session that went idle. Below is the full conversation`,
+      `from your previous session — your actual exchanges with the user. Pick up`,
+      `exactly where you left off. The user's new message follows at the end.`,
+      ``,
+      `Role: ${agent.role} | Provider: ${agent.provider} | Scope: ${agent.scope?.join(', ') || 'unrestricted'}`,
+      agent.workingDir ? `Working directory: ${agent.workingDir}` : '',
+      ``,
+      constraints ? `## Project Constraints\n\n${constraints}\n` : '',
+      discoveries ? `## Known Issues & Fixes\n\n${discoveries}\n` : '',
+      `## Previous Conversation\n\n${thread}`,
+      ``,
+      `---`,
+      ``,
+      `## New Message From User`,
+      ``,
+      userMessage,
+      ``,
+      `Continue seamlessly from the conversation above. You have the full context of what was discussed, what was tried, what worked and what didn't. Do not ask the user to repeat anything.`,
+    ].filter(Boolean).join('\n');
+
+    // Hard cap at 80K chars (~20K tokens) to leave plenty of room in context window
+    if (prompt.length > 80000) {
+      // Re-extract with smaller budget and rebuild
+      const smallerThread = this.extractConversationThread(agent, { maxChars: 40000 });
+      if (smallerThread) {
+        prompt = [
+          `# Session Context Resume`,
+          ``,
+          `You are continuing a session that went idle. Below is the conversation`,
+          `from your previous session (older turns summarized to fit). Pick up`,
+          `exactly where you left off.`,
+          ``,
+          `Role: ${agent.role} | Scope: ${agent.scope?.join(', ') || 'unrestricted'}`,
+          agent.workingDir ? `Working directory: ${agent.workingDir}` : '',
+          ``,
+          constraints ? `## Project Constraints\n\n${constraints}\n` : '',
+          `## Previous Conversation\n\n${smallerThread}`,
+          ``,
+          `---`,
+          ``,
+          `## New Message From User`,
+          ``,
+          userMessage,
+          ``,
+          `Continue seamlessly. Do not ask the user to repeat anything.`,
+        ].filter(Boolean).join('\n');
+      }
+    }
+
+    return prompt;
+  }
+
   // --- Workspace Grouping ---
 
   /**

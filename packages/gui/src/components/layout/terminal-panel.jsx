@@ -1,7 +1,87 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useRef, useCallback, useState } from 'react';
-import { Maximize2, Minimize2, Plus, X, Terminal } from 'lucide-react';
+import { useRef, useCallback, useState, useEffect } from 'react';
+import { Maximize2, Minimize2, Plus, X, Terminal, Send, ChevronDown, Sparkles } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { useGrooveStore } from '../../stores/groove';
+import { Tooltip } from '../ui/tooltip';
+
+function AgentPicker({ onSelect, onClose }) {
+  const ref = useRef(null);
+  const agents = useGrooveStore((s) => s.agents);
+  const teams = useGrooveStore((s) => s.teams);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) onClose();
+    }
+    function handleKey(e) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [onClose]);
+
+  const running = agents.filter((a) => a.status === 'running' || a.status === 'starting');
+  const stopped = agents.filter((a) => a.status !== 'running' && a.status !== 'starting');
+
+  function teamName(teamId) {
+    const team = teams.find((t) => t.id === teamId);
+    return team?.name || 'Default';
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="absolute bottom-full right-0 mb-1 z-50 min-w-[220px] max-h-[300px] overflow-y-auto py-1 bg-surface-2 border border-border rounded-lg shadow-xl"
+    >
+      {running.length > 0 && (
+        <>
+          <div className="px-3 py-1 text-2xs text-text-4 font-sans font-medium uppercase tracking-wider">Active</div>
+          {running.map((agent) => (
+            <button
+              key={agent.id}
+              onClick={() => onSelect(agent.id)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs font-sans text-text-1 hover:bg-surface-5 cursor-pointer transition-colors text-left"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-success flex-shrink-0" />
+              <span className="truncate flex-1">{agent.name}</span>
+              <span className="text-2xs text-text-4">{teamName(agent.teamId)}</span>
+            </button>
+          ))}
+        </>
+      )}
+      {stopped.length > 0 && (
+        <>
+          <div className="px-3 py-1 text-2xs text-text-4 font-sans font-medium uppercase tracking-wider">
+            {running.length > 0 ? 'Other' : 'Agents'}
+          </div>
+          {stopped.slice(0, 10).map((agent) => (
+            <button
+              key={agent.id}
+              onClick={() => onSelect(agent.id)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs font-sans text-text-2 hover:bg-surface-5 cursor-pointer transition-colors text-left"
+            >
+              <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0',
+                agent.status === 'completed' ? 'bg-accent' : agent.status === 'crashed' ? 'bg-danger' : 'bg-text-4',
+              )} />
+              <span className="truncate flex-1">{agent.name}</span>
+              <span className="text-2xs text-text-4">{teamName(agent.teamId)}</span>
+            </button>
+          ))}
+        </>
+      )}
+      {agents.length === 0 && (
+        <div className="px-3 py-3 text-xs text-text-4 font-sans text-center">
+          No agents available
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function TerminalPanel({
   children,
@@ -18,12 +98,21 @@ export function TerminalPanel({
   onMinimize,
   onClose,
   onRenameTab,
+  selectedText,
 }) {
   const dragging = useRef(false);
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
+  const [showPicker, setShowPicker] = useState(false);
   const startY = useRef(0);
   const startH = useRef(0);
+
+  const activeAgent = useGrooveStore((s) => s.editorSelectedAgent);
+  const agents = useGrooveStore((s) => s.agents);
+  const attachSnippet = useGrooveStore((s) => s.attachSnippet);
+
+  const agent = agents.find((a) => a.id === activeAgent);
+  const hasSelection = selectedText && selectedText.trim().length > 0;
 
   const onMouseDown = useCallback((e) => {
     if (fullHeight) return;
@@ -48,6 +137,21 @@ export function TerminalPanel({
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
   }, [height, onHeightChange, fullHeight]);
+
+  function sendToAgent(agentId) {
+    if (!agentId || !selectedText?.trim()) return;
+    setShowPicker(false);
+    useGrooveStore.setState({ editorSelectedAgent: agentId });
+    attachSnippet({ type: 'terminal', code: selectedText.trim() });
+  }
+
+  function handleSendClick() {
+    if (activeAgent) {
+      sendToAgent(activeAgent);
+    } else {
+      setShowPicker(true);
+    }
+  }
 
   const tabList = tabs || [{ id: 'default', label: 'Terminal' }];
 
@@ -116,8 +220,53 @@ export function TerminalPanel({
           </button>
         </div>
 
-        {/* Window controls */}
+        {/* Send to Agent + Window controls */}
         <div className="flex items-center gap-0.5 flex-shrink-0 ml-2">
+          {/* Send to Agent */}
+          {hasSelection && (
+            <div className="relative flex items-center">
+              <Tooltip content={activeAgent ? `Send to ${agent?.name || 'agent'}` : 'Send to agent'} side="top">
+                <button
+                  onClick={handleSendClick}
+                  disabled={sending}
+                  className={cn(
+                    'flex items-center gap-1.5 px-2 py-1 rounded text-xs font-sans cursor-pointer transition-colors mr-1',
+                    'bg-accent/15 text-accent hover:bg-accent/25 disabled:opacity-50',
+                  )}
+                >
+                  {activeAgent ? (
+                    <>
+                      <Send size={11} />
+                      <span className="text-2xs max-w-[80px] truncate">{agent?.name || 'Agent'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={11} />
+                      <span className="text-2xs">Agent</span>
+                      <ChevronDown size={9} />
+                    </>
+                  )}
+                </button>
+              </Tooltip>
+              {!activeAgent && hasSelection && (
+                <Tooltip content="Pick agent" side="top">
+                  <button
+                    onClick={() => setShowPicker(!showPicker)}
+                    className="p-1 rounded text-text-3 hover:text-accent hover:bg-accent/10 cursor-pointer transition-colors mr-1"
+                  >
+                    <ChevronDown size={10} />
+                  </button>
+                </Tooltip>
+              )}
+              {showPicker && (
+                <AgentPicker
+                  onSelect={(id) => sendToAgent(id)}
+                  onClose={() => setShowPicker(false)}
+                />
+              )}
+            </div>
+          )}
+
           {fullHeight ? (
             <button
               onClick={onMinimize}

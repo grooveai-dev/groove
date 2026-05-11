@@ -22,7 +22,7 @@ const THEME = {
 let tabCounter = 0;
 let spawnSeq = 0;
 
-function TerminalInstance({ tabId, visible, registerKill }) {
+function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
   const containerRef = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);
@@ -69,6 +69,11 @@ function TerminalInstance({ tabId, visible, registerKill }) {
     term.open(containerRef.current);
     termRef.current = term;
     fitRef.current = fitAddon;
+
+    term.onSelectionChange(() => {
+      const text = term.getSelection();
+      onSelectionChange?.(text || '');
+    });
 
     let spawnAttempts = 0;
     function trySpawn() {
@@ -117,7 +122,6 @@ function TerminalInstance({ tabId, visible, registerKill }) {
       });
     }
 
-    // Fit first, then spawn — ensures PTY gets correct column count
     requestAnimationFrame(() => {
       try { fitAddon.fit(); } catch {}
       trySpawn();
@@ -169,6 +173,7 @@ export function TerminalManager() {
 
   const [tabs, setTabs] = useState([{ id: 'term-0', label: 'Terminal' }]);
   const [activeTab, setActiveTab] = useState('term-0');
+  const [selectedText, setSelectedText] = useState('');
   const killFns = useRef({});
 
   const registerKill = useCallback((tabId, fn) => { killFns.current[tabId] = fn; }, []);
@@ -217,13 +222,19 @@ export function TerminalManager() {
       onToggleFullHeight={() => setFullHeight(true)}
       onMinimize={() => setFullHeight(false)}
       onClose={() => setTerminalVisible(false)}
+      selectedText={selectedText}
     >
       {tabs.map((tab) => (
-        <TerminalInstance key={tab.id} tabId={tab.id} visible={tab.id === activeTab} registerKill={registerKill} />
+        <TerminalInstance
+          key={tab.id}
+          tabId={tab.id}
+          visible={tab.id === activeTab}
+          registerKill={registerKill}
+          onSelectionChange={tab.id === activeTab ? setSelectedText : undefined}
+        />
       ))}
     </TerminalPanel>
   );
 }
 
-// Keep backward-compat export for existing imports
 export { TerminalManager as TerminalEmulator };

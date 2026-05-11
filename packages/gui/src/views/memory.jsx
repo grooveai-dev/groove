@@ -7,15 +7,15 @@ import { Dialog, DialogContent } from '../components/ui/dialog';
 import { BookOpen, Plus, Search, Trash2, Pencil, ChevronRight, Hash, FolderOpen, Clock, Save, Link2, FileText, Sparkles, HelpCircle } from 'lucide-react';
 
 const COMMANDS = [
-  { cmd: '[save]',     args: '#tag',                desc: 'Save the current message as a tagged memory' },
-  { cmd: '[append]',   args: '#tag',                desc: 'Add to an existing memory without overwriting' },
-  { cmd: '[update]',   args: '#tag',                desc: 'Open the editor to modify a memory in place' },
-  { cmd: '[delete]',   args: '#tag',                desc: 'Remove a memory permanently' },
-  { cmd: '[view]',     args: '#tag',                desc: 'Read a memory in the viewer' },
-  { cmd: '[read]',     args: '#tag1 #tag2 ...',     desc: 'Send memory content to the agent — agent reads it, chat stays clean' },
-  { cmd: '[doc]',      args: '#tag',                desc: 'AI synthesizes the full conversation into a document' },
-  { cmd: '[link]',     args: '#tag path/to/doc',    desc: 'Link a memory to a NORTHSTAR or external document' },
-  { cmd: '[instruct]', args: '',                    desc: 'Show this command reference' },
+  { cmd: 'save',     args: '#tag',                desc: 'Save the message and send it to the agent' },
+  { cmd: 'append',   args: '#tag',                desc: 'Add to an existing memory and send to agent' },
+  { cmd: 'update',   args: '#tag',                desc: 'Open the editor to modify a memory in place' },
+  { cmd: 'delete',   args: '#tag',                desc: 'Remove a memory permanently' },
+  { cmd: 'view',     args: '#tag',                desc: 'Read a memory in the viewer' },
+  { cmd: 'read',     args: '#tag1 #tag2 ...',     desc: 'Send memory content to the agent — chat stays clean' },
+  { cmd: 'doc',      args: '#tag',                desc: 'AI synthesizes the full conversation into a document' },
+  { cmd: 'link',     args: '#tag path/to/doc',    desc: 'Link a memory to a NORTHSTAR or external document' },
+  { cmd: '[instruct]', args: '',                  desc: 'Show this command reference' },
 ];
 
 function formatRelative(iso) {

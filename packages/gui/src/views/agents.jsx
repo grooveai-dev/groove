@@ -10,7 +10,7 @@ import { RootNode } from '../components/agents/root-node';
 import { cn } from '../lib/cn';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Layers, Box, HardDrive, LayoutGrid } from 'lucide-react';
+import { Plus, Users, UserPlus, Zap, X, Check, Rocket, Server, Monitor, Code2, TestTube, Shield, Pencil, Copy, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Eye, Settings2, Search, GripVertical, Cloud, FileText, Database, Megaphone, Calculator, UserCheck, Headphones, BarChart3, Pen, Presentation, Globe, MessageCircle, Save, Layers, LayoutGrid, Activity, Gauge, Cpu } from 'lucide-react';
 import { PreviewWorkspace } from '../components/preview/preview-workspace';
 import { WorkspaceMode } from '../components/agents/workspace-mode';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '../components/ui/context-menu';
@@ -1258,7 +1258,7 @@ function RecommendedTeamCard() {
   const [tsModel, setTsModel] = useState(teamLaunchConfig?.model || '');
   const [tsReasoning, setTsReasoning] = useState(teamLaunchConfig?.reasoningEffort ?? 50);
   const [tsTemp, setTsTemp] = useState(teamLaunchConfig?.temperature ?? 0.5);
-  const [tsMode, setTsMode] = useState(teamLaunchConfig?.mode || 'sandbox');
+  const [expandedAgent, setExpandedAgent] = useState(null);
 
   useEffect(() => {
     fetchProviders().then((list) => {
@@ -1283,6 +1283,15 @@ function RecommendedTeamCard() {
     setEditedAgents(next);
   }
 
+  function handleAgentField(i, updates) {
+    if (typeof updates === 'string') {
+      const [field, value] = [updates, arguments[2]];
+      setEditedAgents((prev) => (prev ?? agentEdits).map((a, idx) => idx === i ? { ...a, [field]: value } : a));
+    } else {
+      setEditedAgents((prev) => (prev ?? agentEdits).map((a, idx) => idx === i ? { ...a, ...updates } : a));
+    }
+  }
+
   function handleTsProviderChange(id) {
     setTsProvider(id);
     const p = providers.find((x) => x.id === id);
@@ -1298,7 +1307,6 @@ function RecommendedTeamCard() {
         ...(tsProvider && { provider: tsProvider, model: tsModel }),
         reasoningEffort: tsReasoning,
         ...(showTemp && { temperature: tsTemp }),
-        mode: tsMode,
       },
     });
     try {
@@ -1376,41 +1384,6 @@ function RecommendedTeamCard() {
                   formatValue={(v) => v.toFixed(2)}
                 />
               )}
-              {/* Build Mode */}
-              <div className="space-y-1">
-                <label className="text-2xs text-text-3 font-sans">Build Mode</label>
-                <div className="flex rounded-md bg-surface-4 border border-border-subtle p-0.5">
-                  <button
-                    onClick={() => setTsMode('sandbox')}
-                    className={cn(
-                      'flex-1 flex items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-sans transition-all cursor-pointer',
-                      tsMode === 'sandbox'
-                        ? 'bg-surface-2 text-text-0 font-semibold shadow-sm'
-                        : 'text-text-3 hover:text-text-1',
-                    )}
-                  >
-                    <Box size={11} />
-                    Sandbox
-                  </button>
-                  <button
-                    onClick={() => setTsMode('production')}
-                    className={cn(
-                      'flex-1 flex items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-sans transition-all cursor-pointer',
-                      tsMode === 'production'
-                        ? 'bg-surface-2 text-text-0 font-semibold shadow-sm'
-                        : 'text-text-3 hover:text-text-1',
-                    )}
-                  >
-                    <HardDrive size={11} />
-                    Production
-                  </button>
-                </div>
-                <p className="text-2xs text-text-4 font-sans">
-                  {tsMode === 'sandbox'
-                    ? 'Files live in a team directory, removable with the team'
-                    : 'Files live in the project directory, persist forever'}
-                </p>
-              </div>
             </div>
           )}
         </div>
@@ -1419,31 +1392,116 @@ function RecommendedTeamCard() {
           {agentEdits.map((a, i) => {
             const Icon = ROLE_ICONS[a.role] || Code2;
             const nameValid = !a.name || NAME_RE.test(a.name);
+            const isExpanded = expandedAgent === i;
+            const agentProvider = providers.find((p) => p.id === (a.provider || tsProvider));
+            const agentModels = (agentProvider?.models || []).filter((m) => m.type !== 'image' && !m.disabled);
             return (
-              <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-surface-4 border border-border-subtle">
-                <Icon size={12} className="text-text-2 shrink-0" />
-                <input
-                  type="text"
-                  value={a.name}
-                  onChange={(e) => handleNameChange(i, e.target.value)}
-                  placeholder={a.role}
-                  className={cn(
-                    'flex-1 min-w-0 bg-transparent text-xs font-mono text-text-0 outline-none placeholder:text-text-4',
-                    !nameValid && 'text-red-400',
+              <div key={i} className="rounded-md bg-surface-4 border border-border-subtle overflow-hidden">
+                <div
+                  className="flex items-center gap-2 px-2.5 py-1.5 cursor-pointer hover:bg-surface-5/50 transition-colors"
+                  onClick={() => setExpandedAgent(isExpanded ? null : i)}
+                >
+                  <Icon size={12} className="text-text-2 shrink-0" />
+                  <input
+                    type="text"
+                    value={a.name}
+                    onChange={(e) => handleNameChange(i, e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    placeholder={a.role}
+                    className={cn(
+                      'flex-1 min-w-0 bg-transparent text-xs font-mono text-text-0 outline-none placeholder:text-text-4',
+                      !nameValid && 'text-red-400',
+                    )}
+                    maxLength={64}
+                    spellCheck={false}
+                  />
+                  {a.provider && a.provider !== tsProvider && (
+                    <span className="text-2xs text-accent font-mono shrink-0">{a.provider}</span>
                   )}
-                  maxLength={64}
-                  spellCheck={false}
-                />
-                {a.scope?.length > 0 && (
-                  <span className="text-2xs text-text-4 font-mono shrink-0 truncate max-w-[120px]">
-                    {a.scope[0]}{a.scope.length > 1 ? ` +${a.scope.length - 1}` : ''}
-                  </span>
+                  {a.scope?.length > 0 && (
+                    <span className="text-2xs text-text-4 font-mono shrink-0 truncate max-w-[120px]">
+                      {a.scope[0]}{a.scope.length > 1 ? ` +${a.scope.length - 1}` : ''}
+                    </span>
+                  )}
+                  <ChevronDown size={10} className={cn('text-text-4 shrink-0 transition-transform duration-200', !isExpanded && '-rotate-90')} />
+                </div>
+                {isExpanded && (
+                  <div className="px-2.5 pb-2.5 pt-1 space-y-2.5 border-t border-border-subtle">
+                    <div className="flex gap-2">
+                      <div className="flex-1 space-y-1">
+                        <label className="flex items-center gap-1 text-2xs text-text-3 font-sans"><Cpu size={10} />Provider</label>
+                        <Select value={a.provider || ''} onValueChange={(id) => {
+                          const p = providers.find((x) => x.id === id);
+                          const pModels = (p?.models || []).filter((m) => m.type !== 'image' && !m.disabled);
+                          handleAgentField(i, { provider: id, model: pModels[0]?.id || '' });
+                        }}>
+                          <SelectTrigger placeholder="Team default" className="bg-surface-3 h-7 text-xs" />
+                          <SelectContent>
+                            <SelectItem value="">Team default</SelectItem>
+                            {providers.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>{p.displayName || p.name || p.id}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <label className="text-2xs text-text-3 font-sans">Model</label>
+                        <Select value={a.model || ''} onValueChange={(v) => handleAgentField(i, 'model', v)}>
+                          <SelectTrigger placeholder="Auto" className="bg-surface-3 h-7 text-xs" />
+                          <SelectContent>
+                            <SelectItem value="">Auto</SelectItem>
+                            {agentModels.map((m) => (
+                              <SelectItem key={m.id} value={m.id}>{m.name || m.id}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="flex items-center gap-1 text-2xs text-text-3 font-sans"><Activity size={10} />Model Routing</label>
+                      <div className="flex bg-surface-3 rounded-md p-0.5 border border-border-subtle">
+                        {[{ value: 'fixed', label: 'Fixed' }, { value: 'auto', label: 'Auto' }, { value: 'auto-floor', label: 'Auto + Floor' }].map((opt) => (
+                          <button
+                            key={opt.value}
+                            onClick={() => handleAgentField(i, 'routingMode', opt.value)}
+                            className={cn(
+                              'flex-1 px-2 py-1 text-2xs font-semibold font-sans rounded transition-all cursor-pointer',
+                              (a.routingMode || 'auto') === opt.value
+                                ? 'bg-accent/15 text-accent shadow-sm'
+                                : 'text-text-3 hover:text-text-1',
+                            )}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="flex items-center gap-1 text-2xs text-text-3 font-sans"><Gauge size={10} />Effort Level</label>
+                      <div className="flex bg-surface-3 rounded-md p-0.5 border border-border-subtle">
+                        {[{ value: 'min', label: 'Min' }, { value: 'low', label: 'Low' }, { value: 'default', label: 'Default' }, { value: 'high', label: 'High' }, { value: 'max', label: 'Max' }].map((opt) => (
+                          <button
+                            key={opt.value}
+                            onClick={() => handleAgentField(i, 'effort', opt.value)}
+                            className={cn(
+                              'flex-1 px-1.5 py-1 text-2xs font-semibold font-sans rounded transition-all cursor-pointer',
+                              (a.effort || 'default') === opt.value
+                                ? 'bg-accent/15 text-accent shadow-sm'
+                                : 'text-text-3 hover:text-text-1',
+                            )}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             );
           })}
 
-          {recommendedTeam.projectDir && tsMode === 'sandbox' && (
+          {recommendedTeam.projectDir && (
             <div className="flex items-center gap-1.5 text-2xs text-text-2 font-mono pt-0.5">
               <span className="text-text-4">Project:</span>
               <span className="text-accent">{recommendedTeam.projectDir}/</span>

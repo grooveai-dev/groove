@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { ScrollArea } from '../ui/scroll-area';
-import { Send, Bot, MessageSquare, X, ArrowRight } from 'lucide-react';
+import { Send, Bot, MessageSquare, X, ArrowRight, FileCode, Terminal } from 'lucide-react';
 import { timeAgo } from '../../lib/format';
 
 function FormattedText({ text }) {
@@ -29,6 +29,38 @@ function FormattedText({ text }) {
   );
 }
 
+function SnippetTag({ snippet, onRemove }) {
+  const isCode = snippet.type === 'code';
+  const Icon = isCode ? FileCode : Terminal;
+  const lines = snippet.code.split('\n').length;
+
+  let label;
+  if (isCode && snippet.filePath) {
+    const fileName = snippet.filePath.split('/').pop();
+    label = `${fileName}:${snippet.lineStart}-${snippet.lineEnd}`;
+  } else if (isCode) {
+    label = `${lines} line${lines !== 1 ? 's' : ''}`;
+  } else {
+    label = `Terminal · ${lines} line${lines !== 1 ? 's' : ''}`;
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-accent/10 border border-accent/20 text-accent">
+      <Icon size={11} className="flex-shrink-0" />
+      <span className="text-2xs font-sans font-medium truncate max-w-[160px]">{label}</span>
+      {snippet.instruction && (
+        <span className="text-2xs text-accent/60 truncate max-w-[100px]">· {snippet.instruction}</span>
+      )}
+      <button
+        onClick={onRemove}
+        className="p-0.5 rounded hover:bg-accent/20 cursor-pointer flex-shrink-0"
+      >
+        <X size={9} />
+      </button>
+    </div>
+  );
+}
+
 export function AiPanel() {
   const agentId = useGrooveStore((s) => s.editorSelectedAgent);
   const agents = useGrooveStore((s) => s.agents);
@@ -37,6 +69,8 @@ export function AiPanel() {
   const instructAgent = useGrooveStore((s) => s.instructAgent);
   const isThinking = useGrooveStore((s) => agentId ? s.thinkingAgents?.has(agentId) : false);
   const toggleAiPanel = useGrooveStore((s) => s.toggleAiPanel);
+  const pendingSnippet = useGrooveStore((s) => s.editorPendingSnippet);
+  const clearSnippet = useGrooveStore((s) => s.clearSnippet);
 
   const agent = agents.find((a) => a.id === agentId);
   const [input, setInput] = useState('');
@@ -44,6 +78,12 @@ export function AiPanel() {
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const isAtBottomRef = useRef(true);
+
+  useEffect(() => {
+    if (pendingSnippet) {
+      inputRef.current?.focus();
+    }
+  }, [pendingSnippet]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -61,14 +101,38 @@ export function AiPanel() {
     }
   }, [chatHistory.length, activityLog.length, sending, isThinking]);
 
+  function buildMessage(userText) {
+    const parts = [];
+
+    if (userText) parts.push(userText);
+
+    if (pendingSnippet) {
+      const s = pendingSnippet;
+      if (s.type === 'code' && s.filePath) {
+        if (s.instruction && !userText) parts.push(s.instruction);
+        parts.push(`File: ${s.filePath} (lines ${s.lineStart}-${s.lineEnd})`);
+        parts.push('```\n' + s.code + '\n```');
+      } else if (s.type === 'terminal') {
+        if (!userText) parts.push('Terminal output:');
+        parts.push('```\n' + s.code + '\n```');
+      } else {
+        parts.push('```\n' + s.code + '\n```');
+      }
+    }
+
+    return parts.join('\n');
+  }
+
   async function handleSend() {
     const text = input.trim();
-    if (!text || sending || !agentId) return;
+    if ((!text && !pendingSnippet) || sending || !agentId) return;
+    const message = buildMessage(text);
     setInput('');
+    clearSnippet();
     setSending(true);
     isAtBottomRef.current = true;
     try {
-      await instructAgent(agentId, text);
+      await instructAgent(agentId, message);
     } catch { /* toast handles */ }
     setSending(false);
     inputRef.current?.focus();
@@ -85,6 +149,7 @@ export function AiPanel() {
     from: 'agent', text: a.text, timestamp: a.timestamp, key: `act-${i}`,
   }));
   const messages = chatHistory.length > 0 ? chatHistory : recentActivity;
+  const canSend = (input.trim() || pendingSnippet) && !sending;
 
   return (
     <div className="flex flex-col h-full bg-surface-1 border-l border-border">
@@ -168,22 +233,28 @@ export function AiPanel() {
 
           {/* Input */}
           <div className="border-t border-border-subtle px-3 py-2 flex-shrink-0">
+            {/* Snippet tag */}
+            {pendingSnippet && (
+              <div className="mb-1.5">
+                <SnippetTag snippet={pendingSnippet} onRemove={clearSnippet} />
+              </div>
+            )}
             <div className="flex items-end gap-1.5">
               <textarea
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={onKeyDown}
-                placeholder="Message agent..."
+                placeholder={pendingSnippet ? 'Add a message (optional)...' : 'Message agent...'}
                 rows={1}
                 className="flex-1 resize-none rounded-lg px-3 py-1.5 text-xs bg-surface-0 border border-border text-text-0 font-sans placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent/40 min-h-[32px] max-h-[100px]"
               />
               <button
                 onClick={handleSend}
-                disabled={!input.trim() || sending}
+                disabled={!canSend}
                 className={cn(
                   'w-8 h-8 flex items-center justify-center rounded-lg transition-colors cursor-pointer flex-shrink-0',
-                  input.trim() && !sending
+                  canSend
                     ? 'bg-accent text-surface-0 hover:bg-accent/80'
                     : 'bg-surface-3 text-text-4',
                 )}

@@ -3231,8 +3231,11 @@ Keep responses concise. Help them think, don't lecture them about the system the
       const raw = readdirSync(fullPath, { withFileTypes: true });
       const entries = [];
 
+      const HIDDEN_DIRS = new Set(['.git', 'node_modules', '.groove', '.next', '.nuxt', '__pycache__', '.venv', 'dist', '.cache']);
+      const HIDDEN_FILES = new Set(['.DS_Store']);
+
       const dirs = raw.filter((e) => {
-        if (e.name === '.DS_Store') return false;
+        if (HIDDEN_FILES.has(e.name) || HIDDEN_DIRS.has(e.name)) return false;
         if (e.isDirectory()) return true;
         if (e.isSymbolicLink()) {
           try { return statSync(resolve(fullPath, e.name)).isDirectory(); }
@@ -3241,7 +3244,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
         return false;
       }).sort((a, b) => a.name.localeCompare(b.name));
       const files = raw.filter((e) => {
-        if (e.name === '.DS_Store') return false;
+        if (HIDDEN_FILES.has(e.name)) return false;
         if (e.isFile()) return true;
         if (e.isSymbolicLink()) {
           try { return statSync(resolve(fullPath, e.name)).isFile(); }
@@ -6986,30 +6989,93 @@ Keep responses concise. Help them think, don't lecture them about the system the
   app.post('/api/lab/inference', async (req, res) => {
     try {
       const params = validateLabInferenceParams(req.body);
+      const rt = daemon.modelLab.getRuntime(params.runtimeId);
+      if (!rt) throw new Error('Runtime not found');
 
+      const url = new URL(`${rt.endpoint}/v1/chat/completions`);
+      const reqHeaders = { 'Content-Type': 'application/json' };
+      if (rt.apiKey) reqHeaders['Authorization'] = `Bearer ${rt.apiKey}`;
+
+      const body = {
+        model: params.model,
+        messages: params.messages,
+        stream: true,
+      };
+      const pb = params.parameters || {};
+      if (pb.temperature !== undefined) body.temperature = pb.temperature;
+      if (pb.top_p !== undefined) body.top_p = pb.top_p;
+      if (pb.top_k !== undefined) body.top_k = pb.top_k;
+      if (pb.repeat_penalty !== undefined) body.repeat_penalty = pb.repeat_penalty;
+      if (pb.max_tokens !== undefined) body.max_tokens = pb.max_tokens;
+      if (pb.stop !== undefined) body.stop = pb.stop;
+      if (pb.frequency_penalty !== undefined) body.frequency_penalty = pb.frequency_penalty;
+      if (pb.presence_penalty !== undefined) body.presence_penalty = pb.presence_penalty;
+
+      const payload = JSON.stringify(body);
+
+      // Use Node http module directly — Electron's fetch has stream issues
+      const { request: httpRequest } = await import('http');
+      const upstream = await new Promise((resolve, reject) => {
+        const r = httpRequest({
+          hostname: url.hostname,
+          port: url.port,
+          path: url.pathname,
+          method: 'POST',
+          headers: { ...reqHeaders, 'Content-Length': Buffer.byteLength(payload) },
+          timeout: 300000,
+        }, resolve);
+        r.on('error', reject);
+        r.on('timeout', () => { r.destroy(); reject(new Error('Upstream timeout')); });
+        r.write(payload);
+        r.end();
+      });
+
+      if (upstream.statusCode !== 200) {
+        let errMsg = `HTTP ${upstream.statusCode}`;
+        try {
+          const chunks = [];
+          for await (const c of upstream) chunks.push(c);
+          const data = JSON.parse(Buffer.concat(chunks).toString());
+          errMsg = data.error?.message || errMsg;
+        } catch { /* ignore */ }
+        throw new Error(errMsg);
+      }
+
+      // Pipe raw OpenAI-compatible SSE straight to client
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
       res.setHeader('X-Accel-Buffering', 'no');
-      res.flushHeaders();
+      upstream.pipe(res);
 
-      let closed = false;
-      req.on('close', () => { closed = true; });
-
-      await daemon.modelLab.streamInference(params, (event) => {
-        if (!closed) res.write(`data: ${JSON.stringify(event)}\n\n`);
-      });
-
-      if (!closed) {
-        res.write('data: [DONE]\n\n');
-        res.end();
+      // Collect content for session persistence
+      if (params.sessionId) {
+        let full = '';
+        upstream.on('data', (chunk) => {
+          const text = chunk.toString('utf8');
+          for (const line of text.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data: ')) continue;
+            const d = trimmed.slice(6);
+            if (d === '[DONE]') continue;
+            try {
+              const p = JSON.parse(d);
+              const c = p.choices?.[0]?.delta?.content;
+              if (c) full += c;
+            } catch { /* skip */ }
+          }
+        });
+        upstream.on('end', () => {
+          if (full) daemon.modelLab._appendToSession(params.sessionId, params.messages, { role: 'assistant', content: full });
+        });
       }
+
+      req.on('close', () => { upstream.destroy(); });
     } catch (err) {
       if (!res.headersSent) {
         res.status(400).json({ error: err.message });
       } else {
-        res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
-        res.end();
+        try { res.end(); } catch { /* ignore */ }
       }
     }
   });

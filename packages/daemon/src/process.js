@@ -1976,6 +1976,10 @@ For normal file edits within your scope, proceed without review.
    * Resume a completed agent's session with a new message.
    * Uses --resume SESSION_ID for zero cold-start continuation.
    * Falls back to full spawn if no session ID available.
+   *
+   * If the agent has been idle for longer than IDLE_CONTEXT_THRESHOLD,
+   * spawns fresh with the full conversation thread instead of --resume.
+   * This avoids degraded context from internal compaction.
    */
   async resume(agentId, message) {
     const { registry, locks } = this.daemon;
@@ -1994,6 +1998,23 @@ For normal file edits within your scope, proceed without review.
     // If no session ID, fall back to rotation (handoff brief)
     if (!agent.sessionId) {
       return this.daemon.rotator.rotate(agentId, { additionalPrompt: message });
+    }
+
+    // Context-aware idle resume: if the agent has been idle long enough for
+    // internal compaction to degrade context, spawn fresh with the full
+    // conversation thread instead of resuming the compacted session.
+    const IDLE_CONTEXT_THRESHOLD_MS = 5 * 60_000; // 5 minutes (matches prompt cache TTL)
+    const idleMs = agent.lastActivity
+      ? Date.now() - new Date(agent.lastActivity).getTime()
+      : Infinity;
+
+    if (idleMs > IDLE_CONTEXT_THRESHOLD_MS && this.daemon.journalist) {
+      const resumePrompt = this.daemon.journalist.buildConversationResumePrompt(agent, message);
+      if (resumePrompt) {
+        console.log(`[Groove] Agent ${agent.name} idle ${Math.round(idleMs / 60000)}min — using conversation-thread resume`);
+        // Use rotation machinery but with our richer prompt instead of handoff brief
+        return this._conversationResume(agentId, agent, resumePrompt);
+      }
     }
 
     const provider = getProvider(agent.provider || 'claude-code');
@@ -2120,6 +2141,61 @@ For normal file edits within your scope, proceed without review.
       this._exitHandled.add(newAgent.id);
       this._stalledAgents.delete(newAgent.id);
       registry.update(newAgent.id, { status: 'crashed', pid: null });
+    });
+
+    return newAgent;
+  }
+
+  /**
+   * Conversation-thread resume: spawns a fresh agent with the full
+   * user↔assistant conversation as context instead of using --resume
+   * on a potentially compacted session. Used when idle > threshold.
+   */
+  async _conversationResume(agentId, agent, resumePrompt) {
+    const { registry, locks } = this.daemon;
+    const config = { ...agent };
+
+    if (this.handles.has(agentId)) {
+      await this.kill(agentId);
+    }
+    registry.remove(agentId);
+    locks.release(agentId);
+
+    const newAgent = await this.spawn({
+      role: config.role,
+      scope: config.scope,
+      provider: config.provider,
+      model: config.model,
+      prompt: resumePrompt,
+      permission: config.permission || 'full',
+      workingDir: config.workingDir,
+      name: config.name,
+      teamId: config.teamId,
+      isRotation: true,
+    });
+
+    // Carry cumulative token count for tracking
+    if (config.tokensUsed > 0) {
+      registry.update(newAgent.id, { tokensUsed: config.tokensUsed });
+    }
+
+    if (this.daemon.timeline) {
+      this.daemon.timeline.recordEvent('conversation_resume', {
+        agentId: newAgent.id,
+        oldAgentId: agentId,
+        agentName: newAgent.name,
+        role: config.role,
+        idleMinutes: Math.round((Date.now() - new Date(config.lastActivity).getTime()) / 60000),
+      });
+    }
+
+    this.daemon.broadcast({
+      type: 'rotation:complete',
+      agentId: newAgent.id,
+      agentName: newAgent.name,
+      oldAgentId: agentId,
+      reason: 'conversation_resume',
+      tokensSaved: 0,
     });
 
     return newAgent;

@@ -182,10 +182,11 @@ export function AgentFileTree({ agentId, onCollapse }) {
   const createFile = useGrooveStore((s) => s.createFile);
   const addToast = useGrooveStore((s) => s.addToast);
   const fetchTreeDir = useGrooveStore((s) => s.fetchTreeDir);
+  const projectDir = useGrooveStore((s) => s.projectDir);
 
   const agent = agents.find((a) => a.id === agentId);
   const scope = agent?.scope || [];
-  const workingDir = agent?.workingDir || '';
+  const workingDir = agent?.workingDir || projectDir || '';
   const isRunning = agent?.status === 'running' || agent?.status === 'starting';
 
   const [treeData, setTreeData] = useState([]);
@@ -366,7 +367,11 @@ export function AgentFileTree({ agentId, onCollapse }) {
     if (workingDir && absPath.startsWith(workingDir + '/')) {
       return absPath.slice(workingDir.length + 1);
     }
-    return absPath;
+    if (projectDir && absPath.startsWith(projectDir + '/')) {
+      return absPath.slice(projectDir.length + 1);
+    }
+    const lastSlash = absPath.lastIndexOf('/');
+    return lastSlash >= 0 ? absPath.slice(lastSlash + 1) : absPath;
   }
 
   function parentDir(path) {

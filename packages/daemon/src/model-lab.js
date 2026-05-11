@@ -95,6 +95,17 @@ export class ModelLab {
   removeRuntime(id) {
     const rt = this.runtimes.get(id);
     if (!rt) return null;
+
+    // Stop the llama-server process if this is a local model runtime
+    if (rt._localModelId) {
+      const mm = this.daemon.modelManager;
+      const ls = this.daemon.llamaServer;
+      if (mm && ls) {
+        const modelPath = mm.getModelPath(rt._localModelId);
+        if (modelPath) ls.stopServer(modelPath).catch(() => {});
+      }
+    }
+
     this.runtimes.delete(id);
     this._saveRuntimes();
     this.daemon.broadcast({ type: 'lab:runtime:removed', data: { id } });

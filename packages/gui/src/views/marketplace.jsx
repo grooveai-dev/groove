@@ -4,15 +4,13 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Skeleton } from '../components/ui/skeleton';
-import { SkillCard, SkillCardSkeleton } from '../components/marketplace/skill-card';
+import { SkillCardSkeleton } from '../components/marketplace/skill-card';
 import { MarketplaceCard } from '../components/marketplace/marketplace-card';
 import { SearchBar } from '../components/marketplace/search-bar';
-import { CategoryBar } from '../components/marketplace/category-bar';
 import { MarketplaceBadge } from '../components/marketplace/marketplace-badge';
 import { StarRating } from '../components/marketplace/star-rating';
 import { PriceBadge } from '../components/marketplace/price-badge';
 import { VerifiedShield } from '../components/marketplace/verified-shield';
-import { markFavorites } from '../components/marketplace/favorites';
 import { api } from '../lib/api';
 import { useToast } from '../lib/hooks/use-toast';
 import { fmtNum, timeAgo } from '../lib/format';
@@ -22,7 +20,7 @@ import { RepoImport } from '../components/marketplace/repo-import';
 import { RepoCard } from '../components/marketplace/repo-card';
 import { RepoNukeDialog } from '../components/marketplace/repo-nuke-dialog';
 import {
-  ChevronLeft, ChevronDown, Sparkles, Plug, LogIn,
+  ChevronLeft, Plug, LogIn,
   Upload, Package, Download, ShoppingBag, RefreshCw, Trash2,
   GitBranch,
 } from 'lucide-react';
@@ -214,70 +212,6 @@ function SkillDetail({ skill, onBack }) {
 }
 
 // ── Skills Browse ────────────────────────────────────────
-function SkillsBrowse() {
-  const [skills, setSkills] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('');
-  const [sort, setSort] = useState('popular');
-  const [selectedSkill, setSelectedSkill] = useState(null);
-
-  useEffect(() => {
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (search) params.set('search', search);
-    if (category) params.set('category', category);
-    if (sort) params.set('sort', sort);
-    api.get(`/skills/registry?${params}`)
-      .then((d) => setSkills(markFavorites(d.skills || d.items || (Array.isArray(d) ? d : []))))
-      .catch(() => setSkills([]))
-      .finally(() => setLoading(false));
-  }, [search, category, sort]);
-
-  if (selectedSkill) {
-    return <SkillDetail skill={selectedSkill} onBack={() => setSelectedSkill(null)} />;
-  }
-
-  return (
-    <ScrollArea className="h-full">
-      <div className="px-5 py-4">
-        <div className="flex items-center gap-3">
-          <div className="w-72">
-            <SearchBar value={search} onChange={setSearch} />
-          </div>
-          <CategoryBar selected={category} onSelect={setCategory} />
-          <div className="flex-1" />
-          <div className="relative flex-shrink-0">
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value)}
-              className="appearance-none font-sans cursor-pointer pr-7 py-2 pl-3 text-xs bg-surface-0 border border-border-subtle rounded text-text-1 focus:outline-none"
-            >
-              <option value="popular">Popular</option>
-              <option value="rating">Top Rated</option>
-              <option value="newest">Newest</option>
-              <option value="name">A-Z</option>
-            </select>
-            <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-4 pointer-events-none" />
-          </div>
-          <span className="text-2xs text-text-4 font-mono flex-shrink-0">{skills.length}</span>
-        </div>
-
-        <div className="mt-4 grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
-          {loading
-            ? Array.from({ length: 8 }).map((_, i) => <SkillCardSkeleton key={i} />)
-            : skills.map((s) => <SkillCard key={s.id} skill={s} onClick={setSelectedSkill} />)
-          }
-        </div>
-
-        {!loading && skills.length === 0 && (
-          <div className="text-center py-16 text-text-4 font-sans text-sm">No skills found.</div>
-        )}
-      </div>
-    </ScrollArea>
-  );
-}
-
 // ── Integrations Browse ──────────────────────────────────
 const GOOGLE_IDS = new Set(['gmail', 'google-calendar', 'google-drive', 'google-docs', 'google-sheets', 'google-slides']);
 
@@ -666,10 +600,9 @@ function GitHubBrowse() {
 
 // ── Main ─────────────────────────────────────────────────
 export default function MarketplaceView() {
-  const [tab, setTab] = useState('skills');
+  const [tab, setTab] = useState('integrations');
 
   const tabs = [
-    { id: 'skills', label: 'Skills', icon: Sparkles },
     { id: 'integrations', label: 'Integrations', icon: Plug },
     { id: 'github', label: 'GitHub', icon: GitBranch },
     { id: 'library', label: 'My Library', icon: Package },
@@ -701,7 +634,6 @@ export default function MarketplaceView() {
 
       {/* Content */}
       <div className="flex-1 min-h-0">
-        {tab === 'skills' && <SkillsBrowse />}
         {tab === 'integrations' && <IntegrationsBrowse />}
         {tab === 'github' && <GitHubBrowse />}
         {tab === 'library' && <MyLibrary />}

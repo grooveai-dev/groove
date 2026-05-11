@@ -460,13 +460,14 @@ export function createApi(app, daemon) {
   // Discoveries (error → fix pairs)
   app.get('/api/memory/discoveries', (req, res) => {
     const role = req.query.role;
+    const teamId = req.query.teamId;
     const limit = Math.min(parseInt(req.query.limit) || 100, 500);
-    res.json({ discoveries: daemon.memory.listDiscoveries({ role, limit }) });
+    res.json({ discoveries: daemon.memory.listDiscoveries({ role, teamId, limit }) });
   });
 
   app.post('/api/memory/discoveries', (req, res) => {
-    const { agentId, role, trigger, fix, outcome } = req.body || {};
-    const result = daemon.memory.addDiscovery({ agentId, role, trigger, fix, outcome });
+    const { agentId, role, trigger, fix, outcome, teamId } = req.body || {};
+    const result = daemon.memory.addDiscovery({ agentId, role, trigger, fix, outcome, teamId });
     if (!result.added && result.error) {
       return res.status(400).json(result);
     }
@@ -3171,11 +3172,21 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   function validateFilePath(relPath, projectDir) {
     if (!relPath || typeof relPath !== 'string') return { error: 'path is required' };
-    if (relPath.startsWith('/') || relPath.includes('..') || relPath.includes('\0')) {
-      return { error: 'Invalid path' };
+    if (relPath.includes('\0')) return { error: 'Invalid path' };
+
+    let fullPath;
+    if (relPath.startsWith('/')) {
+      if (relPath.includes('..')) return { error: 'Invalid path' };
+      if (!relPath.startsWith(projectDir + '/') && relPath !== projectDir) {
+        return { error: 'Path outside project' };
+      }
+      fullPath = relPath;
+    } else {
+      if (relPath.includes('..')) return { error: 'Invalid path' };
+      fullPath = resolve(projectDir, relPath);
+      if (!fullPath.startsWith(projectDir)) return { error: 'Path outside project' };
     }
-    const fullPath = resolve(projectDir, relPath);
-    if (!fullPath.startsWith(projectDir)) return { error: 'Path outside project' };
+
     // Symlink resolution — ensure real path is also within project
     try {
       const realPath = realpathSync(fullPath);

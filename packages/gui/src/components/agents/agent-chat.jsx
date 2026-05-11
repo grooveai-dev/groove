@@ -39,9 +39,9 @@ function parseSegments(text) {
 }
 
 function highlightKeeper(text) {
-  const parts = text.split(/(\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|\b(?:save|append|update|delete|view|doc|link|read|instruct)\b(?=\s+#)|#[\w/.-]+)/gi);
+  const parts = text.split(/(\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|#[\w/.-]+)/gi);
   return parts.map((part, i) => {
-    if (/^\[?(?:save|append|update|delete|view|doc|link|read|instruct)\]?$/i.test(part)) {
+    if (/^\[(?:save|append|update|delete|view|doc|link|read|instruct)\]$/i.test(part)) {
       return <span key={i} className="px-1 py-0.5 rounded bg-accent/15 text-accent font-semibold font-mono text-2xs">{part}</span>;
     }
     if (/^#[\w/.-]+$/.test(part)) {
@@ -267,7 +267,7 @@ export function AgentChat({ agent }) {
           >
             <Paperclip size={14} />
           </button>
-          <div className="flex-1 relative">
+          <div className="flex-1 relative bg-surface-0 rounded-lg border border-border focus-within:ring-1 focus-within:ring-accent/40">
             <div
               aria-hidden
               className="absolute inset-0 px-3 py-1.5 text-xs font-sans pointer-events-none whitespace-pre-wrap break-words overflow-hidden min-h-[32px] max-h-[120px] leading-[1.625]"
@@ -283,12 +283,11 @@ export function AgentChat({ agent }) {
               rows={1}
               className={cn(
                 'w-full resize-none rounded-lg px-3 py-1.5 text-xs',
-                'bg-surface-0 border font-sans',
+                'bg-transparent font-sans relative z-10',
                 'placeholder:text-text-4',
-                'focus:outline-none focus:ring-1',
+                'focus:outline-none',
                 'min-h-[32px] max-h-[120px]',
-                'border-border focus:ring-accent/40',
-                input && /(\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|\b(?:save|append|update|delete|view|doc|link|read|instruct)\b\s+#|#[\w/.-]+)/i.test(input)
+                input && /(\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|#[\w/.-]+)/i.test(input)
                   ? 'text-transparent caret-text-0'
                   : 'text-text-0',
               )}

@@ -261,7 +261,7 @@ export class MemoryStore {
 
   // --- Discoveries (error → fix pairs) ---
 
-  addDiscovery({ agentId, role, trigger, fix, outcome = 'success' }) {
+  addDiscovery({ agentId, role, trigger, fix, outcome = 'success', teamId }) {
     if (!trigger || !fix) return { added: false, error: 'trigger and fix required' };
     if (outcome !== 'success') return { added: false, reason: 'only successes stored' };
 
@@ -277,6 +277,7 @@ export class MemoryStore {
       ts: new Date().toISOString(),
       agentId: agentId || null,
       role: role || 'unknown',
+      teamId: teamId || null,
       trigger: truncate(String(trigger).trim(), 300),
       fix: truncate(String(fix).trim(), 500),
       outcome,
@@ -298,7 +299,7 @@ export class MemoryStore {
     }
   }
 
-  listDiscoveries({ role, limit = 100 } = {}) {
+  listDiscoveries({ role, teamId, limit = 100 } = {}) {
     if (!existsSync(this.discoveriesPath)) return [];
     try {
       const lines = readFileSync(this.discoveriesPath, 'utf8').split('\n').filter(Boolean);
@@ -306,7 +307,9 @@ export class MemoryStore {
       for (const line of lines) {
         try {
           const e = JSON.parse(line);
-          if (!role || e.role === role) entries.push(e);
+          if (role && e.role !== role) continue;
+          if (teamId && e.teamId && e.teamId !== teamId) continue;
+          entries.push(e);
         } catch { /* skip malformed */ }
       }
       return entries.slice(-limit).reverse(); // newest first
@@ -328,8 +331,8 @@ export class MemoryStore {
     } catch { /* best-effort */ }
   }
 
-  getDiscoveriesMarkdown(role, limit = 20, maxChars = 4000, scope) {
-    let entries = this.listDiscoveries({ role, limit: limit * 3 });
+  getDiscoveriesMarkdown(role, limit = 20, maxChars = 4000, scope, teamId) {
+    let entries = this.listDiscoveries({ role, teamId, limit: limit * 3 });
     if (entries.length === 0) return '';
 
     if (scope && Array.isArray(scope) && scope.length > 0) {

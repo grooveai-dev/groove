@@ -877,7 +877,7 @@ export class Journalist {
     const entries = agentLog?.entries || [];
 
     // Layer 7 memory: discoveries (inline, not pointer — agents lose context with pointers), constraints, specializations
-    const discoveries = this.daemon.memory?.getDiscoveriesMarkdown(agent.role, 10, 1500) || '';
+    const discoveries = this.daemon.memory?.getDiscoveriesMarkdown(agent.role, 10, 1500, agent.scope, agent.teamId) || '';
     const constraints = this.daemon.memory?.getConstraintsMarkdown(2000) || '';
     const specialization = this.daemon.memory?.getSpecialization(agent.id);
     const specLine = specialization?.avgQualityScore != null
@@ -1106,7 +1106,7 @@ export class Journalist {
     if (!thread) return null;
 
     const constraints = this.daemon.memory?.getConstraintsMarkdown(2000) || '';
-    const discoveries = this.daemon.memory?.getDiscoveriesMarkdown(agent.role, 5, 1000) || '';
+    const discoveries = this.daemon.memory?.getDiscoveriesMarkdown(agent.role, 5, 1000, agent.scope, agent.teamId) || '';
 
     let prompt = [
       `# Session Context Resume`,
@@ -1352,6 +1352,7 @@ export class Journalist {
             this.daemon.memory.addDiscovery({
               agentId: agent.id,
               role: agent.role,
+              teamId: agent.teamId || null,
               trigger: trigger.slice(0, 300),
               fix: fix.slice(0, 500),
               outcome: 'success',

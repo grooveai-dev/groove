@@ -511,19 +511,18 @@ export function AgentFileTree({ agentId, onCollapse }) {
               Agent Files
             </div>
             {touchedFiles.slice(0, 15).map((f) => {
-              const relPath = toRelativePath(f.path);
-              const name = relPath.split('/').pop();
+              const name = f.path.split('/').pop();
               const hasWrites = f.writes > 0;
               return (
                 <button
                   key={f.path}
-                  onClick={() => openFile(relPath)}
-                  onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); handleContextMenu(e, { path: relPath, name, type: 'file' }); }}
-                  onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); handleContextMenu(e, { path: relPath, name, type: 'file' }); }}
+                  onClick={() => openFile(f.path)}
+                  onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); handleContextMenu(e, { path: f.path, name, type: 'file' }); }}
+                  onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); handleContextMenu(e, { path: f.path, name, type: 'file' }); }}
                   className={cn(
                     'w-full flex items-center gap-1.5 px-3 py-1 text-xs font-sans cursor-pointer',
                     'hover:bg-surface-4/50 transition-colors text-left',
-                    (editorActiveFile === f.path || editorActiveFile === relPath) && 'bg-accent/8 text-accent',
+                    editorActiveFile === f.path && 'bg-accent/8 text-accent',
                   )}
                 >
                   {hasWrites

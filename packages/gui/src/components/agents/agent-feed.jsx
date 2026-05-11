@@ -483,11 +483,17 @@ function BootSequence({ agent }) {
 // ── Main Feed ────────────────────────────────────────────────
 
 export function AgentFeed({ agent }) {
-  const chatHistory = useGrooveStore((s) => s.chatHistory[agent.id]) || EMPTY;
-  const activityLog = useGrooveStore((s) => s.activityLog[agent.id]) || EMPTY;
+  const rawChatHistory = useGrooveStore((s) => s.chatHistory[agent.id]) || EMPTY;
+  const rawActivityLog = useGrooveStore((s) => s.activityLog[agent.id]) || EMPTY;
   const instructAgent = useGrooveStore((s) => s.instructAgent);
   const queryAgent = useGrooveStore((s) => s.queryAgent);
   const isThinking = useGrooveStore((s) => s.thinkingAgents?.has(agent.id));
+  const cachedChatRef = useRef(EMPTY);
+  const cachedActivityRef = useRef(EMPTY);
+  if (rawChatHistory.length > 0) cachedChatRef.current = rawChatHistory;
+  if (rawActivityLog.length > 0) cachedActivityRef.current = rawActivityLog;
+  const chatHistory = rawChatHistory.length > 0 ? rawChatHistory : cachedChatRef.current;
+  const activityLog = rawActivityLog.length > 0 ? rawActivityLog : cachedActivityRef.current;
 
   const storeInput = useGrooveStore((s) => s.chatInputs[agent.id] || '');
   const setStoreInput = (val) => useGrooveStore.setState((s) => ({ chatInputs: { ...s.chatInputs, [agent.id]: val } }));

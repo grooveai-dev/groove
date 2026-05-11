@@ -1322,7 +1322,7 @@ export const useGrooveStore = create((set, get) => ({
   },
 
   async _handleKeeperCommand(agentId, message, command) {
-    const rest = message.replace(/\[\w+[-\w]*\]|\b(?:save|append|update|delete|view|doc|link|read|instruct)\b/i, '').trim();
+    const rest = message.replace(/\[\w+[-\w]*\]/i, '').trim();
     const tags = (rest.match(/#[\w/.-]+/g) || []).map(t => t.replace(/^#/, ''));
 
     const addSystemMsg = (text) => {
@@ -2684,9 +2684,9 @@ export const useGrooveStore = create((set, get) => ({
 
   async instructAgent(id, message) {
     // ── Keeper command interception ─────────────────────────
-    const keeperCmd = message.match(/\[(save|append|update|delete|view|doc|link|read|instruct)\]|\b(save|append|update|delete|view|doc|link|read)\b(?=\s+#[\w/.-])/i);
+    const keeperCmd = message.match(/\[(save|append|update|delete|view|doc|link|read|instruct)\]/i);
     if (keeperCmd) {
-      const handled = await get()._handleKeeperCommand(id, message, (keeperCmd[1] || keeperCmd[2]).toLowerCase());
+      const handled = await get()._handleKeeperCommand(id, message, keeperCmd[1].toLowerCase());
       if (handled === true) return { status: 'keeper_handled' };
       if (handled?.passthrough) {
         message = handled.passthrough;

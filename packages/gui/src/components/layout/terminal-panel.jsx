@@ -228,7 +228,6 @@ export function TerminalPanel({
               <Tooltip content={activeAgent ? `Send to ${agent?.name || 'agent'}` : 'Send to agent'} side="top">
                 <button
                   onClick={handleSendClick}
-                  disabled={sending}
                   className={cn(
                     'flex items-center gap-1.5 px-2 py-1 rounded text-xs font-sans cursor-pointer transition-colors mr-1',
                     'bg-accent/15 text-accent hover:bg-accent/25 disabled:opacity-50',

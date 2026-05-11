@@ -1,7 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useRef, useEffect, useCallback } from 'react';
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, Decoration, ViewPlugin, gutter, GutterMarker } from '@codemirror/view';
-import { EditorState, Compartment, StateField, StateEffect, RangeSet } from '@codemirror/state';
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view';
+import { EditorState, Compartment } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { bracketMatching } from '@codemirror/language';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
@@ -26,7 +26,6 @@ import {
   vscodeLight, xcodeLight,
 } from '@uiw/codemirror-themes-all';
 import { useGrooveStore } from '../../stores/groove';
-import { api } from '../../lib/api';
 
 const LANGS = {
   javascript: () => javascript({ jsx: true, typescript: false }),
@@ -79,52 +78,6 @@ export const EDITOR_THEMES = {
   basicLight:       { label: 'Basic Light',         ext: basicLight },
 };
 
-// ── Git gutter decorations ───────────────────────────────────
-const setGitLines = StateEffect.define();
-
-const gitLinesField = StateField.define({
-  create() { return { added: new Set(), modified: new Set(), deleted: new Set() }; },
-  update(value, tr) {
-    for (const e of tr.effects) {
-      if (e.is(setGitLines)) return e.value;
-    }
-    return value;
-  },
-});
-
-class GitGutterMarker extends GutterMarker {
-  constructor(type) { super(); this.type = type; }
-  toDOM() {
-    const el = document.createElement('div');
-    el.style.width = '3px';
-    el.style.height = '100%';
-    el.style.borderRadius = '1px';
-    if (this.type === 'added') el.style.background = 'var(--color-success)';
-    else if (this.type === 'modified') el.style.background = 'var(--color-warning)';
-    else el.style.background = 'var(--color-danger)';
-    return el;
-  }
-}
-
-const addedMarker = new GitGutterMarker('added');
-const modifiedMarker = new GitGutterMarker('modified');
-const deletedMarker = new GitGutterMarker('deleted');
-
-const gitGutter = gutter({
-  class: 'cm-git-gutter',
-  markers(view) {
-    const lines = view.state.field(gitLinesField);
-    const markers = [];
-    for (let i = 1; i <= view.state.doc.lines; i++) {
-      const lineStart = view.state.doc.line(i).from;
-      if (lines.added.has(i)) markers.push(addedMarker.range(lineStart));
-      else if (lines.modified.has(i)) markers.push(modifiedMarker.range(lineStart));
-      else if (lines.deleted.has(i)) markers.push(deletedMarker.range(lineStart));
-    }
-    return RangeSet.of(markers);
-  },
-});
-
 const editorChrome = EditorView.theme({
   '&': { fontFamily: 'var(--font-mono)', fontSize: '12px', height: '100%', lineHeight: '1.6' },
   '.cm-scroller': { overflow: 'auto', padding: '4px 0' },
@@ -139,8 +92,6 @@ const editorChrome = EditorView.theme({
   '.cm-search .cm-button, .cm-button': { borderRadius: '4px', padding: '2px 8px', fontSize: '10px', fontFamily: 'var(--font-sans)', cursor: 'pointer', backgroundImage: 'none' },
   '.cm-search br': { display: 'none' },
   '.cm-panel.cm-search [name=close]': { cursor: 'pointer', padding: '0 4px' },
-  '.cm-git-gutter': { width: '4px', marginRight: '2px' },
-  '.cm-git-gutter .cm-gutterElement': { padding: '0', minWidth: '3px' },
 });
 
 function getThemeExt(key) {
@@ -186,8 +137,6 @@ export function CodeEditor({ content, language, onChange, onSave, onCursorChange
     const state = EditorState.create({
       doc: content || '',
       extensions: [
-        gitLinesField,
-        gitGutter,
         lineNumbers(),
         highlightActiveLine(),
         highlightActiveLineGutter(),
@@ -219,21 +168,6 @@ export function CodeEditor({ content, language, onChange, onSave, onCursorChange
 
     return () => { view.destroy(); viewRef.current = null; if (externalViewRef) externalViewRef.current = null; };
   }, []);
-
-  // Fetch and apply git line status when filePath changes
-  useEffect(() => {
-    const view = viewRef.current;
-    if (!view || !filePath) return;
-    api.get(`/files/git-line-status?path=${encodeURIComponent(filePath)}`).then((data) => {
-      if (!data?.lines) return;
-      const lines = {
-        added: new Set(data.lines.added || []),
-        modified: new Set(data.lines.modified || []),
-        deleted: new Set(data.lines.deleted || []),
-      };
-      view.dispatch({ effects: setGitLines.of(lines) });
-    }).catch(() => {});
-  }, [filePath, content]);
 
   useEffect(() => {
     const view = viewRef.current;

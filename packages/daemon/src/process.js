@@ -2000,22 +2000,11 @@ For normal file edits within your scope, proceed without review.
       return this.daemon.rotator.rotate(agentId, { additionalPrompt: message });
     }
 
-    // Context-aware idle resume: if the agent has been idle long enough for
-    // internal compaction to degrade context, spawn fresh with the full
-    // conversation thread instead of resuming the compacted session.
-    const IDLE_CONTEXT_THRESHOLD_MS = 5 * 60_000; // 5 minutes (matches prompt cache TTL)
-    const idleMs = agent.lastActivity
-      ? Date.now() - new Date(agent.lastActivity).getTime()
-      : Infinity;
-
-    if (idleMs > IDLE_CONTEXT_THRESHOLD_MS && this.daemon.journalist) {
-      const resumePrompt = this.daemon.journalist.buildConversationResumePrompt(agent, message);
-      if (resumePrompt) {
-        console.log(`[Groove] Agent ${agent.name} idle ${Math.round(idleMs / 60000)}min — using conversation-thread resume`);
-        // Use rotation machinery but with our richer prompt instead of handoff brief
-        return this._conversationResume(agentId, agent, resumePrompt);
-      }
-    }
+    // Conversation-thread resume: available via explicit API call (conversationResume=true)
+    // but NOT automatic. The old 5-min idle threshold was too aggressive — it replaced
+    // every normal --resume with a full re-spawn, losing the Claude Code session.
+    // Normal --resume preserves the actual CC session; conversation-resume is for when
+    // the user explicitly wants a fresh context with the dialogue replayed.
 
     const provider = getProvider(agent.provider || 'claude-code');
     if (!provider?.buildResumeCommand) {

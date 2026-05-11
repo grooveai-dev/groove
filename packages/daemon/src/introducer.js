@@ -437,7 +437,7 @@ export class Introducer {
         }
 
         if (!isLightPlanner && (hasTask || isRotation)) {
-          const discoveries = this.daemon.memory.getDiscoveriesMarkdown(newAgent.role, 8, 600, newAgent.scope);
+          const discoveries = this.daemon.memory.getDiscoveriesMarkdown(newAgent.role, 8, 600, newAgent.scope, newAgent.teamId);
           if (discoveries) {
             parts.push(`### Known Fixes for ${newAgent.role} Role\n${discoveries}`);
           }

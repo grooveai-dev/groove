@@ -4,6 +4,7 @@ import { useGrooveStore } from '../stores/groove';
 import { DashboardHeader } from '../components/dashboard/header-bar';
 import { KpiStrip } from '../components/dashboard/kpi-card';
 import { FleetPanel } from '../components/dashboard/fleet-panel';
+import { ContextGauges } from '../components/dashboard/context-gauges';
 import { TokenChart } from '../components/dashboard/token-chart';
 import { CacheRing } from '../components/dashboard/cache-ring';
 import { RoutingChart } from '../components/dashboard/routing-chart';
@@ -142,6 +143,7 @@ export default function DashboardView() {
             <div className="px-3 pt-2.5 pb-1 flex-shrink-0">
               <span className="text-2xs font-mono text-text-3 uppercase tracking-widest">Agent Fleet</span>
             </div>
+            <ContextGauges agentBreakdown={agentBreakdown} />
             <FleetPanel agentBreakdown={agentBreakdown} rotating={rotating} teams={teams} />
           </div>
 

@@ -6,7 +6,6 @@ import { AgentFileTree } from './agent-file-tree';
 import { DiffViewer } from './diff-viewer';
 import { CodeReview } from './code-review';
 import { CodeEditor } from '../editor/code-editor';
-import { AiPanel } from '../editor/ai-panel';
 import { SelectionMenu } from '../editor/selection-menu';
 import { InlinePrompt } from '../editor/inline-prompt';
 import { QuickSearch } from '../editor/quick-search';
@@ -15,7 +14,7 @@ import { roleColor } from '../../lib/status';
 import { MediaViewer, isMediaFile } from '../editor/media-viewer';
 import {
   X, Code2, FileCode, GitCompareArrows,
-  ClipboardCheck, Users, PanelLeftOpen, Sparkles, Search,
+  ClipboardCheck, Users, PanelLeftOpen, Search,
 } from 'lucide-react';
 
 const TREE_DEFAULT = 220;
@@ -61,7 +60,7 @@ function AgentRail({ agents, activeId, onSelect }) {
   );
 }
 
-function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggleDiff, workspaceSnapshots, onBackToTeam, onToggleReview, reviewMode, onToggleAi, aiOpen, onCmdP }) {
+function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggleDiff, workspaceSnapshots, onBackToTeam, onToggleReview, reviewMode, onCmdP }) {
   const hasSnapshot = activeFile && workspaceSnapshots[activeFile];
 
   return (
@@ -142,19 +141,6 @@ function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggle
             <ClipboardCheck size={12} />
           </button>
         </Tooltip>
-        <Tooltip content="AI Panel" side="bottom">
-          <button
-            onClick={onToggleAi}
-            className={cn(
-              'flex items-center gap-1 px-2 py-1 text-xs font-sans rounded cursor-pointer transition-colors',
-              aiOpen
-                ? 'bg-accent/15 text-accent'
-                : 'text-text-3 hover:text-text-1 hover:bg-surface-3',
-            )}
-          >
-            <Sparkles size={12} />
-          </button>
-        </Tooltip>
         <Tooltip content="Back to Team View" side="bottom">
           <button
             onClick={onBackToTeam}
@@ -177,10 +163,6 @@ export function WorkspaceMode() {
   const toggleReviewMode = useGrooveStore((s) => s.toggleReviewMode);
   const workspaceSnapshots = useGrooveStore((s) => s.workspaceSnapshots);
   const setWorkspaceMode = useGrooveStore((s) => s.setWorkspaceMode);
-  const aiPanelOpen = useGrooveStore((s) => s.editorAiPanelOpen);
-  const toggleAiPanel = useGrooveStore((s) => s.toggleAiPanel);
-  const aiPanelWidth = useGrooveStore((s) => s.editorAiPanelWidth);
-  const setAiPanelWidth = useGrooveStore((s) => s.setEditorAiPanelWidth);
   const setQuickSearchOpen = useGrooveStore((s) => s.setEditorQuickSearchOpen);
 
   const editorFiles = useGrooveStore((s) => s.editorFiles);
@@ -205,9 +187,6 @@ export function WorkspaceMode() {
   const treeDragging = useRef(false);
   const startX = useRef(0);
   const startW = useRef(0);
-  const aiDragging = useRef(false);
-  const aiStartX = useRef(0);
-  const aiStartW = useRef(0);
 
   useEffect(() => {
     setDiffMode(false);
@@ -238,24 +217,6 @@ export function WorkspaceMode() {
     document.addEventListener('mouseup', onUp);
   }, [treeWidth]);
 
-  const onAiPanelMouseDown = useCallback((e) => {
-    e.preventDefault();
-    aiDragging.current = true;
-    aiStartX.current = e.clientX;
-    aiStartW.current = aiPanelWidth;
-    function onMove(e) {
-      if (!aiDragging.current) return;
-      const delta = aiStartX.current - e.clientX;
-      setAiPanelWidth(Math.min(Math.max(aiStartW.current + delta, 280), 600));
-    }
-    function onUp() {
-      aiDragging.current = false;
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    }
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }, [aiPanelWidth, setAiPanelWidth]);
 
   const handleEditorMouseUp = useCallback(() => {
     const view = editorViewRef.current;
@@ -357,8 +318,6 @@ export function WorkspaceMode() {
                 onBackToTeam={() => setWorkspaceMode(false)}
                 onToggleReview={toggleReviewMode}
                 reviewMode={workspaceReviewMode}
-                onToggleAi={toggleAiPanel}
-                aiOpen={aiPanelOpen}
                 onCmdP={() => setQuickSearchOpen(true)}
               />
 
@@ -423,16 +382,6 @@ export function WorkspaceMode() {
           )}
         </div>
 
-        {/* AI Panel */}
-        {aiPanelOpen && !workspaceReviewMode && (
-          <div className="relative flex-shrink-0" style={{ width: aiPanelWidth }}>
-            <div
-              className="absolute top-0 left-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/30 transition-colors z-10"
-              onMouseDown={onAiPanelMouseDown}
-            />
-            <AiPanel />
-          </div>
-        )}
       </div>
 
       {/* Quick Search modal */}

@@ -20,7 +20,6 @@ import TeamsView from './views/teams';
 import SettingsView from './views/settings';
 import ModelsView from './views/models';
 import FederationView from './views/federation';
-import ToysView from './views/toys';
 import ModelLabView from './views/model-lab';
 import NetworkView from './views/network';
 import ChatView from './views/chat';
@@ -73,7 +72,6 @@ function ViewRouter() {
     case 'editor':      content = <EditorView />;      break;
     case 'dashboard':   content = <DashboardView />;   break;
     case 'marketplace': content = <MarketplaceView />; break;
-    case 'toys':        content = <ToysView />;        break;
     case 'teams':       content = <TeamsView />;       break;
     case 'models':      content = <ModelsView />;      break;
     case 'model-lab':   content = <ModelLabView />;    break;

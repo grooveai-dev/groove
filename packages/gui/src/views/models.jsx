@@ -603,12 +603,12 @@ export default function ModelsView() {
     if (filter === 'running') list = list.filter((m) => m.status === 'running');
     else if (filter === 'ready') list = list.filter((m) => m.status === 'ready');
     else if (filter === 'downloaded') list = list.filter((m) => m.status === 'downloaded' || m.status === 'downloading');
-    if (searchQuery.trim()) {
+    if (searchQuery.trim() && discoveryTab !== 'search') {
       const q = searchQuery.toLowerCase();
       list = list.filter((m) => m.name.toLowerCase().includes(q));
     }
     return list;
-  }, [unifiedModels, filter, searchQuery]);
+  }, [unifiedModels, filter, searchQuery, discoveryTab]);
 
   const filterCounts = useMemo(() => ({
     all: unifiedModels.length,
@@ -794,7 +794,7 @@ export default function ModelsView() {
             </div>
           ) : (
             /* ── Card Grid ── */
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
               {filteredModels.map((model) => (
                 <UnifiedModelCard
                   key={model.id}

@@ -346,14 +346,31 @@ export class Rotator extends EventEmitter {
       delete this.scoreHistory[agentId];
       this.compactionCounts.delete(agentId);
 
-      let brief = await journalist.generateHandoffBrief(agent, {
-        reason: options.reason,
-        qualityScore: options.qualityScore,
-        signals: options.signals,
-      });
-
-      if (options.additionalPrompt) {
-        brief = brief + '\n\n## User Instruction\n\n' + options.additionalPrompt;
+      // Try conversation-thread resume first: replays the actual user↔assistant
+      // dialogue from stream-json logs so the new agent picks up with full context
+      // instead of a lossy journalist summary. Falls back to the brief if logs are
+      // empty or the thread is too short to be useful.
+      let brief;
+      let usedConversationThread = false;
+      if (typeof journalist.buildConversationResumePrompt === 'function') {
+        const conversationPrompt = journalist.buildConversationResumePrompt(
+          agent,
+          options.additionalPrompt || ''
+        );
+        if (conversationPrompt && conversationPrompt.length > 500) {
+          brief = conversationPrompt;
+          usedConversationThread = true;
+        }
+      }
+      if (!usedConversationThread) {
+        brief = await journalist.generateHandoffBrief(agent, {
+          reason: options.reason,
+          qualityScore: options.qualityScore,
+          signals: options.signals,
+        });
+        if (options.additionalPrompt) {
+          brief = brief + '\n\n## User Instruction\n\n' + options.additionalPrompt;
+        }
       }
 
       if (agent.role === 'planner' && !brief.includes('PLANNING ONLY')) {

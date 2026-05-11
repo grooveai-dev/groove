@@ -254,9 +254,9 @@ export class Keeper {
   // ── Command parser ────────────────────────────────────────
 
   static parseCommand(text) {
-    const cmdMatch = text.match(/\[(save|append|update|delete|view|doc|link|read|instruct)\]|\b(save|append|update|delete|view|doc|link|read)\b(?=\s+#[\w/.-])/i);
+    const cmdMatch = text.match(/\[(save|append|update|delete|view|doc|link|read|instruct)\]/i);
     if (!cmdMatch) return null;
-    const command = (cmdMatch[1] || cmdMatch[2]).toLowerCase();
+    const command = cmdMatch[1].toLowerCase();
     const rest = text.slice(cmdMatch.index + cmdMatch[0].length).trim();
 
     if (command === 'instruct') {

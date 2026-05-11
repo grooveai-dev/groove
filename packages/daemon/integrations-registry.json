@@ -491,10 +491,10 @@
     "icon": "hubspot",
     "tags": ["crm", "sales", "contacts", "marketing"],
     "roles": ["cmo", "analyst", "support"],
-    "npmPackage": "hubspot-mcp",
+    "npmPackage": "@hubspot/mcp-server",
     "transport": "stdio",
     "command": "npx",
-    "args": ["-y", "hubspot-mcp"],
+    "args": ["-y", "@hubspot/mcp-server"],
     "authType": "api-key",
     "envKeys": [
       { "key": "HUBSPOT_ACCESS_TOKEN", "label": "Private App Token", "required": true }
@@ -853,10 +853,10 @@
     "icon": "twilio",
     "tags": ["sms", "voice", "phone", "whatsapp"],
     "roles": ["ea", "support", "cmo"],
-    "npmPackage": "twilio-mcp",
+    "npmPackage": "@twilio-alpha/mcp",
     "transport": "stdio",
     "command": "npx",
-    "args": ["-y", "twilio-mcp"],
+    "args": ["-y", "@twilio-alpha/mcp"],
     "authType": "api-key",
     "envKeys": [
       { "key": "TWILIO_ACCOUNT_SID", "label": "Account SID", "placeholder": "AC...", "required": true },

@@ -17,21 +17,30 @@ import {
 
 import { INTEGRATION_LOGOS } from '../../lib/integration-logos';
 
+const ICON_PALETTES = [
+  'bg-accent/15 text-accent',
+  'bg-purple/15 text-purple',
+  'bg-success/15 text-success',
+  'bg-warning/15 text-warning',
+  'bg-danger/15 text-danger',
+  'bg-info/15 text-info',
+];
+
 function IntegrationIcon({ item, size = 48 }) {
   const logoUrl = INTEGRATION_LOGOS[item.id];
   if (logoUrl) {
     return (
       <div className="rounded-lg bg-surface-4 flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ width: size, height: size }}>
-        <img src={logoUrl} alt={item.name} className="w-6 h-6" onError={(e) => { e.target.style.display = 'none'; }} />
+        <img src={logoUrl} alt={item.name} className="w-6 h-6" onError={(e) => { e.target.classList.add('hidden'); }} />
       </div>
     );
   }
   const initial = (item.name || '?')[0].toUpperCase();
-  const hue = item.name ? item.name.charCodeAt(0) * 37 % 360 : 200;
+  const palette = ICON_PALETTES[(item.name || '').charCodeAt(0) % ICON_PALETTES.length];
   return (
     <div
-      className="rounded-lg flex items-center justify-center flex-shrink-0 text-xl font-bold font-sans"
-      style={{ width: size, height: size, background: `hsl(${hue}, 40%, 18%)`, color: `hsl(${hue}, 60%, 65%)` }}
+      className={`rounded-lg flex items-center justify-center flex-shrink-0 text-xl font-bold font-sans ${palette}`}
+      style={{ width: size, height: size }}
     >
       {initial}
     </div>

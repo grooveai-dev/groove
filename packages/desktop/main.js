@@ -950,7 +950,7 @@ function getWelcomeHtml() {
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { height: 100%; }
 body {
-  background: radial-gradient(ellipse at 50% 30%, rgba(51,175,188,0.04) 0%, transparent 70%) #0f1115;
+  background: #0f1115;
   color: #e6e6e6;
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
   overflow: hidden; user-select: none;
@@ -963,361 +963,396 @@ body {
   display: flex; align-items: center; justify-content: center;
 }
 .titlebar-label {
-  font-size: 11px; color: #505862; font-weight: 600;
+  font-size: 11px; color: #2c313a; font-weight: 600;
   letter-spacing: 1.5px;
 }
 
-.page {
-  flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; overflow-y: auto;
-  padding: 24px 0; -webkit-app-region: no-drag;
-}
-.page::-webkit-scrollbar { width: 6px; }
-.page::-webkit-scrollbar-track { background: transparent; }
-.page::-webkit-scrollbar-thumb { background: #2c313a; border-radius: 3px; }
-.page::-webkit-scrollbar-thumb:hover { background: #3e4451; }
-.content {
-  max-width: 720px; width: 100%;
-  padding: 0 48px;
-  margin: auto 0;
-  display: flex; flex-direction: column; align-items: center;
-}
+/* === Two-Panel Layout === */
+.layout { display: flex; flex: 1; overflow: hidden; }
 
-.hero {
-  display: flex; flex-direction: column; align-items: center;
-  margin-bottom: 32px;
+/* === Sidebar === */
+.sidebar {
+  width: 280px; flex-shrink: 0;
+  display: flex; flex-direction: column;
+  border-right: 1px solid #1e2127;
+  -webkit-app-region: no-drag;
 }
-.hero-icon {
-  width: 80px; height: 80px; border-radius: 50%;
-  background: radial-gradient(circle at center, rgba(51,175,188,0.25) 0%, rgba(51,175,188,0.08) 55%, transparent 100%);
-  display: flex; align-items: center; justify-content: center;
-  position: relative; margin-bottom: 18px;
-}
-.hero-icon::before {
-  content: ''; position: absolute; inset: 6px;
-  border-radius: 50%; border: 1px solid rgba(51,175,188,0.4);
-  box-shadow: 0 0 24px rgba(51,175,188,0.18), inset 0 0 14px rgba(51,175,188,0.1);
-}
-.hero-icon svg { position: relative; color: #33afbc; }
-.hero h1 {
-  font-size: 26px; font-weight: 700; letter-spacing: -0.5px;
-  color: #e6e6e6; margin-bottom: 6px;
-}
-.hero .sub { font-size: 13px; color: #6e7681; }
-
-.error-msg {
-  display: none; width: 100%; margin-bottom: 16px;
-  padding: 11px 14px; border-radius: 8px;
-  background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3);
-  color: #fbbf24; font-size: 12px;
-}
-.error-msg.active { display: block; }
-
-.actions {
-  width: 100%; max-width: 520px;
-  display: flex; flex-direction: column; gap: 10px;
-}
-
-.action-primary {
-  position: relative; display: flex; align-items: center; gap: 16px;
-  padding: 18px 20px; border-radius: 12px;
-  background: linear-gradient(135deg, rgba(51,175,188,0.18) 0%, rgba(51,175,188,0.08) 100%), #1a2127;
-  border: 1px solid rgba(51,175,188,0.55);
-  cursor: pointer; -webkit-app-region: no-drag;
-  transition: transform 0.15s, background 0.15s, border-color 0.15s;
-  font-family: inherit; color: inherit; text-align: left; width: 100%;
-  box-shadow: 0 0 0 1px rgba(51,175,188,0.08), 0 8px 24px rgba(0,0,0,0.25), 0 0 20px rgba(51,175,188,0.1);
-}
-.action-primary:hover {
-  background: linear-gradient(135deg, rgba(51,175,188,0.25) 0%, rgba(51,175,188,0.12) 100%), #24282f;
-  border-color: rgba(51,175,188,0.75);
-  transform: translateY(-1px);
-}
-.ap-ic {
-  width: 44px; height: 44px; border-radius: 11px;
-  background: rgba(51,175,188,0.12); color: #33afbc;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.ap-text { flex: 1; min-width: 0; }
-.ap-title { font-size: 14px; font-weight: 600; color: #e6e6e6; }
-.ap-sub { font-size: 11px; color: #6e7681; margin-top: 2px; }
-.ap-tag {
-  font-size: 10px; font-weight: 600; color: #6e7681;
-  background: #2c313a; padding: 4px 8px; border-radius: 5px;
-  letter-spacing: 0.5px; font-family: ui-monospace, 'SF Mono', Monaco, monospace;
-}
-
-.action-card {
+.sidebar-brand {
+  padding: 20px 20px 24px;
   display: flex; align-items: center; gap: 12px;
-  padding: 14px 16px; border-radius: 10px;
-  background: #1e2127; border: 1px solid #3e4451;
-  cursor: pointer; -webkit-app-region: no-drag;
-  transition: background 0.15s, border-color 0.15s;
-  font-family: inherit; color: inherit; text-align: left; width: 100%;
+  flex-shrink: 0;
 }
-.action-card:hover {
-  background: #24282f; border-color: #33afbc;
+.brand-icon {
+  width: 32px; height: 32px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #33afbc;
 }
-.ac-ic {
-  width: 34px; height: 34px; border-radius: 9px;
-  background: #2c313a; color: #6e7681;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-  transition: color 0.15s, background 0.15s;
+.brand-text { display: flex; flex-direction: column; }
+.brand-name {
+  font-size: 15px; font-weight: 600; color: #e6e6e6;
+  letter-spacing: -0.3px; line-height: 1.2;
 }
-.action-card:hover .ac-ic { color: #33afbc; background: rgba(51,175,188,0.1); }
-.ac-text { flex: 1; min-width: 0; }
-.ac-title { font-size: 13px; font-weight: 600; color: #e6e6e6; }
-.ac-sub { font-size: 11px; color: #6e7681; margin-top: 2px; }
-
+.brand-sub {
+  font-size: 11px; color: #3e4451; margin-top: 1px;
+  font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+}
+.sidebar-lists {
+  flex: 1; overflow-y: auto; padding: 0 8px;
+}
+.sidebar-lists::-webkit-scrollbar { width: 5px; }
+.sidebar-lists::-webkit-scrollbar-track { background: transparent; }
+.sidebar-lists::-webkit-scrollbar-thumb { background: #1e2127; border-radius: 3px; }
 .section-title {
   font-size: 10px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 1px; color: #6e7681;
+  letter-spacing: 1.2px; color: #3e4451;
   font-family: ui-monospace, 'SF Mono', Monaco, monospace;
-  margin-bottom: 8px;
-}
-
-.recents-area {
-  width: 100%; max-width: 520px;
-  margin-top: 24px;
-  display: grid; grid-template-columns: 1fr 1fr; gap: 32px;
+  padding: 16px 12px 6px;
 }
 .list-row {
   display: flex; align-items: center;
-  padding: 5px 0;
-  cursor: pointer; transition: color 0.12s;
+  padding: 7px 12px; border-radius: 5px;
+  cursor: pointer; transition: background 0.1s;
   -webkit-app-region: no-drag; position: relative;
 }
+.list-row:hover { background: rgba(255,255,255,0.04); }
 .list-row:hover .list-name { color: #e6e6e6; }
 .list-info { flex: 1; min-width: 0; }
 .list-name {
-  font-size: 13px; font-weight: 500; color: #b0b8c4;
+  font-size: 13px; font-weight: 500; color: #6e7681;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  line-height: 1.4; transition: color 0.12s;
+  line-height: 1.4; transition: color 0.1s;
 }
 .list-delete {
   opacity: 0; width: 20px; height: 20px; border: none;
-  background: transparent; color: #6e7681; cursor: pointer;
+  background: transparent; color: #3e4451; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  border-radius: 4px; flex-shrink: 0;
-  transition: opacity 0.12s, color 0.12s;
+  border-radius: 3px; flex-shrink: 0;
+  transition: opacity 0.1s, color 0.1s;
   font-family: inherit; -webkit-app-region: no-drag;
 }
 .list-row:hover .list-delete { opacity: 1; }
 .list-delete:hover { color: #ef4444; }
-
 .empty-text {
-  font-size: 12px; color: #505862; padding: 8px 10px;
+  font-size: 11px; color: #3e4451; padding: 16px 12px;
+  font-family: ui-monospace, 'SF Mono', Monaco, monospace;
 }
-
-.update-banner {
-  display: none; position: fixed; left: 0; right: 0; bottom: 48px;
-  padding: 14px 36px; z-index: 40;
-  background: rgba(30,33,39,0.97);
-  border-top: 1px solid rgba(51,175,188,0.25);
-  -webkit-app-region: no-drag;
-}
-.update-banner.active { display: block; }
-
-.footer {
-  display: flex; align-items: center; justify-content: center; gap: 16px;
-  padding: 12px 24px 14px;
-  border-top: 1px solid rgba(62,68,81,0.35);
-  flex-shrink: 0; -webkit-app-region: no-drag;
+.sidebar-footer {
+  padding: 12px 20px; flex-shrink: 0;
+  border-top: 1px solid #1e2127;
+  display: flex; align-items: center; justify-content: space-between;
 }
 .kbd-hint {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11px; color: #6e7681;
+  font-size: 11px; color: #3e4451;
 }
 .kbd-hint kbd {
-  display: inline-block; padding: 2px 6px; border-radius: 4px;
-  background: #24282f; border: 1px solid #3e4451; color: #e6e6e6;
+  display: inline-block; padding: 2px 5px; border-radius: 3px;
+  background: #161a1e; border: 1px solid #2c313a; color: #6e7681;
   font-family: ui-monospace, 'SF Mono', Monaco, monospace;
   font-size: 10px; font-weight: 500;
 }
-.footer-sep { width: 1px; height: 12px; background: #3e4451; }
-.version { font-size: 11px; color: #505862; font-weight: 500; }
+.version { font-size: 11px; color: #3e4451; font-weight: 500; }
 
+/* === Main Area === */
+.main-area {
+  flex: 1; display: flex; flex-direction: column;
+  overflow-y: auto; -webkit-app-region: no-drag;
+}
+.main-area::-webkit-scrollbar { width: 6px; }
+.main-area::-webkit-scrollbar-track { background: transparent; }
+.main-area::-webkit-scrollbar-thumb { background: #1e2127; border-radius: 3px; }
+.main-inner {
+  max-width: 600px; width: 100%;
+  padding: 48px 56px;
+}
+
+.error-msg {
+  display: none; width: 100%; margin-bottom: 16px;
+  padding: 10px 12px; border-radius: 4px;
+  background: rgba(251,191,36,0.06); border: 1px solid rgba(251,191,36,0.2);
+  color: #fbbf24; font-size: 12px;
+}
+.error-msg.active { display: block; }
+
+.main-header {
+  font-size: 10px; font-weight: 600; color: #3e4451;
+  text-transform: uppercase; letter-spacing: 1.2px;
+  font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+  margin-bottom: 16px;
+}
+
+/* === Actions === */
+.actions {
+  width: 100%;
+  display: flex; flex-direction: column; gap: 1px;
+  background: #1e2127; border-radius: 6px;
+  overflow: hidden; border: 1px solid #2c313a;
+  margin-bottom: 32px;
+}
+.action-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px;
+  background: #161a1e;
+  border: none; cursor: pointer;
+  font-family: inherit; color: inherit; text-align: left; width: 100%;
+  transition: background 0.1s;
+  -webkit-app-region: no-drag;
+}
+.action-row:hover { background: #1a1f24; }
+.action-ic {
+  width: 32px; height: 32px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.action-ic.primary { background: rgba(51,175,188,0.08); color: #33afbc; }
+.action-ic.muted { background: #1e2127; color: #505862; transition: color 0.1s; }
+.action-row:hover .action-ic.muted { color: #b0b8c4; }
+.action-text { flex: 1; min-width: 0; }
+.action-title { font-size: 13px; font-weight: 500; color: #e6e6e6; }
+.action-sub { font-size: 11px; color: #505862; margin-top: 1px; }
+.action-tag {
+  font-size: 10px; font-weight: 500; color: #505862;
+  padding: 3px 7px; border-radius: 3px;
+  border: 1px solid #2c313a;
+  font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+}
+.action-arrow { color: #3e4451; flex-shrink: 0; transition: color 0.1s; }
+.action-row:hover .action-arrow { color: #6e7681; }
+
+/* === What's New === */
+.whats-new { width: 100%; }
+.whats-new-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.whats-new-tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 1.2px; color: #33afbc;
+  font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+}
+.whats-new-tag::before {
+  content: ''; width: 5px; height: 5px; border-radius: 50%;
+  background: #33afbc;
+}
+.whats-new-ver {
+  font-size: 10px; color: #3e4451;
+  font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+}
+.whats-new-list {
+  list-style: none; display: flex; flex-direction: column; gap: 4px;
+}
+.whats-new-list li {
+  font-size: 12px; color: #6e7681; line-height: 1.5;
+  padding-left: 12px; position: relative;
+}
+.whats-new-list li::before {
+  content: ''; position: absolute; left: 0; top: 7px;
+  width: 4px; height: 4px; border-radius: 1px;
+  background: #2c313a;
+}
+
+/* === Loading === */
 .loading-full {
   display: none; position: fixed; inset: 0;
-  background: rgba(26,30,37,0.96); backdrop-filter: blur(8px);
-  flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  background: rgba(15,17,21,0.96); backdrop-filter: blur(8px);
+  flex-direction: column; align-items: center; justify-content: center; gap: 16px;
   z-index: 100;
 }
 .loading-full.active { display: flex; }
 .spinner {
-  width: 32px; height: 32px; border: 3px solid #2c313a;
+  width: 24px; height: 24px; border: 2px solid #1e2127;
   border-top-color: #33afbc; border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading-text { font-size: 13px; color: #e6e6e6; font-weight: 500; }
+.loading-text { font-size: 12px; color: #6e7681; font-weight: 500; }
 
+/* === Update Banner === */
+.update-banner {
+  display: none; position: fixed; left: 0; right: 0; bottom: 0;
+  padding: 12px 32px; z-index: 40;
+  background: rgba(15,17,21,0.97);
+  border-top: 1px solid #1e2127;
+  -webkit-app-region: no-drag;
+}
+.update-banner.active { display: block; }
 .update-inner {
   display: flex; align-items: center; gap: 12px;
   max-width: 600px; margin: 0 auto;
 }
-.update-title { font-size: 13px; font-weight: 600; color: #e6e6e6; }
-.update-detail { font-size: 11px; color: #6e7681; margin-top: 2px; }
+.update-title { font-size: 12px; font-weight: 600; color: #e6e6e6; }
+.update-detail { font-size: 11px; color: #505862; margin-top: 1px; }
 .update-info { flex: 1; min-width: 0; }
 .update-action {
   display: none; font-size: 11px; font-weight: 600; color: #33afbc;
-  background: rgba(51,175,188,0.15); padding: 6px 14px; border-radius: 6px;
+  background: rgba(51,175,188,0.08); padding: 5px 12px; border-radius: 4px;
+  border: 1px solid rgba(51,175,188,0.2);
   white-space: nowrap; cursor: pointer;
 }
 .update-progress-bar {
-  margin-top: 10px; height: 3px; border-radius: 2px;
-  background: rgba(51,175,188,0.12); overflow: hidden;
+  margin-top: 8px; height: 2px; border-radius: 1px;
+  background: #1e2127; overflow: hidden;
   max-width: 600px; margin-left: auto; margin-right: auto;
 }
 .update-progress-fill {
-  height: 100%; width: 0%; border-radius: 2px;
+  height: 100%; width: 0%; border-radius: 1px;
   background: #33afbc; transition: width 0.4s ease-out;
 }
 
-/* --- Wizard styles --- */
-.wizard-panel {
-  width: 100%; max-width: 520px;
-  padding: 24px; border-radius: 12px;
-  background: #1a1e24; border: 1px solid #3e4451;
+/* === Wizard === */
+.wizard-panel { width: 100%; max-width: 540px; }
+.wizard-header {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 24px;
 }
+.wizard-header-ic {
+  width: 28px; height: 28px; border-radius: 5px;
+  background: rgba(51,175,188,0.08); color: #33afbc;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.wizard-header-text { font-size: 14px; font-weight: 600; color: #e6e6e6; }
 .step-bar {
-  display: flex; align-items: center; justify-content: center;
-  gap: 0; margin-bottom: 28px;
+  display: flex; align-items: center;
+  margin-bottom: 28px; gap: 0;
 }
-.step-item { display: flex; align-items: center; gap: 0; }
+.step-col { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; width: 56px; }
 .step-circle {
   width: 24px; height: 24px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 600;
-  border: 2px solid #3e4451; color: #6e7681; background: transparent;
+  font-size: 10px; font-weight: 600;
+  border: 1.5px solid #2c313a; color: #3e4451; background: #0f1115;
   transition: all 0.2s; flex-shrink: 0;
 }
-.step-circle.active { border-color: #33afbc; background: rgba(51,175,188,0.15); color: #33afbc; }
-.step-circle.completed { border-color: #22c55e; background: rgba(34,197,94,0.15); color: #22c55e; }
-.step-line { width: 32px; height: 2px; background: #3e4451; transition: background 0.2s; }
-.step-line.completed { background: #22c55e; }
-.step-label { font-size: 10px; color: #6e7681; margin-top: 4px; text-align: center; white-space: nowrap; }
-.step-col { display: flex; flex-direction: column; align-items: center; }
-
-.wizard-field { margin-bottom: 14px; }
+.step-circle.active { border-color: #33afbc; color: #33afbc; background: rgba(51,175,188,0.06); }
+.step-circle.completed { border-color: #33afbc; color: #0f1115; background: #33afbc; }
+.step-line {
+  flex: 1; height: 1px; background: #2c313a; min-width: 12px;
+  transition: background 0.2s;
+}
+.step-line.completed { background: #33afbc; }
+.step-label {
+  font-size: 9px; font-weight: 500; color: #3e4451; margin-top: 5px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  text-align: center; white-space: nowrap;
+  font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+}
+.wizard-field { margin-bottom: 16px; }
 .wizard-field label {
-  display: block; font-size: 11px; font-weight: 600;
-  color: #b0b8c4; margin-bottom: 5px; letter-spacing: 0.3px;
+  display: block; font-size: 11px; font-weight: 500;
+  color: #505862; margin-bottom: 5px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  font-family: ui-monospace, 'SF Mono', Monaco, monospace;
 }
 .wizard-input {
-  width: 100%; padding: 9px 12px; border-radius: 7px;
-  background: #1e2127; border: 1px solid #3e4451;
+  width: 100%; height: 36px; padding: 0 12px; border-radius: 4px;
+  background: #161a1e; border: 1px solid #2c313a;
   color: #e6e6e6; font-size: 13px;
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
   outline: none; transition: border-color 0.15s;
 }
 .wizard-input:focus { border-color: #33afbc; }
-.wizard-input::placeholder { color: #505862; }
+.wizard-input::placeholder { color: #3e4451; }
 .wizard-input-mono {
-  width: 100%; padding: 9px 12px; border-radius: 7px;
-  background: #1e2127; border: 1px solid #3e4451;
+  width: 100%; height: 36px; padding: 0 12px; border-radius: 4px;
+  background: #161a1e; border: 1px solid #2c313a;
   color: #e6e6e6; font-size: 13px;
   font-family: ui-monospace, 'SF Mono', Monaco, monospace;
   outline: none; transition: border-color 0.15s;
 }
 .wizard-input-mono:focus { border-color: #33afbc; }
-.wizard-input-mono::placeholder { color: #505862; }
-
-.wizard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.wizard-input-mono::placeholder { color: #3e4451; }
+.wizard-input-short { max-width: 140px; }
+.wizard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .wizard-card {
-  padding: 16px; border-radius: 10px;
-  background: #1e2127; border: 1px solid #2c313a;
+  padding: 0; border-radius: 4px;
+  background: transparent; border: 1px solid #2c313a;
 }
 .wizard-btn-primary {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 9px 20px; border-radius: 8px;
-  background: linear-gradient(135deg, rgba(51,175,188,0.3) 0%, rgba(51,175,188,0.15) 100%);
-  border: 1px solid rgba(51,175,188,0.5);
-  color: #33afbc; font-size: 13px; font-weight: 600;
+  height: 34px; padding: 0 16px; border-radius: 4px;
+  background: #33afbc; border: none;
+  color: #0f1115; font-size: 12px; font-weight: 600;
   cursor: pointer; font-family: inherit;
-  transition: background 0.15s, border-color 0.15s;
+  transition: opacity 0.12s; letter-spacing: 0.2px;
 }
-.wizard-btn-primary:hover { background: linear-gradient(135deg, rgba(51,175,188,0.4) 0%, rgba(51,175,188,0.2) 100%); border-color: rgba(51,175,188,0.7); }
-.wizard-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.wizard-btn-primary:hover { opacity: 0.85; }
+.wizard-btn-primary:disabled { opacity: 0.3; cursor: not-allowed; }
 .wizard-btn-secondary {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 9px 20px; border-radius: 8px;
-  background: transparent; border: 1px solid #3e4451;
-  color: #b0b8c4; font-size: 13px; font-weight: 500;
+  height: 34px; padding: 0 16px; border-radius: 4px;
+  background: transparent; border: 1px solid #2c313a;
+  color: #6e7681; font-size: 12px; font-weight: 500;
   cursor: pointer; font-family: inherit;
-  transition: background 0.15s, border-color 0.15s;
+  transition: border-color 0.12s, color 0.12s;
 }
-.wizard-btn-secondary:hover { background: #24282f; border-color: #6e7681; }
-.wizard-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
-
+.wizard-btn-secondary:hover { border-color: #3e4451; color: #b0b8c4; }
+.wizard-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+.wizard-actions-split { justify-content: space-between; }
+.wizard-actions-group { display: flex; gap: 8px; }
 .test-result {
-  margin-top: 14px; padding: 12px 14px; border-radius: 8px;
-  background: #1e2127; border: 1px solid #2c313a; font-size: 12px;
+  margin-top: 12px; padding: 10px 12px; border-radius: 4px;
+  background: #161a1e; border: 1px solid #2c313a; font-size: 12px;
 }
 .test-dot {
-  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
   margin-right: 8px; vertical-align: middle;
 }
-.test-dot.green { background: #22c55e; }
+.test-dot.green { background: #33afbc; }
 .test-dot.red { background: #ef4444; }
 .test-dot.yellow { background: #fbbf24; }
-.test-row { padding: 3px 0; color: #b0b8c4; }
-
+.test-row { padding: 3px 0; color: #6e7681; }
 .toggle-track {
-  width: 40px; height: 22px; border-radius: 11px;
-  background: #3e4451; cursor: pointer;
+  width: 32px; height: 18px; border-radius: 9px;
+  background: #2c313a; cursor: pointer;
   position: relative; transition: background 0.2s;
   flex-shrink: 0; border: none;
 }
 .toggle-track.on { background: #33afbc; }
 .toggle-track::after {
   content: ''; position: absolute;
-  top: 3px; left: 3px; width: 16px; height: 16px;
+  top: 2px; left: 2px; width: 14px; height: 14px;
   border-radius: 50%; background: #e6e6e6;
   transition: transform 0.2s;
 }
-.toggle-track.on::after { transform: translateX(18px); }
+.toggle-track.on::after { transform: translateX(14px); }
 .toggle-row {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 0; border-bottom: 1px solid #2c313a;
+  padding: 10px 14px;
 }
-.toggle-row:last-child { border-bottom: none; }
-.toggle-label { font-size: 13px; color: #b0b8c4; }
-
-.success-panel {
-  text-align: center; padding: 32px 16px;
-  border-radius: 10px;
-  background: rgba(34,197,94,0.06); border: 1px solid rgba(34,197,94,0.2);
-}
+.toggle-row:first-child { border-bottom: 1px solid #2c313a; }
+.toggle-label { font-size: 12px; color: #6e7681; }
+.success-panel { text-align: center; padding: 40px 20px; }
 .success-check {
   width: 48px; height: 48px; border-radius: 50%;
-  background: rgba(34,197,94,0.12);
+  background: rgba(51,175,188,0.08);
   display: inline-flex; align-items: center; justify-content: center;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
-.success-title { font-size: 16px; font-weight: 600; color: #e6e6e6; margin-bottom: 6px; }
-.success-sub { font-size: 12px; color: #6e7681; margin-bottom: 20px; }
-
+.success-title { font-size: 16px; font-weight: 600; color: #e6e6e6; margin-bottom: 4px; }
+.success-sub { font-size: 12px; color: #505862; margin-bottom: 24px; font-family: ui-monospace, 'SF Mono', Monaco, monospace; }
+.success-actions { display: flex; gap: 8px; justify-content: center; }
 .wizard-summary {
-  margin-top: 14px; padding: 12px 14px; border-radius: 8px;
-  background: #1a1e24; border: 1px solid #2c313a; font-size: 12px;
+  margin-top: 12px; padding: 10px 12px; border-radius: 4px;
+  background: #161a1e; border: 1px solid #2c313a; font-size: 12px;
 }
-.wizard-summary-row { display: flex; justify-content: space-between; padding: 4px 0; color: #b0b8c4; }
-.wizard-summary-label { color: #6e7681; }
-.wizard-summary-val {
-  font-family: ui-monospace, 'SF Mono', Monaco, monospace; color: #e6e6e6;
-}
+.wizard-summary-row { display: flex; justify-content: space-between; padding: 3px 0; color: #6e7681; }
+.wizard-summary-label { color: #3e4451; font-size: 11px; }
+.wizard-summary-val { font-family: ui-monospace, 'SF Mono', Monaco, monospace; color: #e6e6e6; font-size: 12px; }
 .browse-row { display: flex; gap: 8px; align-items: center; }
 .browse-row .wizard-input-mono { flex: 1; }
-
-.create-project-panel {
-  width: 100%; max-width: 520px;
-  padding: 24px; border-radius: 12px;
-  background: #1a1e24; border: 1px solid #3e4451;
+.create-project-panel { width: 100%; max-width: 540px; }
+.create-title {
+  font-size: 14px; font-weight: 600; color: #e6e6e6; margin-bottom: 20px;
+  display: flex; align-items: center; gap: 10px;
 }
-.create-title { font-size: 15px; font-weight: 600; color: #e6e6e6; margin-bottom: 20px; }
+.create-title-ic {
+  width: 28px; height: 28px; border-radius: 5px;
+  background: rgba(51,175,188,0.08); color: #33afbc;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
 .selected-path {
-  margin-top: 6px; font-size: 11px; color: #6e7681;
+  margin-top: 4px; font-size: 11px; color: #3e4451;
   font-family: ui-monospace, 'SF Mono', Monaco, monospace;
   word-break: break-all;
 }
@@ -1325,196 +1360,233 @@ body {
 </head>
 <body>
 <div class="titlebar"><span class="titlebar-label">GROOVE</span></div>
-<div class="page">
-  <div class="content">
-    <div class="hero">
-      <div class="hero-icon">
-        <svg width="48" height="24" viewBox="0 6 24 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/></svg>
+<div class="layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">
+        <svg width="28" height="14" viewBox="0 6 24 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/></svg>
       </div>
-      <h1>Welcome to Groove</h1>
-      <div class="sub">Your AI coding team, ready in minutes</div>
+      <div class="brand-text">
+        <div class="brand-name">Groove</div>
+        <div class="brand-sub">agent orchestration</div>
+      </div>
     </div>
 
-    <div class="error-msg" id="error"></div>
-
-    <div class="actions">
-      <button class="action-primary" id="open-folder">
-        <div class="ap-ic">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-        </div>
-        <div class="ap-text">
-          <div class="ap-title">Open Project</div>
-          <div class="ap-sub">Select a local folder to start a team</div>
-        </div>
-        <div class="ap-tag" id="kbd-open">\u2318O</div>
-      </button>
-
-      <button class="action-card" id="btn-ssh-wizard">
-        <div class="ac-ic">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="m7 10 2 2-2 2"/><path d="M13 14h4"/></svg>
-        </div>
-        <div class="ac-text">
-          <div class="ac-title">New SSH Connection</div>
-          <div class="ac-sub">Connect to a remote server</div>
-        </div>
-      </button>
-
-      <button class="action-card" id="btn-create-project">
-        <div class="ac-ic">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-        </div>
-        <div class="ac-text">
-          <div class="ac-title">Create Project</div>
-          <div class="ac-sub">Create a new project directory</div>
-        </div>
-      </button>
-
-      <button class="action-card" id="btn-docs">
-        <div class="ac-ic">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>
-        </div>
-        <div class="ac-text">
-          <div class="ac-title">Read the Docs</div>
-          <div class="ac-sub">Learn how teams work</div>
-        </div>
-      </button>
-    </div>
-
-    <div class="recents-area">
+    <div class="sidebar-lists">
       <div id="recents-section" style="display:none">
         <div class="section-title">Recent Projects</div>
         <div id="recents"></div>
       </div>
-
       <div id="ssh-section" style="display:none">
         <div class="section-title">SSH Connections</div>
         <div id="ssh-list"></div>
       </div>
+      <div id="empty-state" style="display:none">
+        <div class="empty-text">No recent activity</div>
+      </div>
     </div>
 
-    <div id="empty-state" style="display:none">
-      <div class="empty-text">No recent activity</div>
+    <div class="sidebar-footer">
+      <span class="kbd-hint"><kbd id="kbd-footer">⌘O</kbd> Open</span>
+      <span class="version" id="version"></span>
     </div>
+  </aside>
 
-    <!-- SSH Wizard -->
-    <div id="ssh-wizard" style="display:none">
-      <div class="wizard-panel">
-        <div class="step-bar" id="step-bar">
-          <div class="step-col"><div class="step-circle active" id="sc-0">1</div><div class="step-label">Server</div></div>
-          <div class="step-item"><div class="step-line" id="sl-0"></div></div>
-          <div class="step-col"><div class="step-circle" id="sc-1">2</div><div class="step-label">Auth</div></div>
-          <div class="step-item"><div class="step-line" id="sl-1"></div></div>
-          <div class="step-col"><div class="step-circle" id="sc-2">3</div><div class="step-label">Setup</div></div>
-          <div class="step-item"><div class="step-line" id="sl-2"></div></div>
-          <div class="step-col"><div class="step-circle" id="sc-3">4</div><div class="step-label">Connected</div></div>
-        </div>
+  <!-- Main Content -->
+  <main class="main-area">
+    <div class="main-inner">
+      <div class="error-msg" id="error"></div>
 
-        <div class="wizard-step" id="ws-0">
-          <div class="wizard-field">
-            <label>Connection Name</label>
-            <input type="text" class="wizard-input" id="wiz-name" placeholder="My Server">
+      <div class="actions" id="main-actions">
+        <div class="main-header">Start</div>
+
+        <button class="action-row" id="open-folder">
+          <div class="action-ic primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
           </div>
-          <div class="wizard-grid">
+          <div class="action-text">
+            <div class="action-title">Open Project</div>
+            <div class="action-sub">Select a local folder to start a team</div>
+          </div>
+          <div class="action-tag" id="kbd-open">⌘O</div>
+        </button>
+
+        <button class="action-row" id="btn-ssh-wizard">
+          <div class="action-ic muted">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="m7 10 2 2-2 2"/><path d="M13 14h4"/></svg>
+          </div>
+          <div class="action-text">
+            <div class="action-title">New SSH Connection</div>
+            <div class="action-sub">Connect to a remote server</div>
+          </div>
+        </button>
+
+        <button class="action-row" id="btn-create-project">
+          <div class="action-ic muted">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <div class="action-text">
+            <div class="action-title">Create Project</div>
+            <div class="action-sub">Initialize a new project directory</div>
+          </div>
+        </button>
+
+        <button class="action-row" id="btn-docs">
+          <div class="action-ic muted">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>
+          </div>
+          <div class="action-text">
+            <div class="action-title">Documentation</div>
+            <div class="action-sub">Learn how teams work</div>
+          </div>
+          <svg class="action-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><path d="M7 7h10v10"/></svg>
+        </button>
+      </div>
+
+      <div class="whats-new" id="whats-new">
+        <div class="whats-new-header">
+          <span class="whats-new-tag">What's New</span>
+          <span class="whats-new-ver" id="version-whats-new"></span>
+        </div>
+        <ul class="whats-new-list">
+          <li>Local model engine — run agents on GGUF, Ollama, llama-server</li>
+          <li>HuggingFace model browser with one-click download</li>
+          <li>MCP integrations — Slack, Gmail, Stripe, 15+ services</li>
+          <li>Agent scheduling with cron expressions</li>
+        </ul>
+      </div>
+
+      <!-- SSH Wizard -->
+      <div id="ssh-wizard" style="display:none">
+        <div class="wizard-panel">
+          <div class="wizard-header">
+            <div class="wizard-header-ic">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="m7 10 2 2-2 2"/><path d="M13 14h4"/></svg>
+            </div>
+            <span class="wizard-header-text">New SSH Connection</span>
+          </div>
+          <div class="step-bar" id="step-bar">
+            <div class="step-col"><div class="step-circle active" id="sc-0">1</div><div class="step-label">Server</div></div>
+            <div class="step-line" id="sl-0"></div>
+            <div class="step-col"><div class="step-circle" id="sc-1">2</div><div class="step-label">Auth</div></div>
+            <div class="step-line" id="sl-1"></div>
+            <div class="step-col"><div class="step-circle" id="sc-2">3</div><div class="step-label">Setup</div></div>
+            <div class="step-line" id="sl-2"></div>
+            <div class="step-col"><div class="step-circle" id="sc-3">4</div><div class="step-label">Done</div></div>
+          </div>
+
+          <div class="wizard-step" id="ws-0">
             <div class="wizard-field">
-              <label>Host</label>
-              <input type="text" class="wizard-input-mono" id="wiz-host" placeholder="192.168.1.100">
+              <label>Connection Name</label>
+              <input type="text" class="wizard-input" id="wiz-name" placeholder="My Server">
+            </div>
+            <div class="wizard-grid">
+              <div class="wizard-field">
+                <label>Host</label>
+                <input type="text" class="wizard-input-mono" id="wiz-host" placeholder="192.168.1.100">
+              </div>
+              <div class="wizard-field">
+                <label>User</label>
+                <input type="text" class="wizard-input-mono" id="wiz-user" placeholder="root">
+              </div>
             </div>
             <div class="wizard-field">
-              <label>User</label>
-              <input type="text" class="wizard-input-mono" id="wiz-user" placeholder="root">
+              <label>Port</label>
+              <input type="number" class="wizard-input-mono wizard-input-short" id="wiz-port" value="22" min="1" max="65535">
+            </div>
+            <div class="wizard-actions">
+              <button class="wizard-btn-secondary" id="wiz-cancel-0">Cancel</button>
+              <button class="wizard-btn-primary" id="wiz-next-0" disabled>Continue</button>
             </div>
           </div>
-          <div class="wizard-field">
-            <label>SSH Port</label>
-            <input type="number" class="wizard-input-mono" id="wiz-port" value="22" min="1" max="65535" style="width:120px">
+
+          <div class="wizard-step" id="ws-1" style="display:none">
+            <div class="wizard-field">
+              <label>SSH Key Path</label>
+              <div class="browse-row">
+                <input type="text" class="wizard-input-mono" id="wiz-key" placeholder="~/.ssh/id_ed25519" readonly>
+                <button class="wizard-btn-secondary" id="wiz-browse">Browse</button>
+              </div>
+            </div>
+            <div class="wizard-actions wizard-actions-split">
+              <button class="wizard-btn-secondary" id="wiz-test">Test Connection</button>
+              <div class="wizard-actions-group">
+                <button class="wizard-btn-secondary" id="wiz-back-1">Back</button>
+                <button class="wizard-btn-primary" id="wiz-next-1">Continue</button>
+              </div>
+            </div>
+            <div id="wiz-test-result"></div>
           </div>
-          <div class="wizard-actions">
-            <button class="wizard-btn-secondary" id="wiz-cancel-0">Cancel</button>
-            <button class="wizard-btn-primary" id="wiz-next-0" disabled>Next</button>
+
+          <div class="wizard-step" id="ws-2" style="display:none">
+            <div class="wizard-card">
+              <div class="toggle-row">
+                <span class="toggle-label">Auto-start daemon</span>
+                <button class="toggle-track" id="wiz-toggle-autostart"></button>
+              </div>
+              <div class="toggle-row">
+                <span class="toggle-label">Auto-connect on launch</span>
+                <button class="toggle-track" id="wiz-toggle-autoconnect"></button>
+              </div>
+            </div>
+            <div class="wizard-summary" id="wiz-summary"></div>
+            <div class="wizard-actions">
+              <button class="wizard-btn-secondary" id="wiz-back-2">Back</button>
+              <button class="wizard-btn-primary" id="wiz-connect">Connect</button>
+            </div>
+          </div>
+
+          <div class="wizard-step" id="ws-3" style="display:none">
+            <div class="success-panel">
+              <div class="success-check">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#33afbc" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              </div>
+              <div class="success-title" id="wiz-success-title">Connected</div>
+              <div class="success-sub" id="wiz-success-sub"></div>
+              <div class="success-actions">
+                <button class="wizard-btn-primary" id="wiz-open-remote">Open Remote GUI</button>
+                <button class="wizard-btn-secondary" id="wiz-done">Done</button>
+              </div>
+            </div>
           </div>
         </div>
+      </div>
 
-        <div class="wizard-step" id="ws-1" style="display:none">
+      <!-- Create Project -->
+      <div id="create-project" style="display:none">
+        <div class="create-project-panel">
+          <div class="create-title">
+            <div class="create-title-ic">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            Create New Project
+          </div>
           <div class="wizard-field">
-            <label>SSH Key Path</label>
+            <label>Location</label>
             <div class="browse-row">
-              <input type="text" class="wizard-input-mono" id="wiz-key" placeholder="~/.ssh/id_ed25519" readonly>
-              <button class="wizard-btn-secondary" id="wiz-browse">Browse</button>
+              <input type="text" class="wizard-input-mono" id="cp-path" placeholder="Choose a folder..." readonly>
+              <button class="wizard-btn-secondary" id="cp-browse">Choose</button>
             </div>
+            <div class="selected-path" id="cp-path-display"></div>
           </div>
-          <div class="wizard-actions" style="justify-content:space-between">
-            <button class="wizard-btn-primary" id="wiz-test">Test Connection</button>
-            <div style="display:flex;gap:10px">
-              <button class="wizard-btn-secondary" id="wiz-back-1">Back</button>
-              <button class="wizard-btn-primary" id="wiz-next-1">Next</button>
-            </div>
+          <div class="wizard-field">
+            <label>Project Name</label>
+            <input type="text" class="wizard-input" id="cp-name" placeholder="my-project">
           </div>
-          <div id="wiz-test-result"></div>
-        </div>
-
-        <div class="wizard-step" id="ws-2" style="display:none">
-          <div class="wizard-card">
-            <div class="toggle-row">
-              <span class="toggle-label">Auto-start daemon</span>
-              <button class="toggle-track" id="wiz-toggle-autostart"></button>
-            </div>
-            <div class="toggle-row">
-              <span class="toggle-label">Auto-connect on launch</span>
-              <button class="toggle-track" id="wiz-toggle-autoconnect"></button>
-            </div>
-          </div>
-          <div class="wizard-summary" id="wiz-summary"></div>
           <div class="wizard-actions">
-            <button class="wizard-btn-secondary" id="wiz-back-2">Back</button>
-            <button class="wizard-btn-primary" id="wiz-connect">Connect</button>
-          </div>
-        </div>
-
-        <div class="wizard-step" id="ws-3" style="display:none">
-          <div class="success-panel">
-            <div class="success-check">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-            </div>
-            <div class="success-title" id="wiz-success-title">Connected!</div>
-            <div class="success-sub" id="wiz-success-sub"></div>
-            <div style="display:flex;gap:10px;justify-content:center">
-              <button class="wizard-btn-primary" id="wiz-open-remote">Open Remote GUI</button>
-              <button class="wizard-btn-secondary" id="wiz-done">Done</button>
-            </div>
+            <button class="wizard-btn-secondary" id="cp-cancel">Cancel</button>
+            <button class="wizard-btn-primary" id="cp-create" disabled>Create &amp; Open</button>
           </div>
         </div>
       </div>
     </div>
-
-    <!-- Create Project -->
-    <div id="create-project" style="display:none">
-      <div class="create-project-panel">
-        <div class="create-title">Create New Project</div>
-        <div class="wizard-field">
-          <label>Location</label>
-          <div class="browse-row">
-            <input type="text" class="wizard-input-mono" id="cp-path" placeholder="Choose a folder..." readonly>
-            <button class="wizard-btn-secondary" id="cp-browse">Choose Location</button>
-          </div>
-          <div class="selected-path" id="cp-path-display"></div>
-        </div>
-        <div class="wizard-field">
-          <label>Project Name</label>
-          <input type="text" class="wizard-input" id="cp-name" placeholder="my-project">
-        </div>
-        <div class="wizard-actions">
-          <button class="wizard-btn-secondary" id="cp-cancel">Cancel</button>
-          <button class="wizard-btn-primary" id="cp-create" disabled>Create &amp; Open</button>
-        </div>
-      </div>
-    </div>
-  </div>
+  </main>
 </div>
-
 
 <div class="update-banner" id="update-btn">
   <div class="update-inner">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#33afbc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4"/><path d="M12 16V8"/></svg>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#33afbc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4"/><path d="M12 16V8"/></svg>
     <div class="update-info">
       <div class="update-title" id="update-title">Update Available</div>
       <div class="update-detail" id="update-detail">Downloading...</div>
@@ -1526,11 +1598,6 @@ body {
   </div>
 </div>
 
-<div class="footer">
-  <span class="kbd-hint"><kbd id="kbd-footer">\u2318O</kbd> Open Project</span>
-  <span class="footer-sep"></span>
-  <span class="version" id="version"></span>
-</div>
 <div class="loading-full" id="loading">
   <div class="spinner"></div>
   <div class="loading-text" id="loading-text">Starting Groove...</div>
@@ -1581,26 +1648,23 @@ body {
     if (k2) k2.textContent = 'Ctrl+O';
   }
 
-  // --- Main menu navigation ---
-  var actionsEl = document.querySelector('.actions');
-  var recentsArea = document.querySelector('.recents-area');
-  var emptyState = document.getElementById('empty-state');
+  // --- Main area navigation ---
+  var actionsEl = document.getElementById('main-actions');
+  var whatsNewEl = document.getElementById('whats-new');
   var sshWizardEl = document.getElementById('ssh-wizard');
   var createProjectEl = document.getElementById('create-project');
 
   function showMainMenu() {
     actionsEl.style.display = '';
-    recentsArea.style.display = '';
+    if (whatsNewEl) whatsNewEl.style.display = '';
     sshWizardEl.style.display = 'none';
     createProjectEl.style.display = 'none';
     hideError();
-    checkEmpty();
   }
 
   function showSSHWizard() {
     actionsEl.style.display = 'none';
-    recentsArea.style.display = 'none';
-    emptyState.style.display = 'none';
+    if (whatsNewEl) whatsNewEl.style.display = 'none';
     sshWizardEl.style.display = '';
     createProjectEl.style.display = 'none';
     hideError();
@@ -1622,8 +1686,7 @@ body {
 
   function showCreateProject() {
     actionsEl.style.display = 'none';
-    recentsArea.style.display = 'none';
-    emptyState.style.display = 'none';
+    if (whatsNewEl) whatsNewEl.style.display = 'none';
     sshWizardEl.style.display = 'none';
     createProjectEl.style.display = '';
     hideError();
@@ -1654,6 +1717,8 @@ body {
 
   window.groove.getVersion().then(function(v) {
     document.getElementById('version').textContent = 'v' + v;
+    var wnv = document.getElementById('version-whats-new');
+    if (wnv) wnv.textContent = 'v' + v;
   }).catch(function() {});
 
   if (window.groove.update) {
@@ -1667,7 +1732,7 @@ body {
     if (window.groove.update.onUpdateProgress) {
       window.groove.update.onUpdateProgress(function(data) {
         updateBtn.classList.add('active');
-        updateDetail.textContent = 'Downloading\u2026 ' + (data.percent || 0) + '%';
+        updateDetail.textContent = 'Downloading… ' + (data.percent || 0) + '%';
         progressFill.style.width = (data.percent || 0) + '%';
       });
     }
@@ -1699,7 +1764,7 @@ body {
       return;
     }
     recentsSec.style.display = '';
-    var items = recentsData.slice(0, 3);
+    var items = recentsData.slice(0, 8);
     recentsEl.innerHTML = items.map(function(r) {
       return '<div class="list-row" data-dir="' + esc(r.dir) + '" title="' + esc(r.dir) + '">' +
         '<div class="list-info">' +

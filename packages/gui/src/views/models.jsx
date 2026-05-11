@@ -42,21 +42,35 @@ const STATUS_LABEL = {
 // ── Model Card ─────────────────────────────────────────────────
 
 function ModelCard({
-  model, serverRunning,
-  onStart, onStop, onSpawn, onDelete, onImport,
-  isLoading, isUnloading, isDeleting, isImporting,
+  model, runtimes,
+  onStop, onSpawn, onDelete,
+  onStartRuntime, onCreateRuntime,
+  isStarting, isUnloading, isDeleting,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
   const menuRef = useRef(null);
+  const runtimeRef = useRef(null);
 
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen && !runtimeMenuOpen) return;
     const close = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+      if (runtimeRef.current && !runtimeRef.current.contains(e.target)) setRuntimeMenuOpen(false);
     };
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
-  }, [menuOpen]);
+  }, [menuOpen, runtimeMenuOpen]);
+
+  function handleRuntimeClick() {
+    if (runtimes.length === 0) {
+      onCreateRuntime();
+    } else if (runtimes.length === 1) {
+      onStartRuntime(model.id, runtimes[0]);
+    } else {
+      setRuntimeMenuOpen(!runtimeMenuOpen);
+    }
+  }
 
   const specs = [
     model.parameters,
@@ -134,13 +148,8 @@ function ModelCard({
       {model.status !== 'downloading' && (
         <>
           <div className="h-px bg-border-subtle my-2" />
-          <div className="flex items-center gap-2">
-            <span className="text-2xs font-sans text-text-3 flex-shrink-0">
-              {model.source === 'gguf' ? 'GGUF' : 'Ollama'}
-            </span>
-            <div className="flex-1" />
-
-            {model.status === 'running' && (
+          <div className="flex items-center justify-end gap-2">
+            {model.status === 'running' ? (
               <>
                 <button
                   onClick={() => onStop(model.name)}
@@ -157,36 +166,43 @@ function ModelCard({
                   <Rocket size={10} /> Spawn
                 </button>
               </>
-            )}
-            {model.status === 'ready' && (
+            ) : (
               <>
-                {serverRunning && (
+                {/* Runtime picker */}
+                <div ref={runtimeRef} className="relative">
                   <button
-                    onClick={() => onStart(model.id)}
-                    disabled={isLoading}
-                    className="p-1 rounded text-text-4 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40"
-                    title="Run"
+                    onClick={handleRuntimeClick}
+                    disabled={isStarting}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded text-2xs font-sans font-semibold text-accent hover:bg-accent/10 transition-colors cursor-pointer disabled:opacity-40"
                   >
-                    {isLoading ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                    {isStarting
+                      ? <Loader2 size={10} className="animate-spin" />
+                      : <Play size={10} />}
+                    {runtimes.length === 0 ? 'Create Runtime' : 'Start Runtime'}
                   </button>
-                )}
+                  {runtimeMenuOpen && runtimes.length > 1 && (
+                    <div className="absolute right-0 top-full mt-1 z-50 min-w-[180px] bg-surface-2 border border-border rounded-md shadow-lg py-1">
+                      {runtimes.map((rt) => (
+                        <button
+                          key={rt.id}
+                          onClick={() => { onStartRuntime(model.id, rt); setRuntimeMenuOpen(false); }}
+                          className="w-full text-left px-3 py-1.5 text-xs font-sans text-text-2 hover:bg-surface-3 transition-colors cursor-pointer flex items-center gap-2"
+                        >
+                          <Play size={10} />
+                          <span className="truncate flex-1">{rt.name}</span>
+                          <span className="text-2xs text-text-4 flex-shrink-0">{rt.type}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <button
                   onClick={() => onSpawn(model.id)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded text-2xs font-sans font-semibold text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded text-2xs font-sans font-semibold text-text-3 hover:text-text-1 transition-colors cursor-pointer"
                 >
                   <Rocket size={10} /> Spawn
                 </button>
               </>
-            )}
-            {model.status === 'downloaded' && (
-              <button
-                onClick={() => onImport(model.id)}
-                disabled={isImporting}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded text-2xs font-sans font-semibold text-text-2 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40"
-              >
-                {isImporting ? <Loader2 size={10} className="animate-spin" /> : <Rocket size={10} />}
-                {isImporting ? 'Importing' : 'Import'}
-              </button>
             )}
 
             {/* Overflow menu */}
@@ -198,20 +214,11 @@ function ModelCard({
                 <MoreHorizontal size={12} />
               </button>
               {menuOpen && (
-                <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] bg-surface-2 border border-border rounded-md shadow-lg py-1">
-                  {model.source === 'gguf' && (
-                    <button
-                      onClick={() => { onImport(model.id); setMenuOpen(false); }}
-                      disabled={isImporting}
-                      className="w-full text-left px-3 py-1.5 text-xs font-mono text-text-2 hover:bg-surface-3 transition-colors cursor-pointer flex items-center gap-2 disabled:opacity-40"
-                    >
-                      <Rocket size={10} /> Import to Ollama
-                    </button>
-                  )}
+                <div className="absolute right-0 top-full mt-1 z-50 min-w-[160px] bg-surface-2 border border-border rounded-md shadow-lg py-1">
                   <button
                     onClick={() => { onDelete(model); setMenuOpen(false); }}
                     disabled={isDeleting}
-                    className="w-full text-left px-3 py-1.5 text-xs font-mono text-danger hover:bg-danger/5 transition-colors cursor-pointer flex items-center gap-2 disabled:opacity-40"
+                    className="w-full text-left px-3 py-1.5 text-xs font-sans text-danger hover:bg-danger/5 transition-colors cursor-pointer flex items-center gap-2 disabled:opacity-40"
                   >
                     <Trash2 size={10} /> Delete
                   </button>
@@ -300,12 +307,11 @@ export default function ModelsView() {
   const [downloads, setDownloads] = useState([]);
   const [expandedResult, setExpandedResult] = useState(null);
   const [serverAction, setServerAction] = useState(null);
-  const [loadingModel, setLoadingModel] = useState(null);
   const [unloadingModel, setUnloadingModel] = useState(null);
   const [deletingModel, setDeletingModel] = useState(null);
   const [ggufModels, setGgufModels] = useState([]);
   const [deletingGguf, setDeletingGguf] = useState(null);
-  const [importingGguf, setImportingGguf] = useState(null);
+  const [startingModel, setStartingModel] = useState(null);
   const [filter, setFilter] = useState('all');
   const [discoveryOpen, setDiscoveryOpen] = useState(true);
   const [discoveryTab, setDiscoveryTab] = useState('recommended');
@@ -319,6 +325,10 @@ export default function ModelsView() {
   const catalog = useGrooveStore((s) => s.ollamaCatalog);
   const pullProgress = useGrooveStore((s) => s.ollamaPullProgress);
   const labActiveModel = useGrooveStore((s) => s.labActiveModel);
+  const labRuntimes = useGrooveStore((s) => s.labRuntimes);
+  const fetchLabRuntimes = useGrooveStore((s) => s.fetchLabRuntimes);
+  const launchLocalModel = useGrooveStore((s) => s.launchLocalModel);
+  const setActiveView = useGrooveStore((s) => s.setActiveView);
   const fetchOllamaStatus = useGrooveStore((s) => s.fetchOllamaStatus);
   const startServer = useGrooveStore((s) => s.startOllamaServer);
   const stopServer = useGrooveStore((s) => s.stopOllamaServer);
@@ -333,9 +343,10 @@ export default function ModelsView() {
 
   useEffect(() => {
     fetchOllamaStatus();
+    fetchLabRuntimes();
     pollingRef.current = setInterval(fetchOllamaStatus, 10000);
     return () => clearInterval(pollingRef.current);
-  }, [fetchOllamaStatus]);
+  }, [fetchOllamaStatus, fetchLabRuntimes]);
 
   useEffect(() => {
     api.get('/models/recommended').then((data) => {
@@ -404,12 +415,6 @@ export default function ModelsView() {
     setServerAction(null);
   }
 
-  async function handleLoadModel(modelId) {
-    setLoadingModel(modelId);
-    try { await loadModel(modelId); } catch {}
-    setLoadingModel(null);
-  }
-
   async function handleUnloadModel(modelId) {
     setUnloadingModel(modelId);
     try { await unloadModel(modelId); } catch {}
@@ -422,17 +427,21 @@ export default function ModelsView() {
     setDeletingModel(null);
   }
 
-  async function handleImportToOllama(modelId) {
-    setImportingGguf(modelId);
+  async function handleStartRuntime(modelId, runtime) {
+    setStartingModel(modelId);
     try {
-      const result = await api.post(`/models/${encodeURIComponent(modelId)}/import-to-ollama`);
-      toast.success(`Imported as "${result.ollamaName}"`);
+      if (runtime.type === 'ollama') {
+        await loadModel(modelId);
+      } else {
+        await launchLocalModel(modelId);
+      }
       fetchOllamaStatus();
-      setGgufModels((prev) => prev.filter((m) => m.id !== modelId));
-    } catch (err) {
-      toast.error(`Import failed: ${err.message}`);
-    }
-    setImportingGguf(null);
+    } catch {}
+    setStartingModel(null);
+  }
+
+  function handleCreateRuntime() {
+    setActiveView('model-lab');
   }
 
   async function handleDeleteGguf(modelId) {
@@ -716,16 +725,15 @@ export default function ModelsView() {
               <ModelCard
                 key={model.id}
                 model={model}
-                serverRunning={ollamaStatus.serverRunning}
-                onStart={handleLoadModel}
+                runtimes={labRuntimes}
                 onStop={handleUnloadModel}
                 onSpawn={spawnFromModel}
                 onDelete={handleDeleteUnified}
-                onImport={handleImportToOllama}
-                isLoading={loadingModel === model.id}
+                onStartRuntime={handleStartRuntime}
+                onCreateRuntime={handleCreateRuntime}
+                isStarting={startingModel === model.id}
                 isUnloading={unloadingModel === model.id || unloadingModel === model.name}
                 isDeleting={deletingModel === model.id || deletingGguf === model.id}
-                isImporting={importingGguf === model.id}
               />
             ))}
           </div>

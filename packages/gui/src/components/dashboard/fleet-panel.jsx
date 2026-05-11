@@ -25,7 +25,7 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
   const successRate = quality?.toolSuccessRate != null ? Math.round(quality.toolSuccessRate * 100) : null;
   const thresholdPct = agent.rotationThreshold ? Math.round(agent.rotationThreshold * 100) : null;
   const rc = roleColor(agent.role);
-  const barColor = HEX.accent;
+  const barColor = HEX.text1;
 
   return (
     <div className="px-3 pl-6 py-2 hover:bg-surface-4 transition-colors space-y-1.5">
@@ -89,7 +89,7 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
       <div className="flex items-center gap-2">
         <div
           className="relative flex-1 h-0.5 rounded-sm overflow-visible"
-          style={{ background: hexAlpha(HEX.text3, 0.12) }}
+          style={{ background: hexAlpha(HEX.text4, 0.2) }}
         >
           <div
             className="absolute inset-y-0 left-0 rounded-sm transition-all duration-700"
@@ -98,7 +98,7 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
           {thresholdPct && (
             <div
               className="absolute top-[-1px] w-px h-[4px]"
-              style={{ left: `${thresholdPct}%`, background: HEX.accent }}
+              style={{ left: `${thresholdPct}%`, background: HEX.text3 }}
               title={`Rotation at ${thresholdPct}%`}
             />
           )}
@@ -136,7 +136,7 @@ function TeamSection({ team, members, rotatingSet }) {
         )}
         <span
           className="text-2xs font-mono tabular-nums flex-shrink-0 ml-1.5"
-          style={{ color: isActive ? HEX.accent : undefined }}
+          style={{ color: isActive ? HEX.text1 : undefined }}
         >
           {runningCount}/{members.length}
         </span>

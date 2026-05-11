@@ -5,7 +5,7 @@ import { HEX } from '../../lib/theme-hex';
 import { Tooltip } from '../ui/tooltip';
 import { HelpCircle } from 'lucide-react';
 
-function MiniSparkline({ data, color = HEX.accent, width = 72, height = 22 }) {
+function MiniSparkline({ data, color = HEX.text3, width = 72, height = 22 }) {
   if (!data || data.length < 2) return <div style={{ width, height }} />;
   const vals = data.map((d) => d.v);
   const min = Math.min(...vals);
@@ -34,7 +34,7 @@ function MiniSparkline({ data, color = HEX.accent, width = 72, height = 22 }) {
   );
 }
 
-const KpiCard = memo(function KpiCard({ label, value, sparkData, color = HEX.accent, hint, className }) {
+const KpiCard = memo(function KpiCard({ label, value, sparkData, color = HEX.text3, hint, className }) {
   return (
     <div className={cn(
       'flex items-center gap-2.5 px-3 py-2.5 min-w-0',

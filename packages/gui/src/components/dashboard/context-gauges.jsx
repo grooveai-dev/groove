@@ -9,7 +9,7 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 const START_ANGLE = -90;
 
 function gaugeColor() {
-  return HEX.accent;
+  return HEX.text1;
 }
 
 function MiniGauge({ name, pct, threshold }) {
@@ -42,7 +42,7 @@ function MiniGauge({ name, pct, threshold }) {
             fill="none" strokeWidth={1}
             strokeLinecap="butt"
             style={{
-              stroke: HEX.accent,
+              stroke: HEX.text3,
               strokeDasharray: `1 ${CIRCUMFERENCE - 1}`,
               strokeDashoffset: -(threshold / 100) * CIRCUMFERENCE,
             }}

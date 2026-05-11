@@ -89,14 +89,14 @@ export default function DashboardView() {
   const events = timeline.events || data.events || [];
 
   const kpis = [
-    { label: 'Tokens Used',  value: fmtNum(tokens.totalTokens),        sparkData: kpiHistory.tokens,      color: HEX.accent, hint: 'Total tokens consumed across all agents — input, output, and cache tokens combined.' },
-    { label: 'Total Cost',   value: fmtDollar(tokens.totalCostUsd),    sparkData: kpiHistory.cost,        color: HEX.accent, hint: 'Actual cost reported by providers. Claude Code reports real billing; other providers use estimated rates.' },
-    { label: 'Quality',      value: avgQuality != null ? `${avgQuality}` : '—', sparkData: kpiHistory.saved, color: HEX.accent, hint: 'Average session quality score (0-100) across running agents. Based on error rate, repetitions, file churn, and tool success. Below 40 triggers auto-rotation.' },
-    { label: 'Cache Rate',   value: fmtPct(tokens.cacheHitRate * 100), sparkData: kpiHistory.cache,       color: HEX.accent, hint: 'Percentage of input tokens served from prompt cache. Higher = faster responses and lower cost. Managed by your AI provider.' },
-    { label: 'Rotations',    value: `${totalRotations}`,               sparkData: kpiHistory.efficiency,  color: HEX.accent, hint: 'Total context rotations — includes quality-based (auto), context threshold, natural compaction (provider-managed), and manual rotations.' },
-    { label: 'I/O Ratio',    value: `${ioRatio}:1`,                    sparkData: kpiHistory.inputOutput, color: HEX.accent, hint: 'Ratio of input to output tokens. High ratios mean agents are reading more than writing — common for analysis tasks.' },
-    { label: 'Agents',       value: `${runningCount}/${agents.length}`, sparkData: kpiHistory.agents,      color: HEX.accent, hint: 'Running agents out of total spawned this session (including completed and crashed).' },
-    { label: 'Turns',        value: fmtNum(tokens.totalTurns),         sparkData: kpiHistory.turns,       color: HEX.accent, hint: 'Total conversation turns across all agents. Each turn is one request-response cycle with the AI provider.' },
+    { label: 'Tokens Used',  value: fmtNum(tokens.totalTokens),        sparkData: kpiHistory.tokens,      color: HEX.text3, hint: 'Total tokens consumed across all agents — input, output, and cache tokens combined.' },
+    { label: 'Total Cost',   value: fmtDollar(tokens.totalCostUsd),    sparkData: kpiHistory.cost,        color: HEX.text3, hint: 'Actual cost reported by providers. Claude Code reports real billing; other providers use estimated rates.' },
+    { label: 'Quality',      value: avgQuality != null ? `${avgQuality}` : '—', sparkData: kpiHistory.saved, color: HEX.text3, hint: 'Average session quality score (0-100) across running agents. Based on error rate, repetitions, file churn, and tool success. Below 40 triggers auto-rotation.' },
+    { label: 'Cache Rate',   value: fmtPct(tokens.cacheHitRate * 100), sparkData: kpiHistory.cache,       color: HEX.text3, hint: 'Percentage of input tokens served from prompt cache. Higher = faster responses and lower cost. Managed by your AI provider.' },
+    { label: 'Rotations',    value: `${totalRotations}`,               sparkData: kpiHistory.efficiency,  color: HEX.text3, hint: 'Total context rotations — includes quality-based (auto), context threshold, natural compaction (provider-managed), and manual rotations.' },
+    { label: 'I/O Ratio',    value: `${ioRatio}:1`,                    sparkData: kpiHistory.inputOutput, color: HEX.text3, hint: 'Ratio of input to output tokens. High ratios mean agents are reading more than writing — common for analysis tasks.' },
+    { label: 'Agents',       value: `${runningCount}/${agents.length}`, sparkData: kpiHistory.agents,      color: HEX.text3, hint: 'Running agents out of total spawned this session (including completed and crashed).' },
+    { label: 'Turns',        value: fmtNum(tokens.totalTurns),         sparkData: kpiHistory.turns,       color: HEX.text3, hint: 'Total conversation turns across all agents. Each turn is one request-response cycle with the AI provider.' },
   ];
 
   return (

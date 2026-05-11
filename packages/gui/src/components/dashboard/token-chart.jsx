@@ -144,7 +144,7 @@ const TokenChart = memo(function TokenChart({ data }) {
     const hasCacheData = caches.some((c) => c > 0);
     if (hasCacheData) {
       ctx.beginPath();
-      ctx.strokeStyle = hexAlpha(HEX.accent, 0.45);
+      ctx.strokeStyle = hexAlpha(HEX.text2, 0.5);
       ctx.lineWidth = 1;
       ctx.lineJoin = 'round';
       ctx.setLineDash([2, 3]);
@@ -164,7 +164,7 @@ const TokenChart = memo(function TokenChart({ data }) {
     const ly = 14;
 
     if (hasCacheData) {
-      ctx.fillStyle = hexAlpha(HEX.accent, 0.5);
+      ctx.fillStyle = hexAlpha(HEX.text2, 0.5);
       ctx.fillText('Cache %', rx, ly);
       rx -= ctx.measureText('Cache %').width + 4;
       ctx.beginPath(); ctx.arc(rx, ly - 3, 2.5, 0, Math.PI * 2); ctx.fill();
@@ -203,7 +203,7 @@ const TokenChart = memo(function TokenChart({ data }) {
       // Tooltip
       const lines = [
         { label: 'Burn', value: `${fmtNum(d.burnRate)}/m`, color: HEX.accent },
-        { label: 'Cache', value: fmtPct(d.cacheHitRate * 100), color: hexAlpha(HEX.accent, 0.5) },
+        { label: 'Cache', value: fmtPct(d.cacheHitRate * 100), color: HEX.text2 },
         { label: 'Agents', value: `${d.running}/${d.agents}`, color: HEX.text3 },
       ];
       const tooltipW = 104;

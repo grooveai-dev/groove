@@ -41,7 +41,7 @@ export const TeamBurnPanel = memo(function TeamBurnPanel({ teams = [] }) {
                   <div className="h-0.5 bg-surface-2 rounded-sm overflow-hidden">
                     <div
                       className="h-full rounded-sm transition-all"
-                      style={{ width: `${pct}%`, background: HEX.accent }}
+                      style={{ width: `${pct}%`, background: HEX.text3 }}
                     />
                   </div>
                 </div>

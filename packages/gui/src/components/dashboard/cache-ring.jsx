@@ -47,7 +47,7 @@ const CacheRing = memo(function CacheRing({ cacheRead = 0, cacheCreation = 0, to
         const segEnd = startAngle + sweep * readPct;
         ctx.beginPath();
         ctx.arc(cx, cy, radius, startAngle, segEnd);
-        ctx.strokeStyle = HEX.accent;
+        ctx.strokeStyle = HEX.text0;
         ctx.lineWidth = strokeWidth;
         ctx.lineCap = 'round';
         ctx.stroke();
@@ -58,7 +58,7 @@ const CacheRing = memo(function CacheRing({ cacheRead = 0, cacheCreation = 0, to
         const segEnd = segStart + sweep * createPct;
         ctx.beginPath();
         ctx.arc(cx, cy, radius, segStart, segEnd);
-        ctx.strokeStyle = hexAlpha(HEX.accent, 0.5);
+        ctx.strokeStyle = HEX.text3;
         ctx.lineWidth = strokeWidth;
         ctx.lineCap = 'butt';
         ctx.stroke();
@@ -85,8 +85,8 @@ const CacheRing = memo(function CacheRing({ cacheRead = 0, cacheCreation = 0, to
         style={{ width: size, height: size }}
       />
       <div className="w-full mt-3 space-y-1.5 max-w-[160px]">
-        <StatRow color={HEX.accent} label="Read" value={fmtNum(cacheRead)} />
-        <StatRow color={hexAlpha(HEX.accent, 0.5)} label="Create" value={fmtNum(cacheCreation)} />
+        <StatRow color={HEX.text0} label="Read" value={fmtNum(cacheRead)} />
+        <StatRow color={HEX.text3} label="Create" value={fmtNum(cacheCreation)} />
         <StatRow color={HEX.surface5} label="Miss" value={fmtNum(Math.max(totalInput - cacheRead - cacheCreation, 0))} />
       </div>
     </div>

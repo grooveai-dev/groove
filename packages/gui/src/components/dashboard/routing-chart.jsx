@@ -3,7 +3,7 @@ import { memo } from 'react';
 import { HEX, hexAlpha } from '../../lib/theme-hex';
 import { fmtNum, fmtPct } from '../../lib/format';
 
-const TIER_COLORS = { heavy: HEX.accent, medium: hexAlpha(HEX.accent, 0.6), light: hexAlpha(HEX.accent, 0.3) };
+const TIER_COLORS = { heavy: HEX.text0, medium: HEX.text2, light: HEX.text4 };
 const TIER_LABELS = { heavy: 'Heavy', medium: 'Medium', light: 'Light' };
 
 const DONUT_SIZE = 80;
@@ -126,7 +126,7 @@ const RoutingChart = memo(function RoutingChart({ routing, agentBreakdown }) {
                   <div className="h-0.5 bg-surface-4 rounded-sm overflow-hidden">
                     <div
                       className="h-full rounded-sm transition-all duration-500"
-                      style={{ width: `${Math.max(barPct, 2)}%`, background: HEX.accent }}
+                      style={{ width: `${Math.max(barPct, 2)}%`, background: HEX.text2 }}
                     />
                   </div>
                 </div>

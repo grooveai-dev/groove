@@ -13,11 +13,11 @@ const ICONS = {
 };
 
 const ICON_COLORS = {
-  spawn: 'text-accent',
-  complete: 'text-success',
+  spawn: 'text-text-2',
+  complete: 'text-text-2',
   crash: 'text-danger',
   kill: 'text-text-3',
-  rotate: 'text-purple',
+  rotate: 'text-text-2',
   error: 'text-danger',
 };
 

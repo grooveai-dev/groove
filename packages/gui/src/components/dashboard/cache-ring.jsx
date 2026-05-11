@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useRef, useEffect, memo } from 'react';
-import { HEX } from '../../lib/theme-hex';
+import { HEX, hexAlpha } from '../../lib/theme-hex';
 import { fmtNum } from '../../lib/format';
 
 const CacheRing = memo(function CacheRing({ cacheRead = 0, cacheCreation = 0, totalInput = 0, size = 140 }) {
@@ -58,7 +58,7 @@ const CacheRing = memo(function CacheRing({ cacheRead = 0, cacheCreation = 0, to
         const segEnd = segStart + sweep * createPct;
         ctx.beginPath();
         ctx.arc(cx, cy, radius, segStart, segEnd);
-        ctx.strokeStyle = HEX.purple;
+        ctx.strokeStyle = hexAlpha(HEX.accent, 0.5);
         ctx.lineWidth = strokeWidth;
         ctx.lineCap = 'butt';
         ctx.stroke();
@@ -86,7 +86,7 @@ const CacheRing = memo(function CacheRing({ cacheRead = 0, cacheCreation = 0, to
       />
       <div className="w-full mt-3 space-y-1.5 max-w-[160px]">
         <StatRow color={HEX.accent} label="Read" value={fmtNum(cacheRead)} />
-        <StatRow color={HEX.purple} label="Create" value={fmtNum(cacheCreation)} />
+        <StatRow color={hexAlpha(HEX.accent, 0.5)} label="Create" value={fmtNum(cacheCreation)} />
         <StatRow color={HEX.surface5} label="Miss" value={fmtNum(Math.max(totalInput - cacheRead - cacheCreation, 0))} />
       </div>
     </div>

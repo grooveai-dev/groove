@@ -8,10 +8,8 @@ const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 const START_ANGLE = -90;
 
-function gaugeColor(pct) {
-  if (pct > 80) return HEX.danger;
-  if (pct > 60) return HEX.warning;
-  return HEX.success;
+function gaugeColor() {
+  return HEX.accent;
 }
 
 function MiniGauge({ name, pct, threshold }) {
@@ -44,7 +42,7 @@ function MiniGauge({ name, pct, threshold }) {
             fill="none" strokeWidth={1}
             strokeLinecap="butt"
             style={{
-              stroke: HEX.purple,
+              stroke: HEX.accent,
               strokeDasharray: `1 ${CIRCUMFERENCE - 1}`,
               strokeDashoffset: -(threshold / 100) * CIRCUMFERENCE,
             }}
@@ -68,11 +66,11 @@ function MiniGauge({ name, pct, threshold }) {
 function FleetSummary({ zones }) {
   return (
     <div className="flex items-center gap-2 text-2xs font-mono">
-      <span className="text-success">{zones.healthy}</span>
+      <span className="text-text-2">{zones.healthy}</span>
       <span className="text-text-4">/</span>
-      <span className="text-warning">{zones.warning}</span>
+      <span className="text-text-2">{zones.warning}</span>
       <span className="text-text-4">/</span>
-      <span className="text-danger">{zones.critical}</span>
+      <span className="text-text-2">{zones.critical}</span>
     </div>
   );
 }

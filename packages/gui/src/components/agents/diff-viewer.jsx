@@ -6,7 +6,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { api } from '../../lib/api';
 import { Columns2, AlignJustify } from 'lucide-react';
 
-function computeDiff(original, modified) {
+export function computeDiff(original, modified) {
   const origLines = (original || '').split('\n');
   const modLines = (modified || '').split('\n');
   const result = [];
@@ -71,14 +71,14 @@ function buildSideBySide(diffLines) {
 
 function UnifiedView({ diffLines }) {
   return (
-    <div className="font-mono text-xs leading-5">
+    <div className="font-mono text-xs leading-5 overflow-x-auto">
       {diffLines.map((line, i) => (
         <div
           key={i}
           className={cn(
             'flex',
-            line.type === 'add' && 'bg-success/8',
-            line.type === 'del' && 'bg-danger/8',
+            line.type === 'add' && 'bg-success/15',
+            line.type === 'del' && 'bg-danger/15',
           )}
         >
           <span className={cn(
@@ -100,8 +100,8 @@ function UnifiedView({ diffLines }) {
             {line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' '}
           </span>
           <span className={cn(
-            'flex-1 whitespace-pre px-2',
-            line.type === 'add' ? 'text-success/90' : line.type === 'del' ? 'text-danger/90' : 'text-text-1',
+            'whitespace-pre px-2 flex-1',
+            line.type === 'add' ? 'text-success' : line.type === 'del' ? 'text-danger' : 'text-text-1',
           )}>
             {line.text}
           </span>
@@ -113,14 +113,14 @@ function UnifiedView({ diffLines }) {
 
 function SideBySideView({ pairs }) {
   return (
-    <div className="font-mono text-xs leading-5">
+    <div className="font-mono text-xs leading-5 overflow-x-auto">
       {pairs.map((pair, i) => (
         <div key={i} className="flex">
           {/* Left (original) */}
           <div className={cn(
             'flex flex-1 min-w-0 border-r border-border-subtle',
-            pair.left.type === 'del' && 'bg-danger/8',
-            pair.left.type === 'mod' && 'bg-warning/6',
+            pair.left.type === 'del' && 'bg-danger/15',
+            pair.left.type === 'mod' && 'bg-warning/10',
             pair.left.type === 'empty' && 'bg-surface-2/50',
           )}>
             <span className={cn(
@@ -130,9 +130,9 @@ function SideBySideView({ pairs }) {
               {pair.left.num}
             </span>
             <span className={cn(
-              'flex-1 whitespace-pre px-1 truncate',
-              pair.left.type === 'del' ? 'text-danger/90' :
-              pair.left.type === 'mod' ? 'text-warning/90' :
+              'whitespace-pre px-1',
+              pair.left.type === 'del' ? 'text-danger' :
+              pair.left.type === 'mod' ? 'text-warning' :
               pair.left.type === 'empty' ? '' : 'text-text-1',
             )}>
               {pair.left.text}
@@ -141,8 +141,8 @@ function SideBySideView({ pairs }) {
           {/* Right (modified) */}
           <div className={cn(
             'flex flex-1 min-w-0',
-            pair.right.type === 'add' && 'bg-success/8',
-            pair.right.type === 'mod' && 'bg-success/6',
+            pair.right.type === 'add' && 'bg-success/15',
+            pair.right.type === 'mod' && 'bg-success/10',
             pair.right.type === 'empty' && 'bg-surface-2/50',
           )}>
             <span className={cn(
@@ -152,9 +152,9 @@ function SideBySideView({ pairs }) {
               {pair.right.num}
             </span>
             <span className={cn(
-              'flex-1 whitespace-pre px-1 truncate',
-              pair.right.type === 'add' ? 'text-success/90' :
-              pair.right.type === 'mod' ? 'text-success/90' :
+              'whitespace-pre px-1',
+              pair.right.type === 'add' ? 'text-success' :
+              pair.right.type === 'mod' ? 'text-success' :
               pair.right.type === 'empty' ? '' : 'text-text-1',
             )}>
               {pair.right.text}
@@ -166,7 +166,7 @@ function SideBySideView({ pairs }) {
   );
 }
 
-export function DiffViewer({ filePath, gitDiffData }) {
+export function DiffViewer({ filePath, gitDiffData, originalContent, modifiedContent }) {
   const file = useGrooveStore((s) => s.editorFiles[filePath]);
   const snapshot = useGrooveStore((s) => s.workspaceSnapshots[filePath]);
   const [viewMode, setViewMode] = useState('side-by-side');
@@ -175,15 +175,15 @@ export function DiffViewer({ filePath, gitDiffData }) {
   useEffect(() => {
     if (gitDiffData?.original !== undefined) {
       setGitOriginal(gitDiffData.original);
-    } else if (!snapshot && !file?.originalContent) {
+    } else if (originalContent === undefined && !snapshot && !file?.originalContent) {
       api.get(`/files/git-diff?path=${encodeURIComponent(filePath)}`).then((data) => {
         if (data?.original !== undefined) setGitOriginal(data.original);
       }).catch(() => {});
     }
-  }, [filePath, gitDiffData, snapshot, file?.originalContent]);
+  }, [filePath, gitDiffData, snapshot, file?.originalContent, originalContent]);
 
-  const original = gitOriginal ?? snapshot ?? file?.originalContent ?? '';
-  const modified = file?.content || '';
+  const original = originalContent ?? gitOriginal ?? snapshot ?? file?.originalContent ?? '';
+  const modified = modifiedContent ?? file?.content ?? '';
 
   const diffLines = useMemo(() => computeDiff(original, modified), [original, modified]);
   const sidePairs = useMemo(() => buildSideBySide(diffLines), [diffLines]);
@@ -197,7 +197,7 @@ export function DiffViewer({ filePath, gitDiffData }) {
     return { adds, dels };
   }, [diffLines]);
 
-  if (!file) {
+  if (!original && !modified) {
     return (
       <div className="flex items-center justify-center h-full text-text-4 text-xs font-sans">
         No file loaded

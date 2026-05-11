@@ -120,7 +120,7 @@ function UnifiedModelCard({
       </div>
 
       {/* Specs */}
-      <div className="text-2xs text-text-3 font-sans mb-3 flex items-center gap-1.5 flex-wrap">
+      <div className="text-2xs text-text-3 font-sans mb-3 flex items-center gap-1.5 flex-wrap min-w-0">
         {model.parameters && <span>{model.parameters}</span>}
         {model.parameters && model.quantization && <span className="text-text-4">&middot;</span>}
         {model.quantization && <span>{model.quantization}</span>}
@@ -265,38 +265,40 @@ function FilePicker({ repoId, onDownload, systemRamGb }) {
   }
 
   return (
-    <div className="pl-6 pr-4 pb-2 space-y-1.5">
+    <div className="pl-4 pr-4 pb-2 space-y-1.5">
       {files.map((f) => {
         const canRun = !f.estimatedRamGb || !systemRamGb || f.estimatedRamGb <= systemRamGb;
         const tight = f.estimatedRamGb && systemRamGb && f.estimatedRamGb > systemRamGb * 0.8 && canRun;
         return (
           <div key={f.filename} className={cn(
-            'flex items-center gap-2 py-1.5 px-3 rounded-md text-xs font-sans',
+            'flex items-center gap-2 py-1.5 px-3 rounded-md text-xs font-sans flex-wrap',
             canRun ? 'bg-surface-2' : 'bg-red-500/5 border border-red-500/15',
           )}>
-            <span className="font-mono text-text-1 truncate flex-1">{f.filename}</span>
-            {f.quantization && <Badge variant="default" className="text-2xs">{f.quantization}</Badge>}
-            <span className="text-text-2 text-2xs w-16 text-right">{formatBytes(f.size)}</span>
-            {f.estimatedRamGb && (
-              <span className={cn(
-                'text-2xs w-20 text-right font-medium',
-                !canRun ? 'text-red-400' : tight ? 'text-yellow-400' : 'text-green-400',
-              )}>
-                ~{f.estimatedRamGb} GB RAM
-              </span>
-            )}
-            {!canRun && <span className="text-2xs text-red-400 font-medium">too large</span>}
-            <button
-              onClick={() => handleDownload(f)}
-              disabled={downloading === f.filename || !canRun}
-              className={cn(
-                'p-1 rounded transition-colors cursor-pointer',
-                canRun ? 'text-accent hover:bg-accent/10' : 'text-text-4 cursor-not-allowed',
-                'disabled:opacity-40',
+            <span className="font-mono text-text-1 truncate flex-1 min-w-0">{f.filename}</span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {f.quantization && <Badge variant="default" className="text-2xs">{f.quantization}</Badge>}
+              <span className="text-text-2 text-2xs">{formatBytes(f.size)}</span>
+              {f.estimatedRamGb && (
+                <span className={cn(
+                  'text-2xs font-medium',
+                  !canRun ? 'text-red-400' : tight ? 'text-yellow-400' : 'text-green-400',
+                )}>
+                  ~{f.estimatedRamGb} GB
+                </span>
               )}
-            >
-              {downloading === f.filename ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-            </button>
+              {!canRun && <span className="text-2xs text-red-400 font-medium">too large</span>}
+              <button
+                onClick={() => handleDownload(f)}
+                disabled={downloading === f.filename || !canRun}
+                className={cn(
+                  'p-1 rounded transition-colors cursor-pointer',
+                  canRun ? 'text-accent hover:bg-accent/10' : 'text-text-4 cursor-not-allowed',
+                  'disabled:opacity-40',
+                )}
+              >
+                {downloading === f.filename ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+              </button>
+            </div>
           </div>
         );
       })}
@@ -623,7 +625,7 @@ export default function ModelsView() {
   return (
     <div className="h-full flex flex-col bg-surface-0">
       {/* ════ ZONE 1: Sticky Toolbar ════ */}
-      <div className="flex-shrink-0 px-5 pt-4 pb-3 border-b border-border space-y-3">
+      <div className="flex-shrink-0 px-4 pt-4 pb-3 border-b border-border space-y-3">
 
         {/* Server status row */}
         {!ollamaStatus.installed ? (
@@ -640,17 +642,19 @@ export default function ModelsView() {
               Install <ExternalLink size={10} />
             </a>
           </div>
-        ) : ollamaStatus.serverRunning ? (
+        ) : (
           <div className="flex items-center gap-2 flex-wrap">
             <span className="relative flex-shrink-0 w-1.5 h-1.5">
-              <span className="absolute inset-0 rounded-full bg-success" />
-              <span className="absolute inset-[-2px] rounded-full bg-success opacity-20 animate-pulse" />
+              <span className={cn('absolute inset-0 rounded-full', ollamaStatus.serverRunning ? 'bg-success' : 'bg-text-4')} />
+              {ollamaStatus.serverRunning && <span className="absolute inset-[-2px] rounded-full bg-success opacity-20 animate-pulse" />}
             </span>
             <span className="text-xs font-sans text-text-1 font-medium">Ollama</span>
-            <span className="text-2xs font-mono text-text-4">:11434</span>
+            <span className={cn('text-2xs font-mono', ollamaStatus.serverRunning ? 'text-text-4' : 'text-text-4')}>
+              {ollamaStatus.serverRunning ? ':11434' : 'stopped'}
+            </span>
 
-            {ollamaStatus.hardware && (
-              <div className="flex items-center gap-1.5 ml-2">
+            {ollamaStatus.serverRunning && ollamaStatus.hardware && (
+              <div className="flex items-center gap-1.5 ml-1 flex-wrap">
                 <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-2 text-2xs font-sans text-text-2">
                   <MemoryStick size={10} className="text-text-3" />
                   {ollamaStatus.hardware.totalRamGb} GB
@@ -673,45 +677,41 @@ export default function ModelsView() {
             )}
 
             <div className="flex-1" />
-            <button
-              onClick={handleServerRestart}
-              disabled={!!serverAction}
-              className="flex items-center gap-1 text-2xs font-sans text-text-3 hover:text-accent cursor-pointer transition-colors disabled:opacity-40"
-            >
-              <RefreshCw size={10} className={serverAction === 'restarting' ? 'animate-spin' : ''} />
-              {serverAction === 'restarting' ? 'Restarting...' : 'Restart'}
-            </button>
-            <button
-              onClick={handleServerStop}
-              disabled={!!serverAction}
-              className="flex items-center gap-1 text-2xs font-sans text-text-3 hover:text-danger cursor-pointer transition-colors disabled:opacity-40"
-            >
-              <Square size={10} />
-              {serverAction === 'stopping' ? 'Stopping...' : 'Stop'}
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 bg-danger/8 border border-danger/20 rounded-lg px-3 py-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-danger flex-shrink-0" />
-            <span className="text-xs font-sans text-danger font-semibold">Ollama Stopped</span>
-            <span className="text-2xs font-mono text-text-4">:11434</span>
-            <div className="flex-1" />
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleServerStart}
-              disabled={!!serverAction}
-              className="h-6 px-2.5 text-2xs gap-1"
-            >
-              <Play size={10} />
-              {serverAction === 'starting' ? 'Starting...' : 'Start Server'}
-            </Button>
+            {ollamaStatus.serverRunning ? (
+              <>
+                <button
+                  onClick={handleServerRestart}
+                  disabled={!!serverAction}
+                  className="flex items-center gap-1 text-2xs font-sans text-text-3 hover:text-accent cursor-pointer transition-colors disabled:opacity-40"
+                >
+                  <RefreshCw size={10} className={serverAction === 'restarting' ? 'animate-spin' : ''} />
+                  {serverAction === 'restarting' ? 'Restarting...' : 'Restart'}
+                </button>
+                <button
+                  onClick={handleServerStop}
+                  disabled={!!serverAction}
+                  className="flex items-center gap-1 text-2xs font-sans text-text-3 hover:text-danger cursor-pointer transition-colors disabled:opacity-40"
+                >
+                  <Square size={10} />
+                  {serverAction === 'stopping' ? 'Stopping...' : 'Stop'}
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={handleServerStart}
+                disabled={!!serverAction}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-md text-2xs font-sans font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer disabled:opacity-40"
+              >
+                {serverAction === 'starting' ? <Loader2 size={10} className="animate-spin" /> : <Play size={10} />}
+                {serverAction === 'starting' ? 'Starting...' : 'Start Server'}
+              </button>
+            )}
           </div>
         )}
 
         {/* Search + Filter row */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1 max-w-md">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-[180px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-4" />
             <input
               ref={searchInputRef}
@@ -723,13 +723,13 @@ export default function ModelsView() {
             />
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-shrink-0 overflow-x-auto">
             {FILTERS.map((f) => (
               <button
                 key={f.id}
                 onClick={() => setFilter(f.id)}
                 className={cn(
-                  'px-2.5 py-1 rounded-md text-2xs font-sans font-medium transition-colors cursor-pointer',
+                  'px-2.5 py-1 rounded-md text-2xs font-sans font-medium transition-colors cursor-pointer whitespace-nowrap',
                   filter === f.id
                     ? 'bg-accent/12 text-accent'
                     : 'text-text-3 hover:text-text-1 hover:bg-surface-3',
@@ -748,8 +748,8 @@ export default function ModelsView() {
       </div>
 
       {/* ════ ZONE 2 + 3: Scrollable Content ════ */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="p-5 space-y-6">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+        <div className="px-4 py-5 space-y-6">
 
           {/* Empty State */}
           {hasNoModels && !searchQuery.trim() && filter === 'all' ? (
@@ -793,7 +793,7 @@ export default function ModelsView() {
             </div>
           ) : (
             /* ── Card Grid ── */
-            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 260px), 1fr))' }}>
               {filteredModels.map((model) => (
                 <UnifiedModelCard
                   key={model.id}
@@ -863,7 +863,7 @@ export default function ModelsView() {
                         <div className="text-xs text-text-3 font-sans">
                           Top models for your system ({ollamaStatus.hardware?.totalRamGb || '?'} GB RAM). Click Pull to download via Ollama.
                         </div>
-                        <div className="flex gap-3 overflow-x-auto pb-2">
+                        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 200px), 1fr))' }}>
                           {recommended.map((m) => {
                             const baseId = m.id.split(':')[0];
                             const isInstalled = installedModels.some((im) =>
@@ -878,7 +878,7 @@ export default function ModelsView() {
                               <div
                                 key={m.id}
                                 className={cn(
-                                  'flex-shrink-0 w-[240px] p-3 rounded-xl border transition-colors',
+                                  'p-3 rounded-xl border transition-colors',
                                   isInstalled
                                     ? 'bg-success/5 border-success/20'
                                     : 'bg-surface-1 border-border-subtle hover:border-accent/30',
@@ -889,7 +889,7 @@ export default function ModelsView() {
                                   {isInstalled && <Check size={12} className="text-success flex-shrink-0" />}
                                 </div>
                                 <div className="text-2xs text-text-3 font-sans line-clamp-1 mb-2">{m.description}</div>
-                                <div className="flex items-center gap-2 text-2xs font-sans mb-2">
+                                <div className="flex items-center gap-2 text-2xs font-sans mb-2 flex-wrap">
                                   <span className="text-text-2">{m.sizeGb} GB</span>
                                   <span className="text-green-400 font-medium">{m.ramGb} GB RAM</span>
                                   {headroom !== null && <span className="text-text-4">{headroom}%</span>}

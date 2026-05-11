@@ -59,7 +59,7 @@ const KpiCard = memo(function KpiCard({ label, value, sparkData, color = HEX.acc
 
 export function KpiStrip({ kpis }) {
   return (
-    <div className="flex flex-wrap border-b border-border" style={{ background: 'var(--color-surface-0)' }}>
+    <div className="flex flex-wrap border-b border-border bg-surface-0">
       {kpis.map((kpi) => (
         <KpiCard
           key={kpi.label}

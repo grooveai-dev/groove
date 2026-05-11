@@ -107,7 +107,9 @@ export function TerminalPanel({
   const startY = useRef(0);
   const startH = useRef(0);
 
-  const activeAgent = useGrooveStore((s) => s.editorSelectedAgent);
+  const detailPanel = useGrooveStore((s) => s.detailPanel);
+  const workspaceAgentId = useGrooveStore((s) => s.workspaceAgentId);
+  const activeAgent = detailPanel?.type === 'agent' ? detailPanel.agentId : workspaceAgentId || null;
   const agents = useGrooveStore((s) => s.agents);
   const attachSnippet = useGrooveStore((s) => s.attachSnippet);
 
@@ -141,8 +143,8 @@ export function TerminalPanel({
   function sendToAgent(agentId) {
     if (!agentId || !selectedText?.trim()) return;
     setShowPicker(false);
-    useGrooveStore.setState({ editorSelectedAgent: agentId });
     attachSnippet({ type: 'terminal', code: selectedText.trim() });
+    useGrooveStore.getState().selectAgent(agentId);
   }
 
   function handleSendClick() {

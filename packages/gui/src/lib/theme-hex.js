@@ -30,6 +30,7 @@ export const HEX = {
 
   // Semantic
   accent: '#33afbc',
+  accentMuted: '#33afbc99',
   success: '#4ae168',
   warning: '#e5c07b',
   danger: '#e06c75',

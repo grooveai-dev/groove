@@ -3,7 +3,7 @@ import { memo } from 'react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
 import { fmtNum, fmtPct, fmtDollar, timeAgo } from '../../lib/format';
 import { cn } from '../../lib/cn';
-import { HEX } from '../../lib/theme-hex';
+import { HEX, hexAlpha } from '../../lib/theme-hex';
 import { roleColor } from '../../lib/status';
 import { Activity, Brain, Radio, AlertTriangle, CheckCircle, RotateCw, HelpCircle, BookOpen } from 'lucide-react';
 import { Tooltip } from '../ui/tooltip';
@@ -41,17 +41,15 @@ function InfoTip({ text, side = 'bottom' }) {
 /* ── Quality score color ───────────────────────────────────── */
 function qualityColor(score) {
   if (score == null) return HEX.text3;
-  if (score >= 70) return '#4ae168';
-  if (score >= 40) return '#e5c07b';
-  return '#e06c75';
+  return HEX.text1;
 }
 
 /* ── Signal pill ───────────────────────────────────────────── */
-function SignalPill({ label, value, danger }) {
+function SignalPill({ label, value }) {
   if (value == null || value === 0) return null;
   return (
     <span className="text-2xs font-mono px-1.5 py-px rounded-sm bg-surface-4 text-text-3">
-      {label}: <span style={{ color: danger ? '#e06c75' : HEX.text1 }}>{value}</span>
+      {label}: <span className="text-text-1">{value}</span>
     </span>
   );
 }
@@ -59,10 +57,9 @@ function SignalPill({ label, value, danger }) {
 /* ── Quality bar ───────────────────────────────────────────── */
 function QualityBar({ score }) {
   const pct = Math.max(0, Math.min(100, score || 0));
-  const color = qualityColor(score);
   return (
     <div className="h-0.5 rounded-sm overflow-hidden flex-1" style={{ background: 'rgba(51,175,188,0.08)' }}>
-      <div className="h-full rounded-sm transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
+      <div className="h-full rounded-sm transition-all duration-700" style={{ width: `${pct}%`, background: HEX.accent }} />
     </div>
   );
 }
@@ -173,7 +170,7 @@ function HealthTab({ tokens, rotation, agentBreakdown }) {
                       {agent.role}
                     </span>
                     <span className="text-xs font-mono text-text-1 truncate flex-1">{agent.name}</span>
-                    <span className="text-sm font-mono font-bold tabular-nums" style={{ color: qualityColor(score) }}>
+                    <span className="text-sm font-mono font-bold tabular-nums text-text-1">
                       {score ?? '—'}
                     </span>
                   </div>
@@ -186,7 +183,7 @@ function HealthTab({ tokens, rotation, agentBreakdown }) {
                     <SignalPill label="Files" value={q.filesWritten} />
                     {q.toolCalls > 0 && (
                       <span className="text-2xs font-mono px-1.5 py-px rounded-sm bg-surface-4 text-text-3">
-                        Success: <span style={{ color: q.toolSuccessRate >= 0.8 ? '#4ae168' : '#e5c07b' }}>
+                        Success: <span className="text-text-1">
                           {Math.round(q.toolSuccessRate * 100)}%
                         </span>
                       </span>
@@ -220,7 +217,7 @@ function HealthTab({ tokens, rotation, agentBreakdown }) {
                 {fmtDollar(tokens.internalOverhead.costUsd || 0)}
               </span>
               {tokens.totalTokens > 0 && (
-                <span className="text-2xs font-mono font-semibold tabular-nums" style={{ color: HEX.purple }}>
+                <span className="text-2xs font-mono font-semibold tabular-nums text-text-2">
                   {Math.round((tokens.internalOverhead.tokens / tokens.totalTokens) * 100)}%
                 </span>
               )}
@@ -257,7 +254,7 @@ function HealthTab({ tokens, rotation, agentBreakdown }) {
           </div>
           <div className="space-y-2">
             <div className="space-y-1">
-              <ProgressBar label="Cold-start skip" value={tokens.savings.fromColdStartSkip || 0} total={tokens.savings.total || 1} color={HEX.info} />
+              <ProgressBar label="Cold-start skip" value={tokens.savings.fromColdStartSkip || 0} total={tokens.savings.total || 1} color={HEX.accent} />
               <div className="text-2xs font-mono text-text-4 pl-2">estimated · {(tokens?.savings?.fromColdStartSkip || 0) > 0 ? 'fixed overhead per skip' : ''}</div>
             </div>
             <div className="space-y-1">
@@ -265,7 +262,7 @@ function HealthTab({ tokens, rotation, agentBreakdown }) {
               <div className="text-2xs font-mono text-text-4 pl-2">estimated · velocity measurement accumulating</div>
             </div>
             <div className="space-y-1">
-              <ProgressBar label="Conflict prevention" value={tokens.savings.fromConflictPrevention || 0} total={tokens.savings.total || 1} color="#4ec9d4" />
+              <ProgressBar label="Conflict prevention" value={tokens.savings.fromConflictPrevention || 0} total={tokens.savings.total || 1} color={HEX.accent} />
               <div className="text-2xs font-mono text-text-4 pl-2">estimated · fixed overhead per conflict</div>
             </div>
           </div>
@@ -282,11 +279,7 @@ function HealthTab({ tokens, rotation, agentBreakdown }) {
               const isNatural = r.reason === 'natural_compaction';
               const isTokenLimit = r.reason === 'token_limit_exceeded';
               const isVelocity = r.reason === 'runaway_velocity';
-              const dotColor = isTokenLimit ? '#e06c75'
-                : isVelocity ? '#ff8c42'
-                : isQuality ? '#e5c07b'
-                : isNatural ? '#c678dd'
-                : '#33afbc';
+              const dotColor = HEX.accent;
               return (
                 <div key={i} className="flex items-start gap-2.5">
                   <div className="flex flex-col items-center flex-shrink-0">
@@ -309,34 +302,33 @@ function HealthTab({ tokens, rotation, agentBreakdown }) {
                         {r.agentName || r.role}
                       </span>
                       {isTokenLimit ? (
-                        <span className="text-2xs font-mono font-semibold tabular-nums flex-shrink-0" style={{ color: '#e06c75' }}
+                        <span className="text-2xs font-mono font-semibold tabular-nums flex-shrink-0 text-text-2"
                           title={`Auto-rotated: agent burned ${r.instanceTokens?.toLocaleString()} tokens in one session`}>
                           T:{fmtPct(((r.instanceTokens || 0) / 1_000_000) * 100).replace('%', 'M')}
                         </span>
                       ) : isVelocity ? (
                         <span className="flex items-center gap-1 flex-shrink-0">
-                          <span className="text-2xs font-mono font-semibold tabular-nums" style={{ color: '#ff8c42' }}
+                          <span className="text-2xs font-mono font-semibold tabular-nums text-text-2"
                             title={`Auto-rotated: runaway velocity (${r.velocity?.toLocaleString()} tokens in recent window)`}>
                             V:{fmtPct(((r.velocity || 0) / 1_000_000) * 100).replace('%', 'M')}
                           </span>
                           {r.velocityDelta != null && r.velocityDelta > 0 && (
-                            <span className="text-2xs font-mono tabular-nums" style={{ color: '#4ae168' }}
+                            <span className="text-2xs font-mono tabular-nums" style={{ color: HEX.accent }}
                               title={`Post-rotation velocity dropped by ${r.velocityDelta.toLocaleString()} tokens — rotation worked`}>
                               ↓{fmtPct((r.velocityDelta / 1_000_000) * 100).replace('%', 'M')}
                             </span>
                           )}
                         </span>
                       ) : isQuality ? (
-                        <span className="text-2xs font-mono font-semibold tabular-nums flex-shrink-0" style={{ color: '#e5c07b' }}>
+                        <span className="text-2xs font-mono font-semibold tabular-nums flex-shrink-0 text-text-2">
                           Q:{r.qualityScore}
                         </span>
                       ) : isNatural ? (
-                        <span className="text-2xs font-mono font-semibold tabular-nums flex-shrink-0" style={{ color: '#c678dd' }}>
+                        <span className="text-2xs font-mono font-semibold tabular-nums flex-shrink-0 text-text-2">
                           {fmtPct((r.contextUsage || 0) * 100)} → {fmtPct((r.contextAfter || 0) * 100)}
                         </span>
                       ) : (
-                        <span className="text-2xs font-mono font-semibold tabular-nums flex-shrink-0"
-                          style={{ color: (r.contextUsage || 0) > 0.8 ? '#e06c75' : '#33afbc' }}>
+                        <span className="text-2xs font-mono font-semibold tabular-nums flex-shrink-0 text-text-2">
                           {fmtPct((r.contextUsage || 0) * 100)}
                         </span>
                       )}
@@ -396,7 +388,7 @@ function AdaptiveTab({ adaptive }) {
             className="rounded overflow-hidden"
             style={{
               background: 'rgba(51,175,188,0.04)',
-              borderLeft: p.converged ? '2px solid #33afbc' : '2px solid rgba(229,192,123,0.35)',
+              borderLeft: p.converged ? `2px solid ${HEX.accent}` : '2px solid var(--color-border)',
             }}
           >
             <div className="flex items-center gap-2 px-3 pt-2.5 pb-1.5">
@@ -410,13 +402,13 @@ function AdaptiveTab({ adaptive }) {
               <span
                 className="flex items-center gap-1 text-2xs font-mono font-bold px-2 py-px rounded-full"
                 style={{
-                  background: p.converged ? 'rgba(74,225,104,0.12)' : 'rgba(229,192,123,0.12)',
-                  color: p.converged ? '#4ae168' : '#e5c07b',
+                  background: p.converged ? hexAlpha(HEX.accent, 0.12) : 'var(--color-surface-4)',
+                  color: p.converged ? HEX.accent : HEX.text2,
                 }}
               >
                 {!p.converged && (
                   <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                    style={{ background: '#e5c07b', animation: 'node-pulse-bar 1.5s ease-in-out infinite' }} />
+                    style={{ background: HEX.text3, animation: 'node-pulse-bar 1.5s ease-in-out infinite' }} />
                 )}
                 {p.converged ? 'Converged' : 'Learning'}
               </span>
@@ -425,8 +417,7 @@ function AdaptiveTab({ adaptive }) {
             <div className="flex items-end gap-5 px-3 pb-2">
               <div>
                 <div className="text-2xs font-mono text-text-4 uppercase tracking-wider mb-0.5">Threshold</div>
-                <div className="text-3xl font-mono font-bold tabular-nums leading-none"
-                  style={{ color: p.converged ? '#33afbc' : '#e5c07b' }}>
+                <div className="text-3xl font-mono font-bold tabular-nums leading-none text-text-0">
                   {fmtPct(p.threshold * 100)}
                 </div>
               </div>
@@ -441,13 +432,13 @@ function AdaptiveTab({ adaptive }) {
                 {hasHistory && (
                   <div>
                     <div className="text-2xs font-mono text-text-4 mb-0.5">Threshold history</div>
-                    <TinySparkline data={p.thresholdHistory.map((h) => h.v)} color={p.converged ? HEX.accent : HEX.warning} width={240} height={32} />
+                    <TinySparkline data={p.thresholdHistory.map((h) => h.v)} color={HEX.accent} width={240} height={32} />
                   </div>
                 )}
                 {hasScores && (
                   <div>
                     <div className="text-2xs font-mono text-text-4 mb-0.5">Quality score</div>
-                    <TinySparkline data={p.recentScores} color={HEX.warning} width={240} height={24} />
+                    <TinySparkline data={p.recentScores} color={hexAlpha(HEX.accent, 0.6)} width={240} height={24} />
                   </div>
                 )}
               </div>
@@ -569,7 +560,7 @@ function MemoryTab({ memory }) {
             Constraints
             <InfoTip text="Project rules discovered by agents or set by the user. Every new agent reads these on spawn to avoid rediscovering them." />
           </div>
-          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: HEX.accent }}>
+          <div className="text-2xl font-mono font-bold tabular-nums leading-none text-text-0">
             {constraints.length}
           </div>
         </div>
@@ -578,7 +569,7 @@ function MemoryTab({ memory }) {
             Discoveries
             <InfoTip text="Error→fix pairs successful agents have recorded. Injected into future agent context so they don't rediscover known solutions." />
           </div>
-          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: HEX.success }}>
+          <div className="text-2xl font-mono font-bold tabular-nums leading-none text-text-0">
             {discoveries.length}
           </div>
         </div>
@@ -587,7 +578,7 @@ function MemoryTab({ memory }) {
             Handoff Chains
             <InfoTip text="Cumulative rotation briefs per role. Agent #50 knows what agent #1 struggled with. Each role keeps its last 10 rotation briefs." />
           </div>
-          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: HEX.purple }}>
+          <div className="text-2xl font-mono font-bold tabular-nums leading-none text-text-0">
             {roles.length}
           </div>
         </div>
@@ -596,7 +587,7 @@ function MemoryTab({ memory }) {
             Specializations
             <InfoTip text="Per-agent quality profiles: session counts, average quality, file touches, preferred thresholds." />
           </div>
-          <div className="text-2xl font-mono font-bold tabular-nums leading-none" style={{ color: HEX.info }}>
+          <div className="text-2xl font-mono font-bold tabular-nums leading-none text-text-0">
             {agentCount}
           </div>
           {roleCount > 0 && (
@@ -644,7 +635,7 @@ function MemoryTab({ memory }) {
                     <span className="text-text-4">When:</span> <span className="text-text-1">{d.trigger}</span>
                   </div>
                   <div className="text-xs font-mono text-text-2 leading-relaxed">
-                    <span className="text-text-4">Fix:</span> <span style={{ color: HEX.success }}>{d.fix}</span>
+                    <span className="text-text-4">Fix:</span> <span style={{ color: HEX.accent }}>{d.fix}</span>
                   </div>
                 </div>
               );
@@ -683,7 +674,7 @@ function MemoryTab({ memory }) {
                     {role}
                   </span>
                   <span className="text-xs font-mono text-text-3 flex-1">{data.sessionCount} sessions</span>
-                  <span className="text-xs font-mono font-semibold tabular-nums" style={{ color: qualityColor(data.avgQualityScore) }}>
+                  <span className="text-xs font-mono font-semibold tabular-nums text-text-1">
                     Q:{data.avgQualityScore}
                   </span>
                 </div>

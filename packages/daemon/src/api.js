@@ -3696,6 +3696,40 @@ Keep responses concise. Help them think, don't lecture them about the system the
     });
   }
 
+  // Git checkout — revert a file to its HEAD version
+  app.post('/api/files/revert', (req, res) => {
+    const rootDir = getEditorRoot();
+    if (!rootDir) return res.status(400).json({ error: 'Editor root not set' });
+    const filePath = req.body?.path;
+    if (!filePath || typeof filePath !== 'string') return res.status(400).json({ error: 'path is required' });
+    const result = validateFilePath(filePath, rootDir);
+    if (result.error) return res.status(400).json({ error: result.error });
+
+    try {
+      execFileSync('git', ['checkout', 'HEAD', '--', filePath], { cwd: rootDir, timeout: 10000 });
+      res.json({ ok: true, path: filePath });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to revert file', detail: err.message });
+    }
+  });
+
+  // Git show — retrieve original file content from HEAD
+  app.get('/api/files/git-show', (req, res) => {
+    const rootDir = getEditorRoot();
+    if (!rootDir) return res.status(400).json({ error: 'Editor root not set' });
+    const result = validateFilePath(req.query.path, rootDir);
+    if (result.error) return res.status(400).json({ error: result.error });
+
+    try {
+      const content = execFileSync('git', ['show', `HEAD:${req.query.path}`], {
+        cwd: rootDir, timeout: 10000, maxBuffer: 10 * 1024 * 1024,
+      }).toString();
+      res.json({ path: req.query.path, content });
+    } catch {
+      res.json({ path: req.query.path, content: null });
+    }
+  });
+
   // File search — fuzzy filename matching for quick-open (Ctrl+P)
   app.get('/api/files/search', (req, res) => {
     const query = req.query.q;

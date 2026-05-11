@@ -20,15 +20,15 @@ function shortModel(id) {
 const AgentRow = memo(function AgentRow({ agent, isRotating }) {
   const isAlive = agent.status === 'running' || agent.status === 'starting';
   const contextPct = Math.round((agent.contextUsage || 0) * 100);
-  const sColor = isRotating ? '#c678dd' : statusColor(agent.status);
+  const sColor = isRotating ? HEX.accent : statusColor(agent.status);
   const quality = agent.quality;
   const successRate = quality?.toolSuccessRate != null ? Math.round(quality.toolSuccessRate * 100) : null;
   const thresholdPct = agent.rotationThreshold ? Math.round(agent.rotationThreshold * 100) : null;
   const rc = roleColor(agent.role);
-  const barColor = contextPct > 80 ? HEX.danger : contextPct > 60 ? HEX.warning : HEX.accent;
+  const barColor = HEX.accent;
 
   return (
-    <div className="px-3 pl-6 py-2 hover:bg-[rgba(51,175,188,0.06)] transition-colors space-y-1.5">
+    <div className="px-3 pl-6 py-2 hover:bg-surface-4 transition-colors space-y-1.5">
       {/* Top row */}
       <div className="flex items-center gap-2 min-w-0">
         {/* Status dot */}
@@ -64,13 +64,7 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
 
         {/* Quality badge */}
         {successRate != null && (
-          <span
-            className="text-2xs font-mono font-bold px-1 py-px rounded-sm flex-shrink-0"
-            style={{
-              color: successRate >= 90 ? '#4ae168' : successRate >= 70 ? '#e5c07b' : '#e06c75',
-              background: successRate >= 90 ? 'rgba(74,225,104,0.1)' : successRate >= 70 ? 'rgba(229,192,123,0.1)' : 'rgba(224,108,117,0.1)',
-            }}
-          >
+          <span className="text-2xs font-mono font-bold px-1 py-px rounded-sm flex-shrink-0 text-text-1 bg-surface-4">
             {successRate}%
           </span>
         )}
@@ -95,7 +89,7 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
       <div className="flex items-center gap-2">
         <div
           className="relative flex-1 h-0.5 rounded-sm overflow-visible"
-          style={{ background: hexAlpha(HEX.accent, 0.12) }}
+          style={{ background: hexAlpha(HEX.text3, 0.12) }}
         >
           <div
             className="absolute inset-y-0 left-0 rounded-sm transition-all duration-700"
@@ -104,7 +98,7 @@ const AgentRow = memo(function AgentRow({ agent, isRotating }) {
           {thresholdPct && (
             <div
               className="absolute top-[-1px] w-px h-[4px]"
-              style={{ left: `${thresholdPct}%`, background: HEX.purple }}
+              style={{ left: `${thresholdPct}%`, background: HEX.accent }}
               title={`Rotation at ${thresholdPct}%`}
             />
           )}
@@ -126,7 +120,7 @@ function TeamSection({ team, members, rotatingSet }) {
     <div>
       <button
         onClick={() => setExpanded((e) => !e)}
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-[rgba(51,175,188,0.08)] bg-[rgba(51,175,188,0.05)]"
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-surface-4 bg-surface-3"
         style={{ borderLeft: isActive ? `2px solid ${HEX.accent}` : '2px solid transparent' }}
       >
         {expanded

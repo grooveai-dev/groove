@@ -19,10 +19,12 @@ import { IntegrationWizard, GoogleWorkspaceWizard } from '../components/marketpl
 import { RepoImport } from '../components/marketplace/repo-import';
 import { RepoCard } from '../components/marketplace/repo-card';
 import { RepoNukeDialog } from '../components/marketplace/repo-nuke-dialog';
+import { Dialog, DialogContent } from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
 import {
-  ChevronLeft, Plug, LogIn,
+  ChevronLeft, Plug, LogIn, Plus,
   Upload, Package, Download, ShoppingBag, RefreshCw, Trash2,
-  GitBranch,
+  GitBranch, Users, Loader2,
 } from 'lucide-react';
 
 // ── Skill Detail ─────────────────────────────────────────
@@ -211,7 +213,178 @@ function SkillDetail({ skill, onBack }) {
   );
 }
 
-// ── Skills Browse ────────────────────────────────────────
+// ── New Integration Wizard ───────────────────────────────
+function NewIntegrationWizard({ open, onClose }) {
+  const [teamMode, setTeamMode] = useState('new');
+  const [teamName, setTeamName] = useState('');
+  const [selectedTeamId, setSelectedTeamId] = useState('');
+  const [name, setName] = useState('');
+  const [docsUrl, setDocsUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [spawning, setSpawning] = useState(false);
+
+  const teams = useGrooveStore((s) => s.teams);
+  const activeTeamId = useGrooveStore((s) => s.activeTeamId);
+  const createTeam = useGrooveStore((s) => s.createTeam);
+  const spawnAgent = useGrooveStore((s) => s.spawnAgent);
+  const setActiveView = useGrooveStore((s) => s.setActiveView);
+  const selectAgent = useGrooveStore((s) => s.selectAgent);
+  const toast = useToast();
+
+  useEffect(() => {
+    if (open) {
+      setTeamMode('new');
+      setTeamName('');
+      setSelectedTeamId(activeTeamId || '');
+      setName('');
+      setDocsUrl('');
+      setApiKey('');
+      setSpawning(false);
+    }
+  }, [open, activeTeamId]);
+
+  async function handleGo() {
+    if (!name.trim()) return;
+    setSpawning(true);
+    try {
+      let teamId;
+      if (teamMode === 'new') {
+        const team = await createTeam(teamName.trim() || name.trim());
+        teamId = team.id;
+      } else {
+        teamId = selectedTeamId;
+      }
+
+      const lines = [
+        `The user wants to integrate the **${name.trim()}** API into their project.`,
+        '',
+      ];
+      if (docsUrl.trim()) lines.push(`**API Documentation:** ${docsUrl.trim()}`);
+      if (apiKey.trim()) lines.push(`**API Key:** The user has provided an API key. Store it securely using environment variables — never hardcode it.`);
+      lines.push(
+        '',
+        'Start by:',
+        '1. Reviewing the API documentation to understand available endpoints and authentication',
+        '2. Asking the user what they want to build with this API',
+        '3. Setting up the necessary configuration and authentication',
+        '4. Building the integration together',
+        '',
+        'Ask the user about their project and how they\'d like to use this API.',
+      );
+
+      const prompt = lines.join('\n');
+      const agent = await spawnAgent({ role: 'fullstack', prompt, teamId });
+
+      if (apiKey.trim()) {
+        await api.post(`/agents/${agent.id}/instruct`, {
+          message: `Here is the API key for ${name.trim()}: \`${apiKey.trim()}\`\n\nStore this in a .env file as an environment variable. Do not commit it to git.`,
+        }).catch(() => {});
+      }
+
+      setActiveView('agents');
+      selectAgent(agent.id);
+      onClose();
+    } catch (err) {
+      toast('error', 'Failed to start integration', err.message);
+      setSpawning(false);
+    }
+  }
+
+  const canGo = name.trim() && (teamMode === 'new' || selectedTeamId);
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent title="New Integration" description="Set up a custom API integration">
+        <div className="px-5 py-4 flex flex-col gap-4">
+          <Input
+            label="Integration name"
+            placeholder="e.g. NASA APOD, Stripe, Twilio…"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+          />
+
+          <Input
+            label="Documentation URL"
+            placeholder="https://api.example.com/docs"
+            value={docsUrl}
+            onChange={(e) => setDocsUrl(e.target.value)}
+          />
+
+          <Input
+            label="API key (optional)"
+            placeholder="sk-..."
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            mono
+            type="password"
+          />
+
+          {/* Team selection */}
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-medium text-text-2 font-sans">Team</span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setTeamMode('new')}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-xs font-medium font-sans border transition-colors cursor-pointer ${
+                  teamMode === 'new'
+                    ? 'border-accent bg-accent/10 text-accent'
+                    : 'border-border bg-surface-0 text-text-2 hover:border-accent/50'
+                }`}
+              >
+                <Plus size={12} />
+                New team
+              </button>
+              <button
+                onClick={() => setTeamMode('existing')}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-xs font-medium font-sans border transition-colors cursor-pointer ${
+                  teamMode === 'existing'
+                    ? 'border-accent bg-accent/10 text-accent'
+                    : 'border-border bg-surface-0 text-text-2 hover:border-accent/50'
+                }`}
+              >
+                <Users size={12} />
+                Existing team
+              </button>
+            </div>
+
+            {teamMode === 'new' ? (
+              <Input
+                placeholder={name ? name.trim() : 'Team name (defaults to integration name)'}
+                value={teamName}
+                onChange={(e) => setTeamName(e.target.value)}
+              />
+            ) : (
+              <select
+                value={selectedTeamId}
+                onChange={(e) => setSelectedTeamId(e.target.value)}
+                className="h-8 w-full rounded-md px-3 text-sm font-sans bg-surface-1 border border-border text-text-0 focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent cursor-pointer"
+              >
+                <option value="">Select a team…</option>
+                {teams.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <Button
+            onClick={handleGo}
+            disabled={!canGo || spawning}
+            className="w-full mt-1"
+          >
+            {spawning ? (
+              <><Loader2 size={14} className="animate-spin" /> Setting up…</>
+            ) : (
+              'Go'
+            )}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Integrations Browse ──────────────────────────────────
 const GOOGLE_IDS = new Set(['gmail', 'google-calendar', 'google-drive', 'google-docs', 'google-sheets', 'google-slides']);
 
@@ -222,6 +395,7 @@ function IntegrationsBrowse() {
   const [selectedIntegration, setSelectedIntegration] = useState(null);
   const [showWizard, setShowWizard] = useState(false);
   const [showGoogleWizard, setShowGoogleWizard] = useState(false);
+  const [showNewWizard, setShowNewWizard] = useState(false);
 
   const fetchItems = () => {
     setLoading(true);
@@ -261,6 +435,15 @@ function IntegrationsBrowse() {
             <SearchBar value={search} onChange={setSearch} placeholder="Search integrations..." />
           </div>
           <div className="flex-1" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowNewWizard(true)}
+            className="gap-1 text-xs"
+          >
+            <Plus size={13} />
+            New
+          </Button>
           <span className="text-2xs text-text-4 font-mono flex-shrink-0">
             {otherItems.length + (googleItems.length > 0 ? 1 : 0)}
           </span>
@@ -311,6 +494,11 @@ function IntegrationsBrowse() {
         integrations={items}
         open={showGoogleWizard}
         onClose={() => { setShowGoogleWizard(false); fetchItems(); }}
+      />
+
+      <NewIntegrationWizard
+        open={showNewWizard}
+        onClose={() => setShowNewWizard(false)}
       />
     </ScrollArea>
   );

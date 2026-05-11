@@ -5,6 +5,7 @@ import {
   FileEdit, Search, Terminal, CheckCircle2, AlertCircle,
   RotateCw, Zap, Wrench, Eye, Code2, Bug,
   ChevronDown, HelpCircle, Pencil, Paperclip, GripHorizontal,
+  FileCode, X,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useGrooveStore } from '../../stores/groove';
@@ -15,6 +16,18 @@ import { ThinkingIndicator } from '../ui/thinking-indicator';
 import { TableTree } from '../ui/table-tree';
 
 const EMPTY = [];
+const KEEPER_RE = /(\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|#[\w/.-]+)/gi;
+const KEEPER_CMD_RE = /^\[(?:save|append|update|delete|view|doc|link|read|instruct)\]$/i;
+const KEEPER_TAG_RE = /^#[\w/.-]+$/;
+const KEEPER_DETECT_RE = /\[(?:save|append|update|delete|view|doc|link|read|instruct)\]/i;
+
+function highlightKeeperInput(text) {
+  return text.split(KEEPER_RE).map((part, i) => {
+    if (KEEPER_CMD_RE.test(part)) return <span key={i} className="text-accent font-semibold">{part}</span>;
+    if (KEEPER_TAG_RE.test(part)) return <span key={i} className="text-accent">{part}</span>;
+    return <span key={i} className="text-text-0">{part}</span>;
+  });
+}
 
 // ── Activity metadata ────────────────────────────────────────
 function activityMeta(text) {
@@ -480,6 +493,33 @@ function BootSequence({ agent }) {
   );
 }
 
+// ── Snippet Tag ─────────────────────────────────────────────
+
+function SnippetTag({ snippet, onRemove }) {
+  const isCode = snippet.type === 'code';
+  const Icon = isCode ? FileCode : Terminal;
+  const lines = snippet.code.split('\n').length;
+  let label;
+  if (isCode && snippet.filePath) {
+    const fileName = snippet.filePath.split('/').pop();
+    label = `${fileName}:${snippet.lineStart}-${snippet.lineEnd}`;
+  } else {
+    label = `${isCode ? '' : 'Terminal · '}${lines} line${lines !== 1 ? 's' : ''}`;
+  }
+  return (
+    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-accent/10 border border-accent/20 text-accent">
+      <Icon size={11} className="flex-shrink-0" />
+      <span className="text-2xs font-sans font-medium truncate max-w-[160px]">{label}</span>
+      {snippet.instruction && (
+        <span className="text-2xs text-accent/60 truncate max-w-[100px]">· {snippet.instruction}</span>
+      )}
+      <button onClick={onRemove} className="p-0.5 rounded hover:bg-accent/20 cursor-pointer flex-shrink-0">
+        <X size={9} />
+      </button>
+    </div>
+  );
+}
+
 // ── Main Feed ────────────────────────────────────────────────
 
 export function AgentFeed({ agent }) {
@@ -495,6 +535,9 @@ export function AgentFeed({ agent }) {
   const chatHistory = rawChatHistory.length > 0 ? rawChatHistory : cachedChatRef.current;
   const activityLog = rawActivityLog.length > 0 ? rawActivityLog : cachedActivityRef.current;
 
+  const pendingSnippet = useGrooveStore((s) => s.editorPendingSnippet);
+  const clearSnippet = useGrooveStore((s) => s.clearSnippet);
+
   const storeInput = useGrooveStore((s) => s.chatInputs[agent.id] || '');
   const setStoreInput = (val) => useGrooveStore.setState((s) => ({ chatInputs: { ...s.chatInputs, [agent.id]: val } }));
   const input = storeInput;
@@ -507,6 +550,10 @@ export function AgentFeed({ agent }) {
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
   const isAtBottomRef = useRef(true);
+
+  useEffect(() => {
+    if (pendingSnippet) inputRef.current?.focus();
+  }, [pendingSnippet]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -616,7 +663,7 @@ export function AgentFeed({ agent }) {
 
   async function handleSend() {
     const text = input.trim();
-    if (!text || sending) return;
+    if ((!text && !pendingSnippet) || sending) return;
 
     if (text === '/rotate') {
       const rotateAgent = useGrooveStore.getState().rotateAgent;
@@ -625,7 +672,22 @@ export function AgentFeed({ agent }) {
       return;
     }
 
+    const parts = [];
+    if (text) parts.push(text);
+    if (pendingSnippet) {
+      const s = pendingSnippet;
+      if (s.type === 'code' && s.filePath) {
+        if (s.instruction && !text) parts.push(s.instruction);
+        parts.push(`File: ${s.filePath} (lines ${s.lineStart}-${s.lineEnd})`);
+        parts.push('```\n' + s.code + '\n```');
+      } else if (s.code) {
+        parts.push('```\n' + s.code + '\n```');
+      }
+    }
+    const message = parts.join('\n\n');
+
     setInput('');
+    clearSnippet();
     setSending(true);
     isAtBottomRef.current = true;
     requestAnimationFrame(() => {
@@ -633,9 +695,9 @@ export function AgentFeed({ agent }) {
     });
     try {
       if (mode === 'query') {
-        await queryAgent(agent.id, text);
+        await queryAgent(agent.id, message);
       } else {
-        await instructAgent(agent.id, text);
+        await instructAgent(agent.id, message);
       }
     } catch { /* toast handles */ }
     setSending(false);
@@ -707,6 +769,26 @@ export function AgentFeed({ agent }) {
         </div>
 
         <div className="px-4 pb-3">
+        {/* Snippet tag */}
+        {pendingSnippet && (
+          <div className="mb-2">
+            <SnippetTag snippet={pendingSnippet} onRemove={clearSnippet} />
+          </div>
+        )}
+
+        {/* Keeper command indicator */}
+        {input && /\[(?:save|append|update|delete|view|doc|link|read|instruct)\]/i.test(input) && (() => {
+          const cmdMatch = input.match(/\[(save|append|update|delete|view|doc|link|read|instruct)\]/i);
+          const tags = (input.match(/#[\w/.-]+/g) || []);
+          return (
+            <div className="flex items-center gap-1.5 px-3 py-1 mb-2 rounded-lg bg-accent/5 border border-accent/10">
+              <span className="px-1.5 py-0.5 rounded bg-accent/15 text-accent font-semibold font-mono text-[10px]">{cmdMatch[0]}</span>
+              {tags.map((tag, i) => <span key={i} className="text-accent font-medium text-[10px]">{tag}</span>)}
+              <span className="text-[10px] text-text-4 ml-auto">memory command</span>
+            </div>
+          );
+        })()}
+
         {/* Mode pills */}
         <div className="flex items-center gap-1 mb-2">
           <button
@@ -757,42 +839,56 @@ export function AgentFeed({ agent }) {
           >
             <Paperclip size={14} />
           </button>
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={mode === 'query'
-              ? 'Ask about this agent\'s work...'
-              : isAlive ? 'Send an instruction...' : 'Continue this session...'}
-            rows={1}
-            className={cn(
-              'flex-1 resize-none px-3 py-2 text-[13px]',
-              'bg-transparent text-text-0 font-sans',
-              'placeholder:text-text-4',
-              'focus:outline-none',
+          <div className="flex-1 relative">
+            {input && KEEPER_DETECT_RE.test(input) && (
+              <div
+                aria-hidden
+                className="absolute inset-0 px-3 py-2 text-[13px] font-sans pointer-events-none whitespace-pre-wrap break-words overflow-hidden"
+                style={{ height: inputHeight }}
+              >
+                {highlightKeeperInput(input)}
+              </div>
             )}
-            style={{ height: inputHeight }}
-          />
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder={pendingSnippet ? 'Add a message (optional)...'
+                : mode === 'query' ? 'Ask about this agent\'s work...'
+                : isAlive ? 'Send an instruction...' : 'Continue this session...'}
+              rows={1}
+              className={cn(
+                'w-full resize-none px-3 py-2 text-[13px]',
+                'bg-transparent font-sans relative z-10',
+                'placeholder:text-text-4',
+                'focus:outline-none',
+                input && KEEPER_DETECT_RE.test(input)
+                  ? 'text-transparent caret-text-0'
+                  : 'text-text-0',
+              )}
+              style={{ height: inputHeight }}
+            />
+          </div>
           {isAlive && (
             <button
               onClick={() => useGrooveStore.getState().stopAgent(agent.id)}
               title="Stop agent"
-              className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-danger/10 transition-colors cursor-pointer flex-shrink-0 mb-px"
+              className="group w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer flex-shrink-0 mb-px"
             >
               <span className="relative flex items-center justify-center w-3.5 h-3.5">
-                <span className="absolute inset-0 rounded-full bg-danger/30 animate-ping" style={{ animationDuration: '2s' }} />
-                <span className="relative w-2.5 h-2.5 rounded-full bg-danger" />
+                <span className="absolute inset-0 rounded-full bg-accent/30 group-hover:bg-red-500/30 animate-ping transition-colors" style={{ animationDuration: '2s' }} />
+                <span className="relative w-2.5 h-2.5 rounded-full bg-accent group-hover:bg-red-500 transition-colors" />
               </span>
             </button>
           )}
           <button
             onClick={handleSend}
-            disabled={!input.trim() || sending}
+            disabled={(!input.trim() && !pendingSnippet) || sending}
             className={cn(
               'w-9 h-9 flex items-center justify-center rounded-lg transition-all cursor-pointer flex-shrink-0 mb-px',
               'disabled:opacity-15 disabled:cursor-not-allowed',
-              input.trim()
+              (input.trim() || pendingSnippet)
                 ? mode === 'query'
                   ? 'bg-info/15 text-info hover:bg-info/25 border border-info/25'
                   : 'bg-accent/15 text-accent hover:bg-accent/25 border border-accent/25'

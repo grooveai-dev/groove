@@ -1,9 +1,9 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { memo } from 'react';
-import { HEX } from '../../lib/theme-hex';
+import { HEX, hexAlpha } from '../../lib/theme-hex';
 import { fmtNum, fmtPct } from '../../lib/format';
 
-const TIER_COLORS = { heavy: HEX.danger, medium: HEX.warning, light: HEX.success };
+const TIER_COLORS = { heavy: HEX.accent, medium: hexAlpha(HEX.accent, 0.6), light: hexAlpha(HEX.accent, 0.3) };
 const TIER_LABELS = { heavy: 'Heavy', medium: 'Medium', light: 'Light' };
 
 const DONUT_SIZE = 80;

@@ -25,7 +25,7 @@ export function SystemPromptEditor() {
   const systemPrompt = useGrooveStore((s) => s.labSystemPrompt);
   const setSystemPrompt = useGrooveStore((s) => s.setLabSystemPrompt);
   const themeKey = useGrooveStore((s) => s.editorTheme);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const containerRef = useRef(null);
   const viewRef = useRef(null);
   const themeCompartment = useRef(new Compartment());
@@ -87,20 +87,22 @@ export function SystemPromptEditor() {
   }, [systemPrompt]);
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-3">
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="flex items-center gap-1.5 w-full cursor-pointer group"
+        className="flex items-center gap-1.5 w-full h-6 cursor-pointer group"
       >
         {collapsed ? (
-          <ChevronRight size={11} className="text-text-4 group-hover:text-text-2 transition-colors" />
+          <ChevronRight size={10} className="text-text-4 group-hover:text-text-2 transition-colors flex-shrink-0" />
         ) : (
-          <ChevronDown size={11} className="text-text-4 group-hover:text-text-2 transition-colors" />
+          <ChevronDown size={10} className="text-text-4 group-hover:text-text-2 transition-colors flex-shrink-0" />
         )}
-        <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider group-hover:text-text-2 transition-colors">
+        <span className="text-[10px] font-semibold font-sans text-text-3 uppercase tracking-widest group-hover:text-text-2 transition-colors">
           System Prompt
         </span>
-        <span className="text-2xs font-mono text-text-4 ml-auto">{charCount > 0 ? `${charCount}` : ''}</span>
+        {charCount > 0 && (
+          <span className="text-[10px] font-mono text-text-4 ml-auto tabular-nums">{charCount}</span>
+        )}
       </button>
 
       <div className={cn(
@@ -109,7 +111,7 @@ export function SystemPromptEditor() {
       )}>
         <div
           ref={containerRef}
-          className="h-full border border-border-subtle rounded-sm overflow-hidden"
+          className="h-full rounded-md bg-surface-1/50 border border-border-subtle overflow-hidden"
         />
       </div>
     </div>

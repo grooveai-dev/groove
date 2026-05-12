@@ -5,7 +5,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { Button } from '../ui/button';
 import { Tooltip } from '../ui/tooltip';
 import { cn } from '../../lib/cn';
-import { Send, Plus, ChevronDown, Square, Clock, Zap, Bot } from 'lucide-react';
+import { SendHorizontal, Plus, ChevronDown, Clock, Zap, Bot } from 'lucide-react';
 
 function MessageMetrics({ metrics }) {
   if (!metrics) return null;
@@ -217,44 +217,52 @@ export function ChatPlayground() {
 
       {/* Input */}
       <div className="flex-shrink-0 px-4 py-3">
-        <div className="flex items-end gap-2 bg-surface-1 border border-border-subtle rounded-md p-1.5 focus-within:border-accent/30 transition-colors">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={!activeRuntime ? 'Select a runtime first' : !activeModel ? 'Select a model first' : 'Type a message...'}
-            disabled={!activeRuntime || !activeModel}
-            rows={1}
-            className={cn(
-              'flex-1 resize-none bg-transparent px-2 py-1.5',
-              'text-xs text-text-0 font-sans placeholder:text-text-4',
-              'focus:outline-none',
-              'disabled:opacity-40 disabled:cursor-not-allowed',
-              'min-h-[28px] max-h-32',
+        <div className="flex flex-col rounded-lg border border-border-subtle bg-surface-0 transition-colors overflow-hidden focus-within:border-text-4/40">
+          <div className="px-1">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={!activeRuntime ? 'Select a runtime first' : !activeModel ? 'Select a model first' : 'Type a message...'}
+              disabled={!activeRuntime || !activeModel}
+              rows={1}
+              className={cn(
+                'w-full resize-none px-3 py-2.5 text-[13px]',
+                'bg-transparent font-sans text-text-0',
+                'placeholder:text-text-4',
+                'focus:outline-none',
+                'disabled:opacity-40 disabled:cursor-not-allowed',
+              )}
+              style={{ height: 88 }}
+            />
+          </div>
+          <div className="flex items-center gap-1 px-1.5 pb-1.5 pt-0.5">
+            <div className="flex-1" />
+            {streaming && (
+              <button
+                onClick={() => useGrooveStore.getState().stopLabInference()}
+                title="Stop generation"
+                className="group w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer"
+              >
+                <span className="relative flex items-center justify-center w-3.5 h-3.5">
+                  <span className="absolute inset-0 rounded-full bg-accent/30 group-hover:bg-red-500/30 animate-ping [animation-duration:2s] transition-colors" />
+                  <span className="relative w-2.5 h-2.5 rounded-full bg-accent group-hover:bg-red-500 transition-colors" />
+                </span>
+              </button>
             )}
-            style={{ height: 'auto', overflowY: input.split('\n').length > 4 ? 'auto' : 'hidden' }}
-            onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`; }}
-          />
-          {streaming ? (
-            <button
-              onClick={() => useGrooveStore.getState().stopLabInference()}
-              className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-sm bg-danger/15 text-danger hover:bg-danger/25 transition-colors cursor-pointer"
-            >
-              <Square size={12} />
-            </button>
-          ) : (
             <button
               disabled={!canSend}
               onClick={handleSend}
               className={cn(
-                'flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-sm transition-colors cursor-pointer',
-                canSend ? 'bg-accent text-surface-0 hover:bg-accent/90' : 'bg-surface-3 text-text-4 cursor-not-allowed',
+                'w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer',
+                'disabled:opacity-15 disabled:cursor-not-allowed',
+                canSend ? 'text-text-0 hover:text-text-1' : 'text-text-4',
               )}
             >
-              <Send size={12} />
+              <SendHorizontal size={15} />
             </button>
-          )}
+          </div>
         </div>
       </div>
     </div>

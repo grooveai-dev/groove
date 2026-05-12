@@ -8,6 +8,8 @@ import { cn } from '../../lib/cn';
 import { roleColor } from '../../lib/status';
 
 const CHAT_ROLES = [
+  { id: 'chat', label: 'Chat', desc: 'General conversation' },
+  { id: 'research', label: 'Research Assistant', desc: 'Explore ideas, web search' },
   { id: 'fullstack', label: 'Fullstack', desc: 'End-to-end engineering' },
   { id: 'backend', label: 'Backend', desc: 'APIs, services, databases' },
   { id: 'frontend', label: 'Frontend', desc: 'UI, components, styling' },

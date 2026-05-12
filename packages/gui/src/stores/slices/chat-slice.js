@@ -166,20 +166,19 @@ export const createChatSlice = (set, get) => ({
 
     try {
       const body = { message };
-      if (conv.mode === 'api' || !conv.mode) {
-        const history = get().conversationMessages[conversationId] || [];
-        body.history = history.slice(0, -1);
+      const history = get().conversationMessages[conversationId] || [];
+      body.history = history.slice(0, -1);
 
-        const role = get().conversationRoles?.[conversationId];
-        const rules = ['Never use emojis in your responses.', 'Be professional, concise, and direct.'];
-        if (role) rules.unshift(`You are a professional ${role}. Respond with deep expertise in that domain.`);
-        const systemCtx = rules.join(' ');
-        body.history = [
-          { from: 'user', text: `Instructions: ${systemCtx}` },
-          { from: 'assistant', text: 'Understood.' },
-          ...body.history,
-        ];
-      }
+      const role = get().conversationRoles?.[conversationId];
+      const rules = ['Never use emojis in your responses.', 'Be professional, concise, and direct.'];
+      if (role && role !== 'chat') rules.unshift(`You are a professional ${role}. Respond with deep expertise in that domain.`);
+      if (role === 'research') rules.unshift('You are a research assistant. Help explore ideas, synthesize information, and provide thorough analysis with sources when possible.');
+      const systemCtx = rules.join(' ');
+      body.history = [
+        { from: 'user', text: `Instructions: ${systemCtx}` },
+        { from: 'assistant', text: 'Understood.' },
+        ...body.history,
+      ];
       const effort = get().conversationReasoningEffort?.[conversationId] || 'medium';
       const verbosity = get().conversationVerbosity?.[conversationId] || 'medium';
       if (conv.provider === 'codex') {

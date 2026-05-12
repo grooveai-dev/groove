@@ -89,27 +89,10 @@ export class ConversationManager {
     const id = randomUUID().slice(0, 12);
     const now = new Date().toISOString();
 
-    let agentId = null;
-
-    if (mode === 'agent') {
-      const defaultTeam = this.daemon.teams.getDefault();
-      const workingDir = defaultTeam?.workingDir || this.daemon.projectDir;
-
-      const agent = await this.daemon.processes.spawn({
-        role: 'chat',
-        provider,
-        model: model || null,
-        workingDir,
-        teamId: defaultTeam?.id || null,
-        permission: 'full',
-      });
-      agentId = agent.id;
-    }
-
     const conversation = {
       id,
       title: title || 'New Chat',
-      agentId,
+      agentId: null,
       provider,
       model: model || null,
       mode: mode === 'agent' ? 'agent' : 'api',
@@ -265,35 +248,7 @@ export class ConversationManager {
     this._modeChanging.add(id);
 
     try {
-      if (mode === 'agent') {
-        const existingAgent = conv.agentId ? this.daemon.registry.get(conv.agentId) : null;
-        const alive = existingAgent && (existingAgent.status === 'running' || existingAgent.status === 'starting');
-
-        if (!alive) {
-          const defaultTeam = this.daemon.teams.getDefault();
-          const workingDir = defaultTeam?.workingDir || this.daemon.projectDir;
-          const agent = await this.daemon.processes.spawn({
-            role: 'chat',
-            provider: conv.provider,
-            model: conv.model || null,
-            workingDir,
-            teamId: defaultTeam?.id || null,
-            permission: 'full',
-          });
-          conv.agentId = agent.id;
-        }
-      } else {
-        // Switching to API mode — kill the agent if running
-        this._killStreamingProcess(id);
-        if (conv.agentId) {
-          const agent = this.daemon.registry.get(conv.agentId);
-          if (agent && (agent.status === 'running' || agent.status === 'starting')) {
-            try { await this.daemon.processes.kill(conv.agentId); } catch { /* ignore */ }
-          }
-          if (agent) this.daemon.registry.remove(conv.agentId);
-          conv.agentId = null;
-        }
-      }
+      this._killStreamingProcess(id);
 
       conv.mode = mode;
       conv.updatedAt = new Date().toISOString();
@@ -354,7 +309,6 @@ export class ConversationManager {
   async sendMessage(id, message, history, { reasoningEffort, verbosity } = {}) {
     const conv = this.conversations.get(id);
     if (!conv) throw new Error('Conversation not found');
-    if (conv.mode !== 'api') throw new Error('sendMessage only works in API mode');
 
     this._killStreamingProcess(id);
 
@@ -393,6 +347,17 @@ export class ConversationManager {
     let tcResponseText = '';
     if (tc) {
       try { tcAgentId = tc.onChatTurnStart(id, providerName, modelId, message); } catch { /* never block chat */ }
+    }
+
+    // Agent mode prefers headless CLI (has tools + web search), falls back to API
+    if (conv.mode === 'agent') {
+      const headlessCmd = provider.buildHeadlessCommand(
+        this._buildHistoryPrompt(history, message), modelId,
+      );
+      if (headlessCmd) {
+        return this._sendViaHeadlessCLI(id, conv, provider, providerName, modelId, message, history, tcAgentId, tc);
+      }
+      // Provider has no CLI — fall through to API streaming
     }
 
     // Try direct API streaming first (sub-second latency)
@@ -448,6 +413,11 @@ export class ConversationManager {
     }
 
     // Fallback: headless CLI spawn (for providers without streamChat or missing API key)
+    return this._sendViaHeadlessCLI(id, conv, provider, providerName, modelId, message, history, tcAgentId, tc);
+  }
+
+  _sendViaHeadlessCLI(id, conv, provider, providerName, modelId, message, history, tcAgentId, tc) {
+    let tcResponseText = '';
     const prompt = this._buildHistoryPrompt(history, message);
     const headlessCmd = provider.buildHeadlessCommand(prompt, modelId);
     if (!headlessCmd) {

@@ -91,6 +91,11 @@ export const useGrooveStore = create((set, get) => ({
           if (data) set({ subscription: { ...get().subscription, ...data } });
         });
       }
+      if (window.groove?.update?.onUpdateAvailable) {
+        window.groove.update.onUpdateAvailable((data) => {
+          set({ updateProgress: { percent: 0, version: data.version } });
+        });
+      }
       if (window.groove?.update?.onUpdateProgress) {
         window.groove.update.onUpdateProgress((data) => {
           set({ updateProgress: data });
@@ -100,6 +105,18 @@ export const useGrooveStore = create((set, get) => ({
         window.groove.update.onUpdateDownloaded((data) => {
           set({ updateReady: data.version, updateModalOpen: true, updateProgress: null });
         });
+      }
+      if (window.groove?.update?.getUpdateStatus) {
+        window.groove.update.getUpdateStatus().then((state) => {
+          if (!state) return;
+          if (state.downloaded) {
+            set({ updateReady: state.downloaded.version, updateProgress: null });
+          } else if (state.progress) {
+            set({ updateProgress: state.progress });
+          } else if (state.available) {
+            set({ updateProgress: { percent: 0, version: state.available.version } });
+          }
+        }).catch(() => {});
       }
     };
 

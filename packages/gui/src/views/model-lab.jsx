@@ -12,7 +12,7 @@ import { LabAssistant } from '../components/lab/lab-assistant';
 import { MetricsPanel } from '../components/lab/metrics-panel';
 import { PresetManager } from '../components/lab/preset-manager';
 import { cn } from '../lib/cn';
-import { FlaskConical, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Box } from 'lucide-react';
+import { FlaskConical, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Box, ChevronRight } from 'lucide-react';
 
 const LEFT_DEFAULT = 280;
 const LEFT_MIN = 220;
@@ -20,6 +20,39 @@ const LEFT_MAX = 400;
 const RIGHT_DEFAULT = 240;
 const RIGHT_MIN = 200;
 const RIGHT_MAX = 360;
+
+export function SidebarSection({ label, action, children, className, collapsible = false, defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const isOpen = collapsible ? open : true;
+
+  return (
+    <div className={cn('space-y-3', className)}>
+      {label && (
+        <div className="flex items-center justify-between h-6">
+          {collapsible ? (
+            <button
+              onClick={() => setOpen(!open)}
+              className="flex items-center gap-1.5 cursor-pointer group"
+            >
+              <ChevronRight
+                size={10}
+                className={cn(
+                  'text-text-4 transition-transform duration-150 flex-shrink-0',
+                  isOpen && 'rotate-90',
+                )}
+              />
+              <span className="text-[10px] font-semibold font-sans text-text-3 uppercase tracking-widest group-hover:text-text-2 transition-colors">{label}</span>
+            </button>
+          ) : (
+            <span className="text-[10px] font-semibold font-sans text-text-3 uppercase tracking-widest">{label}</span>
+          )}
+          {isOpen && action}
+        </div>
+      )}
+      {isOpen && children}
+    </div>
+  );
+}
 
 function ModelSelector() {
   const models = useGrooveStore((s) => s.labModels);
@@ -35,18 +68,16 @@ function ModelSelector() {
 
   if (!online) {
     return (
-      <div className="space-y-1.5">
-        <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider">Model</span>
-        <p className="text-2xs text-text-4 font-sans px-1">Start the runtime to select a model</p>
-      </div>
+      <SidebarSection label="Model">
+        <p className="text-2xs text-text-4 font-sans">Start the runtime to select a model</p>
+      </SidebarSection>
     );
   }
 
   if (models.length <= 1 && activeModel) return null;
 
   return (
-    <div className="space-y-1.5">
-      <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider">Model</span>
+    <SidebarSection label="Model">
       <Combobox
         value={activeModel || ''}
         onChange={setActiveModel}
@@ -60,7 +91,7 @@ function ModelSelector() {
           </div>
         )}
       />
-    </div>
+    </SidebarSection>
   );
 }
 
@@ -175,7 +206,7 @@ export default function ModelLabView() {
           style={leftCollapsed ? undefined : { width: leftWidth }}
         >
           <div className="h-full flex flex-col">
-            <div className="flex-shrink-0 flex items-center justify-between px-4 h-10">
+            <div className="flex-shrink-0 flex items-center justify-between px-4 h-10 border-b border-border-subtle">
               <div className="flex items-center gap-2">
                 <FlaskConical size={13} className="text-accent" />
                 <span className="text-xs font-semibold font-sans text-text-1">Model Lab</span>
@@ -183,7 +214,7 @@ export default function ModelLabView() {
               <PanelToggle collapsed={false} onClick={() => setLeftCollapsed(true)} side="left" />
             </div>
             <ScrollArea className="flex-1 min-h-0">
-              <div className="px-4 pb-4 space-y-5 divide-y divide-border-subtle [&>*]:pt-5 [&>*:first-child]:pt-0">
+              <div className="px-4 py-4 space-y-6">
                 <RuntimeSection />
                 <ModelSelector />
                 <ParameterPanel />

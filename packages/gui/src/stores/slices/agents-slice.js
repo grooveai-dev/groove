@@ -407,15 +407,22 @@ export const createAgentsSlice = (set, get) => ({
 
         case 'read': {
           if (tags.length === 0) { addSystemMsg('Usage: [read] #tag1 #tag2 ...'); return true; }
+          const userText = rest.replace(/#[\w/.-]+/g, '').trim();
           get().addChatMessage(agentId, 'user', message, false);
           const readBrief = await api.post('/keeper/pull', { tags });
           if (readBrief?.brief) {
+            const memoryBlock = `\n\n---\nContext from memories (${tags.map(t => '#' + t).join(', ')}):\n\n${readBrief.brief}`;
+            set((s) => ({ thinkingAgents: new Set([...s.thinkingAgents, agentId]) }));
             await api.post(`/agents/${encodeURIComponent(agentId)}/instruct`, {
-              message: `Here is context from my tagged memories:\n\n${readBrief.brief}`,
+              message: userText ? `${userText}${memoryBlock}` : `Here is context from my tagged memories:\n\n${readBrief.brief}`,
             });
             addSystemMsg(`Sent ${tags.map(t => '#' + t).join(', ')} to agent`);
           } else {
             addSystemMsg(`No memories found for ${tags.map(t => '#' + t).join(', ')}`);
+            if (userText) {
+              set((s) => ({ thinkingAgents: new Set([...s.thinkingAgents, agentId]) }));
+              await api.post(`/agents/${encodeURIComponent(agentId)}/instruct`, { message: userText });
+            }
           }
           return true;
         }

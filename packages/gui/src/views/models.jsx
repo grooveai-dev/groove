@@ -78,15 +78,14 @@ function ModelCard({
     model.size && model.size !== '—' && model.size,
   ].filter(Boolean);
 
+  const formatTag = model.formatTag || (model.source === 'gguf' ? 'GGUF' : model.source === 'mlx' ? 'MLX' : model.source === 'hf' ? 'HF' : 'Ollama');
+
   return (
-    <div className={cn(
-      'group flex flex-col p-5 rounded-md border border-border-subtle bg-surface-1',
-      'hover:border-accent/30 hover:bg-surface-2 transition-all duration-150 min-h-[180px]',
-    )}>
-      {/* Header: icon + name + status */}
-      <div className="flex items-center gap-3 mb-3">
+    <div className="group flex flex-col p-5 rounded-md border border-border-subtle bg-surface-1 min-h-[180px]">
+      {/* Header: icon + name + menu */}
+      <div className="flex items-start gap-3 mb-3">
         <div
-          className="w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0 text-base font-bold font-sans"
+          className="w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0 text-base font-bold font-sans mt-0.5"
           style={{
             background: `hsl(${(model.name || '').charCodeAt(0) * 37 % 360}, 40%, 18%)`,
             color: `hsl(${(model.name || '').charCodeAt(0) * 37 % 360}, 60%, 65%)`,
@@ -108,9 +107,31 @@ function ModelCard({
             )}
           </div>
           <span className="text-2xs text-text-3 font-sans">
-            {model.source === 'gguf' ? 'GGUF' : 'Ollama'} · {STATUS_LABEL[model.status]}
+            {formatTag} · {STATUS_LABEL[model.status]}
           </span>
         </div>
+        {/* Overflow menu — upper right */}
+        {model.status !== 'downloading' && (
+          <div ref={menuRef} className="relative flex-shrink-0 -mt-0.5 -mr-1">
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="p-1 rounded text-text-4 hover:text-text-2 transition-colors cursor-pointer"
+            >
+              <MoreHorizontal size={14} />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 min-w-[160px] bg-surface-2 border border-border rounded-md shadow-lg py-1">
+                <button
+                  onClick={() => { onDelete(model); setMenuOpen(false); }}
+                  disabled={isDeleting}
+                  className="w-full text-left px-3 py-1.5 text-xs font-sans text-danger hover:bg-danger/5 transition-colors cursor-pointer flex items-center gap-2 disabled:opacity-40"
+                >
+                  <Trash2 size={10} /> Delete
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Specs */}
@@ -144,20 +165,20 @@ function ModelCard({
 
       <div className="flex-1" />
 
-      {/* Divider + Actions */}
+      {/* Divider + Actions — left-aligned */}
       {model.status !== 'downloading' && (
         <>
           <div className="h-px bg-border-subtle my-2" />
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center gap-2">
             {model.status === 'running' ? (
               <>
                 <button
                   onClick={() => onStop(model.name)}
                   disabled={isUnloading}
-                  className="p-1 rounded text-text-4 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded text-2xs font-sans font-semibold text-text-3 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-40"
                   title="Stop"
                 >
-                  {isUnloading ? <Loader2 size={12} className="animate-spin" /> : <Square size={12} />}
+                  {isUnloading ? <Loader2 size={10} className="animate-spin" /> : <Square size={10} />} Stop
                 </button>
                 <button
                   onClick={() => onSpawn(model.name)}
@@ -181,7 +202,7 @@ function ModelCard({
                     {runtimes.length === 0 ? 'Create Runtime' : 'Start Runtime'}
                   </button>
                   {runtimeMenuOpen && runtimes.length > 1 && (
-                    <div className="absolute right-0 top-full mt-1 z-50 min-w-[180px] bg-surface-2 border border-border rounded-md shadow-lg py-1">
+                    <div className="absolute left-0 top-full mt-1 z-50 min-w-[180px] bg-surface-2 border border-border rounded-md shadow-lg py-1">
                       {runtimes.map((rt) => (
                         <button
                           key={rt.id}
@@ -204,27 +225,6 @@ function ModelCard({
                 </button>
               </>
             )}
-
-            {/* Overflow menu */}
-            <div ref={menuRef} className="relative">
-              <button
-                onClick={() => setMenuOpen(!menuOpen)}
-                className="p-1 rounded text-text-4 hover:text-text-2 transition-colors cursor-pointer"
-              >
-                <MoreHorizontal size={12} />
-              </button>
-              {menuOpen && (
-                <div className="absolute right-0 top-full mt-1 z-50 min-w-[160px] bg-surface-2 border border-border rounded-md shadow-lg py-1">
-                  <button
-                    onClick={() => { onDelete(model); setMenuOpen(false); }}
-                    disabled={isDeleting}
-                    className="w-full text-left px-3 py-1.5 text-xs font-sans text-danger hover:bg-danger/5 transition-colors cursor-pointer flex items-center gap-2 disabled:opacity-40"
-                  >
-                    <Trash2 size={10} /> Delete
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
         </>
       )}
@@ -326,7 +326,9 @@ export default function ModelsView() {
   const pullProgress = useGrooveStore((s) => s.ollamaPullProgress);
   const labActiveModel = useGrooveStore((s) => s.labActiveModel);
   const labRuntimes = useGrooveStore((s) => s.labRuntimes);
+  const labLocalModels = useGrooveStore((s) => s.labLocalModels);
   const fetchLabRuntimes = useGrooveStore((s) => s.fetchLabRuntimes);
+  const fetchLabLocalModels = useGrooveStore((s) => s.fetchLabLocalModels);
   const launchLocalModel = useGrooveStore((s) => s.launchLocalModel);
   const setActiveView = useGrooveStore((s) => s.setActiveView);
   const fetchOllamaStatus = useGrooveStore((s) => s.fetchOllamaStatus);
@@ -344,9 +346,10 @@ export default function ModelsView() {
   useEffect(() => {
     fetchOllamaStatus();
     fetchLabRuntimes();
+    fetchLabLocalModels();
     pollingRef.current = setInterval(fetchOllamaStatus, 10000);
     return () => clearInterval(pollingRef.current);
-  }, [fetchOllamaStatus, fetchLabRuntimes]);
+  }, [fetchOllamaStatus, fetchLabRuntimes, fetchLabLocalModels]);
 
   useEffect(() => {
     api.get('/models/recommended').then((data) => {
@@ -553,6 +556,24 @@ export default function ModelsView() {
       });
     }
 
+    for (const m of labLocalModels) {
+      if (seen.has(m.id)) continue;
+      seen.add(m.id);
+      const tag = m.type === 'mlx' ? 'MLX' : m.type === 'hf' ? 'HF' : 'GGUF';
+      models.push({
+        id: m.id,
+        name: m.name || m.id.replace(/^(mlx|hf|gguf):/, ''),
+        source: m.type || 'hf',
+        status: 'downloaded',
+        size: m.sizeBytes ? formatBytes(m.sizeBytes) : '—',
+        parameters: m.parameters,
+        quantization: m.quantization,
+        formatTag: tag,
+        compatibleBackends: m.compatibleBackends,
+        isInLab: isModelInLab(m.id),
+      });
+    }
+
     for (const d of downloads) {
       if (seen.has(d.filename)) continue;
       models.push({
@@ -576,7 +597,7 @@ export default function ModelsView() {
     }
 
     return models;
-  }, [runningModels, installedModels, ggufModels, downloads, pullProgress, labActiveModel, catalog]);
+  }, [runningModels, installedModels, ggufModels, labLocalModels, downloads, pullProgress, labActiveModel, catalog]);
 
   const filteredModels = useMemo(() => {
     let list = unifiedModels;

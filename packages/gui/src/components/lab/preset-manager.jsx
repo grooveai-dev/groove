@@ -1,6 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState } from 'react';
 import { useGrooveStore } from '../../stores/groove';
+import { SidebarSection } from '../../views/model-lab';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Dialog, DialogContent } from '../ui/dialog';
@@ -54,33 +55,35 @@ export function PresetManager() {
   const [saveOpen, setSaveOpen] = useState(false);
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider">Presets</span>
+    <SidebarSection
+      label="Presets"
+      collapsible
+      defaultOpen={false}
+      action={
         <Tooltip content="Save current settings as preset">
           <button
             onClick={() => setSaveOpen(true)}
             className="p-1 text-text-4 hover:text-accent transition-colors cursor-pointer"
           >
-            <Save size={13} />
+            <Save size={12} />
           </button>
         </Tooltip>
-      </div>
-
+      }
+    >
       {presets.length === 0 ? (
-        <div className="py-3 text-center">
-          <BookmarkCheck size={14} className="mx-auto text-text-4 mb-1" />
-          <p className="text-2xs text-text-4 font-sans">No presets saved</p>
+        <div className="py-5 text-center rounded-md bg-surface-1/50 border border-border-subtle">
+          <BookmarkCheck size={14} className="mx-auto text-text-4 mb-1.5" />
+          <p className="text-[10px] text-text-4 font-sans">No presets saved</p>
         </div>
       ) : (
         <ScrollArea className="max-h-32">
-          <div className="space-y-px">
+          <div className="space-y-1 rounded-md bg-surface-1/50 border border-border-subtle p-2">
             {presets.map((preset) => (
               <div
                 key={preset.id}
                 className={cn(
-                  'flex items-center gap-2 px-2.5 py-1.5 rounded-sm transition-colors',
-                  activePreset === preset.id ? 'bg-accent/8' : 'hover:bg-surface-3',
+                  'flex items-center gap-2.5 px-2.5 py-2 rounded transition-colors',
+                  activePreset === preset.id ? 'bg-accent/10' : 'hover:bg-surface-3',
                 )}
               >
                 <button
@@ -88,7 +91,7 @@ export function PresetManager() {
                   className="flex-1 text-left min-w-0 cursor-pointer"
                 >
                   <div className={cn(
-                    'text-xs font-sans truncate',
+                    'text-[11px] font-sans truncate',
                     activePreset === preset.id ? 'text-accent font-medium' : 'text-text-2',
                   )}>
                     {preset.name}
@@ -109,6 +112,6 @@ export function PresetManager() {
       )}
 
       <SavePresetDialog open={saveOpen} onOpenChange={setSaveOpen} />
-    </div>
+    </SidebarSection>
   );
 }

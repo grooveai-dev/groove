@@ -37,7 +37,7 @@ export function ChatView() {
   const setActiveConversation = useGrooveStore((s) => s.setActiveConversation);
   const sendChatMessage = useGrooveStore((s) => s.sendChatMessage);
   const sendImageMessage = useGrooveStore((s) => s.sendImageMessage);
-  const stopAgent = useGrooveStore((s) => s.stopAgent);
+
   const stopChatStreaming = useGrooveStore((s) => s.stopChatStreaming);
   const setConversationMode = useGrooveStore((s) => s.setConversationMode);
   const setConversationModel = useGrooveStore((s) => s.setConversationModel);
@@ -54,7 +54,7 @@ export function ChatView() {
   const [replyContext, setReplyContext] = useState(null);
   const [modeChanging, setModeChanging] = useState(false);
 
-  const activeRole = activeConversationId ? (conversationRoles?.[activeConversationId] || null) : null;
+  const activeRole = activeConversationId ? (conversationRoles?.[activeConversationId] || 'chat') : 'chat';
   const activeReasoningEffort = activeConversationId ? (conversationReasoningEffort?.[activeConversationId] || 'medium') : 'medium';
   const activeVerbosity = activeConversationId ? (conversationVerbosity?.[activeConversationId] || 'medium') : 'medium';
 
@@ -101,12 +101,8 @@ export function ChatView() {
 
   const handleStop = useCallback(() => {
     if (!activeConversation) return;
-    if (activeConversation.mode === 'agent' && activeConversation.agentId) {
-      stopAgent(activeConversation.agentId);
-    } else {
-      stopChatStreaming(activeConversationId);
-    }
-  }, [activeConversation, activeConversationId, stopAgent, stopChatStreaming]);
+    stopChatStreaming(activeConversationId);
+  }, [activeConversation, activeConversationId, stopChatStreaming]);
 
   const handleModelChange = useCallback(async (selection) => {
     if (activeConversationId) {

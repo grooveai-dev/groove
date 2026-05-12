@@ -285,89 +285,12 @@ export function registerAgentRoutes(app, daemon) {
       daemon.conversations.autoTitle(req.params.id, message.trim());
       daemon.conversations.touchUpdatedAt(req.params.id);
 
-      // API mode — lightweight headless streaming, no agent spawned
-      if (conv.mode === 'api' || !conv.agentId) {
-        await daemon.conversations.sendMessage(req.params.id, message.trim(), history || [], {
-          reasoningEffort: validatedEffort,
-          verbosity: validatedVerbosity,
-        });
-        daemon.audit.log('conversation.message', { id: req.params.id, mode: 'api' });
-        return res.json({ status: 'streaming', mode: 'api' });
-      }
-
-      // Agent mode — existing behavior
-      const agent = daemon.registry.get(conv.agentId);
-      if (!agent) return res.status(400).json({ error: 'Agent no longer exists' });
-
-      // Record user feedback for journalist context
-      if (daemon.journalist) daemon.journalist.recordUserFeedback(agent, message.trim());
-
-      // Agent loop path — send message directly to the running loop
-      if (daemon.processes.hasAgentLoop(conv.agentId)) {
-        const sent = await daemon.processes.sendMessage(conv.agentId, message.trim());
-        if (sent) {
-          daemon.audit.log('conversation.message', { id: req.params.id, agentId: conv.agentId });
-          return res.json({ id: conv.agentId, status: 'message_sent' });
-        }
-      }
-
-      // One-shot providers: kill and respawn with the message as prompt
-      const provider = getProvider(agent.provider);
-      if (provider?.constructor?.isOneShot) {
-        const oldConfig = { ...agent };
-        if (daemon.processes.isRunning(conv.agentId)) {
-          await daemon.processes.kill(conv.agentId);
-        }
-        daemon.registry.remove(conv.agentId);
-        daemon.locks.release(conv.agentId);
-
-        const newAgent = await daemon.processes.spawn({
-          role: 'chat',
-          scope: oldConfig.scope,
-          provider: oldConfig.provider,
-          model: oldConfig.model,
-          prompt: message.trim(),
-          permission: oldConfig.permission || 'full',
-          workingDir: oldConfig.workingDir,
-          name: oldConfig.name,
-          teamId: oldConfig.teamId,
-        });
-
-        // Update conversation to point to new agent
-        const convObj = daemon.conversations.conversations.get(req.params.id);
-        if (convObj) {
-          convObj.agentId = newAgent.id;
-          daemon.conversations._save();
-        }
-        daemon.audit.log('conversation.message', { id: req.params.id, agentId: newAgent.id, oneShot: true });
-        return res.json({ id: newAgent.id, status: 'respawned' });
-      }
-
-      // Running CLI agent — queue the message
-      if (daemon.processes.isRunning(conv.agentId)) {
-        daemon.processes.queueMessage(conv.agentId, message.trim());
-        daemon.audit.log('conversation.message', { id: req.params.id, agentId: conv.agentId, queued: true });
-        return res.json({ id: conv.agentId, status: 'message_queued' });
-      }
-
-      // CLI agent — session resume or rotation
-      const SESSION_RESUME_CEILING = 5_000_000;
-      const resumed = !!agent.sessionId && (agent.tokensUsed || 0) < SESSION_RESUME_CEILING;
-      const newAgent = resumed
-        ? await daemon.processes.resume(conv.agentId, message.trim())
-        : await daemon.rotator.rotate(conv.agentId, { additionalPrompt: message.trim() });
-
-      // Update conversation to point to new agent if rotated
-      if (newAgent.id !== conv.agentId) {
-        const convObj = daemon.conversations.conversations.get(req.params.id);
-        if (convObj) {
-          convObj.agentId = newAgent.id;
-          daemon.conversations._save();
-        }
-      }
-
-      daemon.audit.log('conversation.message', { id: req.params.id, agentId: newAgent.id, resumed });
-      res.json({ id: newAgent.id, status: resumed ? 'resumed' : 'rotated' });
+      await daemon.conversations.sendMessage(req.params.id, message.trim(), history || [], {
+        reasoningEffort: validatedEffort,
+        verbosity: validatedVerbosity,
+      });
+      daemon.audit.log('conversation.message', { id: req.params.id, mode: conv.mode || 'api' });
+      res.json({ status: 'streaming', mode: conv.mode || 'api' });
     } catch (err) {
       res.status(400).json({ error: err.message });
     }

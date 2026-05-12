@@ -1,10 +1,10 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
-  Send, Loader2, MessageSquare, ArrowRight, Square,
+  Loader2, MessageSquare, SendHorizontal, Pause,
   FileEdit, Search, Terminal, CheckCircle2, AlertCircle,
   RotateCw, Zap, Wrench, Eye, Code2, Bug,
-  ChevronDown, HelpCircle, Pencil, Paperclip, GripHorizontal,
+  ChevronDown, Paperclip, GripHorizontal,
   FileCode, X,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -19,11 +19,11 @@ const EMPTY = [];
 const KEEPER_RE = /(\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|#[\w/.-]+)/gi;
 const KEEPER_CMD_RE = /^\[(?:save|append|update|delete|view|doc|link|read|instruct)\]$/i;
 const KEEPER_TAG_RE = /^#[\w/.-]+$/;
-const KEEPER_DETECT_RE = /\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|#[\w/.-]+/i;
+const KEEPER_DETECT_RE = /\[(?:save|append|update|delete|view|doc|link|read|instruct)\]/i;
 
 function highlightKeeperInput(text) {
   return text.split(KEEPER_RE).map((part, i) => {
-    if (KEEPER_CMD_RE.test(part)) return <span key={i} className="text-accent font-semibold">{part}</span>;
+    if (KEEPER_CMD_RE.test(part)) return <span key={i} className="text-accent">{part}</span>;
     if (KEEPER_TAG_RE.test(part)) return <span key={i} className="text-accent">{part}</span>;
     return <span key={i} className="text-text-0">{part}</span>;
   });
@@ -234,22 +234,10 @@ function FormattedText({ text }) {
 // ── Message components ───────────────────────────────────────
 
 function UserMessage({ msg }) {
-  const isQuery = msg.isQuery;
   return (
     <div className="flex justify-end pl-8">
       <div className="max-w-[90%]">
-        {isQuery && (
-          <div className="flex items-center justify-end gap-1 mb-1">
-            <HelpCircle size={9} className="text-info" />
-            <span className="text-2xs text-info font-sans font-medium">Query</span>
-          </div>
-        )}
-        <div className={cn(
-          'px-3.5 py-2.5 rounded-lg border',
-          isQuery
-            ? 'bg-info/10 border-info/25'
-            : 'bg-info/10 border-info/25',
-        )}>
+        <div className="px-3.5 py-2.5 rounded-lg border bg-info/10 border-info/25">
           <div className="text-[12px] font-sans whitespace-pre-wrap break-words leading-relaxed text-text-0">
             <FormattedText text={msg.text} />
           </div>
@@ -526,7 +514,6 @@ export function AgentFeed({ agent }) {
   const rawChatHistory = useGrooveStore((s) => s.chatHistory[agent.id]) || EMPTY;
   const rawActivityLog = useGrooveStore((s) => s.activityLog[agent.id]) || EMPTY;
   const instructAgent = useGrooveStore((s) => s.instructAgent);
-  const queryAgent = useGrooveStore((s) => s.queryAgent);
   const isThinking = useGrooveStore((s) => s.thinkingAgents?.has(agent.id));
   const cachedChatRef = useRef(EMPTY);
   const cachedActivityRef = useRef(EMPTY);
@@ -546,9 +533,9 @@ export function AgentFeed({ agent }) {
   });
   const input = storeInput;
   const setInput = setStoreInput;
-  const [mode, setMode] = useState('instruct'); // instruct | query
   const [sending, setSending] = useState(false);
-  const [inputHeight, setInputHeight] = useState(36);
+  const [inputHeight, setInputHeight] = useState(88);
+  const [providerModels, setProviderModels] = useState([]);
   const dragRef = useRef(null);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
@@ -559,6 +546,14 @@ export function AgentFeed({ agent }) {
   useEffect(() => {
     if (pendingSnippet) inputRef.current?.focus();
   }, [pendingSnippet]);
+
+  useEffect(() => {
+    if (!agent.provider) return;
+    api.get('/providers').then((data) => {
+      const p = (Array.isArray(data) ? data : []).find((pr) => pr.id === agent.provider);
+      setProviderModels((p?.models || []).filter((m) => !m.disabled));
+    }).catch(() => {});
+  }, [agent.provider]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -574,7 +569,7 @@ export function AgentFeed({ agent }) {
     e.preventDefault();
     const startY = e.clientY;
     const startH = inputHeight;
-    const onMove = (ev) => setInputHeight(Math.min(Math.max(36, startH - (ev.clientY - startY)), 280));
+    const onMove = (ev) => setInputHeight(Math.min(Math.max(56, startH - (ev.clientY - startY)), 280));
     const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -699,11 +694,7 @@ export function AgentFeed({ agent }) {
       if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     });
     try {
-      if (mode === 'query') {
-        await queryAgent(agent.id, message);
-      } else {
-        await instructAgent(agent.id, message);
-      }
+      await instructAgent(agent.id, message);
     } catch { /* toast handles */ }
     setSending(false);
     inputRef.current?.focus();
@@ -794,41 +785,7 @@ export function AgentFeed({ agent }) {
           );
         })()}
 
-        {/* Mode pills */}
-        <div className="flex items-center gap-1 mb-2">
-          <button
-            onClick={() => setMode('instruct')}
-            className={cn(
-              'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-sans font-medium transition-colors cursor-pointer',
-              mode === 'instruct'
-                ? 'bg-accent/12 text-accent border border-accent/20'
-                : 'text-text-3 hover:text-text-1 hover:bg-surface-3',
-            )}
-          >
-            <Pencil size={10} />
-            Instruct
-          </button>
-          <button
-            onClick={() => setMode('query')}
-            className={cn(
-              'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-sans font-medium transition-colors cursor-pointer',
-              mode === 'query'
-                ? 'bg-info/12 text-info border border-info/20'
-                : 'text-text-3 hover:text-text-1 hover:bg-surface-3',
-            )}
-          >
-            <HelpCircle size={10} />
-            Query
-          </button>
-          <span className="text-[10px] text-text-4 font-sans ml-auto">
-            {mode === 'query' ? 'Read-only — agent keeps working' : isAlive ? 'Directs the agent' : 'Continues the session'}
-          </span>
-        </div>
-
-        <div className={cn(
-          'flex items-end gap-1 rounded-xl border bg-surface-0 p-1 transition-colors',
-          mode === 'query' ? 'border-info/20 focus-within:border-info/40' : 'border-border-subtle focus-within:border-accent/30',
-        )}>
+        <div className="flex flex-col rounded-lg border border-border-subtle bg-surface-0 transition-colors overflow-hidden focus-within:border-text-4/40">
           <input
             ref={fileInputRef}
             type="file"
@@ -837,19 +794,13 @@ export function AgentFeed({ agent }) {
             onChange={handleFileSelect}
             className="hidden"
           />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="w-9 h-9 flex items-center justify-center rounded-lg text-text-4 hover:text-text-1 hover:bg-surface-3 transition-colors cursor-pointer flex-shrink-0 mb-px"
-            title="Attach file"
-          >
-            <Paperclip size={14} />
-          </button>
-          <div className="flex-1 relative">
+          {/* Textarea — full width */}
+          <div className="relative px-1">
             {input && KEEPER_DETECT_RE.test(input) && (
               <div
                 ref={highlightRef}
                 aria-hidden
-                className="absolute inset-0 px-3 py-2 text-[13px] font-sans pointer-events-none whitespace-pre-wrap break-words overflow-y-hidden"
+                className="absolute inset-0 px-3 py-2.5 text-[13px] leading-[20px] font-sans pointer-events-none whitespace-pre-wrap break-words overflow-y-hidden"
                 style={{ height: inputHeight }}
               >
                 {highlightKeeperInput(input)}
@@ -872,11 +823,10 @@ export function AgentFeed({ agent }) {
                 }
               }}
               placeholder={pendingSnippet ? 'Add a message (optional)...'
-                : mode === 'query' ? 'Ask about this agent\'s work...'
                 : isAlive ? 'Send an instruction...' : 'Continue this session...'}
               rows={1}
               className={cn(
-                'w-full resize-none px-3 py-2 text-[13px]',
+                'w-full resize-none px-3 py-2.5 text-[13px] leading-[20px]',
                 'bg-transparent font-sans relative z-10',
                 'placeholder:text-text-4',
                 'focus:outline-none',
@@ -887,33 +837,68 @@ export function AgentFeed({ agent }) {
               style={{ height: inputHeight }}
             />
           </div>
-          {isAlive && (
+          {/* Bottom toolbar */}
+          <div className="flex items-center gap-1 px-1.5 pb-1.5 pt-0.5">
+            {/* Left: attach */}
             <button
-              onClick={() => useGrooveStore.getState().stopAgent(agent.id)}
-              title="Stop agent"
-              className="group w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer flex-shrink-0 mb-px"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-7 h-7 flex items-center justify-center rounded-md text-text-4 hover:text-text-1 transition-colors cursor-pointer"
+              title="Attach file"
             >
-              <span className="relative flex items-center justify-center w-3.5 h-3.5">
-                <span className="absolute inset-0 rounded-full bg-accent/30 group-hover:bg-red-500/30 animate-ping [animation-duration:2s] transition-colors" />
-                <span className="relative w-2.5 h-2.5 rounded-full bg-accent group-hover:bg-red-500 transition-colors" />
-              </span>
+              <Paperclip size={14} />
             </button>
-          )}
-          <button
-            onClick={handleSend}
-            disabled={(!input.trim() && !pendingSnippet) || sending}
-            className={cn(
-              'w-9 h-9 flex items-center justify-center rounded-lg transition-all cursor-pointer flex-shrink-0 mb-px',
-              'disabled:opacity-15 disabled:cursor-not-allowed',
-              (input.trim() || pendingSnippet)
-                ? mode === 'query'
-                  ? 'bg-info/15 text-info hover:bg-info/25 border border-info/25'
-                  : 'bg-accent/15 text-accent hover:bg-accent/25 border border-accent/25'
-                : 'bg-transparent text-text-4',
+            {/* Model selector */}
+            {providerModels.length > 1 && (
+              <div className="relative flex items-center">
+                <select
+                  value={agent.model || ''}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    api.patch(`/agents/${agent.id}`, { model: e.target.value }).catch(() => {});
+                  }}
+                  className="h-7 pl-2 pr-5 text-[11px] font-mono bg-transparent text-text-3 hover:text-text-1 rounded-md cursor-pointer focus:outline-none appearance-none border-none"
+                  title="Switch model"
+                >
+                  {providerModels.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name || m.id}</option>
+                  ))}
+                </select>
+                <ChevronDown size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-4 pointer-events-none" />
+              </div>
             )}
-          >
-            {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-          </button>
+            {/* Pulsating activity indicator */}
+            {isAlive && (
+              <span className="relative flex items-center justify-center w-3 h-3 mr-auto">
+                <span className="absolute inset-0 rounded-full bg-accent/30 animate-ping [animation-duration:2s]" />
+                <span className="relative w-2 h-2 rounded-full bg-accent" />
+              </span>
+            )}
+            <div className="flex-1" />
+            {/* Right: pause (when alive) or send (when idle) */}
+            {isAlive ? (
+              <button
+                onClick={() => useGrooveStore.getState().stopAgent(agent.id)}
+                className="flex items-center gap-1.5 h-7 px-2 rounded-md text-text-0 hover:text-text-1 hover:bg-surface-3 transition-colors cursor-pointer"
+              >
+                <Pause size={13} />
+                <span className="text-[11px] font-sans font-medium">Pause</span>
+              </button>
+            ) : (
+              <button
+                onClick={handleSend}
+                disabled={(!input.trim() && !pendingSnippet) || sending}
+                className={cn(
+                  'w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer',
+                  'disabled:opacity-15 disabled:cursor-not-allowed',
+                  (input.trim() || pendingSnippet)
+                    ? 'text-text-0 hover:text-text-1'
+                    : 'text-text-4',
+                )}
+              >
+                {sending ? <Loader2 size={15} className="animate-spin" /> : <SendHorizontal size={15} />}
+              </button>
+            )}
+          </div>
         </div>
         </div>
       </div>

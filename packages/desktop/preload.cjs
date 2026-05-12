@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld('groove', {
   update: {
     installUpdate: () => ipcRenderer.invoke('install-update'),
     checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
+    getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
     onUpdateAvailable: (cb) => {
       const h = (_e, d) => cb(d);
       ipcRenderer.on('update-available', h);

@@ -45,6 +45,7 @@ export const ROLE_COLORS = {
   creative:   NEUTRAL_ROLE,
   slides:     NEUTRAL_ROLE,
   chat:       NEUTRAL_ROLE,
+  research:   NEUTRAL_ROLE,
 };
 
 export function roleColor(role) {

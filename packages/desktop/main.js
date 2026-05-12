@@ -1044,6 +1044,9 @@ ipcMain.handle('install-update', async () => {
   }
 });
 
+// Cached update state — survives the race between autoUpdater events and renderer load
+let updateState = { available: null, progress: null, downloaded: null };
+
 ipcMain.handle('check-for-update', async () => {
   if (!app.isPackaged) return { updateAvailable: false };
   try {
@@ -1052,9 +1055,21 @@ ipcMain.handle('check-for-update', async () => {
   } catch { return { updateAvailable: false }; }
 });
 
-autoUpdater.on('update-available', (info) => broadcastToAllWindows('update-available', { version: info.version }));
-autoUpdater.on('download-progress', (info) => broadcastToAllWindows('update-progress', { percent: Math.round(info.percent) }));
-autoUpdater.on('update-downloaded', (info) => broadcastToAllWindows('update-downloaded', { version: info.version }));
+ipcMain.handle('get-update-status', () => updateState);
+
+autoUpdater.on('update-available', (info) => {
+  updateState.available = { version: info.version };
+  broadcastToAllWindows('update-available', { version: info.version });
+});
+autoUpdater.on('download-progress', (info) => {
+  updateState.progress = { percent: Math.round(info.percent) };
+  broadcastToAllWindows('update-progress', { percent: Math.round(info.percent) });
+});
+autoUpdater.on('update-downloaded', (info) => {
+  updateState.downloaded = { version: info.version };
+  updateState.progress = null;
+  broadcastToAllWindows('update-downloaded', { version: info.version });
+});
 autoUpdater.on('error', (err) => console.error('[auto-updater]', err.message));
 
 ipcMain.handle('get-instance-info', (event) => {

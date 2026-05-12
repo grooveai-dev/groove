@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Loader2, Square, Paperclip, Image as ImageIcon, Zap, Bot, GripHorizontal } from 'lucide-react';
+import { SendHorizontal, Loader2, Square, Paperclip, Image as ImageIcon, Zap, Bot, GripHorizontal } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { formatModelName } from './model-picker';
 
@@ -19,7 +19,7 @@ const VERBOSITY_OPTIONS = [
 
 export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImageModel, currentModel, replyContext, onClearReply, role, isCodex, reasoningEffort, onReasoningEffortChange, verbosity, onVerbosityChange, mode, onModeChange, modeChanging }) {
   const [input, setInput] = useState('');
-  const [inputHeight, setInputHeight] = useState(40);
+  const [inputHeight, setInputHeight] = useState(88);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -32,7 +32,6 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
     if (!text || sending || disabled) return;
     onSend(text);
     setInput('');
-    setInputHeight(40);
   }
 
   function onKeyDown(e) {
@@ -54,7 +53,7 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
     e.preventDefault();
     const startY = e.clientY;
     const startH = inputHeight;
-    const onMove = (ev) => setInputHeight(Math.min(Math.max(40, startH - (ev.clientY - startY)), 400));
+    const onMove = (ev) => setInputHeight(Math.min(Math.max(56, startH - (ev.clientY - startY)), 400));
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
@@ -76,95 +75,97 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
         : 'Send a message...';
 
   return (
-    <div className="border-t border-border-subtle bg-surface-1">
+    <div className="px-4 pb-3">
       <div
         onMouseDown={onDragStart}
-        className="flex items-center justify-center h-3 cursor-row-resize hover:bg-surface-3/50 transition-colors group"
+        className="flex items-center justify-center h-5 cursor-row-resize group"
       >
-        <GripHorizontal size={10} className="text-text-4 group-hover:text-text-2 transition-colors" />
+        <GripHorizontal size={12} className="text-text-4 group-hover:text-text-2 transition-colors" />
       </div>
 
-      <div className="px-4 pb-3">
-        {replyContext && (
-          <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-lg bg-accent/5 border border-accent/15">
-            <ImageIcon size={12} className="text-accent flex-shrink-0" />
-            <span className="flex-1 text-2xs text-text-2 font-sans truncate">Iterating: &quot;{replyContext.prompt}&quot;</span>
-            <button onClick={onClearReply} className="text-text-4 hover:text-text-1 cursor-pointer flex-shrink-0">
-              <Square size={10} />
-            </button>
-          </div>
-        )}
+      {replyContext && (
+        <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-lg bg-accent/5 border border-accent/15">
+          <ImageIcon size={12} className="text-accent flex-shrink-0" />
+          <span className="flex-1 text-2xs text-text-2 font-sans truncate">Iterating: &quot;{replyContext.prompt}&quot;</span>
+          <button onClick={onClearReply} className="text-text-4 hover:text-text-1 cursor-pointer flex-shrink-0">
+            <Square size={10} />
+          </button>
+        </div>
+      )}
 
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={placeholder}
-          disabled={disabled}
-          rows={1}
-          style={{ height: inputHeight }}
-          className={cn(
-            'w-full resize-none rounded-xl px-4 py-2.5 text-sm',
-            'bg-surface-0 border text-text-0 font-sans',
-            'placeholder:text-text-4',
-            'focus:outline-none focus:ring-1',
-            'border-border focus:ring-accent/40',
-            'disabled:opacity-50 disabled:cursor-not-allowed',
-          )}
+      <div className="flex flex-col rounded-lg border border-border-subtle bg-surface-0 transition-colors overflow-hidden focus-within:border-text-4/40">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".pdf,.png,.jpg,.jpeg,.gif,.svg,.csv,.txt,.md,.json,.yaml,.yml,.docx,.pptx,.xlsx"
+          onChange={handleFileSelect}
+          className="hidden"
         />
 
-        <div className="flex items-center gap-2 mt-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept=".pdf,.png,.jpg,.jpeg,.gif,.svg,.csv,.txt,.md,.json,.yaml,.yml,.docx,.pptx,.xlsx"
-            onChange={handleFileSelect}
-            className="hidden"
+        <div className="px-1">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={placeholder}
+            disabled={disabled}
+            rows={1}
+            className={cn(
+              'w-full resize-none px-3 py-2.5 text-[13px]',
+              'bg-transparent font-sans text-text-0',
+              'placeholder:text-text-4',
+              'focus:outline-none',
+              'disabled:opacity-40 disabled:cursor-not-allowed',
+            )}
+            style={{ height: inputHeight }}
           />
+        </div>
+
+        <div className="flex items-center gap-1.5 px-1.5 pb-1.5 pt-0.5">
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-text-4 hover:text-text-1 hover:bg-surface-3 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0"
+            className="w-7 h-7 flex items-center justify-center rounded-md text-text-4 hover:text-text-1 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
             title="Attach file"
           >
             <Paperclip size={14} />
           </button>
 
-          <div className="flex items-center h-7 rounded-lg bg-surface-3 border border-border-subtle p-0.5">
+          <div className="flex items-center h-6 rounded-md bg-surface-3 border border-border-subtle p-0.5">
             <button
               onClick={() => onModeChange?.('api')}
               disabled={modeChanging}
               className={cn(
-                'flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-semibold font-sans transition-colors cursor-pointer',
+                'flex items-center gap-1 h-5 px-2 rounded text-2xs font-semibold font-sans transition-colors cursor-pointer',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
-                currentMode === 'api' ? 'bg-accent/15 text-accent border border-accent/25' : 'text-text-3 hover:text-text-1',
+                currentMode === 'api' ? 'bg-accent/15 text-accent' : 'text-text-3 hover:text-text-1',
               )}
               title="Lightweight — fast and cheap, no tools"
             >
-              <Zap size={11} /> Chat
+              <Zap size={10} /> Chat
             </button>
             <button
               onClick={() => onModeChange?.('agent')}
               disabled={modeChanging}
               className={cn(
-                'flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-semibold font-sans transition-colors cursor-pointer',
+                'flex items-center gap-1 h-5 px-2 rounded text-2xs font-semibold font-sans transition-colors cursor-pointer',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
-                currentMode === 'agent' ? 'bg-purple/15 text-purple border border-purple/25' : 'text-text-3 hover:text-text-1',
+                currentMode === 'agent' ? 'bg-purple/15 text-purple' : 'text-text-3 hover:text-text-1',
               )}
               title="Full agent — tools, files, session resume"
             >
-              <Bot size={11} /> Agent
+              <Bot size={10} /> Agent
             </button>
           </div>
 
           {currentModel && (
             <div className={cn(
-              'flex items-center gap-1 h-6 px-2 rounded-md text-2xs font-mono border',
+              'flex items-center gap-1 h-5 px-2 rounded text-2xs font-mono',
               isImageModel
-                ? 'bg-purple/8 border-purple/20 text-purple'
-                : 'bg-surface-3 border-border-subtle text-text-3',
+                ? 'bg-purple/8 text-purple'
+                : 'text-text-3',
             )}>
               {isImageModel && <ImageIcon size={9} />}
               <span className="max-w-[80px] truncate">{formatModelName(currentModel)}</span>
@@ -173,13 +174,13 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
 
           {isCodex && (
             <>
-              <div className="flex items-center h-6 rounded-md bg-surface-3 border border-border-subtle p-0.5">
+              <div className="flex items-center h-5 rounded bg-surface-3 border border-border-subtle p-0.5">
                 {EFFORT_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
                     onClick={() => onReasoningEffortChange?.(opt.value)}
                     className={cn(
-                      'h-5 px-1.5 rounded text-2xs font-semibold font-sans transition-colors cursor-pointer',
+                      'h-4 px-1.5 rounded text-2xs font-semibold font-sans transition-colors cursor-pointer',
                       reasoningEffort === opt.value
                         ? 'bg-accent/15 text-accent'
                         : 'text-text-4 hover:text-text-1',
@@ -191,13 +192,13 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
                 ))}
               </div>
 
-              <div className="flex items-center h-6 rounded-md bg-surface-3 border border-border-subtle p-0.5">
+              <div className="flex items-center h-5 rounded bg-surface-3 border border-border-subtle p-0.5">
                 {VERBOSITY_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
                     onClick={() => onVerbosityChange?.(opt.value)}
                     className={cn(
-                      'h-5 px-1.5 rounded text-2xs font-semibold font-sans transition-colors cursor-pointer',
+                      'h-4 px-1.5 rounded text-2xs font-semibold font-sans transition-colors cursor-pointer',
                       verbosity === opt.value
                         ? 'bg-accent/15 text-accent'
                         : 'text-text-4 hover:text-text-1',
@@ -216,24 +217,25 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
           {isActive ? (
             <button
               onClick={onStop}
-              className="w-8 h-8 flex items-center justify-center rounded-lg bg-danger/80 text-white hover:bg-danger transition-all cursor-pointer shadow-lg shadow-danger/20 flex-shrink-0"
               title="Stop generation"
+              className="group w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer"
             >
-              <Square size={14} fill="currentColor" />
+              <span className="relative flex items-center justify-center w-3.5 h-3.5">
+                <span className="absolute inset-0 rounded-full bg-accent/30 group-hover:bg-red-500/30 animate-ping [animation-duration:2s] transition-colors" />
+                <span className="relative w-2.5 h-2.5 rounded-full bg-accent group-hover:bg-red-500 transition-colors" />
+              </span>
             </button>
           ) : (
             <button
               onClick={handleSend}
               disabled={!canSend}
               className={cn(
-                'w-8 h-8 flex items-center justify-center rounded-lg transition-all cursor-pointer flex-shrink-0',
-                'disabled:opacity-20 disabled:cursor-not-allowed',
-                canSend
-                  ? 'bg-accent/15 text-accent hover:bg-accent/25 border border-accent/25'
-                  : 'bg-surface-4 text-text-4',
+                'w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer',
+                'disabled:opacity-15 disabled:cursor-not-allowed',
+                canSend ? 'text-text-0 hover:text-text-1' : 'text-text-4',
               )}
             >
-              {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              {sending ? <Loader2 size={15} className="animate-spin" /> : <SendHorizontal size={15} />}
             </button>
           )}
         </div>

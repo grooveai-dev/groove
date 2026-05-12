@@ -1,9 +1,10 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState } from 'react';
 import { useGrooveStore } from '../../stores/groove';
+import { SidebarSection } from '../../views/model-lab';
 import { TuningSlider } from '../ui/slider';
 import { Tooltip } from '../ui/tooltip';
-import { RotateCcw, Brain, Braces, ChevronRight, Dices, X, Plus } from 'lucide-react';
+import { RotateCcw, ChevronRight, Dices, X, Plus } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
 const DEFAULTS = {
@@ -25,40 +26,42 @@ const PENALTY_SLIDERS = [
   { key: 'presencePenalty', label: 'Pres Penalty', min: 0, max: 2, step: 0.01 },
 ];
 
-function ParamGroup({ title, defaultOpen = true, children }) {
+function ParamGroup({ title, defaultOpen = false, children }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div>
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-1.5 py-1.5 text-left cursor-pointer group"
+        className="w-full flex items-center gap-1.5 h-7 text-left cursor-pointer group"
       >
         <ChevronRight
           size={10}
           className={cn('text-text-4 transition-transform duration-150 flex-shrink-0', open && 'rotate-90')}
         />
-        <span className="text-2xs font-semibold text-text-4 font-sans uppercase tracking-wider">{title}</span>
+        <span className="text-[10px] font-semibold text-text-4 font-sans uppercase tracking-widest">{title}</span>
       </button>
-      {open && <div className="space-y-0.5 pb-1">{children}</div>}
+      {open && <div className="space-y-1 pl-0.5 pt-1">{children}</div>}
     </div>
   );
 }
 
-function ToggleRow({ icon: Icon, label, active, onClick, description }) {
+function ToggleSwitch({ label, active, onClick, description }) {
   return (
     <Tooltip content={description} side="right">
       <button
         onClick={onClick}
-        className={cn(
-          'w-full flex items-center gap-2 px-2 py-1.5 rounded-sm transition-colors cursor-pointer text-left',
-          active ? 'bg-accent/8' : 'hover:bg-surface-3',
-        )}
+        className="w-full flex items-center gap-2.5 h-9 text-left cursor-pointer group"
       >
-        <Icon size={12} className={cn(active ? 'text-accent' : 'text-text-4')} />
-        <span className="flex-1 text-2xs font-sans text-text-2">{label}</span>
-        <span className={cn('text-2xs font-mono', active ? 'text-accent' : 'text-text-4')}>
-          {active ? 'ON' : 'OFF'}
-        </span>
+        <span className="text-[11px] font-sans text-text-2 flex-1">{label}</span>
+        <div className={cn(
+          'w-7 h-[16px] rounded-full transition-colors relative flex-shrink-0',
+          active ? 'bg-accent' : 'bg-surface-5',
+        )}>
+          <div className={cn(
+            'absolute top-[2px] w-3 h-3 rounded-full bg-white shadow-sm transition-all',
+            active ? 'left-[14px]' : 'left-[2px]',
+          )} />
+        </div>
       </button>
     </Tooltip>
   );
@@ -69,26 +72,28 @@ function SeedInput({ value, onChange }) {
     onChange(Math.floor(Math.random() * 2147483647));
   }
   return (
-    <div className="flex items-center gap-1.5 px-2 py-1">
-      <span className="text-2xs text-text-3 font-sans flex-shrink-0 w-12">Seed</span>
-      <input
-        type="number"
-        min={0}
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value === '' ? null : parseInt(e.target.value, 10))}
-        placeholder="Random"
-        className="flex-1 min-w-0 h-6 px-1.5 text-2xs font-mono bg-surface-1 border border-border rounded-sm text-text-1 placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent tabular-nums"
-      />
-      <Tooltip content="Randomize seed">
-        <button onClick={handleRandomize} className="p-0.5 text-text-4 hover:text-accent transition-colors cursor-pointer">
-          <Dices size={12} />
-        </button>
-      </Tooltip>
-      {value != null && (
-        <button onClick={() => onChange(null)} className="p-0.5 text-text-4 hover:text-danger transition-colors cursor-pointer">
-          <X size={10} />
-        </button>
-      )}
+    <div className="space-y-2 pt-1.5">
+      <span className="text-[11px] text-text-2 font-sans">Seed</span>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="number"
+          min={0}
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value === '' ? null : parseInt(e.target.value, 10))}
+          placeholder="Random"
+          className="flex-1 min-w-0 h-7 px-2.5 text-[11px] font-mono bg-surface-1 border border-border rounded text-text-1 placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent/50 focus:border-accent/50 tabular-nums"
+        />
+        <Tooltip content="Randomize seed">
+          <button onClick={handleRandomize} className="p-0.5 text-text-4 hover:text-accent transition-colors cursor-pointer">
+            <Dices size={12} />
+          </button>
+        </Tooltip>
+        {value != null && (
+          <button onClick={() => onChange(null)} className="p-0.5 text-text-4 hover:text-danger transition-colors cursor-pointer">
+            <X size={10} />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -113,35 +118,35 @@ function StopSequenceInput({ sequences, onChange }) {
   }
 
   return (
-    <div className="px-2 py-1 space-y-1.5">
-      <span className="text-2xs text-text-3 font-sans">Stop Sequences</span>
-      {sequences.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {sequences.map((s, i) => (
-            <span key={i} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-surface-3 rounded text-2xs font-mono text-text-2">
-              {s.length > 12 ? s.slice(0, 12) + '...' : s}
-              <button onClick={() => handleRemove(i)} className="text-text-4 hover:text-danger cursor-pointer"><X size={8} /></button>
-            </span>
-          ))}
-        </div>
-      )}
-      <div className="flex gap-1">
+    <div className="space-y-2 pt-1.5">
+      <span className="text-[11px] text-text-2 font-sans">Stop Sequences</span>
+      <div className="flex items-center gap-1.5">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Add sequence..."
           maxLength={100}
-          className="flex-1 min-w-0 h-6 px-1.5 text-2xs font-mono bg-surface-1 border border-border rounded-sm text-text-1 placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+          className="flex-1 min-w-0 h-7 px-2.5 text-[11px] font-mono bg-surface-1 border border-border rounded text-text-1 placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent/50 focus:border-accent/50"
         />
         <button
           onClick={handleAdd}
           disabled={!input.trim() || sequences.length >= 10}
-          className="p-1 text-text-4 hover:text-accent disabled:opacity-30 transition-colors cursor-pointer"
+          className="p-0.5 text-text-4 hover:text-accent disabled:opacity-30 transition-colors cursor-pointer"
         >
           <Plus size={12} />
         </button>
       </div>
+      {sequences.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {sequences.map((s, i) => (
+            <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-surface-2 border border-border-subtle rounded text-[10px] font-mono text-text-2">
+              {s.length > 12 ? s.slice(0, 12) + '...' : s}
+              <button onClick={() => handleRemove(i)} className="text-text-4 hover:text-danger cursor-pointer"><X size={8} /></button>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -157,9 +162,11 @@ export function ParameterPanel() {
   }
 
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider">Parameters</span>
+    <SidebarSection
+      label="Parameters"
+      collapsible
+      defaultOpen={false}
+      action={
         <Tooltip content="Reset to defaults">
           <button
             onClick={handleReset}
@@ -168,19 +175,16 @@ export function ParameterPanel() {
             <RotateCcw size={11} />
           </button>
         </Tooltip>
-      </div>
-
-      {/* Mode toggles */}
-      <div className="space-y-px pb-1">
-        <ToggleRow
-          icon={Brain}
+      }
+    >
+      <div className="space-y-0.5 rounded-md bg-surface-1/50 border border-border-subtle px-3 py-2">
+        <ToggleSwitch
           label="Thinking"
           active={parameters.thinking}
           onClick={() => setParameter('thinking', !parameters.thinking)}
           description="Chain-of-thought for supported models (Qwen3, etc.)"
         />
-        <ToggleRow
-          icon={Braces}
+        <ToggleSwitch
           label="JSON Mode"
           active={parameters.jsonMode}
           onClick={() => setParameter('jsonMode', !parameters.jsonMode)}
@@ -188,7 +192,6 @@ export function ParameterPanel() {
         />
       </div>
 
-      {/* Sampling group */}
       <ParamGroup title="Sampling">
         {SAMPLING_SLIDERS.map((s) => (
           <TuningSlider
@@ -203,7 +206,6 @@ export function ParameterPanel() {
         ))}
       </ParamGroup>
 
-      {/* Generation group */}
       <ParamGroup title="Generation">
         <TuningSlider
           label="Max Tokens"
@@ -221,7 +223,6 @@ export function ParameterPanel() {
         />
       </ParamGroup>
 
-      {/* Penalties group — collapsed by default */}
       <ParamGroup title="Penalties" defaultOpen={false}>
         {PENALTY_SLIDERS.map((s) => (
           <TuningSlider
@@ -235,6 +236,6 @@ export function ParameterPanel() {
           />
         ))}
       </ParamGroup>
-    </div>
+    </SidebarSection>
   );
 }

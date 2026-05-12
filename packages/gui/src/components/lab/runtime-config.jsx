@@ -1,6 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useEffect, useRef } from 'react';
 import { useGrooveStore } from '../../stores/groove';
+import { SidebarSection } from '../../views/model-lab';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
@@ -95,8 +96,8 @@ function RuntimeItem({ runtime, active, onSelect, onTest, onRemove, onStop, onSt
     <button
       onClick={() => onSelect(runtime.id)}
       className={cn(
-        'w-full flex items-center gap-2.5 px-2.5 py-2 text-left transition-colors cursor-pointer rounded-sm',
-        active ? 'bg-accent/8 border border-accent/20' : 'border border-transparent text-text-2 hover:bg-surface-3 hover:text-text-0',
+        'w-full flex items-center gap-2.5 px-2.5 py-2 text-left transition-colors cursor-pointer rounded',
+        active ? 'bg-accent/8 ring-1 ring-accent/20' : 'hover:bg-surface-2',
       )}
     >
       <span className={cn(
@@ -104,10 +105,10 @@ function RuntimeItem({ runtime, active, onSelect, onTest, onRemove, onStop, onSt
         online ? 'bg-success' : runtime.status === 'error' ? 'bg-danger' : 'bg-text-4',
       )} />
       <div className="flex-1 min-w-0">
-        <div className={cn('text-xs font-sans font-medium truncate', active ? 'text-text-0' : '')}>
+        <div className={cn('text-[11px] font-sans font-medium truncate', active ? 'text-text-0' : 'text-text-2')}>
           {RUNTIME_TYPES.find((t) => t.value === runtime.type)?.label || runtime.type}
         </div>
-        <div className="text-2xs text-text-4 flex items-center gap-1.5">
+        <div className="text-[10px] text-text-4 flex items-center gap-1.5">
           <span className={cn('font-sans', online ? 'text-success' : 'text-danger')}>
             {online ? 'Online' : 'Offline'}
           </span>
@@ -116,7 +117,7 @@ function RuntimeItem({ runtime, active, onSelect, onTest, onRemove, onStop, onSt
           )}
         </div>
       </div>
-      <div className="flex items-center gap-0.5 flex-shrink-0">
+      <div className="flex items-center gap-px flex-shrink-0">
         {managed && online && (
           <Tooltip content="Stop server">
             <button
@@ -142,7 +143,7 @@ function RuntimeItem({ runtime, active, onSelect, onTest, onRemove, onStop, onSt
             onClick={(e) => { e.stopPropagation(); onTest(runtime.id); }}
             className="p-1 text-text-4 hover:text-accent transition-colors cursor-pointer"
           >
-            {testing === runtime.id ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
+            {testing === runtime.id ? <Loader2 size={10} className="animate-spin" /> : <RotateCcw size={10} />}
           </button>
         </Tooltip>
         <Tooltip content="Remove runtime">
@@ -150,7 +151,7 @@ function RuntimeItem({ runtime, active, onSelect, onTest, onRemove, onStop, onSt
             onClick={(e) => { e.stopPropagation(); onRemove(runtime.id); }}
             className="p-1 text-text-4 hover:text-danger transition-colors cursor-pointer"
           >
-            <Trash2 size={11} />
+            <Trash2 size={10} />
           </button>
         </Tooltip>
       </div>
@@ -172,21 +173,28 @@ const BACKENDS = [
   { id: 'tgi', label: 'TGI', subtitle: 'HuggingFace, guided setup', autoLaunch: false },
 ];
 
-function LaunchStatus({ phase, error }) {
-  if (!phase) return null;
+function StatusBanner({ variant, icon: Icon, children }) {
+  const styles = {
+    success: 'bg-success/8 text-success',
+    danger: 'bg-danger/8 text-danger',
+    accent: 'bg-accent/8 text-accent',
+    warning: 'bg-warning/8 text-warning',
+  };
   return (
-    <div className={cn(
-      'flex items-center gap-2 px-2.5 py-1.5 text-2xs font-sans rounded-sm',
-      phase === 'ready' && 'bg-success/8 text-success',
-      phase === 'error' && 'bg-danger/8 text-danger',
-      (phase === 'starting' || phase === 'checking') && 'bg-accent/8 text-accent',
-    )}>
-      {phase === 'starting' && <><Loader2 size={11} className="animate-spin" /> Starting server...</>}
-      {phase === 'checking' && <><Loader2 size={11} className="animate-spin" /> Checking...</>}
-      {phase === 'ready' && <><CheckCircle size={11} /> Server ready</>}
-      {phase === 'error' && <><AlertTriangle size={11} /> {error || 'Launch failed'}</>}
+    <div className={cn('flex items-center gap-2 px-2.5 py-2 text-[11px] font-sans rounded', styles[variant])}>
+      <Icon size={11} className={variant === 'accent' ? 'animate-spin' : ''} />
+      <span>{children}</span>
     </div>
   );
+}
+
+function LaunchStatus({ phase, error }) {
+  if (!phase) return null;
+  if (phase === 'starting') return <StatusBanner variant="accent" icon={Loader2}>Starting server...</StatusBanner>;
+  if (phase === 'checking') return <StatusBanner variant="accent" icon={Loader2}>Checking...</StatusBanner>;
+  if (phase === 'ready') return <StatusBanner variant="success" icon={CheckCircle}>Server ready</StatusBanner>;
+  if (phase === 'error') return <StatusBanner variant="danger" icon={AlertTriangle}>{error || 'Launch failed'}</StatusBanner>;
+  return null;
 }
 
 function getIncompatibilityReason(modelType, backendId) {
@@ -289,22 +297,20 @@ export function LaunchModel() {
   }
 
   return (
-    <div className="space-y-3">
-      <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider">Launch Model</span>
-
+    <SidebarSection label="Launch Model" collapsible defaultOpen={false}>
       {localModels.length === 0 ? (
-        <div className="py-5 text-center">
-          <HardDrive size={18} className="mx-auto text-text-4 mb-1.5" />
-          <p className="text-xs text-text-3 font-sans">No downloaded models</p>
-          <p className="text-2xs text-text-4 font-sans mt-0.5">Download models from the Models tab</p>
+        <div className="py-6 text-center rounded-md bg-surface-1/50 border border-border-subtle">
+          <HardDrive size={16} className="mx-auto text-text-4 mb-2" />
+          <p className="text-[11px] text-text-3 font-sans">No downloaded models</p>
+          <p className="text-[10px] text-text-4 font-sans mt-0.5">Download models from the Models tab</p>
         </div>
       ) : (
-        <>
+        <div className="space-y-4">
           <div className="relative">
             <select
               value={selectedModel || ''}
               onChange={handleModelChange}
-              className="w-full h-8 px-3 pr-8 text-xs rounded-md bg-surface-1 border border-border text-text-0 font-sans appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
+              className="w-full h-9 px-2.5 pr-7 text-[11px] rounded bg-surface-1 border border-border text-text-0 font-sans appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent/50 focus:border-accent/50 transition-colors"
             >
               <option value="">Select a model</option>
               {localModels.map((m) => {
@@ -318,75 +324,73 @@ export function LaunchModel() {
                 );
               })}
             </select>
-            <ChevronRight size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none rotate-90" />
+            <ChevronRight size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-4 pointer-events-none rotate-90" />
           </div>
 
           {selectedModel && (
-            <div className="space-y-2">
-              <span className="text-2xs font-semibold font-sans text-text-4 uppercase tracking-wider">Backend</span>
-              <div className="space-y-px">
-                {backendsWithCompat.map((b) => (
-                  <Tooltip key={b.id} content={b.reason} side="right">
-                    <button
-                      onClick={() => setSelectedBackend(b.id)}
-                      className={cn(
-                        'w-full flex items-center gap-2.5 px-2.5 py-2 text-left transition-colors cursor-pointer rounded-sm',
-                        selectedBackend === b.id ? 'bg-accent/8' : 'hover:bg-surface-3',
-                        !b.compatible && 'opacity-40',
-                      )}
-                    >
-                      <span className={cn(
-                        'w-2 h-2 rounded-full border-[1.5px] flex-shrink-0',
-                        selectedBackend === b.id ? 'border-accent bg-accent' : 'border-text-4',
-                      )} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className={cn('text-xs font-sans font-medium', selectedBackend === b.id ? 'text-text-0' : 'text-text-2')}>
-                            {b.label}
-                          </span>
-                          {b.compatible && b.recommended && <Badge variant="success" className="text-2xs">Recommended</Badge>}
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <span className="text-[10px] font-semibold font-sans text-text-4 uppercase tracking-widest">Backend</span>
+                <div className="space-y-1 rounded-md bg-surface-1/50 border border-border-subtle p-2">
+                  {backendsWithCompat.map((b) => (
+                    <Tooltip key={b.id} content={b.reason} side="right">
+                      <button
+                        onClick={() => setSelectedBackend(b.id)}
+                        className={cn(
+                          'w-full flex items-center gap-2.5 px-2.5 py-2 text-left transition-colors cursor-pointer rounded',
+                          selectedBackend === b.id ? 'bg-accent/10' : 'hover:bg-surface-3',
+                          !b.compatible && 'opacity-40',
+                        )}
+                      >
+                        <span className={cn(
+                          'w-2 h-2 rounded-full border-[1.5px] flex-shrink-0 transition-colors',
+                          selectedBackend === b.id ? 'border-accent bg-accent' : 'border-text-4',
+                        )} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className={cn('text-[11px] font-sans font-medium', selectedBackend === b.id ? 'text-text-0' : 'text-text-2')}>
+                              {b.label}
+                            </span>
+                            {b.compatible && b.recommended && <Badge variant="success" className="text-[9px]">Recommended</Badge>}
+                          </div>
+                          <div className="text-[10px] text-text-4 font-sans">{b.subtitle}</div>
                         </div>
-                        <div className="text-2xs text-text-4 font-sans">{b.subtitle}</div>
-                      </div>
-                    </button>
-                  </Tooltip>
-                ))}
+                      </button>
+                    </Tooltip>
+                  ))}
+                </div>
               </div>
 
               {!isCompatible && (
-                <div className="px-2.5 py-2 bg-warning/8 rounded-sm space-y-1">
-                  <p className="text-2xs text-warning font-sans">
-                    {currentBackend?.reason}
-                  </p>
+                <StatusBanner variant="warning" icon={AlertTriangle}>
+                  {currentBackend?.reason}
                   {suggestion && (
-                    <p className="text-2xs text-text-2 font-sans">
-                      Try <span className="font-mono font-medium">{suggestion.repoId}</span> instead
-                    </p>
+                    <> — try <span className="font-mono font-medium">{suggestion.repoId}</span></>
                   )}
-                </div>
+                </StatusBanner>
               )}
 
               {isCompatible && selectedBackend === 'llama-cpp' && (
-                <div className="px-2.5">
+                <div>
                   {llamaInstalled === null && (
-                    <div className="flex items-center gap-2 text-2xs text-text-3 font-sans">
+                    <div className="flex items-center gap-2 text-[11px] text-text-3 font-sans">
                       <Loader2 size={10} className="animate-spin" /> Checking llama-server...
                     </div>
                   )}
                   {llamaInstalled === true && (
-                    <div className="flex items-center gap-2 text-2xs text-success font-sans">
+                    <div className="flex items-center gap-2 text-[11px] text-success font-sans">
                       <CheckCircle size={10} /> llama-server found
                     </div>
                   )}
                   {llamaInstalled === false && (
-                    <div className="space-y-1.5">
-                      <div className="flex items-center gap-2 text-2xs text-danger font-sans">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-[11px] text-danger font-sans">
                         <AlertTriangle size={10} /> llama-server not found
                       </div>
-                      <code className="block text-2xs font-mono text-text-3 bg-surface-2 px-2 py-1 rounded-sm">brew install llama.cpp</code>
+                      <code className="block text-[10px] font-mono text-text-3 bg-surface-2 px-2.5 py-1.5 rounded">brew install llama.cpp</code>
                       <button
                         onClick={checkLlama}
-                        className="flex items-center gap-1.5 text-2xs font-sans text-accent hover:text-accent/80 transition-colors cursor-pointer"
+                        className="flex items-center gap-1.5 text-[11px] font-sans text-accent hover:text-accent/80 transition-colors cursor-pointer"
                       >
                         <RotateCcw size={10} /> Recheck after install
                       </button>
@@ -399,44 +403,41 @@ export function LaunchModel() {
                 <div className="space-y-2">
                   {hasActiveAssistant && labAssistantBackend === selectedBackend ? (
                     <div className="space-y-2">
-                      <div className={cn(
-                        'flex items-center gap-2 px-2.5 py-2 rounded-sm text-xs font-sans',
-                        assistantRunning ? 'bg-accent/8 text-accent' : 'bg-success/8 text-success',
-                      )}>
-                        {assistantRunning ? (
-                          <><Loader2 size={12} className="animate-spin" /> Assistant is setting up {currentBackend?.label}...</>
-                        ) : (
-                          <><CheckCircle size={12} /> Setup complete</>
-                        )}
-                      </div>
+                      {assistantRunning ? (
+                        <StatusBanner variant="accent" icon={Loader2}>
+                          Assistant is setting up {currentBackend?.label}...
+                        </StatusBanner>
+                      ) : (
+                        <StatusBanner variant="success" icon={CheckCircle}>Setup complete</StatusBanner>
+                      )}
                       {!labAssistantMode && (
                         <button
                           onClick={() => setLabAssistantMode(true)}
-                          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-sans font-medium text-text-1 bg-surface-3 hover:bg-surface-4 rounded-sm transition-colors cursor-pointer"
+                          className="w-full flex items-center justify-center gap-1.5 h-8 text-[11px] font-sans font-medium text-text-1 bg-surface-2 hover:bg-surface-3 rounded transition-colors cursor-pointer"
                         >
                           View Assistant
                         </button>
                       )}
                     </div>
                   ) : (
-                    <>
+                    <div className="space-y-2">
                       <button
                         onClick={handleLaunchAssistant}
                         disabled={assistantLaunching}
                         className={cn(
-                          'w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-sans font-medium rounded-sm transition-colors cursor-pointer',
+                          'w-full flex items-center justify-center gap-1.5 h-8 text-[11px] font-sans font-medium rounded transition-colors cursor-pointer',
                           assistantLaunching ? 'bg-accent/20 text-accent' : 'bg-accent text-surface-0 hover:bg-accent/90',
                         )}
                       >
                         {assistantLaunching
-                          ? <><Loader2 size={12} className="animate-spin" /> Starting Assistant...</>
-                          : <><Wrench size={12} /> Setup {currentBackend?.label} with Assistant</>
+                          ? <><Loader2 size={11} className="animate-spin" /> Starting Assistant...</>
+                          : <><Wrench size={11} /> Setup {currentBackend?.label} with Assistant</>
                         }
                       </button>
-                      <p className="text-2xs text-text-4 font-sans">
+                      <p className="text-[10px] text-text-4 font-sans text-center">
                         An AI assistant will check your system and handle the installation.
                       </p>
-                    </>
+                    </div>
                   )}
                 </div>
               )}
@@ -444,22 +445,20 @@ export function LaunchModel() {
               {isCompatible && currentBackend?.autoLaunch && (
                 <div className="space-y-2">
                   {serverRunning ? (
-                    <div className="flex items-center gap-2 px-2.5 py-2 bg-success/8 rounded-sm text-xs font-sans text-success">
-                      <CheckCircle size={12} /> Server Running
-                    </div>
+                    <StatusBanner variant="success" icon={CheckCircle}>Server Running</StatusBanner>
                   ) : (
                     <button
                       disabled={!canLaunch}
                       onClick={handleLaunch}
                       className={cn(
-                        'w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-sans font-medium rounded-sm transition-colors cursor-pointer',
+                        'w-full flex items-center justify-center gap-1.5 h-8 text-[11px] font-sans font-medium rounded transition-colors cursor-pointer',
                         canLaunch ? 'bg-accent text-surface-0 hover:bg-accent/90' : 'bg-surface-3 text-text-4 cursor-not-allowed',
                       )}
                     >
                       {launching ? (
-                        <><Loader2 size={12} className="animate-spin" /> Starting...</>
+                        <><Loader2 size={11} className="animate-spin" /> Starting...</>
                       ) : (
-                        <><Play size={12} /> Launch</>
+                        <><Play size={11} /> Launch</>
                       )}
                     </button>
                   )}
@@ -468,9 +467,9 @@ export function LaunchModel() {
               )}
             </div>
           )}
-        </>
+        </div>
       )}
-    </div>
+    </SidebarSection>
   );
 }
 
@@ -493,33 +492,35 @@ export function RuntimeConfig() {
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider">Runtimes</span>
+    <SidebarSection
+      label="Runtimes"
+      collapsible
+      defaultOpen={false}
+      action={
         <Tooltip content="Add runtime">
           <button
             onClick={() => setDialogOpen(true)}
             className="p-1 text-text-4 hover:text-accent transition-colors cursor-pointer"
           >
-            <Plus size={13} />
+            <Plus size={12} />
           </button>
         </Tooltip>
-      </div>
-
+      }
+    >
       {runtimes.length === 0 ? (
-        <div className="py-5 text-center">
-          <WifiOff size={18} className="mx-auto text-text-4 mb-1.5" />
-          <p className="text-xs text-text-3 font-sans">No runtimes configured</p>
+        <div className="py-6 text-center rounded-md bg-surface-1/50 border border-border-subtle">
+          <WifiOff size={16} className="mx-auto text-text-4 mb-2" />
+          <p className="text-[11px] text-text-3 font-sans">No runtimes configured</p>
           <button
             onClick={() => setDialogOpen(true)}
-            className="mt-2 flex items-center gap-1 mx-auto px-3 py-1.5 text-2xs font-sans text-text-3 hover:text-text-1 transition-colors cursor-pointer"
+            className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-sans text-accent hover:text-accent/80 transition-colors cursor-pointer"
           >
-            <Plus size={11} /> Add Runtime
+            <Plus size={10} /> Add Runtime
           </button>
         </div>
       ) : (
         <ScrollArea className="max-h-48">
-          <div className="space-y-px">
+          <div className="space-y-1 rounded-md bg-surface-1/50 border border-border-subtle p-2">
             {runtimes.map((rt) => (
               <RuntimeItem
                 key={rt.id}
@@ -538,7 +539,7 @@ export function RuntimeConfig() {
       )}
 
       <AddRuntimeDialog open={dialogOpen} onOpenChange={setDialogOpen} />
-    </div>
+    </SidebarSection>
   );
 }
 
@@ -560,7 +561,7 @@ export function RuntimeSection() {
 
   if (!serverRunning || expanded) {
     return (
-      <div className="space-y-5 [&>*]:pt-5 [&>*:first-child]:pt-0">
+      <div className="space-y-6">
         <LaunchModel />
         <RuntimeConfig />
       </div>
@@ -568,24 +569,22 @@ export function RuntimeSection() {
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2.5 px-1 py-1.5">
-        <span className="w-2 h-2 rounded-full bg-success flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="text-xs font-sans font-medium text-text-0 truncate">{runtimeLabel}</div>
-          <div className="text-2xs text-text-4 font-sans truncate">
-            {activeModel || 'Ready'}{activeRt?.latency != null ? ` · ${Math.round(activeRt.latency)}ms` : ''}
-          </div>
+    <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-md bg-surface-1/50 border border-border-subtle">
+      <span className="w-2 h-2 rounded-full bg-success flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="text-[11px] font-sans font-medium text-text-0 truncate">{runtimeLabel}</div>
+        <div className="text-[10px] text-text-4 font-sans truncate">
+          {activeModel || 'Ready'}{activeRt?.latency != null ? ` · ${Math.round(activeRt.latency)}ms` : ''}
         </div>
-        <Tooltip content="Runtime settings">
-          <button
-            onClick={() => setExpanded(true)}
-            className="p-1 text-text-4 hover:text-text-1 transition-colors cursor-pointer"
-          >
-            <Settings2 size={13} />
-          </button>
-        </Tooltip>
       </div>
+      <Tooltip content="Runtime settings">
+        <button
+          onClick={() => setExpanded(true)}
+          className="p-1 text-text-4 hover:text-text-1 transition-colors cursor-pointer"
+        >
+          <Settings2 size={12} />
+        </button>
+      </Tooltip>
     </div>
   );
 }

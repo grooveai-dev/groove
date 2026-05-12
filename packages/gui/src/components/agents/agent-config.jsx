@@ -5,7 +5,7 @@ import {
   Gauge, FolderSearch, Key, Check, Eye, EyeOff,
   AlertCircle, Layers, Activity,
   RotateCw, Skull, Copy, Trash2,
-  Sparkles, Calendar, Plug, MessageCircle, Save, GitBranch,
+  Plug, MessageCircle, Save, GitBranch,
 } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { Badge } from '../ui/badge';
@@ -157,11 +157,7 @@ export function AgentConfig({ agent }) {
   const [showKey, setShowKey] = useState(false);
   const [expandedProvider, setExpandedProvider] = useState(null);
   const [routingMode, setRoutingMode] = useState(agent.routingMode || 'auto');
-  const [installedSkills, setInstalledSkills] = useState([]);
   const [importedRepos, setImportedRepos] = useState([]);
-  const [scheduleUnit, setScheduleUnit] = useState('hr');
-  const [scheduleCount, setScheduleCount] = useState('1');
-  const [scheduling, setScheduling] = useState(false);
   const [personalityContent, setPersonalityContent] = useState('');
   const [personalityLoaded, setPersonalityLoaded] = useState(false);
   const [personalities, setPersonalities] = useState([]);
@@ -173,7 +169,6 @@ export function AgentConfig({ agent }) {
 
   useEffect(() => {
     loadProviders();
-    api.get('/skills/installed').then((data) => setInstalledSkills(Array.isArray(data) ? data : data.skills || [])).catch(() => {});
     api.get('/integrations/installed').then((data) => setInstalledIntegrations(Array.isArray(data) ? data : [])).catch(() => {});
     api.get('/repos/imported').then((data) => setImportedRepos((Array.isArray(data) ? data : []).filter((r) => r.status === 'active'))).catch(() => {});
     if (agent.provider === 'claude-code') {
@@ -595,54 +590,6 @@ export function AgentConfig({ agent }) {
         </div>
       </ConfigSection>
 
-      {/* ── Skills ────────────────────────────────────────── */}
-      <ConfigSection label="Skills" icon={Sparkles} description="Attach installed skills to this agent's context.">
-        <div className="flex flex-wrap gap-1.5">
-          {(agent.skills || []).map((skillId) => (
-            <Badge key={skillId} variant="accent" className="font-mono text-xs gap-1.5 px-2.5 py-1">
-              {skillId}
-              <button
-                onClick={async () => {
-                  try {
-                    await api.delete(`/agents/${agent.id}/skills/${skillId}`);
-                    addToast('success', `Detached ${skillId}`);
-                  } catch (err) { addToast('error', 'Detach failed', err.message); }
-                }}
-                className="hover:text-danger cursor-pointer"
-              >
-                <X size={10} />
-              </button>
-            </Badge>
-          ))}
-          {installedSkills.filter((s) => !(agent.skills || []).includes(s.id)).length > 0 && (
-            <div className="relative group">
-              <button className="w-7 h-7 flex items-center justify-center rounded-md bg-surface-4 border border-border-subtle text-text-3 hover:text-accent cursor-pointer transition-colors">
-                <Plus size={12} />
-              </button>
-              <div className="absolute top-full left-0 mt-1 z-20 hidden group-hover:block bg-surface-2 border border-border-subtle rounded-lg shadow-xl py-1 min-w-[160px]">
-                {installedSkills.filter((s) => !(agent.skills || []).includes(s.id)).map((skill) => (
-                  <button
-                    key={skill.id}
-                    onClick={async () => {
-                      try {
-                        await api.post(`/agents/${agent.id}/skills/${skill.id}`);
-                        addToast('success', `Attached ${skill.name || skill.id}`);
-                      } catch (err) { addToast('error', 'Attach failed', err.message); }
-                    }}
-                    className="w-full text-left px-3 py-1.5 text-xs font-sans text-text-1 hover:bg-surface-4 cursor-pointer transition-colors"
-                  >
-                    {skill.name || skill.id}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {(agent.skills || []).length === 0 && installedSkills.length === 0 && (
-            <span className="text-2xs text-text-4 font-sans">No skills installed — browse the Marketplace</span>
-          )}
-        </div>
-      </ConfigSection>
-
       {/* ── Integrations ─────────────────────────────────── */}
       <ConfigSection label="Integrations" icon={Plug} description="Attach MCP integrations for external services.">
         <div className="flex flex-wrap gap-1.5">
@@ -779,80 +726,6 @@ export function AgentConfig({ agent }) {
           </div>
         </ConfigSection>
       )}
-
-      {/* ── Schedule ──────────────────────────────────────── */}
-      <ConfigSection label="Schedule" icon={Calendar} description="Run this agent on a recurring schedule.">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-text-2 font-sans">Every</span>
-          <input
-            value={scheduleCount}
-            onChange={(e) => setScheduleCount(e.target.value.replace(/\D/g, '').slice(0, 3))}
-            className="w-12 h-7 px-2 text-xs text-center bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent"
-            placeholder="1"
-          />
-          <div className="flex bg-surface-0 rounded-lg p-0.5 border border-border-subtle">
-            {[
-              { value: 'min', label: 'Min' },
-              { value: 'hr', label: 'Hr' },
-              { value: 'day', label: 'Day' },
-              { value: 'wk', label: 'Wk' },
-              { value: 'mo', label: 'Mo' },
-            ].map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setScheduleUnit(opt.value)}
-                className={cn(
-                  'px-2 py-1 text-2xs font-semibold font-sans rounded-md transition-all cursor-pointer',
-                  scheduleUnit === opt.value
-                    ? 'bg-accent/15 text-accent shadow-sm'
-                    : 'text-text-3 hover:text-text-1',
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={scheduling || !scheduleCount || parseInt(scheduleCount, 10) < 1}
-            onClick={async () => {
-              const count = parseInt(scheduleCount, 10);
-              if (!count || count < 1) return;
-              const cronMap = {
-                min: count === 1 ? '* * * * *' : `*/${count} * * * *`,
-                hr: count === 1 ? '0 * * * *' : `0 */${count} * * *`,
-                day: count === 1 ? '0 0 * * *' : `0 0 */${count} * *`,
-                wk: `0 0 * * ${count === 1 ? '1' : '*'}`,
-                mo: `0 0 ${count === 1 ? '1' : count} * *`,
-              };
-              setScheduling(true);
-              try {
-                await api.post('/schedules', {
-                  name: `${agent.name} schedule`,
-                  cron: cronMap[scheduleUnit],
-                  agentConfig: {
-                    role: agent.role,
-                    provider: agent.provider,
-                    model: agent.model,
-                    scope: agent.scope,
-                    workingDir: agent.workingDir,
-                    prompt: agent.prompt,
-                  },
-                });
-                addToast('success', `Scheduled every ${count} ${scheduleUnit}`);
-              } catch (err) {
-                addToast('error', 'Schedule failed', err.message);
-              }
-              setScheduling(false);
-            }}
-            className="h-7 px-3 text-2xs gap-1"
-          >
-            <Calendar size={10} />
-            {scheduling ? '...' : 'Set'}
-          </Button>
-        </div>
-      </ConfigSection>
 
       {/* ── Personality ──────────────────────────────────── */}
       <ConfigSection label="Personality" icon={MessageCircle} description="Injected into every prompt. Changes apply on next spawn or rotation.">

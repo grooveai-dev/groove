@@ -4,23 +4,34 @@
 import { resolve } from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
 import { randomUUID } from 'crypto';
+import { homedir } from 'os';
+import { spawn } from 'child_process';
+import { LlamaServerManager } from './llama-server.js';
+import { MLXServerManager } from './mlx-server.js';
 const RUNTIME_TYPES = ['ollama', 'vllm', 'llama-cpp', 'mlx', 'tgi', 'openai-compatible'];
 const DEFAULT_OLLAMA_ENDPOINT = 'http://localhost:11434';
+const GLOBAL_GROOVE_DIR = resolve(homedir(), '.groove');
+
+function localURL(endpoint) { return endpoint.replace('localhost', '127.0.0.1'); }
 
 export class ModelLab {
   constructor(daemon) {
     this.daemon = daemon;
-    this.runtimesPath = resolve(daemon.grooveDir, 'lab-runtimes.json');
+    this.runtimesPath = resolve(GLOBAL_GROOVE_DIR, 'lab-runtimes.json');
     this.presetsPath = resolve(daemon.grooveDir, 'lab-presets.json');
     this.sessionsDir = resolve(daemon.grooveDir, 'lab-sessions');
     this.runtimes = new Map();
     this.presets = new Map();
     this.sessions = new Map();
+    this._processes = new Map();
+    this._installedTools = null;
     this._ensureDirs();
     this._load();
+    this._detectInstalledTools();
   }
 
   _ensureDirs() {
+    try { mkdirSync(GLOBAL_GROOVE_DIR, { recursive: true }); } catch { /* best-effort */ }
     try { mkdirSync(this.sessionsDir, { recursive: true }); } catch { /* best-effort */ }
   }
 
@@ -57,6 +68,36 @@ export class ModelLab {
     } catch { /* dir may not exist yet */ }
   }
 
+  _detectInstalledTools() {
+    // Detect installed inference tools (not running servers) on startup.
+    // Results are cached and broadcast so the GUI can show "Start" buttons.
+    try {
+      const llamaInstalled = LlamaServerManager.isInstalled();
+      const mlxInstalled = MLXServerManager.isInstalled();
+      const mlxModels = MLXServerManager.scanModels();
+      const mlxVersion = mlxInstalled ? MLXServerManager.getVersion() : null;
+
+      this._installedTools = {
+        llama: { installed: llamaInstalled },
+        mlx: { installed: mlxInstalled, version: mlxVersion, models: mlxModels },
+      };
+
+      this.daemon?.broadcast({ type: 'lab:tools:detected', data: this._installedTools });
+    } catch {
+      this._installedTools = { llama: { installed: false }, mlx: { installed: false, version: null, models: [] } };
+    }
+  }
+
+  getInstalledTools() {
+    if (!this._installedTools) this._detectInstalledTools();
+    return this._installedTools;
+  }
+
+  refreshInstalledTools() {
+    this._detectInstalledTools();
+    return this._installedTools;
+  }
+
   _saveRuntimes() {
     writeFileSync(this.runtimesPath, JSON.stringify([...this.runtimes.values()], null, 2));
   }
@@ -74,7 +115,7 @@ export class ModelLab {
 
   // ─── Runtimes ───────────────────────────────────────────────
 
-  async addRuntime({ name, type, endpoint, apiKey, models }) {
+  async addRuntime({ name, type, endpoint, apiKey, models, launchConfig }) {
     const id = randomUUID().slice(0, 8);
     const runtime = {
       id,
@@ -83,6 +124,7 @@ export class ModelLab {
       endpoint: endpoint.replace(/\/+$/, ''),
       apiKey: apiKey || null,
       models: models || [],
+      launchConfig: launchConfig || null,
       createdAt: new Date().toISOString(),
     };
     this.runtimes.set(id, runtime);
@@ -96,7 +138,7 @@ export class ModelLab {
     const rt = this.runtimes.get(id);
     if (!rt) return null;
 
-    // Stop the llama-server process if this is a local model runtime
+    // Stop the llama-server process if this is a local GGUF runtime
     if (rt._localModelId) {
       const mm = this.daemon.modelManager;
       const ls = this.daemon.llamaServer;
@@ -106,10 +148,155 @@ export class ModelLab {
       }
     }
 
+    // Stop the MLX server if this is an MLX runtime
+    if (rt._mlxModelId) {
+      const ms = this.daemon.mlxServer;
+      if (ms) {
+        const hfId = rt._mlxModelId.startsWith('mlx:') ? rt._mlxModelId.slice(4) : rt._mlxModelId;
+        ms.stopServer(hfId).catch(() => {});
+      }
+    }
+
+    // Stop any managed process
+    const proc = this._processes.get(id);
+    if (proc) {
+      try { proc.kill('SIGTERM'); } catch {}
+      this._processes.delete(id);
+    }
+
     this.runtimes.delete(id);
     this._saveRuntimes();
     this.daemon.broadcast({ type: 'lab:runtime:removed', data: { id } });
     this.daemon.audit.log('lab.runtime.remove', { id, name: rt.name });
+    return rt;
+  }
+
+  async startRuntime(id) {
+    const rt = this.runtimes.get(id);
+    if (!rt) throw new Error('Runtime not found');
+
+    // MLX runtimes — use built-in MLXServerManager
+    if (rt.type === 'mlx' && !rt.launchConfig) {
+      const modelId = rt._mlxModelId || this._deriveModelId(rt, 'MLX - ');
+      if (modelId) {
+        const hfId = modelId.startsWith('mlx:') ? modelId.slice(4) : modelId;
+        const ms = this.daemon.mlxServer;
+        if (!ms) throw new Error('MLX server manager not available');
+        const endpoint = await ms.ensureServer(hfId);
+        rt.endpoint = endpoint;
+        if (!rt._mlxModelId) { rt._mlxModelId = `mlx:${hfId}`; }
+        this._saveRuntimes();
+        this.daemon.broadcast({ type: 'lab:runtime:started', data: { id } });
+        this.daemon.audit.log('lab.runtime.start', { id, name: rt.name });
+        return rt;
+      }
+    }
+
+    // llama-cpp runtimes — use built-in LlamaServerManager
+    if (rt.type === 'llama-cpp' && rt._localModelId && !rt.launchConfig) {
+      const mm = this.daemon.modelManager;
+      const ls = this.daemon.llamaServer;
+      if (!mm || !ls) throw new Error('llama-server not available');
+      const modelPath = mm.getModelPath(rt._localModelId);
+      if (!modelPath) throw new Error('Model file not found');
+      const endpoint = await ls.ensureServer(modelPath);
+      rt.endpoint = endpoint;
+      this._saveRuntimes();
+      this.daemon.broadcast({ type: 'lab:runtime:started', data: { id } });
+      this.daemon.audit.log('lab.runtime.start', { id, name: rt.name });
+      return rt;
+    }
+
+    // Generic launchConfig runtimes (vLLM, TGI, etc.)
+    if (!rt.launchConfig) throw new Error('No launch config — use the assistant to set up this runtime first');
+    if (this._processes.has(id)) throw new Error('Server already running');
+
+    const lc = rt.launchConfig;
+    const proc = spawn(lc.command, lc.args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, ...lc.env },
+      detached: false,
+    });
+
+    if (!proc.pid) throw new Error('Failed to start server process');
+
+    this._processes.set(id, proc);
+
+    proc.on('exit', (code, signal) => {
+      this._processes.delete(id);
+      this.daemon?.broadcast({ type: 'lab:runtime:stopped', data: { id, code, signal } });
+    });
+
+    const endpoint = rt.endpoint.replace('localhost', '127.0.0.1');
+    const healthUrl = rt.type === 'ollama' ? `${endpoint}/api/tags` : `${endpoint}/v1/models`;
+
+    try {
+      await this._waitForServer(healthUrl, 60000);
+    } catch (err) {
+      await this.stopRuntime(id);
+      throw new Error(`Server failed to become healthy: ${err.message}`);
+    }
+
+    this.daemon.broadcast({ type: 'lab:runtime:started', data: { id } });
+    this.daemon.audit.log('lab.runtime.start', { id, name: rt.name });
+    return rt;
+  }
+
+  _deriveModelId(rt, prefix) {
+    if (rt.name && rt.name.startsWith(prefix)) {
+      return rt.name.slice(prefix.length).trim();
+    }
+    if (rt.models?.length > 0) {
+      return rt.models[0].id || rt.models[0].name;
+    }
+    return null;
+  }
+
+  async _waitForServer(url, timeout) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+        if (res.ok) return;
+      } catch { /* server still starting */ }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    throw new Error(`Health check timed out after ${timeout / 1000}s`);
+  }
+
+  async stopRuntime(id) {
+    const rt = this.runtimes.get(id);
+    if (!rt) throw new Error('Runtime not found');
+
+    if (rt._localModelId) {
+      const mm = this.daemon.modelManager;
+      const ls = this.daemon.llamaServer;
+      if (mm && ls) {
+        const modelPath = mm.getModelPath(rt._localModelId);
+        if (modelPath) await ls.stopServer(modelPath);
+      }
+    }
+
+    if (rt._mlxModelId) {
+      const ms = this.daemon.mlxServer;
+      if (ms) {
+        const hfId = rt._mlxModelId.startsWith('mlx:') ? rt._mlxModelId.slice(4) : rt._mlxModelId;
+        await ms.stopServer(hfId);
+      }
+    }
+
+    const proc = this._processes.get(id);
+    if (proc) {
+      await new Promise((resolve) => {
+        const timeout = setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, 5000);
+        proc.on('exit', () => { clearTimeout(timeout); resolve(); });
+        try { proc.kill('SIGTERM'); } catch { clearTimeout(timeout); resolve(); }
+      });
+      this._processes.delete(id);
+    }
+
+    this.daemon.broadcast({ type: 'lab:runtime:stopped', data: { id } });
+    this.daemon.audit.log('lab.runtime.stop', { id, name: rt.name });
     return rt;
   }
 
@@ -147,9 +334,9 @@ export class ModelLab {
 
   async _discoverModels(rt) {
     if (rt.type === 'ollama') {
-      return this._discoverOllamaModels(rt.endpoint);
+      return this._discoverOllamaModels(localURL(rt.endpoint));
     }
-    return this._discoverOpenAIModels(rt.endpoint, rt.apiKey);
+    return this._discoverOpenAIModels(localURL(rt.endpoint), rt.apiKey);
   }
 
   async _discoverOllamaModels(endpoint) {
@@ -185,15 +372,16 @@ export class ModelLab {
   async getRuntimeStatus(rt) {
     try {
       const start = Date.now();
+      const ep = localURL(rt.endpoint);
       if (rt.type === 'ollama') {
-        const resp = await fetch(`${rt.endpoint}/api/tags`, {
+        const resp = await fetch(`${ep}/api/tags`, {
           signal: AbortSignal.timeout(5000),
         });
         return { online: resp.ok, latency: Date.now() - start };
       }
       const headers = {};
       if (rt.apiKey) headers['Authorization'] = `Bearer ${rt.apiKey}`;
-      const resp = await fetch(`${rt.endpoint}/v1/models`, {
+      const resp = await fetch(`${ep}/v1/models`, {
         headers,
         signal: AbortSignal.timeout(5000),
       });
@@ -320,7 +508,7 @@ export class ModelLab {
 
     if (rt.type === 'ollama') {
       try {
-        const mem = await this.getOllamaMemoryUsage(rt.endpoint);
+        const mem = await this.getOllamaMemoryUsage(localURL(rt.endpoint));
         if (mem) onEvent({ type: 'memory', usage: mem });
       } catch { /* ignore */ }
     }
@@ -439,9 +627,13 @@ export class ModelLab {
     this._saveSession(session);
   }
 
-  // ─── Launch Local GGUF ───────────────────────────────────────
+  // ─── Launch Local Model ──────────────────────────────────────
 
   async launchLocalModel(modelId) {
+    if (modelId.startsWith('mlx:')) {
+      return this.launchMLXModel(modelId);
+    }
+
     const mm = this.daemon.modelManager;
     const ls = this.daemon.llamaServer;
     if (!mm || !ls) throw new Error('Local model serving not available');
@@ -480,9 +672,113 @@ export class ModelLab {
   }
 
   listLocalModels() {
+    const models = [];
+
+    // GGUF models from ModelManager
     const mm = this.daemon.modelManager;
-    if (!mm) return [];
-    return mm.getInstalled().filter((m) => m.exists);
+    if (mm) {
+      for (const m of mm.getInstalled().filter((m) => m.exists)) {
+        models.push({ ...m, type: 'gguf', compatibleBackends: ['llama-cpp'] });
+      }
+    }
+
+    // HuggingFace cache models (MLX + standard HF)
+    try {
+      const hfModels = MLXServerManager.scanModels();
+      for (const m of hfModels) {
+        models.push(m);
+      }
+    } catch { /* scan may fail */ }
+
+    return models;
+  }
+
+  // ─── Model Suggestions ───────────────────────────────────────
+
+  async suggestAlternativeModel(modelId, targetBackend) {
+    const baseName = this._extractBaseName(modelId);
+    if (!baseName) return null;
+
+    const searchQueries = [];
+    if (targetBackend === 'mlx') {
+      searchQueries.push(`mlx-community/${baseName}`);
+    } else if (targetBackend === 'llama-cpp') {
+      searchQueries.push(baseName, `${baseName}-GGUF`);
+    } else if (targetBackend === 'vllm' || targetBackend === 'tgi') {
+      searchQueries.push(baseName);
+    }
+
+    for (const query of searchQueries) {
+      try {
+        const resp = await fetch(
+          `https://huggingface.co/api/models?search=${encodeURIComponent(query)}&limit=5&sort=downloads`,
+          { signal: AbortSignal.timeout(8000) },
+        );
+        if (!resp.ok) continue;
+        const results = await resp.json();
+
+        for (const r of results) {
+          if (targetBackend === 'mlx' && !r.modelId?.includes('mlx')) continue;
+          if (targetBackend === 'llama-cpp' && !r.modelId?.toLowerCase().includes('gguf')) continue;
+          if (targetBackend === 'vllm' || targetBackend === 'tgi') {
+            if (r.modelId?.includes('gguf') || r.modelId?.includes('mlx')) continue;
+          }
+          return {
+            repoId: r.modelId,
+            name: r.modelId?.split('/').pop() || r.modelId,
+            downloads: r.downloads || 0,
+          };
+        }
+      } catch { /* network error, skip */ }
+    }
+    return null;
+  }
+
+  _extractBaseName(modelId) {
+    let name = modelId;
+    if (name.startsWith('mlx:') || name.startsWith('hf:')) name = name.slice(name.indexOf(':') + 1);
+    name = name.split('/').pop() || name;
+    name = name
+      .replace(/\.gguf$/i, '')
+      .replace(/[-_](4bit|8bit|3bit|bf16|fp16|MLX|GGUF|Q\d_\w+)/gi, '')
+      .replace(/-+$/, '');
+    return name || null;
+  }
+
+  // ─── Launch MLX Model ────────────────────────────────────────
+
+  async launchMLXModel(modelId) {
+    const ms = this.daemon.mlxServer;
+    if (!ms) throw new Error('MLX server manager not available');
+
+    // modelId is "mlx:mlx-community/ModelName"
+    const hfModelId = modelId.startsWith('mlx:') ? modelId.slice(4) : modelId;
+
+    const endpoint = await ms.ensureServer(hfModelId);
+    if (!endpoint) throw new Error('Failed to start MLX server');
+
+    // Check if we already have a runtime for this model
+    const existing = [...this.runtimes.values()].find(
+      (r) => r._mlxModelId === modelId,
+    );
+    if (existing) {
+      existing.endpoint = endpoint;
+      this._saveRuntimes();
+      this.daemon.broadcast({ type: 'lab:runtime:updated', data: existing });
+      return { runtime: existing, model: hfModelId };
+    }
+
+    const shortName = hfModelId.split('/').pop() || hfModelId;
+    const runtime = await this.addRuntime({
+      name: `MLX - ${shortName}`,
+      type: 'mlx',
+      endpoint,
+      models: [{ id: 'default', name: shortName }],
+    });
+    runtime._mlxModelId = modelId;
+    this._saveRuntimes();
+
+    return { runtime, model: hfModelId };
   }
 
   // ─── Auto-detect Ollama ─────────────────────────────────────

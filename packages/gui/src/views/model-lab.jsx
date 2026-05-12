@@ -4,7 +4,7 @@ import { useGrooveStore } from '../stores/groove';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Tooltip } from '../components/ui/tooltip';
 import { Combobox } from '../components/ui/combobox';
-import { RuntimeConfig, LaunchModel } from '../components/lab/runtime-config';
+import { RuntimeSection } from '../components/lab/runtime-config';
 import { ParameterPanel } from '../components/lab/parameter-panel';
 import { SystemPromptEditor } from '../components/lab/system-prompt-editor';
 import { ChatPlayground } from '../components/lab/chat-playground';
@@ -23,11 +23,26 @@ const RIGHT_MAX = 360;
 
 function ModelSelector() {
   const models = useGrooveStore((s) => s.labModels);
+  const runtimes = useGrooveStore((s) => s.labRuntimes);
   const activeRuntime = useGrooveStore((s) => s.labActiveRuntime);
   const activeModel = useGrooveStore((s) => s.labActiveModel);
   const setActiveModel = useGrooveStore((s) => s.setLabActiveModel);
 
   if (!activeRuntime) return null;
+
+  const rt = runtimes.find((r) => r.id === activeRuntime);
+  const online = rt?.status === 'connected';
+
+  if (!online) {
+    return (
+      <div className="space-y-1.5">
+        <span className="text-2xs font-semibold font-sans text-text-3 uppercase tracking-wider">Model</span>
+        <p className="text-2xs text-text-4 font-sans px-1">Start the runtime to select a model</p>
+      </div>
+    );
+  }
+
+  if (models.length <= 1 && activeModel) return null;
 
   return (
     <div className="space-y-1.5">
@@ -45,9 +60,6 @@ function ModelSelector() {
           </div>
         )}
       />
-      {!activeModel && models.length === 0 && (
-        <p className="text-2xs text-text-4 font-sans px-1">No models discovered — type a model name or test the runtime</p>
-      )}
     </div>
   );
 }
@@ -172,8 +184,7 @@ export default function ModelLabView() {
             </div>
             <ScrollArea className="flex-1 min-h-0">
               <div className="px-4 pb-4 space-y-5 divide-y divide-border-subtle [&>*]:pt-5 [&>*:first-child]:pt-0">
-                <LaunchModel />
-                <RuntimeConfig />
+                <RuntimeSection />
                 <ModelSelector />
                 <ParameterPanel />
                 <PresetManager />

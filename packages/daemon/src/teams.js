@@ -371,7 +371,7 @@ export class Teams {
     const defaultTeam = this.getDefault();
     if (!defaultTeam) return;
     for (const agent of this.daemon.registry.getAll()) {
-      if (!agent.teamId) {
+      if (!agent.teamId && !agent.metadata?.scheduled) {
         this.daemon.registry.update(agent.id, { teamId: defaultTeam.id });
       }
     }

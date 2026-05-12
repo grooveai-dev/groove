@@ -79,7 +79,7 @@ function saveTeamViewport(teamId, viewport) {
 /* ── Team Tab Bar (IDE-style) ──────────────────────────────── */
 
 function teamStatus(agents, teamId) {
-  const ta = agents.filter((a) => a.teamId === teamId);
+  const ta = agents.filter((a) => a.teamId === teamId && !a.metadata?.scheduled);
   if (ta.length === 0) return 'idle';
   const running = ta.some((a) => a.status === 'running' || a.status === 'starting');
   if (running) return 'working';
@@ -173,10 +173,10 @@ export function TeamTabBar() {
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
       >
       {teams.map((team) => {
-        const count = agents.filter((a) => a.teamId === team.id).length;
+        const count = agents.filter((a) => a.teamId === team.id && !a.metadata?.scheduled).length;
         const isActive = team.id === activeTeamId;
         const isRenaming = renamingId === team.id;
-        const running = agents.filter((a) => a.teamId === team.id && (a.status === 'running' || a.status === 'starting')).length;
+        const running = agents.filter((a) => a.teamId === team.id && !a.metadata?.scheduled && (a.status === 'running' || a.status === 'starting')).length;
 
         return (
           <ContextMenu key={team.id}>
@@ -332,7 +332,7 @@ function AgentTreeInner() {
   const prevAgentsRef = useRef([]);
   const agents = useMemo(() => {
     const next = allAgents
-      .filter((a) => a.teamId === activeTeamId)
+      .filter((a) => a.teamId === activeTeamId && !a.metadata?.scheduled)
       .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
     const prev = prevAgentsRef.current;
     if (prev.length === next.length && prev.every((p, i) => p.id === next[i].id && p.status === next[i].status && p.name === next[i].name && p.model === next[i].model && p.tokensUsed === next[i].tokensUsed && p.contextUsage === next[i].contextUsage)) return prev;
@@ -1579,7 +1579,7 @@ export default function AgentsView() {
     } catch { /* toast handles */ }
   }
 
-  const teamAgents = allAgents.filter((a) => a.teamId === activeTeamId);
+  const teamAgents = allAgents.filter((a) => a.teamId === activeTeamId && !a.metadata?.scheduled);
   const hydrated = useGrooveStore((s) => s.hydrated);
   const [showLoader, setShowLoader] = useState(true);
 

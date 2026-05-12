@@ -904,13 +904,24 @@ export class Journalist {
       .map((e) => `- ${e.type === 'error' ? 'ERROR ' : ''}${e.tool}: ${(e.input || e.text || '').slice(0, 200)}`)
       .join('\n');
 
-    // Try AI-synthesized session summary
+    // Try AI-synthesized session summary — but only if the session log has
+    // meaningful entries. With an empty/minimal log the headless Claude sees
+    // repo-wide git status (from its own project context) and fills the brief
+    // with unrelated changes from other teams, leaking cross-team state.
+    const meaningfulEntries = entries.filter((e) => e.type === 'tool' || e.type === 'error' || e.type === 'user' || e.type === 'result');
     let sessionSummary = '';
-    try {
-      const prompt = this.buildRotationSynthesisPrompt(agent, entries, options);
-      sessionSummary = await this.callHeadless(prompt, { trackAs: '__rotation__' });
-    } catch {
-      // Fallback: structural summary from raw logs
+    let needsFallback = meaningfulEntries.length < 3;
+
+    if (!needsFallback) {
+      try {
+        const prompt = this.buildRotationSynthesisPrompt(agent, entries, options);
+        sessionSummary = await this.callHeadless(prompt, { trackAs: '__rotation__' });
+      } catch {
+        needsFallback = true;
+      }
+    }
+
+    if (needsFallback) {
       const errorSummary = entries
         .filter((e) => e.type === 'error')
         .map((e) => `- ${e.text}`)
@@ -941,7 +952,6 @@ export class Journalist {
         .map((e) => `- ${e.type === 'error' ? 'ERROR ' : ''}${e.tool}: ${(e.input || '').slice(0, 200)}`)
         .join('\n');
 
-      // Build investigation timeline from thinking entries — these capture reasoning and decisions
       const thinkingEntries = entries
         .filter((e) => e.type === 'thinking' && e.text && e.text.length > 80)
         .slice(-10)

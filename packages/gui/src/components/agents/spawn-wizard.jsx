@@ -62,10 +62,6 @@ export function SpawnWizard() {
   const [model, setModel] = useState('');
   const [prompt, setPrompt] = useState('');
   const [providers, setProviders] = useState([]);
-  const [installedSkills, setInstalledSkills] = useState([]);
-  const [selectedSkills, setSelectedSkills] = useState([]);
-  const [skillModalOpen, setSkillModalOpen] = useState(false);
-  const [skillSearch, setSkillSearch] = useState('');
   const [installedIntegrations, setInstalledIntegrations] = useState([]);
   const [selectedIntegrations, setSelectedIntegrations] = useState([]);
   const [integrationModalOpen, setIntegrationModalOpen] = useState(false);
@@ -82,7 +78,6 @@ export function SpawnWizard() {
   const [selectedPeerId, setSelectedPeerId] = useState('');
   const [recommendations, setRecommendations] = useState([]);
   const [preflightDialog, setPreflightDialog] = useState(null);
-  const [claudeAuth, setClaudeAuth] = useState(null);
   const [ollamaInstalled, setOllamaInstalled] = useState([]);
   const [ollamaServerRunning, setOllamaServerRunning] = useState(false);
   const federation = useGrooveStore((s) => s.federation);
@@ -108,9 +103,6 @@ export function SpawnWizard() {
           setProvider(best);
         }
       }).catch(() => {});
-      api.get('/skills/installed').then((data) => {
-        setInstalledSkills(Array.isArray(data) ? data : []);
-      }).catch(() => {});
       api.get('/integrations/installed').then((data) => {
         setInstalledIntegrations(Array.isArray(data) ? data : []);
       }).catch(() => {});
@@ -123,7 +115,6 @@ export function SpawnWizard() {
       setRole(''); setCustomRole(''); setName('');
       setProvider(_presetProvider); setModel(_presetModel);
       setPrompt('');
-      setSelectedSkills([]);
       setSelectedIntegrations([]);
       setIntegrationApproval('manual');
       setSelectedRepos([]);
@@ -132,7 +123,6 @@ export function SpawnWizard() {
       setShowAdvanced(false);
       setRecommendations([]);
       setPreflightDialog(null);
-      setClaudeAuth(null);
     }
   }, [open, fetchProviders]);
 
@@ -149,13 +139,6 @@ export function SpawnWizard() {
       }
     }).catch(() => setRecommendations([]));
   }, [selectedRole, open]);
-
-  useEffect(() => {
-    if (!open || provider !== 'claude-code') { setClaudeAuth(null); return; }
-    api.get('/providers/claude-code/auth').then((data) => {
-      setClaudeAuth(data);
-    }).catch(() => setClaudeAuth(null));
-  }, [open, provider]);
 
   useEffect(() => {
     if (!open || provider !== 'ollama') { setOllamaInstalled([]); return; }
@@ -176,7 +159,6 @@ export function SpawnWizard() {
         ...(provider && { provider }),
         ...(model && { model }),
         ...(prompt && { prompt }),
-        ...(selectedSkills.length > 0 && { skills: selectedSkills }),
         ...(selectedIntegrations.length > 0 && { integrations: selectedIntegrations }),
         ...(selectedIntegrations.length > 0 && { integrationApproval }),
         ...(selectedRepos.length > 0 && { repos: selectedRepos }),
@@ -204,11 +186,9 @@ export function SpawnWizard() {
     runSpawn();
   }
 
-  const claudeNotAuthed = provider === 'claude-code' && claudeAuth && !claudeAuth.authenticated;
-
   return (
     <Sheet open={open} onOpenChange={(o) => { if (!o) closeDetail(); }}>
-      <SheetContent title="Spawn Agent" width={480}>
+      <SheetContent title="Spawn Agent" width={480} onClose={() => closeDetail()}>
         <div className="flex flex-col h-[calc(100%-57px)]">
           {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
@@ -478,119 +458,6 @@ export function SpawnWizard() {
                     )}
                   </div>
                 )}
-
-                {/* Claude Code Auth */}
-                {claudeNotAuthed && (
-                  <div className="rounded-lg border border-warning/30 bg-warning/5 px-4 py-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertTriangle size={13} className="text-warning flex-shrink-0" />
-                      <span className="text-xs font-semibold text-text-0 font-sans">Claude Code is not signed in</span>
-                    </div>
-                    <p className="text-2xs text-text-2 font-sans">
-                      Open the terminal and run: <code className="font-mono text-accent bg-surface-4 px-1.5 py-0.5 rounded text-2xs">claude</code>
-                    </p>
-                  </div>
-                )}
-                {provider === 'claude-code' && claudeAuth?.authenticated && (
-                  <div className="flex items-center gap-2 text-2xs text-text-2 font-sans">
-                    <div className="w-2 h-2 rounded-full bg-success flex-shrink-0" />
-                    Signed in as {claudeAuth.email || 'Claude user'} ({claudeAuth.subscriptionType || 'subscription'})
-                  </div>
-                )}
-
-                {/* Skills */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-text-2 font-sans">Skills</label>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {selectedSkills.map((skillId) => {
-                      const skill = installedSkills.find((s) => s.id === skillId);
-                      return (
-                        <span
-                          key={skillId}
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-accent/12 text-accent border border-accent/25 text-2xs font-sans"
-                        >
-                          <Sparkles size={9} />
-                          {skill?.name || skillId}
-                          <button
-                            onClick={() => setSelectedSkills((prev) => prev.filter((s) => s !== skillId))}
-                            className="ml-0.5 hover:text-text-0 cursor-pointer"
-                          >
-                            <X size={9} />
-                          </button>
-                        </span>
-                      );
-                    })}
-                    <button
-                      onClick={() => { setSkillModalOpen(true); setSkillSearch(''); }}
-                      className={cn(
-                        'inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-2xs font-sans transition-colors cursor-pointer',
-                        'bg-surface-0 text-text-2 border border-border-subtle hover:border-border hover:text-text-0',
-                      )}
-                    >
-                      <Sparkles size={10} />
-                      {selectedSkills.length > 0 ? 'Add skill' : 'Attach skill'}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Skill picker modal */}
-                <Dialog open={skillModalOpen} onOpenChange={setSkillModalOpen}>
-                  <DialogContent title="Select Skill" className="max-w-sm">
-                    <div className="space-y-3 p-4">
-                      <div className="relative">
-                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-4" />
-                        <input
-                          value={skillSearch}
-                          onChange={(e) => setSkillSearch(e.target.value)}
-                          placeholder="Search skills..."
-                          autoFocus
-                          className="w-full h-8 pl-8 pr-3 text-xs rounded-md bg-surface-0 border border-border text-text-0 font-sans focus:outline-none focus:ring-1 focus:ring-accent"
-                        />
-                      </div>
-                      <div className="max-h-64 overflow-y-auto space-y-1">
-                        {installedSkills
-                          .filter((s) => {
-                            if (!skillSearch) return true;
-                            const q = skillSearch.toLowerCase();
-                            return (s.name || s.id).toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q);
-                          })
-                          .map((skill) => {
-                            const active = selectedSkills.includes(skill.id);
-                            return (
-                              <button
-                                key={skill.id}
-                                onClick={() => {
-                                  setSelectedSkills((prev) =>
-                                    active ? prev.filter((s) => s !== skill.id) : [...prev, skill.id]
-                                  );
-                                }}
-                                className={cn(
-                                  'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left transition-colors cursor-pointer',
-                                  active
-                                    ? 'bg-accent/10 border border-accent/25'
-                                    : 'hover:bg-surface-3 border border-transparent',
-                                )}
-                              >
-                                <Sparkles size={12} className={active ? 'text-accent' : 'text-text-3'} />
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-xs font-semibold text-text-0 font-sans truncate">{skill.name || skill.id}</div>
-                                  {skill.description && (
-                                    <div className="text-2xs text-text-3 font-sans truncate">{skill.description}</div>
-                                  )}
-                                </div>
-                                {active && <CheckMark />}
-                              </button>
-                            );
-                          })}
-                        {installedSkills.length === 0 && (
-                          <div className="text-center py-6 text-xs text-text-3 font-sans">
-                            No skills installed. Visit the Marketplace to install skills.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
 
                 {/* Integrations */}
                 <div className="space-y-1.5">
@@ -900,7 +767,7 @@ export function SpawnWizard() {
               variant="primary"
               size="lg"
               onClick={handleSpawn}
-              disabled={!selectedRole || spawning || installedProviders.length === 0 || claudeNotAuthed}
+              disabled={!selectedRole || spawning || installedProviders.length === 0}
               className="w-full"
             >
               {spawning ? 'Spawning...' : 'Spawn Agent'}

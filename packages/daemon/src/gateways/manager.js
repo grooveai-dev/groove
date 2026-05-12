@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, unlink
 import { resolve } from 'path';
 import { randomUUID } from 'crypto';
 import { validateAgentConfig } from '../validate.js';
-import { eventToSummary, agentListText, statusText, approvalsText, teamsText, schedulesText, briefText, tokensText, logText, planText, truncate, formatTokens } from './formatter.js';
+import { eventToSummary, agentListText, statusText, approvalsText, teamsText, schedulesText, briefText, tokensText, logText, planText, truncate, formatTokens, formatDuration, formatCost } from './formatter.js';
 
 const GATEWAY_TYPES = ['telegram', 'discord', 'slack'];
 
@@ -302,6 +302,40 @@ export class GatewayManager {
   deleteCredential(id, key) {
     if (!this.gateways.has(id)) throw new Error(`Gateway not found: ${id}`);
     this.daemon.credentials.deleteKey(`gateway:${id}:${key}`);
+  }
+
+  // -------------------------------------------------------------------
+  // Schedule Notifications — direct, targeted notification for automations
+  // -------------------------------------------------------------------
+
+  /**
+   * Send a completion notification for a scheduled automation run.
+   * Called directly by the scheduler — bypasses global event routing.
+   */
+  sendScheduleNotification(gatewayIds, summary) {
+    if (!gatewayIds || gatewayIds.length === 0) return;
+
+    const statusIcon = summary.status === 'success' ? '✅' : '❌';
+    const lines = [
+      `${statusIcon} Automation: ${summary.name} — ${summary.status}`,
+    ];
+    if (summary.description) {
+      lines.push(summary.description);
+    }
+    lines.push(`Duration: ${formatDuration(summary.duration)} | Cost: ${formatCost(summary.cost)} | Agents: ${summary.agentCount}`);
+    if (summary.errors) {
+      lines.push(`Error: ${truncate(summary.errors, 500)}`);
+    }
+
+    const message = lines.join('\n');
+
+    for (const gid of gatewayIds) {
+      const gw = this.gateways.get(gid);
+      if (!gw || !gw.connected) continue;
+      gw.send(message).catch((err) => {
+        console.log(`[Groove:Gateway] Schedule notification failed (${gid}): ${err.message}`);
+      });
+    }
   }
 
   // -------------------------------------------------------------------

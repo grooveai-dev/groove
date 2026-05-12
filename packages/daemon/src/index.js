@@ -42,6 +42,7 @@ import { TunnelManager } from './tunnel-manager.js';
 import { ModelManager } from './model-manager.js';
 import { ModelLab } from './model-lab.js';
 import { LlamaServerManager } from './llama-server.js';
+import { MLXServerManager } from './mlx-server.js';
 import { RepoImporter } from './repo-import.js';
 import { ConversationManager } from './conversations.js';
 import { Toys } from './toys.js';
@@ -151,6 +152,7 @@ export class Daemon {
     this.preview = new PreviewService(this);
     this.modelManager = new ModelManager(this);
     this.llamaServer = new LlamaServerManager(this);
+    this.mlxServer = new MLXServerManager(this);
     this.mcpManager = new McpManager(this);
     this.tunnelManager = new TunnelManager(this);
     this.repoImporter = new RepoImporter(this);
@@ -848,6 +850,7 @@ export class Daemon {
     if (this.preview) await this.preview.killAll();
     this.mcpManager.stopAll();
     await this.llamaServer.stopAll();
+    await this.mlxServer.stopAll();
 
     // Clean up PID and host files
     if (existsSync(this.pidFile)) {

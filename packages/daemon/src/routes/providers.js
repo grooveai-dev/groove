@@ -713,6 +713,18 @@ export function registerProviderRoutes(app, daemon) {
     res.json(daemon.llamaServer.getStatus());
   });
 
+  app.get('/api/mlx/status', (req, res) => {
+    res.json(daemon.mlxServer.getStatus());
+  });
+
+  app.get('/api/lab/tools', (req, res) => {
+    res.json(daemon.modelLab.getInstalledTools());
+  });
+
+  app.post('/api/lab/tools/refresh', (req, res) => {
+    res.json(daemon.modelLab.refreshInstalledTools());
+  });
+
   // --- Credentials ---
 
   app.get('/api/credentials', (req, res) => {

@@ -11,15 +11,15 @@ import {
 } from 'lucide-react';
 
 const STEPS = [
-  { id: 'details', label: 'Server Details', icon: Server },
-  { id: 'auth', label: 'Authentication', icon: KeyRound },
+  { id: 'details', label: 'Server', icon: Server },
+  { id: 'auth', label: 'Auth', icon: KeyRound },
   { id: 'setup', label: 'Setup', icon: Settings },
   { id: 'connected', label: 'Connected', icon: Plug },
 ];
 
 function StepIndicator({ steps, currentStep, completedSteps, onStepClick }) {
   return (
-    <div className="flex items-center gap-1 mb-4">
+    <div className="flex items-center mb-6">
       {steps.map((step, i) => {
         const isActive = currentStep === i;
         const isCompleted = completedSteps.includes(i);
@@ -27,35 +27,31 @@ function StepIndicator({ steps, currentStep, completedSteps, onStepClick }) {
         const Icon = step.icon;
 
         return (
-          <div key={step.id} className="flex items-center gap-1 flex-1">
+          <div key={step.id} className="flex items-center flex-1 last:flex-initial">
             <button
               onClick={() => isClickable && onStepClick(i)}
               disabled={!isClickable}
               className={cn(
-                'flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors text-2xs font-sans font-medium',
-                isActive
-                  ? 'bg-accent/12 text-accent'
-                  : isCompleted
-                    ? 'text-success cursor-pointer hover:bg-surface-3'
-                    : 'text-text-4',
+                'flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all text-xs font-sans font-medium',
+                isActive && 'bg-accent/10 text-accent',
+                isCompleted && 'text-success cursor-pointer hover:bg-surface-3',
+                !isActive && !isCompleted && 'text-text-4',
                 isClickable && !isActive && 'cursor-pointer',
               )}
             >
               <div className={cn(
-                'w-5 h-5 rounded-full flex items-center justify-center text-2xs font-semibold border transition-colors',
-                isActive
-                  ? 'border-accent bg-accent/15 text-accent'
-                  : isCompleted
-                    ? 'border-success/40 bg-success/10 text-success'
-                    : 'border-border-subtle bg-surface-3 text-text-4',
+                'w-7 h-7 rounded-full flex items-center justify-center text-2xs font-bold border-2 transition-all',
+                isActive && 'border-accent bg-accent/15 text-accent',
+                isCompleted && 'border-success/40 bg-success/10 text-success',
+                !isActive && !isCompleted && 'border-border-subtle bg-surface-3 text-text-4',
               )}>
-                {isCompleted ? <Check size={10} /> : i + 1}
+                {isCompleted ? <Check size={11} /> : <Icon size={11} />}
               </div>
               <span className="hidden sm:inline">{step.label}</span>
             </button>
             {i < steps.length - 1 && (
               <div className={cn(
-                'flex-1 h-px mx-1',
+                'flex-1 h-px mx-1.5',
                 isCompleted ? 'bg-success/30' : 'bg-border-subtle',
               )} />
             )}
@@ -85,14 +81,31 @@ function ToggleSwitch({ value, onChange }) {
 
 function FieldCard({ icon: Icon, title, children }) {
   return (
-    <div className="rounded-lg border border-border-subtle bg-surface-1 px-4 py-3.5 flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <div className="w-6 h-6 rounded bg-accent/8 flex items-center justify-center flex-shrink-0">
-          <Icon size={12} className="text-accent" />
+    <div className="rounded-xl border border-border-subtle bg-surface-1/80 px-5 py-4 flex flex-col gap-2.5">
+      <div className="flex items-center gap-2.5">
+        <div className="w-7 h-7 rounded-lg bg-accent/10 border border-accent/10 flex items-center justify-center flex-shrink-0">
+          <Icon size={13} className="text-accent" />
         </div>
-        <span className="text-[13px] font-medium text-text-0 font-sans leading-tight">{title}</span>
+        <span className="text-sm font-semibold text-text-0 font-sans">{title}</span>
       </div>
-      <div className="mt-1">{children}</div>
+      <div className="mt-0.5">{children}</div>
+    </div>
+  );
+}
+
+function InfoCard({ icon: Icon, title, iconColor, children }) {
+  return (
+    <div className="rounded-xl border border-border-subtle bg-surface-1/80 px-5 py-4">
+      <div className="flex items-center gap-2.5 mb-3">
+        <div className={cn(
+          'w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0',
+          iconColor || 'bg-accent/10',
+        )}>
+          <Icon size={13} className={iconColor ? undefined : 'text-accent'} />
+        </div>
+        <span className="text-sm font-semibold text-text-0 font-sans">{title}</span>
+      </div>
+      {children}
     </div>
   );
 }
@@ -216,11 +229,11 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
     setConnecting(false);
   }
 
-  const inputCls = 'h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-sans placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent';
-  const monoInputCls = 'h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent';
+  const inputCls = 'h-9 px-3 text-xs bg-surface-0 border border-border-subtle rounded-lg text-text-0 font-sans placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent/50 focus:border-accent/30 transition-colors';
+  const monoInputCls = 'h-9 px-3 text-xs bg-surface-0 border border-border-subtle rounded-lg text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent/50 focus:border-accent/30 transition-colors';
 
   return (
-    <div className="p-4">
+    <div className="p-5">
       <StepIndicator
         steps={STEPS}
         currentStep={step}
@@ -228,13 +241,12 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
         onStepClick={setStep}
       />
 
-      {/* Step 0: Server Details */}
       {step === 0 && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-4">
           <FieldCard icon={Server} title="Server Info">
-            <div className="space-y-2.5">
+            <div className="space-y-3">
               <div>
-                <label className="text-2xs font-semibold text-text-2 font-sans mb-1 block">Name</label>
+                <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">Name</label>
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -244,7 +256,7 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
                 />
               </div>
               <div>
-                <label className="text-2xs font-semibold text-text-2 font-sans mb-1 block">Host</label>
+                <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">Host</label>
                 <input
                   value={host}
                   onChange={(e) => setHost(e.target.value)}
@@ -256,9 +268,9 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
           </FieldCard>
 
           <FieldCard icon={Settings} title="Connection">
-            <div className="space-y-2.5">
+            <div className="space-y-3">
               <div>
-                <label className="text-2xs font-semibold text-text-2 font-sans mb-1 block">User</label>
+                <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">User</label>
                 <input
                   value={user}
                   onChange={(e) => setUser(e.target.value)}
@@ -267,7 +279,7 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
                 />
               </div>
               <div>
-                <label className="text-2xs font-semibold text-text-2 font-sans mb-1 block">SSH Port</label>
+                <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">SSH Port</label>
                 <input
                   value={sshPort}
                   onChange={(e) => setSshPort(Number(e.target.value) || 22)}
@@ -280,13 +292,12 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
         </div>
       )}
 
-      {/* Step 1: Authentication */}
       {step === 1 && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-4">
           <FieldCard icon={KeyRound} title="SSH Key">
-            <div className="space-y-2.5">
+            <div className="space-y-3">
               <div>
-                <label className="text-2xs font-semibold text-text-2 font-sans mb-1 block">Key Path</label>
+                <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">Key Path</label>
                 <div className="flex items-center gap-1.5">
                   <input
                     value={sshKeyPath}
@@ -299,12 +310,12 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
                     variant="secondary"
                     size="sm"
                     onClick={() => setKeyBrowserOpen(true)}
-                    className="h-8 px-2 flex-shrink-0"
+                    className="h-9 px-2.5 flex-shrink-0"
                   >
-                    <FolderSearch size={12} />
+                    <FolderSearch size={13} />
                   </Button>
                 </div>
-                <p className="text-2xs text-text-4 font-sans mt-1">
+                <p className="text-2xs text-text-4 font-sans mt-1.5">
                   Leave blank to use default SSH agent.
                 </p>
               </div>
@@ -313,7 +324,7 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
                 size="sm"
                 onClick={handleTest}
                 disabled={testLoading}
-                className="h-7 text-2xs gap-1.5"
+                className="h-8 text-2xs gap-1.5"
               >
                 {testLoading ? <Loader2 size={11} className="animate-spin" /> : <Plug size={11} />}
                 Test Connection
@@ -321,15 +332,9 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
             </div>
           </FieldCard>
 
-          <div className="space-y-3">
-            <div className="rounded-lg border border-border-subtle bg-surface-1 px-4 py-3.5">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 rounded bg-accent/8 flex items-center justify-center flex-shrink-0">
-                  <Server size={12} className="text-accent" />
-                </div>
-                <span className="text-[13px] font-medium text-text-0 font-sans">Target</span>
-              </div>
-              <div className="space-y-1.5 text-2xs font-sans">
+          <div className="space-y-4">
+            <InfoCard icon={Server} title="Target">
+              <div className="space-y-2 text-2xs font-sans">
                 <div className="flex items-center justify-between">
                   <span className="text-text-3">Host</span>
                   <span className="text-text-1 font-mono">{host || '—'}</span>
@@ -343,11 +348,11 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
                   <span className="text-text-1 font-mono">{sshPort}</span>
                 </div>
               </div>
-            </div>
+            </InfoCard>
 
             {testResult && (
               <div className={cn(
-                'px-3 py-2.5 rounded-lg text-2xs font-sans flex items-start gap-2',
+                'px-4 py-3 rounded-xl text-2xs font-sans flex items-start gap-2',
                 testResult.error
                   ? 'bg-danger/8 border border-danger/20 text-danger'
                   : testResult.reachable
@@ -375,11 +380,10 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
         </div>
       )}
 
-      {/* Step 2: Setup */}
       {step === 2 && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-4">
           <FieldCard icon={Settings} title="Behavior">
-            <div className="space-y-3">
+            <div className="space-y-4">
               <label className="flex items-center justify-between cursor-pointer">
                 <div>
                   <span className="text-xs text-text-1 font-sans block">Auto-start daemon</span>
@@ -397,15 +401,9 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
             </div>
           </FieldCard>
 
-          {testResult && !testResult.error && (
-            <div className="rounded-lg border border-border-subtle bg-surface-1 px-4 py-3.5">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-6 h-6 rounded bg-success/10 flex items-center justify-center flex-shrink-0">
-                  <Check size={12} className="text-success" />
-                </div>
-                <span className="text-[13px] font-medium text-text-0 font-sans">Test Results</span>
-              </div>
-              <div className="space-y-2">
+          {testResult && !testResult.error ? (
+            <InfoCard icon={Check} title="Test Results" iconColor="bg-success/10 text-success">
+              <div className="space-y-2.5">
                 <div className="flex items-center gap-2 text-2xs font-sans">
                   <StatusDot status={testResult.reachable ? 'running' : 'crashed'} size="sm" />
                   <span className="text-text-1">Reachable</span>
@@ -419,18 +417,10 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
                   <span className="text-text-1">Daemon Running</span>
                 </div>
               </div>
-            </div>
-          )}
-
-          {(!testResult || testResult.error) && (
-            <div className="rounded-lg border border-border-subtle bg-surface-1 px-4 py-3.5">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 rounded bg-accent/8 flex items-center justify-center flex-shrink-0">
-                  <Server size={12} className="text-accent" />
-                </div>
-                <span className="text-[13px] font-medium text-text-0 font-sans">{name || 'Server'}</span>
-              </div>
-              <div className="space-y-1.5 text-2xs font-sans">
+            </InfoCard>
+          ) : (
+            <InfoCard icon={Server} title={name || 'Server'}>
+              <div className="space-y-2 text-2xs font-sans">
                 <div className="flex items-center justify-between">
                   <span className="text-text-3">Connection</span>
                   <span className="text-text-1 font-mono">{user}@{host}:{sshPort}</span>
@@ -442,21 +432,20 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
                   </div>
                 )}
               </div>
-            </div>
+            </InfoCard>
           )}
         </div>
       )}
 
-      {/* Step 3: Connected */}
       {step === 3 && (
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-lg border border-success/30 bg-success/5 px-4 py-5 text-center">
-            <div className="w-10 h-10 rounded-full bg-success/15 flex items-center justify-center mx-auto mb-3">
-              <Check size={20} className="text-success" />
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-xl border border-success/25 bg-gradient-to-br from-success/[0.06] to-transparent px-5 py-6 text-center">
+            <div className="w-12 h-12 rounded-full bg-success/15 border border-success/20 flex items-center justify-center mx-auto mb-3">
+              <Check size={22} className="text-success" />
             </div>
-            <h3 className="text-sm font-semibold text-text-0 font-sans mb-1">Connected</h3>
-            <p className="text-2xs text-text-3 font-sans">
-              Successfully connected to <span className="font-mono text-text-1">{name}</span>
+            <h3 className="text-base font-semibold text-text-0 font-sans mb-1">Connected</h3>
+            <p className="text-xs text-text-3 font-sans mb-4">
+              Successfully connected to <span className="font-mono text-text-1 font-medium">{name}</span>
             </p>
             <Button
               variant="primary"
@@ -466,21 +455,15 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
                 const n = encodeURIComponent(name);
                 window.open(`http://localhost:${port}?instance=${n}`, '_blank');
               }}
-              className="h-8 text-xs gap-1.5 mt-4"
+              className="h-8 text-xs gap-1.5"
             >
               <ExternalLink size={12} />
               Open Remote GUI
             </Button>
           </div>
 
-          <div className="rounded-lg border border-border-subtle bg-surface-1 px-4 py-3.5">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-6 h-6 rounded bg-accent/8 flex items-center justify-center flex-shrink-0">
-                <Server size={12} className="text-accent" />
-              </div>
-              <span className="text-[13px] font-medium text-text-0 font-sans">Connection Info</span>
-            </div>
-            <div className="space-y-1.5 text-2xs font-sans">
+          <InfoCard icon={Server} title="Connection Info">
+            <div className="space-y-2 text-2xs font-sans">
               <div className="flex items-center justify-between">
                 <span className="text-text-3">Connection</span>
                 <span className="text-text-1 font-mono">{user}@{host}:{sshPort}</span>
@@ -509,12 +492,11 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
                 </div>
               )}
             </div>
-          </div>
+          </InfoCard>
         </div>
       )}
 
-      {/* Navigation footer */}
-      <div className="flex items-center justify-between mt-4">
+      <div className="flex items-center justify-between mt-5">
         <Button
           variant="ghost"
           size="sm"

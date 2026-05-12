@@ -9,7 +9,7 @@ export function Sheet({ children, ...props }) {
 
 export const SheetTrigger = DialogPrimitive.Trigger;
 
-export function SheetContent({ children, className, title, side = 'right', width = 400, ...props }) {
+export function SheetContent({ children, className, title, side = 'right', width = 400, onClose, ...props }) {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/30" />
@@ -30,7 +30,10 @@ export function SheetContent({ children, className, title, side = 'right', width
             <DialogPrimitive.Title className="text-base font-semibold text-text-0 font-sans">
               {title}
             </DialogPrimitive.Title>
-            <DialogPrimitive.Close className="p-1 rounded-md text-text-3 hover:text-text-0 hover:bg-surface-5 transition-colors cursor-pointer">
+            <DialogPrimitive.Close
+              onClick={onClose}
+              className="p-1 rounded-md text-text-3 hover:text-text-0 hover:bg-surface-5 transition-colors cursor-pointer"
+            >
               <X size={16} />
             </DialogPrimitive.Close>
           </div>

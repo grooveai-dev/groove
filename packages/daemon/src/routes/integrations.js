@@ -2,6 +2,18 @@
 import { resolve } from 'path';
 import { mkdirSync, writeFileSync } from 'fs';
 
+function _isScheduledAgent(daemon, integrationId) {
+  if (!daemon.scheduler) return false;
+  for (const [, runInfo] of daemon.scheduler.runningAgents) {
+    const ids = typeof runInfo === 'string' ? [runInfo] : runInfo?.agentIds || [];
+    for (const aid of ids) {
+      const agent = daemon.registry.get(aid);
+      if (agent && agent.integrations?.includes(integrationId)) return true;
+    }
+  }
+  return false;
+}
+
 export function registerIntegrationRoutes(app, daemon) {
 
   // --- Skills Marketplace ---
@@ -263,7 +275,8 @@ export function registerIntegrationRoutes(app, daemon) {
       const entry = daemon.integrations.registry.find((s) => s.id === integrationId);
       const callingAgent = agentId ? daemon.registry.get(agentId) : null;
       const autoApprove = callingAgent?.integrationApproval === 'auto';
-      if (entry?.requiresApproval?.includes(tool) && !autoApprove) {
+      const scheduledBypass = _isScheduledAgent(daemon, integrationId);
+      if (entry?.requiresApproval?.includes(tool) && !autoApprove && !scheduledBypass) {
         if (approvalId) {
           const approval = daemon.supervisor.getApproval(approvalId);
           if (!approval) return res.status(404).json({ error: 'Approval not found' });
@@ -326,10 +339,11 @@ export function registerIntegrationRoutes(app, daemon) {
         return res.status(400).json({ error: 'filePath (string) is required' });
       }
 
-      // Approval gate (unless agent is set to auto)
+      // Approval gate (unless agent is set to auto or scheduled)
       const uploadAgent = agentId ? daemon.registry.get(agentId) : null;
       const autoApproveUpload = uploadAgent?.integrationApproval === 'auto';
-      if (!autoApproveUpload) {
+      const scheduledUploadBypass = _isScheduledAgent(daemon, 'google-drive');
+      if (!autoApproveUpload && !scheduledUploadBypass) {
         if (approvalId) {
           const approval = daemon.supervisor.getApproval(approvalId);
           if (!approval) return res.status(404).json({ error: 'Approval not found' });

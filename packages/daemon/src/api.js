@@ -26,6 +26,7 @@ import { registerTeamRoutes } from './routes/teams.js';
 import { registerIntegrationRoutes } from './routes/integrations.js';
 import { registerFileRoutes, resetEditorRoot } from './routes/files.js';
 import { registerNetworkRoutes } from './routes/network.js';
+import { registerScheduleRoutes } from './routes/schedules.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkgVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -173,6 +174,7 @@ export function createApi(app, daemon) {
   registerIntegrationRoutes(app, daemon);
   registerFileRoutes(app, daemon);
   registerNetworkRoutes(app, daemon);
+  registerScheduleRoutes(app, daemon);
 
 
   // Token usage
@@ -604,71 +606,6 @@ Keep responses concise. Help them think, don't lecture them about the system the
       res.json(data);
     } catch (err) {
       res.status(502).json({ error: 'Seat update failed', message: err.message });
-    }
-  });
-
-
-  // --- Schedules ---
-
-  app.get('/api/schedules', (req, res) => {
-    res.json(daemon.scheduler.list());
-  });
-
-  app.post('/api/schedules', (req, res) => {
-    try {
-      const schedule = daemon.scheduler.create(req.body);
-      res.status(201).json(schedule);
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.get('/api/schedules/:id', (req, res) => {
-    const schedule = daemon.scheduler.get(req.params.id);
-    if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
-    res.json(schedule);
-  });
-
-  app.patch('/api/schedules/:id', (req, res) => {
-    try {
-      const schedule = daemon.scheduler.update(req.params.id, req.body);
-      res.json(schedule);
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.delete('/api/schedules/:id', (req, res) => {
-    try {
-      daemon.scheduler.delete(req.params.id);
-      res.json({ ok: true });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/schedules/:id/enable', (req, res) => {
-    try {
-      res.json(daemon.scheduler.enable(req.params.id));
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/schedules/:id/disable', (req, res) => {
-    try {
-      res.json(daemon.scheduler.disable(req.params.id));
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/schedules/:id/run', async (req, res) => {
-    try {
-      const agent = await daemon.scheduler.run(req.params.id);
-      res.json({ ok: true, agentId: agent.id });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
     }
   });
 
@@ -1569,6 +1506,26 @@ Keep responses concise. Help them think, don't lecture them about the system the
     res.json({ ok: true });
   });
 
+  app.post('/api/lab/runtimes/:id/start', async (req, res) => {
+    try {
+      const rt = await daemon.modelLab.startRuntime(req.params.id);
+      res.json({ ok: true, name: rt.name });
+    } catch (err) {
+      const status = err.message === 'Runtime not found' ? 404 : 400;
+      res.status(status).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/lab/runtimes/:id/stop', async (req, res) => {
+    try {
+      const rt = await daemon.modelLab.stopRuntime(req.params.id);
+      res.json({ ok: true, name: rt.name });
+    } catch (err) {
+      const status = err.message === 'Runtime not found' ? 404 : 500;
+      res.status(status).json({ error: err.message });
+    }
+  });
+
   app.post('/api/lab/runtimes/:id/test', async (req, res) => {
     try {
       const result = await daemon.modelLab.testRuntime(req.params.id);
@@ -1597,6 +1554,17 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
   });
 
+  app.get('/api/lab/suggest-model', async (req, res) => {
+    try {
+      const { modelId, targetBackend } = req.query;
+      if (!modelId || !targetBackend) return res.status(400).json({ error: 'modelId and targetBackend required' });
+      const suggestion = await daemon.modelLab.suggestAlternativeModel(modelId, targetBackend);
+      res.json({ suggestion });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post('/api/lab/launch-local', async (req, res) => {
     try {
       const { modelId } = req.body;
@@ -1616,7 +1584,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       const rt = daemon.modelLab.getRuntime(params.runtimeId);
       if (!rt) throw new Error('Runtime not found');
 
-      const url = new URL(`${rt.endpoint}/v1/chat/completions`);
+      const url = new URL(`${rt.endpoint.replace('localhost', '127.0.0.1')}/v1/chat/completions`);
       const reqHeaders = { 'Content-Type': 'application/json' };
       if (rt.apiKey) reqHeaders['Authorization'] = `Bearer ${rt.apiKey}`;
 
@@ -1634,6 +1602,10 @@ Keep responses concise. Help them think, don't lecture them about the system the
       if (pb.stop !== undefined) body.stop = pb.stop;
       if (pb.frequency_penalty !== undefined) body.frequency_penalty = pb.frequency_penalty;
       if (pb.presence_penalty !== undefined) body.presence_penalty = pb.presence_penalty;
+      if (pb.seed !== undefined) body.seed = pb.seed;
+      if (pb.min_p !== undefined) body.min_p = pb.min_p;
+      if (pb.response_format) body.response_format = pb.response_format;
+      if (pb.enable_thinking !== undefined) body.enable_thinking = pb.enable_thinking;
 
       const payload = JSON.stringify(body);
 
@@ -1684,7 +1656,8 @@ Keep responses concise. Help them think, don't lecture them about the system the
             if (d === '[DONE]') continue;
             try {
               const p = JSON.parse(d);
-              const c = p.choices?.[0]?.delta?.content;
+              const delta = p.choices?.[0]?.delta;
+              const c = delta?.content || delta?.reasoning_content || delta?.reasoning;
               if (c) full += c;
             } catch { /* skip */ }
           }
@@ -1747,18 +1720,24 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   app.post('/api/lab/assistant', async (req, res) => {
     try {
-      const { backend } = req.body || {};
-      if (!backend || !['vllm', 'tgi'].includes(backend)) {
-        return res.status(400).json({ error: 'backend must be "vllm" or "tgi"' });
+      const { backend, model } = req.body || {};
+      if (!backend || !['vllm', 'tgi', 'mlx'].includes(backend)) {
+        return res.status(400).json({ error: 'backend must be "vllm", "tgi", or "mlx"' });
       }
       const templatePath = resolve(__dirname, `../templates/${backend}-setup.json`);
       const template = JSON.parse(readFileSync(templatePath, 'utf8'));
       const agentConfig = template.agents[0];
+      let prompt = agentConfig.prompt;
+      if (model) {
+        const parts = [model.filename, model.parameters, model.quantization].filter(Boolean);
+        const desc = parts.join(', ');
+        prompt = `The user has selected a local model: ${desc} (id: ${model.id}).\nUse this model for setup instead of recommending a different one. If this exact model isn't available in the runtime's format, find the closest equivalent (same base model, similar quantization).\n\n${prompt}`;
+      }
       const config = {
         role: 'lab-assistant',
         scope: agentConfig.scope || [],
         provider: agentConfig.provider || daemon.config.defaultProvider,
-        prompt: agentConfig.prompt,
+        prompt,
         metadata: { labAssistant: true, backend },
       };
       if (!config.provider) config.provider = daemon.config.defaultProvider;

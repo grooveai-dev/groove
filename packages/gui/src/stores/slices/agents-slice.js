@@ -168,7 +168,12 @@ export const createAgentsSlice = (set, get) => ({
       });
       if (get().chatHistory[newAgent.id]?.length) persistJSON('groove:chatHistory', get().chatHistory);
       if (get().activityLog[newAgent.id]?.length) persistJSON('groove:activityLog', get().activityLog);
-      get().selectAgent(newAgent.id);
+      if (get().labAssistantAgentId === id) {
+        localStorage.setItem('groove:labAssistantAgentId', newAgent.id);
+        set({ labAssistantAgentId: newAgent.id });
+      } else {
+        get().selectAgent(newAgent.id);
+      }
       return newAgent;
     } catch (err) {
       set((s) => {

@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Network, Code2, ChartSpline, Puzzle, Users, Box, FlaskConical, Newspaper, Settings, Globe, MessageCircle, Eye, BookOpen } from 'lucide-react';
+import { Network, Code2, ChartSpline, Puzzle, Users, Box, FlaskConical, Newspaper, Settings, Globe, MessageCircle, BookOpen } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Tooltip } from '../ui/tooltip';
 import { useGrooveStore } from '../../stores/groove';
@@ -18,7 +18,6 @@ const BASE_NAV_ITEMS = [
 ];
 
 const NETWORK_NAV_ITEM = { id: 'network', icon: Globe, label: 'Network' };
-const PREVIEW_NAV_ITEM = { id: 'preview', icon: Eye, label: 'Preview' };
 
 const UTIL_ITEMS = [
   { id: 'journalist', icon: Newspaper, label: 'Journalist', panel: true },
@@ -28,8 +27,7 @@ const UTIL_ITEMS = [
 export function ActivityBar({ activeView, detailPanel, onNavigate, onTogglePanel }) {
   const darwinTrafficLights = isElectron() && getPlatform() === 'darwin';
   const networkUnlocked = useGrooveStore((s) => s.networkUnlocked);
-  const previewUrl = useGrooveStore((s) => s.previewState.url);
-  let NAV_ITEMS = previewUrl ? [...BASE_NAV_ITEMS, PREVIEW_NAV_ITEM] : BASE_NAV_ITEMS;
+  let NAV_ITEMS = BASE_NAV_ITEMS;
   if (networkUnlocked) NAV_ITEMS = [...NAV_ITEMS, NETWORK_NAV_ITEM];
 
   return (

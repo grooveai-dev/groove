@@ -47,7 +47,7 @@ export function JournalistPanel() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-border-subtle flex items-center gap-2">
+      <div className="pl-5 pr-10 py-4 border-b border-border-subtle flex items-center gap-2">
         <Newspaper size={16} className="text-accent" />
         <h3 className="text-sm font-semibold text-text-0 font-sans flex-1">Journalist</h3>
         <Button

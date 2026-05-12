@@ -255,7 +255,7 @@ export function validateTeamMode(mode) {
   return mode;
 }
 
-const VALID_RUNTIME_TYPES = ['ollama', 'vllm', 'llama-cpp', 'tgi', 'openai-compatible'];
+const VALID_RUNTIME_TYPES = ['ollama', 'vllm', 'llama-cpp', 'mlx', 'tgi', 'openai-compatible'];
 const MAX_ENDPOINT_LENGTH = 500;
 const MAX_SYSTEM_PROMPT_LENGTH = 20_000;
 const MAX_MESSAGES = 500;
@@ -293,11 +293,32 @@ export function validateLabRuntimeConfig(config) {
     }
   }
 
+  let launchConfig = null;
+  if (config.launchConfig && typeof config.launchConfig === 'object') {
+    const lc = config.launchConfig;
+    if (!lc.command || typeof lc.command !== 'string') {
+      throw new Error('launchConfig.command is required');
+    }
+    if (lc.args && !Array.isArray(lc.args)) {
+      throw new Error('launchConfig.args must be an array');
+    }
+    if (lc.env && typeof lc.env !== 'object') {
+      throw new Error('launchConfig.env must be an object');
+    }
+    launchConfig = {
+      command: lc.command,
+      args: lc.args || [],
+      env: lc.env || {},
+      port: typeof lc.port === 'number' ? lc.port : null,
+    };
+  }
+
   return {
     name: config.name.trim(),
     type: config.type,
     endpoint: config.endpoint.trim(),
     apiKey: config.apiKey || null,
+    launchConfig,
   };
 }
 
@@ -380,6 +401,22 @@ export function validateLabInferenceParams(params) {
       if (isNaN(v) || v < -2 || v > 2) throw new Error('presence_penalty must be -2 to 2');
       parameters.presence_penalty = v;
     }
+    if (p.seed !== undefined && p.seed !== null) {
+      const v = Math.round(Number(p.seed));
+      if (isNaN(v) || v < 0) throw new Error('seed must be a non-negative integer');
+      parameters.seed = v;
+    }
+    if (p.min_p !== undefined) {
+      const v = Number(p.min_p);
+      if (isNaN(v) || v < 0 || v > 1) throw new Error('min_p must be 0-1');
+      parameters.min_p = v;
+    }
+    if (p.response_format !== undefined) {
+      if (!p.response_format || typeof p.response_format !== 'object') throw new Error('response_format must be an object');
+      if (!['json_object', 'text'].includes(p.response_format.type)) throw new Error('response_format.type must be json_object or text');
+      parameters.response_format = { type: p.response_format.type };
+    }
+    if (p.enable_thinking !== undefined) parameters.enable_thinking = !!p.enable_thinking;
   }
 
   return {

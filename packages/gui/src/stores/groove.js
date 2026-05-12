@@ -13,6 +13,7 @@ import { createProvidersSlice } from './slices/providers-slice.js';
 import { createNetworkSlice } from './slices/network-slice.js';
 import { createPreviewSlice } from './slices/preview-slice.js';
 import { createMarketplaceSlice } from './slices/marketplace-slice.js';
+import { createAutomationsSlice } from './slices/automations-slice.js';
 
 const WS_URL = `ws://${window.location.hostname}:${window.location.port || 31415}`;
 
@@ -37,6 +38,7 @@ export const useGrooveStore = create((set, get) => ({
   ...createNetworkSlice(set, get),
   ...createPreviewSlice(set, get),
   ...createMarketplaceSlice(set, get),
+  ...createAutomationsSlice(set, get),
 
   // ── Connection ────────────────────────────────────────────
   connected: false,
@@ -540,6 +542,13 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'schedule:execute':
           get().addToast('info', `Scheduled agent spawned: ${msg.name || msg.role || 'agent'}`);
+          get().fetchAutomations();
+          break;
+
+        case 'schedule:created':
+        case 'schedule:updated':
+        case 'schedule:deleted':
+          get().fetchAutomations();
           break;
 
         case 'gateway:status':

@@ -19,7 +19,7 @@ const EMPTY = [];
 const KEEPER_RE = /(\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|#[\w/.-]+)/gi;
 const KEEPER_CMD_RE = /^\[(?:save|append|update|delete|view|doc|link|read|instruct)\]$/i;
 const KEEPER_TAG_RE = /^#[\w/.-]+$/;
-const KEEPER_DETECT_RE = /\[(?:save|append|update|delete|view|doc|link|read|instruct)\]/i;
+const KEEPER_DETECT_RE = /\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|#[\w/.-]+/i;
 
 function highlightKeeperInput(text) {
   return text.split(KEEPER_RE).map((part, i) => {
@@ -539,7 +539,11 @@ export function AgentFeed({ agent }) {
   const clearSnippet = useGrooveStore((s) => s.clearSnippet);
 
   const storeInput = useGrooveStore((s) => s.chatInputs[agent.id] || '');
-  const setStoreInput = (val) => useGrooveStore.setState((s) => ({ chatInputs: { ...s.chatInputs, [agent.id]: val } }));
+  const setStoreInput = (val) => useGrooveStore.setState((s) => {
+    const current = s.chatInputs[agent.id] || '';
+    const next = typeof val === 'function' ? val(current) : val;
+    return { chatInputs: { ...s.chatInputs, [agent.id]: next } };
+  });
   const input = storeInput;
   const setInput = setStoreInput;
   const [mode, setMode] = useState('instruct'); // instruct | query
@@ -549,6 +553,7 @@ export function AgentFeed({ agent }) {
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const highlightRef = useRef(null);
   const isAtBottomRef = useRef(true);
 
   useEffect(() => {
@@ -842,8 +847,9 @@ export function AgentFeed({ agent }) {
           <div className="flex-1 relative">
             {input && KEEPER_DETECT_RE.test(input) && (
               <div
+                ref={highlightRef}
                 aria-hidden
-                className="absolute inset-0 px-3 py-2 text-[13px] font-sans pointer-events-none whitespace-pre-wrap break-words overflow-hidden"
+                className="absolute inset-0 px-3 py-2 text-[13px] font-sans pointer-events-none whitespace-pre-wrap break-words overflow-y-hidden"
                 style={{ height: inputHeight }}
               >
                 {highlightKeeperInput(input)}
@@ -854,6 +860,17 @@ export function AgentFeed({ agent }) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
+              onScroll={(e) => { if (highlightRef.current) highlightRef.current.scrollTop = e.target.scrollTop; }}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (e.dataTransfer?.files?.length) {
+                  const dt = new DataTransfer();
+                  for (const f of e.dataTransfer.files) dt.items.add(f);
+                  fileInputRef.current.files = dt.files;
+                  fileInputRef.current.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+              }}
               placeholder={pendingSnippet ? 'Add a message (optional)...'
                 : mode === 'query' ? 'Ask about this agent\'s work...'
                 : isAlive ? 'Send an instruction...' : 'Continue this session...'}

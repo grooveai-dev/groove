@@ -26,10 +26,15 @@ export const createProvidersSlice = (set, get) => ({
   labActivePreset: null,
   labSessions: [],
   labActiveSession: null,
-  labMetrics: { ttft: null, tokensPerSec: null, tokensPerSecHistory: [], memory: null, totalTokens: 0, generationTime: null },
+  labMetrics: {
+    ttft: null, tokensPerSec: null, tokensPerSecHistory: [], ttftHistory: [],
+    memory: null, peakMemory: null, totalTokens: 0, promptTokens: 0, completionTokens: 0,
+    generationTime: null, generationCount: 0, sessionStartTime: null,
+  },
   labParameters: loadJSON('groove:labParameters', {
-    temperature: 0.7, topP: 0.9, topK: 40, repeatPenalty: 1.1,
+    temperature: 0.7, topP: 0.9, topK: 40, minP: 0, repeatPenalty: 1.1,
     maxTokens: 2048, frequencyPenalty: 0, presencePenalty: 0,
+    thinking: false, seed: null, stopSequences: [], jsonMode: false,
   }),
   labSystemPrompt: localStorage.getItem('groove:labSystemPrompt') || '',
   labStreaming: false,
@@ -355,7 +360,11 @@ export const createProvidersSlice = (set, get) => ({
     set({ labLaunching: modelId, labLaunchPhase: 'starting', labLaunchError: null });
     try {
       const result = await api.post('/lab/launch-local', { modelId });
-      const runtimes = await api.get('/lab/runtimes');
+      const raw = await api.get('/lab/runtimes');
+      const runtimes = raw.map((rt) => ({
+        ...rt,
+        status: rt.online === true ? 'connected' : rt.online === false ? 'error' : rt.status,
+      }));
       set({ labRuntimes: runtimes });
       persistJSON('groove:labRuntimes', runtimes);
       get().setLabActiveRuntime(result.runtime.id);
@@ -382,6 +391,32 @@ export const createProvidersSlice = (set, get) => ({
     } catch (err) {
       get().addToast('error', 'Failed to add runtime', err.message);
       throw err;
+    }
+  },
+
+  async startLabRuntime(id) {
+    try {
+      get().addToast('info', 'Starting server...');
+      await api.post(`/lab/runtimes/${id}/start`);
+      await get().fetchLabRuntimes();
+      get().setLabActiveRuntime(id);
+      get().addToast('success', 'Server started');
+    } catch (err) {
+      get().addToast('error', 'Failed to start server', err.message);
+    }
+  },
+
+  async stopLabRuntime(id) {
+    try {
+      await api.post(`/lab/runtimes/${id}/stop`);
+      const runtimes = get().labRuntimes.map((r) =>
+        r.id === id ? { ...r, status: 'error', latency: null } : r,
+      );
+      set({ labRuntimes: runtimes });
+      persistJSON('groove:labRuntimes', runtimes);
+      get().addToast('success', 'Server stopped');
+    } catch (err) {
+      get().addToast('error', 'Failed to stop server', err.message);
     }
   },
 
@@ -433,7 +468,11 @@ export const createProvidersSlice = (set, get) => ({
   async fetchLabModels(runtimeId) {
     try {
       const data = await api.get(`/lab/runtimes/${runtimeId}/models`);
-      set({ labModels: data });
+      const updates = { labModels: data };
+      if (data.length === 1 && !get().labActiveModel) {
+        updates.labActiveModel = data[0].id || data[0].name;
+      }
+      set(updates);
     } catch { set({ labModels: [] }); }
   },
 
@@ -443,7 +482,11 @@ export const createProvidersSlice = (set, get) => ({
     set((s) => ({
       labSessions: [session, ...s.labSessions],
       labActiveSession: id,
-      labMetrics: { ttft: null, tokensPerSec: null, tokensPerSecHistory: [], memory: null, totalTokens: 0, generationTime: null },
+      labMetrics: {
+        ttft: null, tokensPerSec: null, tokensPerSecHistory: [], ttftHistory: [],
+        memory: null, peakMemory: null, totalTokens: 0, promptTokens: 0, completionTokens: 0,
+        generationTime: null, generationCount: 0, sessionStartTime: null,
+      },
     }));
     return id;
   },
@@ -487,10 +530,15 @@ export const createProvidersSlice = (set, get) => ({
       if (p.temperature !== undefined) parameters.temperature = p.temperature;
       if (p.topP !== undefined) parameters.top_p = p.topP;
       if (p.topK !== undefined) parameters.top_k = p.topK;
+      if (p.minP !== undefined && p.minP > 0) parameters.min_p = p.minP;
       if (p.repeatPenalty !== undefined) parameters.repeat_penalty = p.repeatPenalty;
       if (p.maxTokens !== undefined) parameters.max_tokens = p.maxTokens;
       if (p.frequencyPenalty !== undefined) parameters.frequency_penalty = p.frequencyPenalty;
       if (p.presencePenalty !== undefined) parameters.presence_penalty = p.presencePenalty;
+      parameters.enable_thinking = !!p.thinking;
+      if (p.seed != null) parameters.seed = p.seed;
+      if (p.stopSequences?.length) parameters.stop = p.stopSequences;
+      if (p.jsonMode) parameters.response_format = { type: 'json_object' };
 
       const messages = [];
       if (st.labSystemPrompt) messages.push({ role: 'system', content: st.labSystemPrompt });
@@ -543,8 +591,25 @@ export const createProvidersSlice = (set, get) => ({
 
             // Support both raw OpenAI format (piped) and legacy wrapper format
             const delta = parsed.choices?.[0]?.delta;
-            const reasoningText = delta?.reasoning_content || (parsed.type === 'reasoning' ? parsed.content : null);
-            const contentText = delta?.content || (parsed.type === 'token' ? parsed.content : null);
+            const reasoningText = delta?.reasoning_content || delta?.reasoning || (parsed.type === 'reasoning' ? parsed.content : null);
+            let contentText = delta?.content || (parsed.type === 'token' ? parsed.content : null);
+
+            // Raw fallback: if no known field matched, extract any string from delta
+            if (!reasoningText && !contentText && delta) {
+              for (const v of Object.values(delta)) {
+                if (typeof v === 'string' && v) { contentText = v; break; }
+              }
+            }
+            // Last resort: if the parsed object itself has text but no choices wrapper
+            if (!reasoningText && !contentText && !delta && parsed.response) {
+              contentText = typeof parsed.response === 'string' ? parsed.response : null;
+            }
+            if (!reasoningText && !contentText && !delta && typeof parsed.text === 'string') {
+              contentText = parsed.text;
+            }
+            if (!reasoningText && !contentText && !delta && typeof parsed.output === 'string') {
+              contentText = parsed.output;
+            }
 
             if (reasoningText) {
               if (!firstTokenTime) firstTokenTime = performance.now();
@@ -583,7 +648,9 @@ export const createProvidersSlice = (set, get) => ({
               const msgMetrics = { ttft, tokensPerSec: tps, tokens: tokenCount, generationTime: elapsed, ...parsed.metrics };
 
               set((s) => {
-                const tpsHist = [...s.labMetrics.tokensPerSecHistory, tps].slice(-10);
+                const tpsHist = [...s.labMetrics.tokensPerSecHistory, tps].slice(-20);
+                const ttftHist = [...s.labMetrics.ttftHistory, ttft].filter((v) => v != null).slice(-20);
+                const mem = parsed.metrics.memoryUsage || s.labMetrics.memory;
                 const sessions = s.labSessions.map((sess) => {
                   if (sess.id !== sessionId) return sess;
                   const msgs = [...sess.messages];
@@ -593,10 +660,15 @@ export const createProvidersSlice = (set, get) => ({
                 return {
                   labSessions: sessions,
                   labMetrics: {
-                    ttft, tokensPerSec: tps, tokensPerSecHistory: tpsHist,
-                    memory: parsed.metrics.memoryUsage || s.labMetrics.memory,
+                    ...s.labMetrics,
+                    ttft, tokensPerSec: tps, tokensPerSecHistory: tpsHist, ttftHistory: ttftHist,
+                    memory: mem, peakMemory: Math.max(mem || 0, s.labMetrics.peakMemory || 0) || null,
                     totalTokens: s.labMetrics.totalTokens + (parsed.metrics.totalTokens || tokenCount),
+                    promptTokens: s.labMetrics.promptTokens + (parsed.metrics.promptTokens || 0),
+                    completionTokens: s.labMetrics.completionTokens + (parsed.metrics.completionTokens || tokenCount),
                     generationTime: parsed.metrics.generationTime || elapsed,
+                    generationCount: s.labMetrics.generationCount + 1,
+                    sessionStartTime: s.labMetrics.sessionStartTime || Date.now(),
                   },
                 };
               });
@@ -611,13 +683,66 @@ export const createProvidersSlice = (set, get) => ({
         }
       }
 
+      // Strip <think> tags from content — some models embed reasoning in content field
+      if (fullContent && fullContent.includes('<think>')) {
+        const stripped = fullContent.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+        const thinkMatch = fullContent.match(/<think>([\s\S]*?)<\/think>/);
+        if (thinkMatch && !fullReasoning) fullReasoning = thinkMatch[1].trim();
+        // If stripping left nothing, check for unclosed <think> (model still mid-thought)
+        if (stripped) {
+          fullContent = stripped;
+        } else if (fullContent.includes('<think>') && !fullContent.includes('</think>')) {
+          const afterTag = fullContent.replace(/<think>/, '').trim();
+          if (!fullReasoning) fullReasoning = afterTag;
+          fullContent = '';
+        }
+        set((s) => {
+          const sessions = s.labSessions.map((sess) => {
+            if (sess.id !== sessionId) return sess;
+            const msgs = [...sess.messages];
+            msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: fullContent || undefined, reasoning: fullReasoning || undefined };
+            return { ...sess, messages: msgs };
+          });
+          return { labSessions: sessions };
+        });
+      }
+
+      // If stream ended with reasoning but no content, promote reasoning as the response
+      if (fullReasoning && !fullContent) {
+        fullContent = fullReasoning;
+        set((s) => {
+          const sessions = s.labSessions.map((sess) => {
+            if (sess.id !== sessionId) return sess;
+            const msgs = [...sess.messages];
+            msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: fullContent };
+            return { ...sess, messages: msgs };
+          });
+          return { labSessions: sessions };
+        });
+      }
+
+      // If stream ended with zero content at all, surface a fallback message
+      if (!fullContent && !fullReasoning) {
+        fullContent = '[Model returned an empty response — try a different prompt or check server logs]';
+        set((s) => {
+          const sessions = s.labSessions.map((sess) => {
+            if (sess.id !== sessionId) return sess;
+            const msgs = [...sess.messages];
+            msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: fullContent };
+            return { ...sess, messages: msgs };
+          });
+          return { labSessions: sessions };
+        });
+      }
+
       // Compute final metrics from client-side timing
       const elapsed = performance.now() - startTime;
       const ttft = firstTokenTime ? firstTokenTime - startTime : null;
       const tps = tokenCount > 0 && elapsed > 0 ? (tokenCount / (elapsed / 1000)) : null;
       if (tokenCount > 0) {
         set((s) => {
-          const tpsHist = [...s.labMetrics.tokensPerSecHistory, tps].slice(-10);
+          const tpsHist = [...s.labMetrics.tokensPerSecHistory, tps].slice(-20);
+          const ttftHist = [...s.labMetrics.ttftHistory, ttft].filter((v) => v != null).slice(-20);
           const sessions = s.labSessions.map((sess) => {
             if (sess.id !== sessionId) return sess;
             const msgs = [...sess.messages];
@@ -629,7 +754,15 @@ export const createProvidersSlice = (set, get) => ({
           });
           return {
             labSessions: sessions,
-            labMetrics: { ...s.labMetrics, ttft, tokensPerSec: tps, tokensPerSecHistory: tpsHist, totalTokens: s.labMetrics.totalTokens + tokenCount, generationTime: elapsed },
+            labMetrics: {
+              ...s.labMetrics, ttft, tokensPerSec: tps,
+              tokensPerSecHistory: tpsHist, ttftHistory: ttftHist,
+              totalTokens: s.labMetrics.totalTokens + tokenCount,
+              completionTokens: s.labMetrics.completionTokens + tokenCount,
+              generationTime: elapsed,
+              generationCount: s.labMetrics.generationCount + 1,
+              sessionStartTime: s.labMetrics.sessionStartTime || Date.now(),
+            },
           };
         });
       }
@@ -678,14 +811,20 @@ export const createProvidersSlice = (set, get) => ({
   loadLabPreset(id) {
     const preset = get().labPresets.find((p) => p.id === id);
     if (!preset) return;
+    const defaults = {
+      temperature: 0.7, topP: 0.9, topK: 40, minP: 0, repeatPenalty: 1.1,
+      maxTokens: 2048, frequencyPenalty: 0, presencePenalty: 0,
+      thinking: false, seed: null, stopSequences: [], jsonMode: false,
+    };
+    const merged = { ...defaults, ...preset.parameters };
     const updates = {
-      labParameters: { ...preset.parameters },
+      labParameters: merged,
       labSystemPrompt: preset.systemPrompt || '',
       labActivePreset: id,
     };
     if (preset.model) updates.labActiveModel = preset.model;
     set(updates);
-    persistJSON('groove:labParameters', preset.parameters);
+    persistJSON('groove:labParameters', merged);
     if (preset.systemPrompt !== undefined) localStorage.setItem('groove:labSystemPrompt', preset.systemPrompt);
   },
 
@@ -696,7 +835,7 @@ export const createProvidersSlice = (set, get) => ({
     get().addToast('success', 'Preset deleted');
   },
 
-  async launchLabAssistant(backend) {
+  async launchLabAssistant(backend, model) {
     const existing = get().labAssistantAgentId;
     if (existing) {
       const agent = get().agents.find((a) => a.id === existing);
@@ -706,7 +845,9 @@ export const createProvidersSlice = (set, get) => ({
       }
     }
     try {
-      const data = await api.post('/lab/assistant', { backend });
+      const body = { backend };
+      if (model) body.model = { id: model.id, filename: model.filename, parameters: model.parameters, quantization: model.quantization };
+      const data = await api.post('/lab/assistant', body);
       localStorage.setItem('groove:labAssistantAgentId', data.agentId);
       localStorage.setItem('groove:labAssistantBackend', backend);
       set({ labAssistantAgentId: data.agentId, labAssistantMode: true, labAssistantBackend: backend });
@@ -730,5 +871,27 @@ export const createProvidersSlice = (set, get) => ({
 
   setLabAssistantMode(mode) {
     set({ labAssistantMode: mode });
+  },
+
+  async onLabAssistantComplete() {
+    const prevIds = new Set(get().labRuntimes.map((r) => r.id));
+    try {
+      const raw = await api.get('/lab/runtimes');
+      const data = raw.map((rt) => ({
+        ...rt,
+        status: rt.online === true ? 'connected' : rt.online === false ? 'error' : rt.status,
+      }));
+      set({ labRuntimes: data });
+      persistJSON('groove:labRuntimes', data);
+      const newRuntime = data.find((r) => !prevIds.has(r.id));
+      if (newRuntime) {
+        set({ labActiveRuntime: newRuntime.id, labModels: [], labActiveModel: null });
+        try {
+          const models = await api.get(`/lab/runtimes/${newRuntime.id}/models`);
+          set({ labModels: models });
+          if (models.length > 0) set({ labActiveModel: models[0].id || models[0].name });
+        } catch { /* models may not be available yet */ }
+      }
+    } catch { /* ignore */ }
   },
 });

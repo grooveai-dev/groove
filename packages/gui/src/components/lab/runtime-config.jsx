@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -8,7 +8,7 @@ import { Dialog, DialogContent } from '../ui/dialog';
 import { Select, SelectTrigger, SelectContent, SelectItem } from '../ui/select';
 import { Tooltip } from '../ui/tooltip';
 import { ScrollArea } from '../ui/scroll-area';
-import { Plus, Trash2, Loader2, WifiOff, RotateCcw, HardDrive, Play, CheckCircle, AlertTriangle, ChevronRight, Wrench } from 'lucide-react';
+import { Plus, Trash2, Loader2, WifiOff, RotateCcw, HardDrive, Play, Square, CheckCircle, AlertTriangle, ChevronRight, Wrench, Settings2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
 const IS_APPLE = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '');
@@ -88,30 +88,54 @@ function AddRuntimeDialog({ open, onOpenChange }) {
   );
 }
 
-function RuntimeItem({ runtime, active, onSelect, onTest, onRemove, testing }) {
+function RuntimeItem({ runtime, active, onSelect, onTest, onRemove, onStop, onStart, testing }) {
+  const online = runtime.status === 'connected';
+  const managed = !!(runtime._localModelId || runtime._mlxModelId || runtime.launchConfig || runtime.type === 'mlx' || runtime.type === 'llama-cpp');
   return (
     <button
       onClick={() => onSelect(runtime.id)}
       className={cn(
         'w-full flex items-center gap-2.5 px-2.5 py-2 text-left transition-colors cursor-pointer rounded-sm',
-        active ? 'bg-accent/8 text-text-0' : 'text-text-2 hover:bg-surface-3 hover:text-text-0',
+        active ? 'bg-accent/8 border border-accent/20' : 'border border-transparent text-text-2 hover:bg-surface-3 hover:text-text-0',
       )}
     >
       <span className={cn(
         'w-1.5 h-1.5 rounded-full flex-shrink-0',
-        runtime.status === 'connected' ? 'bg-success' : runtime.status === 'error' ? 'bg-danger' : 'bg-text-4',
+        online ? 'bg-success' : runtime.status === 'error' ? 'bg-danger' : 'bg-text-4',
       )} />
       <div className="flex-1 min-w-0">
-        <div className="text-xs font-sans font-medium truncate">{runtime.name}</div>
+        <div className={cn('text-xs font-sans font-medium truncate', active ? 'text-text-0' : '')}>
+          {RUNTIME_TYPES.find((t) => t.value === runtime.type)?.label || runtime.type}
+        </div>
         <div className="text-2xs text-text-4 flex items-center gap-1.5">
-          <span className="font-mono">{runtime.type}</span>
-          {runtime.status === 'connected' && <span className="text-success">Healthy</span>}
-          {runtime.status === 'error' && <span className="text-danger">Unreachable</span>}
+          <span className={cn('font-sans', online ? 'text-success' : 'text-danger')}>
+            {online ? 'Online' : 'Offline'}
+          </span>
+          {runtime.latency != null && online && (
+            <span className="font-mono">{Math.round(runtime.latency)}ms</span>
+          )}
         </div>
       </div>
       <div className="flex items-center gap-0.5 flex-shrink-0">
-        {runtime.latency != null && (
-          <span className="text-2xs font-mono text-text-4 mr-1">{Math.round(runtime.latency)}ms</span>
+        {managed && online && (
+          <Tooltip content="Stop server">
+            <button
+              onClick={(e) => { e.stopPropagation(); onStop(runtime.id); }}
+              className="p-1 text-text-4 hover:text-danger transition-colors cursor-pointer"
+            >
+              <Square size={10} />
+            </button>
+          </Tooltip>
+        )}
+        {managed && !online && (
+          <Tooltip content="Start server">
+            <button
+              onClick={(e) => { e.stopPropagation(); onStart(runtime.id); }}
+              className="p-1 text-text-4 hover:text-success transition-colors cursor-pointer"
+            >
+              <Play size={10} />
+            </button>
+          </Tooltip>
         )}
         <Tooltip content="Test connection">
           <button
@@ -121,7 +145,7 @@ function RuntimeItem({ runtime, active, onSelect, onTest, onRemove, testing }) {
             {testing === runtime.id ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
           </button>
         </Tooltip>
-        <Tooltip content="Remove">
+        <Tooltip content="Remove runtime">
           <button
             onClick={(e) => { e.stopPropagation(); onRemove(runtime.id); }}
             className="p-1 text-text-4 hover:text-danger transition-colors cursor-pointer"
@@ -142,7 +166,7 @@ function formatSize(bytes) {
 }
 
 const BACKENDS = [
-  ...(IS_APPLE ? [{ id: 'mlx', label: 'MLX', subtitle: 'Apple Silicon optimized, guided setup', recommended: true, autoLaunch: false, appleOnly: true }] : []),
+  ...(IS_APPLE ? [{ id: 'mlx', label: 'MLX', subtitle: 'Apple Silicon optimized', recommended: true, autoLaunch: true, appleOnly: true }] : []),
   { id: 'llama-cpp', label: 'llama.cpp', subtitle: 'CPU + GPU, auto-managed', recommended: !IS_APPLE, autoLaunch: true },
   { id: 'vllm', label: 'vLLM', subtitle: 'GPU-optimized, guided setup', autoLaunch: false },
   { id: 'tgi', label: 'TGI', subtitle: 'HuggingFace, guided setup', autoLaunch: false },
@@ -165,6 +189,26 @@ function LaunchStatus({ phase, error }) {
   );
 }
 
+function getIncompatibilityReason(modelType, backendId) {
+  if (modelType === 'gguf' && backendId === 'mlx') return 'GGUF model — MLX needs MLX-format weights';
+  if (modelType === 'gguf' && (backendId === 'vllm' || backendId === 'tgi')) return 'GGUF model — needs standard HuggingFace weights';
+  if (modelType === 'mlx' && backendId === 'llama-cpp') return 'MLX model — llama.cpp needs a GGUF file';
+  if (modelType === 'mlx' && (backendId === 'vllm' || backendId === 'tgi')) return 'MLX model — needs standard HuggingFace weights';
+  if (modelType === 'hf' && backendId === 'mlx') return 'HF model — MLX needs MLX-converted weights';
+  if (modelType === 'hf' && backendId === 'llama-cpp') return 'HF model — llama.cpp needs a GGUF file';
+  return 'Incompatible format';
+}
+
+function getBackendCompat(model, backends) {
+  if (!model) return backends.map((b) => ({ ...b, compatible: true, reason: null }));
+  const compat = model.compatibleBackends || (model.type === 'gguf' ? ['llama-cpp'] : model.type === 'mlx' ? ['mlx'] : ['vllm', 'tgi']);
+  return backends.map((b) => ({
+    ...b,
+    compatible: compat.includes(b.id),
+    reason: compat.includes(b.id) ? null : getIncompatibilityReason(model.type, b.id),
+  }));
+}
+
 export function LaunchModel() {
   const localModels = useGrooveStore((s) => s.labLocalModels);
   const fetchLocalModels = useGrooveStore((s) => s.fetchLabLocalModels);
@@ -175,15 +219,58 @@ export function LaunchModel() {
   const launchPhase = useGrooveStore((s) => s.labLaunchPhase);
   const launchError = useGrooveStore((s) => s.labLaunchError);
   const launchLabAssistant = useGrooveStore((s) => s.launchLabAssistant);
+  const labAssistantAgentId = useGrooveStore((s) => s.labAssistantAgentId);
+  const labAssistantBackend = useGrooveStore((s) => s.labAssistantBackend);
+  const labAssistantMode = useGrooveStore((s) => s.labAssistantMode);
+  const setLabAssistantMode = useGrooveStore((s) => s.setLabAssistantMode);
+  const agents = useGrooveStore((s) => s.agents);
+  const runtimes = useGrooveStore((s) => s.labRuntimes);
+  const activeRuntime = useGrooveStore((s) => s.labActiveRuntime);
 
   const [selectedModel, setSelectedModel] = useState(null);
   const [selectedBackend, setSelectedBackend] = useState(IS_APPLE ? 'mlx' : 'llama-cpp');
   const [assistantLaunching, setAssistantLaunching] = useState(false);
+  const [suggestion, setSuggestion] = useState(null);
 
   useEffect(() => { fetchLocalModels(); checkLlama(); }, [fetchLocalModels, checkLlama]);
 
-  const currentBackend = BACKENDS.find((b) => b.id === selectedBackend);
-  const canLaunch = selectedModel && currentBackend?.autoLaunch && llamaInstalled && !launching;
+  const selectedModelObj = localModels.find((m) => m.id === selectedModel);
+  const backendsWithCompat = getBackendCompat(selectedModelObj, BACKENDS);
+  const currentBackend = backendsWithCompat.find((b) => b.id === selectedBackend);
+  const isCompatible = currentBackend?.compatible ?? true;
+
+  const backendReady = selectedBackend === 'mlx' || selectedBackend === 'llama-cpp' ? (selectedBackend === 'mlx' || llamaInstalled) : true;
+  const canLaunch = selectedModel && currentBackend?.autoLaunch && backendReady && !launching && isCompatible;
+
+  const assistantAgent = labAssistantAgentId ? agents.find((a) => a.id === labAssistantAgentId) : null;
+  const assistantRunning = assistantAgent?.status === 'running';
+  const assistantComplete = assistantAgent && assistantAgent.status !== 'running';
+  const hasActiveAssistant = !!(labAssistantAgentId && (assistantRunning || assistantComplete));
+
+  const activeRt = activeRuntime ? runtimes.find((r) => r.id === activeRuntime) : null;
+  const serverRunning = activeRt?.status === 'connected';
+
+  useEffect(() => {
+    if (!selectedModel || !selectedBackend || isCompatible) { setSuggestion(null); return; }
+    let cancelled = false;
+    fetch(`/api/lab/suggest-model?modelId=${encodeURIComponent(selectedModel)}&targetBackend=${selectedBackend}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (!cancelled) setSuggestion(data?.suggestion || null); })
+      .catch(() => { if (!cancelled) setSuggestion(null); });
+    return () => { cancelled = true; };
+  }, [selectedModel, selectedBackend, isCompatible]);
+
+  function handleModelChange(e) {
+    const id = e.target.value || null;
+    setSelectedModel(id);
+    if (!id) return;
+    const model = localModels.find((m) => m.id === id);
+    if (!model) return;
+    const compat = model.compatibleBackends || [];
+    const preferred = IS_APPLE ? ['mlx', 'llama-cpp', 'vllm', 'tgi'] : ['llama-cpp', 'vllm', 'tgi'];
+    const best = preferred.find((b) => compat.includes(b));
+    if (best) setSelectedBackend(best);
+  }
 
   function handleLaunch() {
     if (!canLaunch) return;
@@ -194,7 +281,8 @@ export function LaunchModel() {
     if (assistantLaunching) return;
     setAssistantLaunching(true);
     try {
-      await launchLabAssistant(currentBackend.id);
+      const model = localModels.find((m) => m.id === selectedModel);
+      await launchLabAssistant(currentBackend.id, model || undefined);
     } finally {
       setAssistantLaunching(false);
     }
@@ -208,69 +296,77 @@ export function LaunchModel() {
         <div className="py-5 text-center">
           <HardDrive size={18} className="mx-auto text-text-4 mb-1.5" />
           <p className="text-xs text-text-3 font-sans">No downloaded models</p>
-          <p className="text-2xs text-text-4 font-sans mt-0.5">Download GGUFs from the Models tab</p>
+          <p className="text-2xs text-text-4 font-sans mt-0.5">Download models from the Models tab</p>
         </div>
       ) : (
         <>
-          <ScrollArea className="max-h-36">
-            <div className="space-y-px">
-              {localModels.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => setSelectedModel(m.id)}
-                  className={cn(
-                    'w-full flex items-center gap-2 px-2.5 py-2 text-left transition-colors cursor-pointer rounded-sm',
-                    selectedModel === m.id ? 'bg-accent/8 text-text-0' : 'text-text-2 hover:bg-surface-3 hover:text-text-0',
-                  )}
-                >
-                  <HardDrive size={11} className={cn('flex-shrink-0', selectedModel === m.id ? 'text-accent' : 'text-text-4')} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-sans font-medium truncate">
-                      {m.filename?.replace(/\.gguf$/i, '') || m.id}
-                    </div>
-                    <div className="text-2xs font-mono text-text-4 flex items-center gap-2">
-                      {m.quantization && <span>{m.quantization}</span>}
-                      {m.parameters && <span>{m.parameters}</span>}
-                      {m.sizeBytes && <span>{formatSize(m.sizeBytes)}</span>}
-                    </div>
-                  </div>
-                  {selectedModel === m.id && <ChevronRight size={11} className="text-accent flex-shrink-0" />}
-                </button>
-              ))}
-            </div>
-          </ScrollArea>
+          <div className="relative">
+            <select
+              value={selectedModel || ''}
+              onChange={handleModelChange}
+              className="w-full h-8 px-3 pr-8 text-xs rounded-md bg-surface-1 border border-border text-text-0 font-sans appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
+            >
+              <option value="">Select a model</option>
+              {localModels.map((m) => {
+                const label = m.filename?.replace(/\.gguf$/i, '') || m.id;
+                const tag = m.type === 'mlx' ? 'MLX' : m.type === 'hf' ? 'HF' : 'GGUF';
+                const meta = [tag, m.quantization, m.parameters, m.sizeBytes ? formatSize(m.sizeBytes) : null].filter(Boolean).join(' · ');
+                return (
+                  <option key={m.id} value={m.id}>
+                    {label}{meta ? ` (${meta})` : ''}
+                  </option>
+                );
+              })}
+            </select>
+            <ChevronRight size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none rotate-90" />
+          </div>
 
           {selectedModel && (
             <div className="space-y-2">
               <span className="text-2xs font-semibold font-sans text-text-4 uppercase tracking-wider">Backend</span>
               <div className="space-y-px">
-                {BACKENDS.map((b) => (
-                  <button
-                    key={b.id}
-                    onClick={() => setSelectedBackend(b.id)}
-                    className={cn(
-                      'w-full flex items-center gap-2.5 px-2.5 py-2 text-left transition-colors cursor-pointer rounded-sm',
-                      selectedBackend === b.id ? 'bg-accent/8' : 'hover:bg-surface-3',
-                    )}
-                  >
-                    <span className={cn(
-                      'w-2 h-2 rounded-full border-[1.5px] flex-shrink-0',
-                      selectedBackend === b.id ? 'border-accent bg-accent' : 'border-text-4',
-                    )} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className={cn('text-xs font-sans font-medium', selectedBackend === b.id ? 'text-text-0' : 'text-text-2')}>
-                          {b.label}
-                        </span>
-                        {b.recommended && <Badge variant="success" className="text-2xs">Recommended</Badge>}
+                {backendsWithCompat.map((b) => (
+                  <Tooltip key={b.id} content={b.reason} side="right">
+                    <button
+                      onClick={() => setSelectedBackend(b.id)}
+                      className={cn(
+                        'w-full flex items-center gap-2.5 px-2.5 py-2 text-left transition-colors cursor-pointer rounded-sm',
+                        selectedBackend === b.id ? 'bg-accent/8' : 'hover:bg-surface-3',
+                        !b.compatible && 'opacity-40',
+                      )}
+                    >
+                      <span className={cn(
+                        'w-2 h-2 rounded-full border-[1.5px] flex-shrink-0',
+                        selectedBackend === b.id ? 'border-accent bg-accent' : 'border-text-4',
+                      )} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={cn('text-xs font-sans font-medium', selectedBackend === b.id ? 'text-text-0' : 'text-text-2')}>
+                            {b.label}
+                          </span>
+                          {b.compatible && b.recommended && <Badge variant="success" className="text-2xs">Recommended</Badge>}
+                        </div>
+                        <div className="text-2xs text-text-4 font-sans">{b.subtitle}</div>
                       </div>
-                      <div className="text-2xs text-text-4 font-sans">{b.subtitle}</div>
-                    </div>
-                  </button>
+                    </button>
+                  </Tooltip>
                 ))}
               </div>
 
-              {selectedBackend === 'llama-cpp' && (
+              {!isCompatible && (
+                <div className="px-2.5 py-2 bg-warning/8 rounded-sm space-y-1">
+                  <p className="text-2xs text-warning font-sans">
+                    {currentBackend?.reason}
+                  </p>
+                  {suggestion && (
+                    <p className="text-2xs text-text-2 font-sans">
+                      Try <span className="font-mono font-medium">{suggestion.repoId}</span> instead
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {isCompatible && selectedBackend === 'llama-cpp' && (
                 <div className="px-2.5">
                   {llamaInstalled === null && (
                     <div className="flex items-center gap-2 text-2xs text-text-3 font-sans">
@@ -299,43 +395,74 @@ export function LaunchModel() {
                 </div>
               )}
 
-              {!currentBackend?.autoLaunch && (
+              {isCompatible && !currentBackend?.autoLaunch && (
                 <div className="space-y-2">
-                  <button
-                    onClick={handleLaunchAssistant}
-                    disabled={assistantLaunching}
-                    className={cn(
-                      'w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-sans font-medium rounded-sm transition-colors cursor-pointer',
-                      assistantLaunching ? 'bg-accent/20 text-accent' : 'bg-accent text-surface-0 hover:bg-accent/90',
-                    )}
-                  >
-                    {assistantLaunching
-                      ? <><Loader2 size={12} className="animate-spin" /> Starting Assistant...</>
-                      : <><Wrench size={12} /> Setup {currentBackend?.label} with Assistant</>
-                    }
-                  </button>
-                  <p className="text-2xs text-text-4 font-sans">
-                    An AI assistant will check your system and handle the installation, or start your server manually and add it as a Runtime below.
-                  </p>
+                  {hasActiveAssistant && labAssistantBackend === selectedBackend ? (
+                    <div className="space-y-2">
+                      <div className={cn(
+                        'flex items-center gap-2 px-2.5 py-2 rounded-sm text-xs font-sans',
+                        assistantRunning ? 'bg-accent/8 text-accent' : 'bg-success/8 text-success',
+                      )}>
+                        {assistantRunning ? (
+                          <><Loader2 size={12} className="animate-spin" /> Assistant is setting up {currentBackend?.label}...</>
+                        ) : (
+                          <><CheckCircle size={12} /> Setup complete</>
+                        )}
+                      </div>
+                      {!labAssistantMode && (
+                        <button
+                          onClick={() => setLabAssistantMode(true)}
+                          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-sans font-medium text-text-1 bg-surface-3 hover:bg-surface-4 rounded-sm transition-colors cursor-pointer"
+                        >
+                          View Assistant
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        onClick={handleLaunchAssistant}
+                        disabled={assistantLaunching}
+                        className={cn(
+                          'w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-sans font-medium rounded-sm transition-colors cursor-pointer',
+                          assistantLaunching ? 'bg-accent/20 text-accent' : 'bg-accent text-surface-0 hover:bg-accent/90',
+                        )}
+                      >
+                        {assistantLaunching
+                          ? <><Loader2 size={12} className="animate-spin" /> Starting Assistant...</>
+                          : <><Wrench size={12} /> Setup {currentBackend?.label} with Assistant</>
+                        }
+                      </button>
+                      <p className="text-2xs text-text-4 font-sans">
+                        An AI assistant will check your system and handle the installation.
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
 
-              {currentBackend?.autoLaunch && (
+              {isCompatible && currentBackend?.autoLaunch && (
                 <div className="space-y-2">
-                  <button
-                    disabled={!canLaunch}
-                    onClick={handleLaunch}
-                    className={cn(
-                      'w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-sans font-medium rounded-sm transition-colors cursor-pointer',
-                      canLaunch ? 'bg-accent text-surface-0 hover:bg-accent/90' : 'bg-surface-3 text-text-4 cursor-not-allowed',
-                    )}
-                  >
-                    {launching ? (
-                      <><Loader2 size={12} className="animate-spin" /> Starting...</>
-                    ) : (
-                      <><Play size={12} /> Launch</>
-                    )}
-                  </button>
+                  {serverRunning ? (
+                    <div className="flex items-center gap-2 px-2.5 py-2 bg-success/8 rounded-sm text-xs font-sans text-success">
+                      <CheckCircle size={12} /> Server Running
+                    </div>
+                  ) : (
+                    <button
+                      disabled={!canLaunch}
+                      onClick={handleLaunch}
+                      className={cn(
+                        'w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-sans font-medium rounded-sm transition-colors cursor-pointer',
+                        canLaunch ? 'bg-accent text-surface-0 hover:bg-accent/90' : 'bg-surface-3 text-text-4 cursor-not-allowed',
+                      )}
+                    >
+                      {launching ? (
+                        <><Loader2 size={12} className="animate-spin" /> Starting...</>
+                      ) : (
+                        <><Play size={12} /> Launch</>
+                      )}
+                    </button>
+                  )}
                   <LaunchStatus phase={launchPhase} error={launchError} />
                 </div>
               )}
@@ -353,6 +480,8 @@ export function RuntimeConfig() {
   const setActiveRuntime = useGrooveStore((s) => s.setLabActiveRuntime);
   const testRuntime = useGrooveStore((s) => s.testLabRuntime);
   const removeRuntime = useGrooveStore((s) => s.removeLabRuntime);
+  const stopRuntime = useGrooveStore((s) => s.stopLabRuntime);
+  const startRuntime = useGrooveStore((s) => s.startLabRuntime);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [testing, setTesting] = useState(null);
@@ -399,6 +528,8 @@ export function RuntimeConfig() {
                 onSelect={setActiveRuntime}
                 onTest={handleTest}
                 onRemove={removeRuntime}
+                onStop={stopRuntime}
+                onStart={startRuntime}
                 testing={testing}
               />
             ))}
@@ -407,6 +538,54 @@ export function RuntimeConfig() {
       )}
 
       <AddRuntimeDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+    </div>
+  );
+}
+
+export function RuntimeSection() {
+  const runtimes = useGrooveStore((s) => s.labRuntimes);
+  const activeRuntime = useGrooveStore((s) => s.labActiveRuntime);
+  const activeModel = useGrooveStore((s) => s.labActiveModel);
+  const [expanded, setExpanded] = useState(true);
+  const wasRunning = useRef(false);
+
+  const activeRt = activeRuntime ? runtimes.find((r) => r.id === activeRuntime) : null;
+  const serverRunning = activeRt?.status === 'connected';
+  const runtimeLabel = activeRt ? (RUNTIME_TYPES.find((t) => t.value === activeRt.type)?.label || activeRt.type) : null;
+
+  useEffect(() => {
+    if (serverRunning && !wasRunning.current) setExpanded(false);
+    wasRunning.current = serverRunning;
+  }, [serverRunning]);
+
+  if (!serverRunning || expanded) {
+    return (
+      <div className="space-y-5 [&>*]:pt-5 [&>*:first-child]:pt-0">
+        <LaunchModel />
+        <RuntimeConfig />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2.5 px-1 py-1.5">
+        <span className="w-2 h-2 rounded-full bg-success flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-sans font-medium text-text-0 truncate">{runtimeLabel}</div>
+          <div className="text-2xs text-text-4 font-sans truncate">
+            {activeModel || 'Ready'}{activeRt?.latency != null ? ` · ${Math.round(activeRt.latency)}ms` : ''}
+          </div>
+        </div>
+        <Tooltip content="Runtime settings">
+          <button
+            onClick={() => setExpanded(true)}
+            className="p-1 text-text-4 hover:text-text-1 transition-colors cursor-pointer"
+          >
+            <Settings2 size={13} />
+          </button>
+        </Tooltip>
+      </div>
     </div>
   );
 }

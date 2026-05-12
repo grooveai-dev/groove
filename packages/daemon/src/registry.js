@@ -11,16 +11,31 @@ export class Registry extends EventEmitter {
     super();
     this.state = state;
     this.agents = new Map();
+    this._counters = new Map();
+    this._initCounters();
+  }
+
+  _initCounters() {
+    for (const agent of this.agents.values()) {
+      const match = agent.name.match(/^(.+)-(\d+)$/);
+      if (!match) continue;
+      const role = match[1];
+      const num = parseInt(match[2], 10);
+      const current = this._counters.get(role) || 0;
+      if (num > current) this._counters.set(role, num);
+    }
   }
 
   add(config) {
-    let name = config.name || `${config.role}-${this.agents.size + 1}`;
-    // Dedup: ensure name is unique within the same team
-    const teamId = config.teamId || null;
+    const role = config.role;
+    const count = (this._counters.get(role) || 0) + 1;
+    this._counters.set(role, count);
+    let name = config.name || `${role}-${count}`;
+    // Dedup: ensure name is globally unique (no two agents ever share a name)
     const existing = this.getAll();
-    if (existing.some((a) => a.name === name && a.teamId === teamId)) {
+    if (existing.some((a) => a.name === name)) {
       let suffix = 2;
-      while (existing.some((a) => a.name === `${name}-${suffix}` && a.teamId === teamId)) suffix++;
+      while (existing.some((a) => a.name === `${name}-${suffix}`)) suffix++;
       name = `${name}-${suffix}`;
     }
     const agent = {
@@ -130,6 +145,7 @@ export class Registry extends EventEmitter {
       agent.pid = null;
       this.agents.set(agent.id, agent);
     }
+    this._initCounters();
     if (agents.length > 0) {
       this.emit('change', { changed: agents.map((a) => a.id) });
     }

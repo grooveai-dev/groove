@@ -41,7 +41,7 @@ describe('Introducer', () => {
 
       const ctx = introducer.generateContext(a2);
 
-      assert.ok(ctx.includes('frontend-2'));
+      assert.ok(ctx.includes('frontend-1'));
       assert.ok(ctx.includes('Team'));
       assert.ok(ctx.includes('backend-1'));
       assert.ok(ctx.includes('src/api/**'));
@@ -77,7 +77,7 @@ describe('Introducer', () => {
       const content = readFileSync(join(tmpDir, 'AGENTS_REGISTRY.md'), 'utf8');
       assert.ok(content.includes('AGENTS REGISTRY'));
       assert.ok(content.includes('backend-1'));
-      assert.ok(content.includes('frontend-2'));
+      assert.ok(content.includes('frontend-1'));
       assert.ok(content.includes('src/api/**'));
       assert.ok(content.includes('src/components/**'));
     });
@@ -257,7 +257,7 @@ describe('Introducer', () => {
       const content = readFileSync(join(tmpDir, 'CLAUDE.md'), 'utf8');
       const startCount = (content.match(/GROOVE:START/g) || []).length;
       assert.equal(startCount, 1, 'should only have one GROOVE section');
-      assert.ok(content.includes('frontend-2'));
+      assert.ok(content.includes('frontend-1'));
     });
 
     it('should not create CLAUDE.md if it does not exist', () => {

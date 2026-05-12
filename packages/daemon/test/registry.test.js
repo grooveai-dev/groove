@@ -34,7 +34,45 @@ describe('Registry', () => {
     const a2 = registry.add({ role: 'frontend' });
 
     assert.equal(a1.name, 'backend-1');
+    assert.equal(a2.name, 'frontend-1');
+  });
+
+  it('should produce unique names across different teams', () => {
+    const a1 = registry.add({ role: 'backend', teamId: 'team-a' });
+    const a2 = registry.add({ role: 'backend', teamId: 'team-b' });
+    const a3 = registry.add({ role: 'backend', teamId: 'team-a' });
+
+    assert.equal(a1.name, 'backend-1');
+    assert.equal(a2.name, 'backend-2');
+    assert.equal(a3.name, 'backend-3');
+    assert.notEqual(a1.name, a2.name);
+    assert.notEqual(a2.name, a3.name);
+  });
+
+  it('should not reuse names after agents are removed', () => {
+    const a1 = registry.add({ role: 'frontend' });
+    assert.equal(a1.name, 'frontend-1');
+
+    registry.remove(a1.id);
+    assert.equal(registry.getAll().length, 0);
+
+    const a2 = registry.add({ role: 'frontend' });
     assert.equal(a2.name, 'frontend-2');
+  });
+
+  it('_initCounters should resume numbering from restored agents', () => {
+    const persisted = [
+      { id: 'x1', name: 'backend-5', role: 'backend', status: 'running', pid: 1 },
+      { id: 'x2', name: 'frontend-12', role: 'frontend', status: 'running', pid: 2 },
+      { id: 'x3', name: 'backend-3', role: 'backend', status: 'running', pid: 3 },
+    ];
+    registry.restore(persisted);
+
+    const newBackend = registry.add({ role: 'backend' });
+    const newFrontend = registry.add({ role: 'frontend' });
+
+    assert.equal(newBackend.name, 'backend-6');
+    assert.equal(newFrontend.name, 'frontend-13');
   });
 
   it('should get an agent by id', () => {

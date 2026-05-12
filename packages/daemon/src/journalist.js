@@ -168,7 +168,7 @@ export class Journalist {
 
   hasNewActivity(agents) {
     for (const agent of agents) {
-      const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.name}.log`);
+      const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.id}.log`);
       if (!existsSync(logPath)) continue;
       try {
         const size = statSync(logPath).size;
@@ -182,7 +182,7 @@ export class Journalist {
     const result = {};
 
     for (const agent of agents) {
-      const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.name}.log`);
+      const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.id}.log`);
       if (!existsSync(logPath)) {
         result[agent.id] = { agent, entries: [], explorationEntries: [] };
         continue;
@@ -846,7 +846,7 @@ export class Journalist {
     for (const [agentId, { agent, entries }] of Object.entries(filteredLogs)) {
       if (entries.length === 0) continue;
 
-      const agentDir = resolve(logsDir, agent.name);
+      const agentDir = resolve(logsDir, agent.id);
       mkdirSync(agentDir, { recursive: true });
 
       const logPath = resolve(agentDir, `${dateStr}-session.md`);
@@ -1005,7 +1005,7 @@ export class Journalist {
    * Budget: keeps recent turns verbatim, summarizes oldest if over maxChars.
    */
   extractConversationThread(agent, { maxChars = 60000 } = {}) {
-    const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.name}.log`);
+    const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.id}.log`);
     if (!existsSync(logPath)) return null;
 
     let content;
@@ -1211,7 +1211,7 @@ export class Journalist {
    * Used by the Introducer to tell new agents what their teammates built.
    */
   getAgentFiles(agent) {
-    const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.name}.log`);
+    const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.id}.log`);
     if (!existsSync(logPath)) return [];
 
     try {
@@ -1249,7 +1249,7 @@ export class Journalist {
    * Used to capture planner conclusions, build summaries, etc.
    */
   getAgentResult(agent) {
-    const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.name}.log`);
+    const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.id}.log`);
     if (!existsSync(logPath)) return '';
 
     try {

@@ -28,7 +28,7 @@ export class ProjectManager {
 
     // Get agent registry for scope awareness
     const agents = this.daemon.registry.getAll();
-    const agentRecord = agents.find((a) => a.name === agent);
+    const agentRecord = agents.find((a) => a.id === agent) || agents.find((a) => a.name === agent);
     const scope = agentRecord?.scope?.join(', ') || 'unrestricted';
     const role = agentRecord?.role || 'unknown';
 

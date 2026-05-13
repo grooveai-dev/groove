@@ -12,7 +12,7 @@ import {
   Shield, Database, Megaphone, Calculator, UserCheck,
   Headphones, BarChart3, Rocket, ChevronDown, Pen, Presentation,
   Sparkles, X, Search, AlertTriangle, Plug, MessageCircle, GitBranch, Globe,
-  Check,
+  Check, Users, Plus,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Dialog, DialogContent } from '../ui/dialog';
@@ -53,6 +53,8 @@ export function SpawnWizard() {
   const closeDetail = useGrooveStore((s) => s.closeDetail);
   const spawnAgent = useGrooveStore((s) => s.spawnAgent);
   const fetchProviders = useGrooveStore((s) => s.fetchProviders);
+  const teams = useGrooveStore((s) => s.teams);
+  const createTeam = useGrooveStore((s) => s.createTeam);
 
   const open = detailPanel?.type === 'spawn';
   const [role, setRole] = useState('');
@@ -80,6 +82,9 @@ export function SpawnWizard() {
   const [preflightDialog, setPreflightDialog] = useState(null);
   const [ollamaInstalled, setOllamaInstalled] = useState([]);
   const [ollamaServerRunning, setOllamaServerRunning] = useState(false);
+  const [teamMode, setTeamMode] = useState('new');
+  const [newTeamName, setNewTeamName] = useState('');
+  const [selectedTeamId, setSelectedTeamId] = useState('');
   const federation = useGrooveStore((s) => s.federation);
   const ollamaRunningModels = useGrooveStore((s) => s.ollamaRunningModels);
 
@@ -102,6 +107,25 @@ export function SpawnWizard() {
           const best = priority.find((pid) => installed.some((p) => p.id === pid)) || installed[0].id;
           setProvider(best);
         }
+        if (_presetProvider) setProvider(_presetProvider);
+        if (_presetModel) {
+          const prov = list.find((p) => p.id === (_presetProvider || provider));
+          const models = prov?.models || [];
+          const exact = models.find((m) => m.id === _presetModel);
+          if (exact) {
+            setModel(_presetModel);
+          } else {
+            const parts = _presetModel.split(':');
+            const modelName = parts.length >= 3 ? parts.slice(2).join(':') : parts[parts.length - 1];
+            const match = models.find((m) =>
+              m.id === _presetModel ||
+              m.id === `gguf:${modelName}` ||
+              m.id.endsWith(`:${modelName}`) ||
+              m.name === modelName
+            );
+            setModel(match?.id || _presetModel);
+          }
+        }
       }).catch(() => {});
       api.get('/integrations/installed').then((data) => {
         setInstalledIntegrations(Array.isArray(data) ? data : []);
@@ -114,6 +138,10 @@ export function SpawnWizard() {
       }).catch(() => {});
       setRole(''); setCustomRole(''); setName('');
       setProvider(_presetProvider); setModel(_presetModel);
+      setTeamMode('new'); setSelectedTeamId('');
+      setNewTeamName(_presetModel
+        ? _presetModel.split(':').pop().replace(/[-_]/g, ' ')
+        : '');
       setPrompt('');
       setSelectedIntegrations([]);
       setIntegrationApproval('manual');
@@ -153,6 +181,14 @@ export function SpawnWizard() {
   async function runSpawn() {
     setSpawning(true);
     try {
+      let teamId;
+      if (teamMode === 'new') {
+        const teamName = newTeamName.trim() || selectedRole || 'New Team';
+        const team = await createTeam(teamName);
+        teamId = team.id;
+      } else if (teamMode === 'existing' && selectedTeamId) {
+        teamId = selectedTeamId;
+      }
       const config = {
         role: selectedRole,
         ...(name && { name: name.replace(/\s+/g, '-') }),
@@ -164,6 +200,7 @@ export function SpawnWizard() {
         ...(selectedRepos.length > 0 && { repos: selectedRepos }),
         ...(selectedPersonality && { personality: selectedPersonality }),
         ...(selectedRole === 'ambassador' && selectedPeerId && { peerId: selectedPeerId }),
+        ...(teamId && { teamId }),
       };
       await spawnAgent(config);
       closeDetail();
@@ -415,7 +452,36 @@ export function SpawnWizard() {
                               }
                             </optgroup>
                           </>
-                        ) : (
+                        ) : provider === 'local' ? (() => {
+                          const runtimeModels = availableModels.filter((m) => m.source === 'runtime');
+                          const ggufModels = availableModels.filter((m) => m.source === 'gguf');
+                          const ollamaMs = availableModels.filter((m) => m.source === 'ollama' || !m.source);
+                          return (
+                            <>
+                              {runtimeModels.length > 0 && (
+                                <optgroup label="Lab Runtimes">
+                                  {runtimeModels.map((m) => (
+                                    <option key={m.id} value={m.id}>{m.name}{m.runtimeType ? ` (${m.runtimeType})` : ''}</option>
+                                  ))}
+                                </optgroup>
+                              )}
+                              {ggufModels.length > 0 && (
+                                <optgroup label="GGUF Models">
+                                  {ggufModels.map((m) => (
+                                    <option key={m.id} value={m.id}>{m.name}{m.hasRuntime ? '' : ' (no runtime)'}</option>
+                                  ))}
+                                </optgroup>
+                              )}
+                              {ollamaMs.length > 0 && (
+                                <optgroup label="Ollama">
+                                  {ollamaMs.map((m) => (
+                                    <option key={m.id} value={m.id}>{m.name}</option>
+                                  ))}
+                                </optgroup>
+                              )}
+                            </>
+                          );
+                        })() : (
                           availableModels.map((m) => (
                             <option key={m.id} value={m.id}>{m.name}</option>
                           ))
@@ -458,6 +524,64 @@ export function SpawnWizard() {
                     )}
                   </div>
                 )}
+
+                {/* Team */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-text-2 font-sans">Team</label>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setTeamMode('new')}
+                      className={cn(
+                        'flex-1 flex items-center gap-2 px-3 py-2 rounded-md border text-left transition-all cursor-pointer',
+                        teamMode === 'new'
+                          ? 'border-accent bg-accent/5'
+                          : 'border-border-subtle bg-surface-1 hover:border-border',
+                      )}
+                    >
+                      <Plus size={13} className={teamMode === 'new' ? 'text-accent' : 'text-text-3'} />
+                      <div>
+                        <div className="text-2xs font-semibold text-text-0 font-sans">New Team</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => setTeamMode('existing')}
+                      className={cn(
+                        'flex-1 flex items-center gap-2 px-3 py-2 rounded-md border text-left transition-all cursor-pointer',
+                        teamMode === 'existing'
+                          ? 'border-accent bg-accent/5'
+                          : 'border-border-subtle bg-surface-1 hover:border-border',
+                      )}
+                    >
+                      <Users size={13} className={teamMode === 'existing' ? 'text-accent' : 'text-text-3'} />
+                      <div>
+                        <div className="text-2xs font-semibold text-text-0 font-sans">Existing</div>
+                      </div>
+                    </button>
+                  </div>
+                  {teamMode === 'new' && (
+                    <Input
+                      value={newTeamName}
+                      onChange={(e) => setNewTeamName(e.target.value)}
+                      placeholder="Team name..."
+                      className="text-xs"
+                    />
+                  )}
+                  {teamMode === 'existing' && (
+                    <div className="relative">
+                      <select
+                        value={selectedTeamId}
+                        onChange={(e) => setSelectedTeamId(e.target.value)}
+                        className="w-full h-8 px-3 pr-8 text-sm rounded-md bg-surface-1 border border-border text-text-0 font-sans appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
+                      >
+                        <option value="">Select team...</option>
+                        {teams.filter((t) => !t.archived).map((t) => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none" />
+                    </div>
+                  )}
+                </div>
 
                 {/* Integrations */}
                 <div className="space-y-1.5">
@@ -756,18 +880,22 @@ export function SpawnWizard() {
               </div>
             )}
             {selectedRole && installedProviders.length > 0 && (
-              <div className="flex items-center gap-2 mb-3 text-xs text-text-3 font-sans">
+              <div className="flex items-center gap-2 mb-3 text-xs text-text-3 font-sans flex-wrap">
                 <span>Spawning</span>
                 <Badge variant="accent">{selectedRole}</Badge>
                 {provider && <span>on {selectedProvider?.name || provider}</span>}
                 {name && <span>as {name.replace(/\s+/g, '-')}</span>}
+                {teamMode === 'new' && <span>in new team{newTeamName ? ` "${newTeamName}"` : ''}</span>}
+                {teamMode === 'existing' && selectedTeamId && (
+                  <span>in {teams.find((t) => t.id === selectedTeamId)?.name || 'team'}</span>
+                )}
               </div>
             )}
             <Button
               variant="primary"
               size="lg"
               onClick={handleSpawn}
-              disabled={!selectedRole || spawning || installedProviders.length === 0}
+              disabled={!selectedRole || spawning || installedProviders.length === 0 || (teamMode === 'existing' && !selectedTeamId)}
               className="w-full"
             >
               {spawning ? 'Spawning...' : 'Spawn Agent'}

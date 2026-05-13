@@ -14,6 +14,15 @@ export const createAgentsSlice = (set, get) => ({
   // Track which agents are thinking (sent a message, waiting for response)
   thinkingAgents: new Set(),
 
+  // Pending questions from agents awaiting user input
+  pendingQuestions: [],
+
+  answerQuestion(agentId, answers) {
+    return api.post(`/agents/${agentId}/answer`, { answers }).then(() => {
+      set((s) => ({ pendingQuestions: s.pendingQuestions.filter((q) => q.agentId !== agentId) }));
+    });
+  },
+
   // ── Workspace Mode ────────────────────────────────────────
   workspaceMode: localStorage.getItem('groove:workspaceMode') === 'true',
   workspaceAgentId: null,
@@ -38,7 +47,7 @@ export const createAgentsSlice = (set, get) => ({
 
   async spawnAgent(config) {
     try {
-      const teamId = get().activeTeamId;
+      const teamId = config.teamId || get().activeTeamId;
       const agent = await api.post('/agents', { ...config, teamId });
       get().addToast('success', `Spawned ${agent.name}`);
       return agent;

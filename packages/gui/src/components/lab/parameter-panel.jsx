@@ -72,8 +72,8 @@ function SeedInput({ value, onChange }) {
     onChange(Math.floor(Math.random() * 2147483647));
   }
   return (
-    <div className="space-y-2 pt-1.5">
-      <span className="text-[11px] text-text-2 font-sans">Seed</span>
+    <div className="pt-2">
+      <span className="text-[11px] text-text-2 font-sans block mb-2.5">Seed</span>
       <div className="flex items-center gap-1.5">
         <input
           type="number"
@@ -118,8 +118,8 @@ function StopSequenceInput({ sequences, onChange }) {
   }
 
   return (
-    <div className="space-y-2 pt-1.5">
-      <span className="text-[11px] text-text-2 font-sans">Stop Sequences</span>
+    <div className="pt-2">
+      <span className="text-[11px] text-text-2 font-sans block mb-2.5">Stop Sequences</span>
       <div className="flex items-center gap-1.5">
         <input
           value={input}
@@ -138,7 +138,7 @@ function StopSequenceInput({ sequences, onChange }) {
         </button>
       </div>
       {sequences.length > 0 && (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1.5 mt-2.5">
           {sequences.map((s, i) => (
             <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-surface-2 border border-border-subtle rounded text-[10px] font-mono text-text-2">
               {s.length > 12 ? s.slice(0, 12) + '...' : s}

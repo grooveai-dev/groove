@@ -11,7 +11,7 @@ import { hostname, networkInterfaces, homedir } from 'os';
 import { StringDecoder } from 'string_decoder';
 import { request as httpRequest } from 'http';
 import { lookup as mimeLookup } from './mimetypes.js';
-import { listProviders, getProvider, clearInstallCache, getProviderMetadata, getProviderPath, setProviderPaths } from './providers/index.js';
+import { listProviders, getProvider, clearInstallCache, getProviderMetadata, getProviderPath, setProviderPaths, isProviderInstalled } from './providers/index.js';
 import { OllamaProvider } from './providers/ollama.js';
 import { ClaudeCodeProvider } from './providers/claude-code.js';
 import { supportsSignalFlag, compareSemver, parseSemver } from './providers/groove-network.js';
@@ -1336,7 +1336,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
 
   app.post('/api/onboarding/set-default', async (req, res) => {
     const { provider, model } = req.body;
-    const validProviders = ['claude-code', 'codex', 'gemini', 'ollama'];
+    const validProviders = ['claude-code', 'codex', 'gemini', 'grok', 'ollama', 'local'];
     if (!provider || !validProviders.includes(provider)) {
       return res.status(400).json({ error: `Invalid provider. Valid: ${validProviders.join(', ')}` });
     }
@@ -1721,8 +1721,9 @@ Keep responses concise. Help them think, don't lecture them about the system the
   app.post('/api/lab/assistant', async (req, res) => {
     try {
       const { backend, model } = req.body || {};
-      if (!backend || !['vllm', 'tgi', 'mlx'].includes(backend)) {
-        return res.status(400).json({ error: 'backend must be "vllm", "tgi", or "mlx"' });
+      const validBackends = ['vllm', 'tgi', 'mlx', 'llama-cpp', 'lab-general'];
+      if (!backend || !validBackends.includes(backend)) {
+        return res.status(400).json({ error: `backend must be one of: ${validBackends.join(', ')}` });
       }
       const templatePath = resolve(__dirname, `../templates/${backend}-setup.json`);
       const template = JSON.parse(readFileSync(templatePath, 'utf8'));
@@ -1733,14 +1734,19 @@ Keep responses concise. Help them think, don't lecture them about the system the
         const desc = parts.join(', ');
         prompt = `The user has selected a local model: ${desc} (id: ${model.id}).\nUse this model for setup instead of recommending a different one. If this exact model isn't available in the runtime's format, find the closest equivalent (same base model, similar quantization).\n\n${prompt}`;
       }
+      // Pick best available CLI provider: prefer user's default, fall back through tool-use capable providers
+      const cliProviders = ['claude-code', 'codex', 'gemini'];
+      const defaultProv = daemon.config.defaultProvider;
+      let assistantProvider = cliProviders.includes(defaultProv) && isProviderInstalled(defaultProv)
+        ? defaultProv
+        : cliProviders.find((p) => isProviderInstalled(p)) || 'claude-code';
       const config = {
         role: 'lab-assistant',
         scope: agentConfig.scope || [],
-        provider: agentConfig.provider || daemon.config.defaultProvider,
+        provider: assistantProvider,
         prompt,
         metadata: { labAssistant: true, backend },
       };
-      if (!config.provider) config.provider = daemon.config.defaultProvider;
       const agent = await daemon.processes.spawn(config);
       daemon.audit.log('lab.assistant.spawn', { id: agent.id, backend });
       res.status(201).json({ agentId: agent.id, backend });

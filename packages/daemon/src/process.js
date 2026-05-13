@@ -345,6 +345,10 @@ export class ProcessManager {
     this._truncationFlagged = new Set(); // agentIds that have had any truncation in their session
     this._lastAssistantBlocks = new Map(); // agentId -> last assistant content blocks (for abandoned tool_use detection)
     this._previousCacheReadTokens = new Map(); // agentId -> previous turn's cacheReadTokens
+    this.pendingQuestions = new Map(); // agentId -> { id, agentId, agentName, questions, timestamp }
+    this._reviewTriggered = new Set(); // teamIds that have had review triggered (one round only)
+    this._pendingReviews = new Map(); // teamId -> { reviewAgentId }
+    this._reviewPending = new Set(); // teamIds with review in progress (blocks preview launch)
 
     this._stallWatchdog = setInterval(() => this._checkStalls(), STALL_CHECK_INTERVAL_MS);
     if (this._stallWatchdog.unref) this._stallWatchdog.unref();
@@ -503,6 +507,7 @@ export class ProcessManager {
 
     if (finalStatus === 'completed' && agent.role === 'planner') {
       this._extractRecommendedTeam(agent, logPath);
+      this._handleReviewComplete(agent);
     }
 
     if (finalStatus === 'completed') {
@@ -528,6 +533,10 @@ export class ProcessManager {
     }
 
     this._checkPhase2(agent.id);
+
+    if (finalStatus === 'completed' && agent.role === 'fullstack' && agent.teamId) {
+      this._triggerReview(agent);
+    }
 
     if (agent.teamId) {
       this._checkPreviewReady(agent.teamId);
@@ -592,6 +601,20 @@ export class ProcessManager {
 
     const hadResult = this._resultReceived.has(agent.id);
     this._resultReceived.delete(agent.id);
+
+    // Agent exited while waiting for user answer — keep it in "waiting" state
+    // instead of marking completed. The GUI will relay the user's answer and
+    // trigger a resume via POST /api/agents/:id/answer.
+    const pendingQ = this.pendingQuestions.get(agent.id);
+    if (pendingQ && code === 0) {
+      registry.update(agent.id, { status: 'waiting_for_input', pid: null });
+      this.daemon.broadcast({
+        type: 'agent:exit',
+        agentId: agent.id, code, signal,
+        status: 'waiting_for_input',
+      });
+      return;
+    }
 
     const finalStatus = hadResult ? 'completed' : signal === 'SIGTERM' || signal === 'SIGKILL' ? 'killed' : code === 0 ? 'completed' : 'crashed';
     registry.update(agent.id, { status: finalStatus, pid: null });
@@ -779,21 +802,58 @@ export class ProcessManager {
       );
     }
 
-    // Pre-flight for local model providers: ensure Ollama server is running and model is installed
+    // Pre-flight for local model providers: ensure runtime/server is running
     if (providerName === 'local' || providerName === 'ollama') {
-      try {
-        await LocalProvider.ensureServerRunning();
-      } catch (err) {
-        const agent = registry.add({ ...config, provider: providerName, status: 'error' });
-        registry.update(agent.id, { status: 'error', error: 'Ollama server failed to start' });
-        this.daemon.broadcast({ type: 'model:error', agentId: agent.id, error: err.message });
-        throw new Error('Ollama server failed to start: ' + err.message);
-      }
-      if (config.model && config.model !== 'auto') {
-        const installed = OllamaProvider.getInstalledModels();
-        const modelInstalled = installed.some((m) => m.id === config.model || config.model.startsWith(m.id.split(':')[0]));
-        if (!modelInstalled) {
-          throw new Error(`Model '${config.model}' is not installed. Pull it first with: ollama pull ${config.model}`);
+      // Auto-start lab runtime when model is runtime:<runtimeId>:<modelId>
+      if (config.model && config.model.startsWith('runtime:') && this.daemon.modelLab) {
+        const parts = config.model.split(':');
+        const runtimeId = parts[1];
+        const rt = this.daemon.modelLab.getRuntime(runtimeId);
+        if (rt) {
+          const status = await this.daemon.modelLab.getRuntimeStatus(rt);
+          if (!status.online) {
+            console.log(`[Groove] Auto-starting runtime '${rt.name}' for agent spawn`);
+            try {
+              await this.daemon.modelLab.startRuntime(runtimeId);
+            } catch (err) {
+              throw new Error(`Failed to auto-start runtime '${rt.name}': ${err.message}`);
+            }
+          }
+        }
+      } else if (config.model && config.model.startsWith('gguf:') && this.daemon.modelLab) {
+        // GGUF models are served by llama-cpp runtimes, not Ollama
+        const ggufId = config.model.slice(5);
+        const runtimes = this.daemon.modelLab.listRuntimes();
+        const rt = runtimes.find(r =>
+          r._localModelId === ggufId ||
+          r.models?.some(rm => rm.id === ggufId || rm.name === ggufId)
+        );
+        if (rt) {
+          const status = await this.daemon.modelLab.getRuntimeStatus(rt);
+          if (!status.online) {
+            console.log(`[Groove] Auto-starting runtime '${rt.name}' for GGUF model '${ggufId}'`);
+            try {
+              await this.daemon.modelLab.startRuntime(rt.id);
+            } catch (err) {
+              throw new Error(`Failed to auto-start runtime '${rt.name}': ${err.message}`);
+            }
+          }
+        }
+      } else {
+        try {
+          await LocalProvider.ensureServerRunning();
+        } catch (err) {
+          const agent = registry.add({ ...config, provider: providerName, status: 'error' });
+          registry.update(agent.id, { status: 'error', error: 'Ollama server failed to start' });
+          this.daemon.broadcast({ type: 'model:error', agentId: agent.id, error: err.message });
+          throw new Error('Ollama server failed to start: ' + err.message);
+        }
+        if (config.model && config.model !== 'auto') {
+          const installed = OllamaProvider.getInstalledModels();
+          const modelInstalled = installed.some((m) => m.id === config.model || config.model.startsWith(m.id.split(':')[0]));
+          if (!modelInstalled) {
+            throw new Error(`Model '${config.model}' is not installed. Pull it first with: ollama pull ${config.model}`);
+          }
         }
       }
     }
@@ -953,7 +1013,7 @@ export class ProcessManager {
     if (!isOneShotProvider) {
       // Apply role-specific prompt prefix so agents always get their role constraints
       const rolePrompt = ROLE_PROMPTS[agent.role];
-      if (rolePrompt) {
+      if (rolePrompt && !config._skipRolePrompt) {
         if (!spawnConfig.prompt) {
           spawnConfig.prompt = rolePrompt + `IMPORTANT: No task has been assigned yet. You MUST wait for the user to tell you what to do.
 
@@ -973,6 +1033,11 @@ DO: Introduce yourself in one sentence and ask the user what they would like you
         spawnConfig.prompt = `You are a ${agent.role} agent.
 
 IMPORTANT: No task has been assigned yet. You MUST wait for the user to tell you what to do. Do NOT start building, coding, or continuing previous work. Do NOT treat existing files or the project map as your task. Introduce yourself in one sentence and ask the user what they would like you to work on. Then wait.`;
+      }
+
+      // AskUserQuestion is unavailable in headless mode — instruct agents to use text output instead
+      if (spawnConfig.prompt) {
+        spawnConfig.prompt += '\n\nIMPORTANT: Do NOT use the AskUserQuestion tool. If you need user input or clarification, state your questions as regular text output — the user will see your output and respond via the chat interface.';
       }
 
       // Inject skill content into the prompt
@@ -1405,6 +1470,23 @@ For normal file edits within your scope, proceed without review.
 
       this._lastAssistantBlocks.set(agentId, blocks);
 
+      // Detect AskUserQuestion tool calls — these cause the agent to exit
+      // in headless mode because there's no terminal to collect input.
+      // Intercept and relay to the GUI instead.
+      const askBlock = blocks.find(b => b.type === 'tool_use' && b.name === 'AskUserQuestion');
+      if (askBlock) {
+        const questionData = {
+          id: askBlock.id || `q_${Date.now()}`,
+          agentId,
+          agentName: agent.name,
+          questions: askBlock.input?.questions || [{ question: askBlock.input?.question || JSON.stringify(askBlock.input || {}).slice(0, 500) }],
+          timestamp: Date.now(),
+        };
+        this.pendingQuestions.set(agentId, questionData);
+        registry.update(agentId, { pendingQuestion: true });
+        this.daemon.broadcast({ type: 'agent:question', agentId, data: questionData });
+      }
+
       if (truncated) {
         this._truncationFlagged.add(agentId);
         const prev = agent.consecutiveTruncations || 0;
@@ -1538,6 +1620,7 @@ For normal file edits within your scope, proceed without review.
    * with _previewAttempted per teamId.
    */
   _checkPreviewReady(teamId) {
+    if (this._reviewPending?.has(teamId)) return;
     const preview = this.daemon.preview;
     if (!preview) return;
     if (!this._previewAttempted) this._previewAttempted = new Set();
@@ -1786,6 +1869,170 @@ For normal file edits within your scope, proceed without review.
         }
       }
     }
+  }
+
+  /**
+   * After the phase-2 fullstack QC completes in a planned team build,
+   * auto-spawn a review planner that checks the implementation against
+   * the original spec. One round only — _reviewTriggered guards re-entry.
+   */
+  _triggerReview(agent) {
+    const teamId = agent.teamId;
+    if (!teamId) return;
+    if (this._reviewTriggered.has(teamId)) return;
+
+    const registry = this.daemon.registry;
+    const teamAgents = registry.getAll().filter(a => a.teamId === teamId);
+
+    // Only trigger for planned team builds — must have a completed planner
+    const planner = teamAgents.find(a => a.role === 'planner' &&
+      (a.status === 'completed' || a.status === 'crashed' || a.status === 'stopped' || a.status === 'killed'));
+    if (!planner) return;
+
+    // All non-planner agents must be done
+    const hasRunning = teamAgents.some(a =>
+      a.role !== 'planner' && (a.status === 'running' || a.status === 'starting'));
+    if (hasRunning) return;
+
+    this._reviewTriggered.add(teamId);
+    this._reviewPending.add(teamId);
+
+    const journalist = this.daemon.journalist;
+    const originalSpec = planner.prompt || '';
+    const plannerResult = journalist?.getAgentResult(planner) || '';
+
+    // Collect all files modified by non-planner team agents
+    const allFiles = new Set();
+    for (const a of teamAgents) {
+      if (a.role === 'planner') continue;
+      for (const f of (journalist?.getAgentFiles(a) || [])) allFiles.add(f);
+    }
+
+    const reviewPrompt = `You are reviewing a completed team build against the original specification.
+
+## Original Task
+${originalSpec.slice(0, 2000)}
+
+## Plan
+${plannerResult.slice(0, 3000)}
+
+## Files Created/Modified
+${[...allFiles].join('\n')}
+
+Read the key files listed above and check:
+1. Are all features from the spec implemented?
+2. Are there bugs, missing error handling, or broken functionality?
+3. Does the implementation match the architectural decisions in the plan?
+
+Output a JSON block with your verdict:
+\`\`\`json
+{ "pass": true, "issues": [] }
+\`\`\`
+
+Or if issues are found:
+\`\`\`json
+{
+  "pass": false,
+  "issues": [
+    { "file": "path/to/file", "problem": "description", "fix": "what to change" }
+  ]
+}
+\`\`\`
+
+If everything matches the spec, set pass: true with empty issues.
+Do NOT write .groove/recommended-team.json. Do NOT plan a new team. Just review and report.`;
+
+    const config = validateAgentConfig({
+      role: 'planner',
+      prompt: reviewPrompt,
+      workingDir: agent.workingDir,
+      teamId,
+      scope: [],
+    });
+    config._skipRolePrompt = true;
+
+    this.spawn(config).then(reviewAgent => {
+      this._pendingReviews.set(teamId, { reviewAgentId: reviewAgent.id });
+      this.daemon.audit?.log('review.started', { teamId, reviewAgentId: reviewAgent.id });
+      this.daemon.broadcast({ type: 'review:started', teamId, agentId: reviewAgent.id, name: reviewAgent.name });
+      console.log(`[Groove] Review planner ${reviewAgent.name} spawned for team ${teamId}`);
+    }).catch(err => {
+      console.error(`[Groove] Review spawn failed: ${err.message}`);
+      this._reviewPending.delete(teamId);
+      this._pendingReviews.delete(teamId);
+    });
+  }
+
+  /**
+   * When a review planner completes, extract its verdict.
+   * If issues found, spawn a fullstack to fix them. If clean, let preview proceed.
+   */
+  _handleReviewComplete(agent) {
+    const teamId = agent.teamId;
+    if (!teamId) return;
+
+    const pending = this._pendingReviews.get(teamId);
+    if (!pending || pending.reviewAgentId !== agent.id) return;
+    this._pendingReviews.delete(teamId);
+
+    const journalist = this.daemon.journalist;
+    const report = journalist?.getAgentResult(agent) || '';
+
+    // Try to parse the structured verdict from the report
+    let pass = true;
+    let issues = [];
+    const jsonMatch = report.match(/```json\s*([\s\S]*?)```/) || report.match(/\{[\s\S]*?"pass"\s*:[\s\S]*?\}/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+        pass = parsed.pass === true;
+        issues = Array.isArray(parsed.issues) ? parsed.issues : [];
+      } catch { /* fall through to text analysis */ }
+    }
+
+    // Fallback: if no JSON parsed, check for pass/fail signals in text
+    if (!jsonMatch) {
+      const lower = report.toLowerCase();
+      pass = lower.includes('pass') && !lower.includes('fail') && !lower.includes('issue');
+    }
+
+    if (pass || issues.length === 0) {
+      this._reviewPending.delete(teamId);
+      this.daemon.audit?.log('review.passed', { teamId });
+      this.daemon.broadcast({ type: 'review:passed', teamId });
+      console.log(`[Groove] Review passed for team ${teamId}`);
+      if (agent.teamId) this._checkPreviewReady(agent.teamId);
+      return;
+    }
+
+    // Build fix prompt from issues
+    const issuesList = issues.map((iss, i) =>
+      `${i + 1}. **${iss.file || 'unknown'}**: ${iss.problem || ''}${iss.fix ? `\n   Fix: ${iss.fix}` : ''}`
+    ).join('\n');
+
+    const fixPrompt = `The QC review found the following issues. Fix each one:
+
+${issuesList}
+
+After fixing all issues, run tests (npm test) and build (npm run build) to verify everything works.`;
+
+    const fixConfig = validateAgentConfig({
+      role: 'fullstack',
+      prompt: fixPrompt,
+      workingDir: agent.workingDir,
+      teamId,
+      scope: [],
+    });
+
+    this.spawn(fixConfig).then(fixAgent => {
+      this._reviewPending.delete(teamId);
+      this.daemon.audit?.log('review.fixStarted', { teamId, fixAgentId: fixAgent.id, issueCount: issues.length });
+      this.daemon.broadcast({ type: 'review:fix-started', teamId, agentId: fixAgent.id, name: fixAgent.name, issueCount: issues.length });
+      console.log(`[Groove] Fix fullstack ${fixAgent.name} spawned with ${issues.length} issues for team ${teamId}`);
+    }).catch(err => {
+      console.error(`[Groove] Review fix spawn failed: ${err.message}`);
+      this._reviewPending.delete(teamId);
+    });
   }
 
   /**

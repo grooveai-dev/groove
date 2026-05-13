@@ -15,13 +15,13 @@ export function formatModelName(id) {
     .join(' ');
 }
 
-const TIER_CONFIG = {
+export const TIER_CONFIG = {
   frontier: { label: 'Frontier', variant: 'purple', icon: Sparkles },
   mid: { label: 'Mid', variant: 'accent', icon: Zap },
   fast: { label: 'Fast', variant: 'success', icon: Zap },
 };
 
-function getTier(model) {
+export function getTier(model) {
   const name = (model || '').toLowerCase();
   if (name.includes('gpt-5.5') || name.includes('gpt-5.4-pro')) return 'frontier';
   if (name.includes('gpt-5.4-mini') || name.includes('gpt-5-mini')) return 'mid';
@@ -32,7 +32,7 @@ function getTier(model) {
   return 'fast';
 }
 
-function getContextSize(model) {
+export function getContextSize(model) {
   const name = (model || '').toLowerCase();
   if (name.startsWith('gpt-5')) return '200k';
   if (name.includes('opus') || name.includes('sonnet')) return '200k';

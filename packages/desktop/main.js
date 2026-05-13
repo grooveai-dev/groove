@@ -27,6 +27,106 @@ if (process.platform === 'linux') {
   }
 }
 
+// Linux ARM64 GPU rendering fallback — escalating recovery:
+//   Level 0: auto (Electron defaults — Ozone auto-detects Wayland/X11)
+//   Level 1: force X11 via Ozone (fixes NVIDIA ARM + Wayland blank screen)
+//   Level 2: full software rendering (no GPU at all)
+// On blank paint or GPU crash, escalate one level and relaunch. A marker file
+// persists the level so subsequent launches start at the right point.
+// Override: GROOVE_GPU=1 resets to level 0, GROOVE_GPU=0 jumps to level 2.
+let _gpuFallbackPath = null;
+let _gpuFallbackLevel = 0;
+
+if (process.platform === 'linux' && process.arch === 'arm64') {
+  let udPath;
+  try { udPath = app.getPath('userData'); } catch { udPath = join(process.env.HOME || '/tmp', '.config', 'Groove'); }
+  _gpuFallbackPath = join(udPath, '.gpu-fallback');
+
+  const gpuEnv = process.env.GROOVE_GPU;
+  if (gpuEnv === '0') {
+    _gpuFallbackLevel = 2;
+  } else if (gpuEnv === '1') {
+    _gpuFallbackLevel = 0;
+    try { unlinkSync(_gpuFallbackPath); } catch {}
+  } else {
+    try {
+      const level = readFileSync(_gpuFallbackPath, 'utf8').trim();
+      if (level === '1') _gpuFallbackLevel = 1;
+      else if (level === '2') _gpuFallbackLevel = 2;
+    } catch {}
+  }
+
+  if (_gpuFallbackLevel === 1) {
+    app.commandLine.appendSwitch('ozone-platform', 'x11');
+  } else if (_gpuFallbackLevel === 2) {
+    app.disableHardwareAcceleration();
+    app.commandLine.appendSwitch('disable-gpu');
+    app.commandLine.appendSwitch('disable-gpu-compositing');
+    app.commandLine.appendSwitch('use-gl', 'swiftshader');
+  }
+}
+
+function _escalateGpuFallback(reason) {
+  if (!_gpuFallbackPath) return;
+  const next = Math.min(_gpuFallbackLevel + 1, 2);
+  const label = next === 1 ? 'X11' : 'software rendering';
+  process.stderr.write(`[groove] GPU ${reason} on Linux ARM64 — restarting with ${label}\n`);
+  try { mkdirSync(dirname(_gpuFallbackPath), { recursive: true }); } catch {}
+  try { writeFileSync(_gpuFallbackPath, String(next)); } catch {}
+  app.relaunch();
+  app.exit(0);
+}
+
+function _isBlankCapture(nativeImage) {
+  if (nativeImage.isEmpty()) return true;
+  const { width, height } = nativeImage.getSize();
+  if (width < 10 || height < 10) return true;
+  const bitmap = nativeImage.toBitmap();
+  if (!bitmap || bitmap.length < 16) return true;
+  const stride = width * 4;
+  const points = [
+    [Math.floor(width * 0.25), Math.floor(height * 0.25)],
+    [Math.floor(width * 0.75), Math.floor(height * 0.25)],
+    [Math.floor(width * 0.5),  Math.floor(height * 0.5)],
+    [Math.floor(width * 0.25), Math.floor(height * 0.75)],
+    [Math.floor(width * 0.75), Math.floor(height * 0.75)],
+  ];
+  const i0 = points[0][1] * stride + points[0][0] * 4;
+  const r0 = bitmap[i0], g0 = bitmap[i0 + 1], b0 = bitmap[i0 + 2];
+  for (let p = 1; p < points.length; p++) {
+    const idx = points[p][1] * stride + points[p][0] * 4;
+    if (Math.abs(bitmap[idx] - r0) > 8 || Math.abs(bitmap[idx + 1] - g0) > 8 || Math.abs(bitmap[idx + 2] - b0) > 8) {
+      return false;
+    }
+  }
+  return true;
+}
+
+if (_gpuFallbackPath && _gpuFallbackLevel < 2) {
+  app.on('child-process-gone', (_e, details) => {
+    if (details.type === 'GPU') _escalateGpuFallback(`gpu-crash:${details.reason}`);
+  });
+
+  let gpuVerified = false;
+  app.on('browser-window-created', (_e, win) => {
+    if (gpuVerified) return;
+    win.webContents.once('did-finish-load', () => {
+      setTimeout(() => {
+        if (gpuVerified || win.isDestroyed()) return;
+        win.webContents.capturePage().then(img => {
+          if (gpuVerified || win.isDestroyed()) return;
+          if (_isBlankCapture(img)) {
+            _escalateGpuFallback('blank-paint');
+          } else {
+            gpuVerified = true;
+            try { unlinkSync(_gpuFallbackPath); } catch {}
+          }
+        }).catch(() => {});
+      }, 4000);
+    });
+  });
+}
+
 const IS_MAC = process.platform === 'darwin';
 const STUDIO_URL = 'https://studio.groovedev.ai';
 const SUBSCRIPTION_POLL_MS = 5 * 60 * 1000;

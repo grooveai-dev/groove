@@ -60,11 +60,23 @@ export class Rotator extends EventEmitter {
     const rotateEvents = events.filter((e) => e.type === 'rotate');
     if (rotateEvents.length === 0) return;
 
-    const existingTimestamps = new Set(this.rotationHistory.map((r) => r.timestamp));
+    const existingEntries = this.rotationHistory.map((r) => ({
+      agentId: r.agentId,
+      reason: r.reason,
+      ts: new Date(r.timestamp).getTime(),
+    }));
     let added = 0;
     for (const e of rotateEvents) {
-      const ts = new Date(e.t).toISOString();
-      if (existingTimestamps.has(ts)) continue;
+      const eventTs = typeof e.t === 'number' ? e.t : new Date(e.t).getTime();
+      const eventAgentId = e.oldAgentId || e.agentId;
+      const eventReason = e.reason || 'context_threshold';
+      const isDupe = existingEntries.some((existing) =>
+        existing.agentId === eventAgentId &&
+        existing.reason === eventReason &&
+        Math.abs(existing.ts - eventTs) < 10_000
+      );
+      if (isDupe) continue;
+      const ts = new Date(eventTs).toISOString();
       this.rotationHistory.push({
         agentId: e.oldAgentId || e.agentId,
         agentName: e.agentName || 'unknown',

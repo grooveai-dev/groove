@@ -115,6 +115,7 @@ function SparklineSection({ icon: Icon, label, value, unit, data, color = HEX.ac
 export function MetricsPanel() {
   const metrics = useGrooveStore((s) => s.labMetrics);
   const activeRuntime = useGrooveStore((s) => s.labActiveRuntime);
+  const activeModel = useGrooveStore((s) => s.labActiveModel);
   const activeSession = useGrooveStore((s) => s.labActiveSession);
   const sessions = useGrooveStore((s) => s.labSessions);
 
@@ -276,11 +277,20 @@ export function MetricsPanel() {
       </div>
 
       {/* Attach to agent */}
-      {activeRuntime && (
+      {activeRuntime && activeModel && (
         <>
           <div className="h-px bg-border-subtle" />
-          <Tooltip content="Use current preset when spawning a new agent">
-            <button className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-2xs font-sans text-text-3 hover:text-text-1 border border-border-subtle rounded-sm hover:border-border transition-colors cursor-pointer">
+          <Tooltip content="Spawn a new agent using this runtime and model">
+            <button
+              onClick={() => {
+                useGrooveStore.getState().openDetail({
+                  type: 'spawn',
+                  presetProvider: 'local',
+                  presetModel: `runtime:${activeRuntime}:${activeModel}`,
+                });
+              }}
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-2xs font-sans text-text-3 hover:text-text-1 border border-border-subtle rounded-sm hover:border-border transition-colors cursor-pointer"
+            >
               <Link size={11} /> Attach to Agent
             </button>
           </Tooltip>

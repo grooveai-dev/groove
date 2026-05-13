@@ -297,7 +297,7 @@ export function LaunchModel() {
   }
 
   return (
-    <SidebarSection label="Launch Model" collapsible defaultOpen={false}>
+    <SidebarSection label="Launch Model">
       {localModels.length === 0 ? (
         <div className="py-6 text-center rounded-md bg-surface-1/50 border border-border-subtle">
           <HardDrive size={16} className="mx-auto text-text-4 mb-2" />
@@ -494,8 +494,6 @@ export function RuntimeConfig() {
   return (
     <SidebarSection
       label="Runtimes"
-      collapsible
-      defaultOpen={false}
       action={
         <Tooltip content="Add runtime">
           <button

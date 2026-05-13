@@ -307,7 +307,7 @@ export function LabAssistant() {
             <span className="relative w-1.5 h-1.5 rounded-full bg-accent" />
           </div>
           <span className="text-2xs font-sans text-text-2">
-            Lab Assistant is setting up <span className="font-medium text-text-1">{backend?.toUpperCase()}</span>
+            Lab Assistant {backend === 'lab-general' ? 'is active' : <>is setting up <span className="font-medium text-text-1">{backend?.toUpperCase()}</span></>}
           </span>
           <div className="flex-1" />
           <Badge variant="success" className="text-2xs">running</Badge>
@@ -322,8 +322,14 @@ export function LabAssistant() {
               <div className="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center mb-3">
                 <FlaskConical size={22} className="text-accent" />
               </div>
-              <p className="text-sm text-text-1 font-sans font-medium">Setting up {backend?.toUpperCase()}</p>
-              <p className="text-[13px] text-text-3 font-sans mt-1.5">The assistant is starting up and will begin configuring your runtime...</p>
+              <p className="text-sm text-text-1 font-sans font-medium">
+                {backend === 'lab-general' ? 'Lab Assistant' : `Setting up ${backend?.toUpperCase()}`}
+              </p>
+              <p className="text-[13px] text-text-3 font-sans mt-1.5">
+                {backend === 'lab-general'
+                  ? 'Ask about runtime setup, model configs, context windows, prompts, or anything else...'
+                  : 'The assistant is starting up and will begin configuring your runtime...'}
+              </p>
             </div>
           ) : (
             messages.map((msg, i) =>

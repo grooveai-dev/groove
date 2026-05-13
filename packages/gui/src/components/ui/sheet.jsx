@@ -30,12 +30,12 @@ export function SheetContent({ children, className, title, side = 'right', width
             <DialogPrimitive.Title className="text-base font-semibold text-text-0 font-sans">
               {title}
             </DialogPrimitive.Title>
-            <DialogPrimitive.Close
+            <button
               onClick={onClose}
               className="p-1 rounded-md text-text-3 hover:text-text-0 hover:bg-surface-5 transition-colors cursor-pointer"
             >
               <X size={16} />
-            </DialogPrimitive.Close>
+            </button>
           </div>
         )}
         <DialogPrimitive.Description className="sr-only">Panel</DialogPrimitive.Description>

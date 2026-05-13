@@ -40,7 +40,7 @@ function UserMessage({ msg }) {
     <div className="flex justify-end animate-chat-fade-in">
       <div className="max-w-[80%]">
         <div className="px-3.5 py-2 bg-accent/8 rounded rounded-br-none">
-          <p className="text-xs text-text-0 font-sans whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
+          <p className="text-sm text-text-0 font-sans whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
         </div>
       </div>
     </div>
@@ -60,7 +60,7 @@ function AssistantMessage({ msg, streaming }) {
       </div>
       {msg.reasoning && (
         <div className="ml-5 mb-1.5 pl-3 border-l border-text-4/20 py-1">
-          <div className="text-2xs font-sans text-text-4 italic whitespace-pre-wrap break-words leading-relaxed">
+          <div className="text-xs font-sans text-text-4 italic whitespace-pre-wrap break-words leading-relaxed">
             {msg.reasoning}
             {isReasoning && <span className="inline-block w-1 h-3 bg-text-4/40 ml-0.5 animate-pulse" />}
           </div>
@@ -69,7 +69,7 @@ function AssistantMessage({ msg, streaming }) {
       <div className="ml-5">
         {msg.content ? (
           <div className={cn(
-            'text-xs font-sans whitespace-pre-wrap break-words leading-relaxed',
+            'text-sm font-sans whitespace-pre-wrap break-words leading-relaxed',
             msg.error ? 'text-danger' : 'text-text-1',
           )}>
             {msg.content}

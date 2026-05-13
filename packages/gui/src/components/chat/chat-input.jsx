@@ -1,8 +1,10 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { SendHorizontal, Loader2, Square, Paperclip, Image as ImageIcon, Zap, Bot, GripHorizontal } from 'lucide-react';
+import { SendHorizontal, Loader2, Square, Paperclip, Image as ImageIcon, Zap, Bot, GripHorizontal, ChevronUp } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { formatModelName } from './model-picker';
+import { formatModelName, isImageModel as checkImageModel, getTier, getContextSize, TIER_CONFIG } from './model-picker';
+import { useGrooveStore } from '../../stores/groove';
+import { Badge } from '../ui/badge';
 
 const EFFORT_OPTIONS = [
   { value: 'none', label: 'None' },
@@ -17,15 +19,36 @@ const VERBOSITY_OPTIONS = [
   { value: 'medium', label: 'Normal' },
 ];
 
-export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImageModel, currentModel, replyContext, onClearReply, role, isCodex, reasoningEffort, onReasoningEffortChange, verbosity, onVerbosityChange, mode, onModeChange, modeChanging }) {
+export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImageModel, currentModel, currentProvider, onModelChange, replyContext, onClearReply, role, isCodex, reasoningEffort, onReasoningEffortChange, verbosity, onVerbosityChange, mode, onModeChange, modeChanging }) {
   const [input, setInput] = useState('');
   const [inputHeight, setInputHeight] = useState(88);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const modelPickerRef = useRef(null);
+
+  const [providers, setProviders] = useState([]);
+  const fetchProviders = useGrooveStore((s) => s.fetchProviders);
+
+  useEffect(() => {
+    fetchProviders().then((data) => {
+      if (Array.isArray(data)) setProviders(data);
+      else if (data?.providers) setProviders(data.providers);
+    }).catch(() => {});
+  }, [fetchProviders]);
 
   useEffect(() => {
     if (!disabled && textareaRef.current) textareaRef.current.focus();
   }, [disabled]);
+
+  useEffect(() => {
+    if (!modelPickerOpen) return;
+    function handleClick(e) {
+      if (modelPickerRef.current && !modelPickerRef.current.contains(e.target)) setModelPickerOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [modelPickerOpen]);
 
   function handleSend() {
     const text = input.trim();
@@ -160,17 +183,116 @@ export function ChatInput({ onSend, onStop, sending, streaming, disabled, isImag
             </button>
           </div>
 
-          {currentModel && (
-            <div className={cn(
-              'flex items-center gap-1 h-5 px-2 rounded text-2xs font-mono',
-              isImageModel
-                ? 'bg-purple/8 text-purple'
-                : 'text-text-3',
-            )}>
+          <div ref={modelPickerRef} className="relative">
+            <button
+              onClick={() => setModelPickerOpen(!modelPickerOpen)}
+              className={cn(
+                'flex items-center gap-1 h-5 px-2 rounded text-2xs font-mono transition-colors cursor-pointer',
+                isImageModel
+                  ? 'bg-purple/8 text-purple hover:bg-purple/15'
+                  : 'text-text-3 hover:text-text-1 hover:bg-surface-3',
+              )}
+            >
               {isImageModel && <ImageIcon size={9} />}
-              <span className="max-w-[80px] truncate">{formatModelName(currentModel)}</span>
-            </div>
-          )}
+              <span className="max-w-[120px] truncate">{currentModel ? formatModelName(currentModel) : 'Select model'}</span>
+              <ChevronUp size={10} className="text-text-4 flex-shrink-0" />
+            </button>
+
+            {modelPickerOpen && (() => {
+              const chatProviders = [];
+              const imageProviders = [];
+              for (const provider of providers) {
+                const models = provider.models || [];
+                const chat = [];
+                const img = [];
+                for (const m of models) {
+                  const mid = typeof m === 'string' ? m : m.id || m.name;
+                  const mtype = typeof m === 'object' ? m.type : undefined;
+                  if (mtype === 'image' || checkImageModel(mid)) img.push(m);
+                  else chat.push(m);
+                }
+                if (chat.length) chatProviders.push({ ...provider, models: chat });
+                if (img.length) imageProviders.push({ ...provider, models: img });
+              }
+
+              const renderModel = (provider, model) => {
+                const modelId = typeof model === 'string' ? model : model.id || model.name;
+                const modelName = typeof model === 'string' ? model : model.name || model.id;
+                const mtype = typeof model === 'object' ? model.type : undefined;
+                const isImg = mtype === 'image' || checkImageModel(modelId);
+                const tier = isImg ? null : getTier(modelId);
+                const tierCfg = tier ? TIER_CONFIG[tier] : null;
+                const TierIcon = tierCfg?.icon;
+                const isActive = currentModel === modelId && currentProvider === provider.id;
+                return (
+                  <button
+                    key={modelId}
+                    onClick={() => {
+                      onModelChange?.({ provider: provider.id, model: modelId });
+                      setModelPickerOpen(false);
+                    }}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition-colors cursor-pointer',
+                      isActive ? 'bg-accent/10' : 'hover:bg-surface-3',
+                    )}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        {isImg && <ImageIcon size={11} className="text-purple flex-shrink-0" />}
+                        <span className={cn('text-xs font-medium font-sans truncate', isActive ? 'text-accent' : 'text-text-0')}>{modelName}</span>
+                      </div>
+                      {!isImg && (
+                        <div className="text-2xs text-text-4 font-sans mt-0.5">{getContextSize(modelId)} context</div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {isImg ? (
+                        <Badge variant="purple" className="text-[9px]">
+                          <ImageIcon size={8} /> Image
+                        </Badge>
+                      ) : tierCfg && (
+                        <Badge variant={tierCfg.variant} className="text-[9px]">
+                          <TierIcon size={8} /> {tierCfg.label}
+                        </Badge>
+                      )}
+                    </div>
+                  </button>
+                );
+              };
+
+              return (
+                <div className="absolute bottom-full left-0 mb-1.5 w-80 max-h-[60vh] overflow-y-auto rounded-xl border border-border bg-surface-1 shadow-2xl z-50">
+                  {providers.length === 0 && (
+                    <div className="px-4 py-8 text-center text-xs text-text-3 font-sans">No providers available</div>
+                  )}
+                  {chatProviders.map((provider) => (
+                    <div key={provider.id}>
+                      <div className="px-3.5 py-2 text-2xs font-semibold text-text-3 uppercase tracking-wider font-sans bg-surface-2/80 border-b border-border-subtle sticky top-0 backdrop-blur-sm">
+                        {provider.name || provider.id}
+                      </div>
+                      {provider.models.map((m) => renderModel(provider, m))}
+                    </div>
+                  ))}
+                  {imageProviders.length > 0 && (
+                    <>
+                      <div className="px-3.5 py-2 text-2xs font-semibold text-text-4 uppercase tracking-wider font-sans bg-surface-0 border-y border-border-subtle flex items-center gap-1.5 sticky top-0 backdrop-blur-sm">
+                        <ImageIcon size={10} className="text-purple" />
+                        Image Generation
+                      </div>
+                      {imageProviders.map((provider) => (
+                        <div key={`img-${provider.id}`}>
+                          <div className="px-3.5 py-2 text-2xs font-semibold text-text-3 uppercase tracking-wider font-sans bg-surface-2/80 border-b border-border-subtle">
+                            {provider.name || provider.id}
+                          </div>
+                          {provider.models.map((m) => renderModel(provider, m))}
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
 
           {isCodex && (
             <>

@@ -314,6 +314,11 @@ export const useGrooveStore = create((set, get) => ({
         }
 
         case 'agent:exit': {
+          if (msg.status === 'waiting_for_input') {
+            const waitAgent = get().agents.find((a) => a.id === msg.agentId);
+            get().addToast('info', `${waitAgent?.name || msg.agentId.slice(0, 8)} needs your input`, 'Check the question popup below');
+            break;
+          }
           const agent = get().agents.find((a) => a.id === msg.agentId);
           const name = agent?.name || msg.agentId;
           const isKill = msg.status === 'killed' || msg.code === 143 || msg.code === 137;
@@ -415,6 +420,14 @@ export const useGrooveStore = create((set, get) => ({
           get().addChatMessage(msg.agentId, 'system', 'Agent is working — message will be delivered when it finishes.');
           break;
 
+        case 'agent:question':
+          set((s) => ({ pendingQuestions: [...s.pendingQuestions, msg.data] }));
+          break;
+
+        case 'agent:question:resolved':
+          set((s) => ({ pendingQuestions: s.pendingQuestions.filter((q) => q.agentId !== msg.agentId) }));
+          break;
+
         case 'ollama:pull:progress':
           set({ ollamaPullProgress: { ...get().ollamaPullProgress, [msg.model]: { status: 'pulling', progress: msg.progress } } });
           break;
@@ -450,6 +463,8 @@ export const useGrooveStore = create((set, get) => ({
         case 'lab:runtime:added':
         case 'lab:runtime:updated':
         case 'lab:runtime:removed':
+        case 'lab:runtime:started':
+        case 'lab:runtime:stopped':
         case 'llama:server:stopped':
           get().fetchLabRuntimes();
           break;
@@ -888,6 +903,17 @@ export const useGrooveStore = create((set, get) => ({
           break;
         }
 
+        case 'conversation:tool': {
+          const { conversationId, name, summary } = msg.data || msg;
+          if (!conversationId) break;
+          set((s) => {
+            const tools = { ...s.conversationActiveTools };
+            tools[conversationId] = { name: name || 'Tool', summary: summary || null, timestamp: Date.now() };
+            return { conversationActiveTools: tools };
+          });
+          break;
+        }
+
         case 'conversation:chunk': {
           const { conversationId, text } = msg.data || msg;
           if (!conversationId || !text) break;
@@ -902,7 +928,9 @@ export const useGrooveStore = create((set, get) => ({
               arr.push({ from: 'assistant', text, timestamp: Date.now() });
             }
             msgs[conversationId] = arr.slice(-200);
-            return { conversationMessages: msgs, streamingConversationId: conversationId };
+            const tools = { ...s.conversationActiveTools };
+            delete tools[conversationId];
+            return { conversationMessages: msgs, streamingConversationId: conversationId, conversationActiveTools: tools };
           });
           break;
         }
@@ -910,7 +938,9 @@ export const useGrooveStore = create((set, get) => ({
         case 'conversation:complete': {
           const { conversationId } = msg.data || msg;
           if (conversationId && get().streamingConversationId === conversationId) {
-            set({ sendingMessage: false, streamingConversationId: null });
+            const tools = { ...get().conversationActiveTools };
+            delete tools[conversationId];
+            set({ sendingMessage: false, streamingConversationId: null, conversationActiveTools: tools });
           }
           if (conversationId) persistJSON('groove:conversationMessages', get().conversationMessages);
           break;

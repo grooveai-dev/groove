@@ -106,6 +106,26 @@ export class Introducer {
 
     if (others.length === 0) {
       lines.push('You are the only agent on this project right now.');
+
+      // Solo agents get full authority — no team coordination, no scope limits.
+      // Business roles and planners keep their restrictions (intentional by design).
+      const NO_SOLO_EXPAND = new Set([
+        'planner', 'cmo', 'cfo', 'ea', 'support', 'analyst', 'home', 'chat', 'ambassador',
+      ]);
+      if (!NO_SOLO_EXPAND.has(newAgent.role)) {
+        lines.push('');
+        lines.push('## Solo Mode');
+        lines.push('');
+        lines.push('You are working alone — no team, no scope restrictions, no coordination needed. You have full authority to do whatever the task requires:');
+        lines.push('- Install dependencies (npm install, pip install, etc.)');
+        lines.push('- Start dev servers and long-running processes when needed');
+        lines.push('- Run tests, builds, and linters');
+        lines.push('- Create, modify, or delete any project files');
+        lines.push('- Commit and manage git operations');
+        lines.push('- Perform any shell commands necessary to complete your task');
+        lines.push('');
+        lines.push('You are not limited to your role\'s typical focus area. If the task requires work outside your specialty, handle it directly.');
+      }
     } else {
       lines.push(`## Team (${others.length} other agent${others.length > 1 ? 's' : ''})`);
       lines.push('');

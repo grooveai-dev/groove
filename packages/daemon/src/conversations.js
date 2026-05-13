@@ -475,31 +475,62 @@ export class ConversationManager {
 
         try {
           const json = JSON.parse(trimmed);
+          let matched = false;
           if (json.type === 'assistant' && json.message?.content) {
             for (const block of json.message.content) {
               if (block.type === 'text' && block.text) {
                 emitChunk(block.text);
               }
             }
-            continue;
+            matched = true;
           }
-          if (json.type === 'content_block_delta' && json.delta?.text) {
+          if (!matched && json.type === 'content_block_delta' && json.delta?.text) {
             emitChunk(json.delta.text);
-            continue;
+            matched = true;
           }
-          if (json.type === 'result' && json.result) continue;
-          if (json.type === 'token' && json.text != null) {
+          if (!matched && json.type === 'result' && json.result) {
+            matched = true;
+          }
+          if (!matched && json.type === 'token' && json.text != null) {
             emitChunk(json.text);
-            continue;
+            matched = true;
           }
-          if ((json.type === 'done' || json.type === 'complete' || json.type === 'result') && json.text) {
+          if (!matched && (json.type === 'done' || json.type === 'complete' || json.type === 'result') && json.text) {
             emitChunk(json.text);
-            continue;
+            matched = true;
           }
-          if (json.content?.[0]?.text) {
+          if (!matched && json.content?.[0]?.text) {
             emitChunk(json.content[0].text);
-            continue;
+            matched = true;
           }
+          // Fallback: use provider's parseOutput for provider-specific formats (Gemini tool_use, tool_result, Codex items, etc.)
+          if (!matched && provider.parseOutput) {
+            const parsed = provider.parseOutput(trimmed);
+            if (parsed) {
+              const blocks = Array.isArray(parsed.data) ? parsed.data : [];
+              for (const block of blocks) {
+                if (block.type === 'text' && block.text) {
+                  emitChunk(block.text);
+                } else if (block.type === 'tool_use') {
+                  const cmd = block.input?.command;
+                  const path = block.input?.path;
+                  const summary = cmd || path || (block.input && Object.keys(block.input).length > 0
+                    ? Object.values(block.input)[0]
+                    : null);
+                  if (block.name || summary) {
+                    this.daemon.broadcast({
+                      type: 'conversation:tool',
+                      data: { conversationId: id, name: block.name || 'Tool', summary: summary ? String(summary).slice(0, 120) : null },
+                    });
+                  }
+                }
+              }
+              if (!blocks.length && typeof parsed.data === 'string' && parsed.data) {
+                emitChunk(parsed.data);
+              }
+            }
+          }
+          continue;
         } catch { /* not JSON */ }
 
         if (!trimmed.startsWith('{')) {

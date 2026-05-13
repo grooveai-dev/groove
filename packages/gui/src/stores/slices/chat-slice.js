@@ -10,6 +10,7 @@ export const createChatSlice = (set, get) => ({
   conversations: [],
   activeConversationId: localStorage.getItem('groove:activeConversationId') || null,
   conversationMessages: loadJSON('groove:conversationMessages'),
+  conversationActiveTools: {},
   sendingMessage: false,
   streamingConversationId: null,
   conversationRoles: loadJSON('groove:conversationRoles'),

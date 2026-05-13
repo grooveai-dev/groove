@@ -12,6 +12,16 @@ export function registerAgentRoutes(app, daemon) {
     res.json(daemon.registry.getAll());
   });
 
+  // List all pending questions from agents awaiting user input
+  // (registered before :id route so Express doesn't capture "questions" as an id)
+  app.get('/api/agents/questions', (req, res) => {
+    const questions = [];
+    for (const [, q] of daemon.processes.pendingQuestions) {
+      questions.push(q);
+    }
+    res.json(questions);
+  });
+
   // Get single agent
   app.get('/api/agents/:id', (req, res) => {
     const agent = daemon.registry.get(req.params.id);
@@ -500,6 +510,39 @@ export function registerAgentRoutes(app, daemon) {
         : await daemon.rotator.rotate(req.params.id, { additionalPrompt: wrappedMessage });
 
       daemon.audit.log('agent.instruct', { id: req.params.id, newId: newAgent.id, resumed });
+      res.json(newAgent);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Answer a pending question from an agent
+  app.post('/api/agents/:id/answer', async (req, res) => {
+    try {
+      const { answers } = req.body;
+      if (!answers || typeof answers !== 'object') {
+        return res.status(400).json({ error: 'answers object is required' });
+      }
+
+      const agent = daemon.registry.get(req.params.id);
+      if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+      const pending = daemon.processes.pendingQuestions.get(req.params.id);
+      if (!pending) return res.status(404).json({ error: 'No pending question for this agent' });
+
+      daemon.processes.pendingQuestions.delete(req.params.id);
+      daemon.registry.update(req.params.id, { pendingQuestion: false });
+      daemon.broadcast({ type: 'agent:question:resolved', agentId: req.params.id });
+
+      // Format the answers as a natural language message for session resume
+      const parts = Object.entries(answers).map(([q, a]) => `Q: ${q}\nA: ${a}`);
+      const resumeMessage = `The user answered your questions:\n\n${parts.join('\n\n')}\n\nContinue with your task based on these answers.`;
+
+      const newAgent = agent.sessionId
+        ? await daemon.processes.resume(req.params.id, resumeMessage)
+        : await daemon.rotator.rotate(req.params.id, { additionalPrompt: resumeMessage });
+
+      daemon.audit.log('agent.answer', { id: req.params.id, newId: newAgent.id });
       res.json(newAgent);
     } catch (err) {
       res.status(400).json({ error: err.message });

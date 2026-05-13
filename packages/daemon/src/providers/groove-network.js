@@ -78,9 +78,7 @@ export class GrooveNetworkProvider extends Provider {
   static authType = 'none';
   static isOneShot = true;
 
-  static models = [
-    { id: 'Qwen/Qwen3-4B', name: 'Qwen 3 4B (Network)', context: 32768 },
-  ];
+  static models = [];
 
   static isInstalled() {
     const cfg = getConfig();

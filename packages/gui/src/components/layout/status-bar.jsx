@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Terminal, BookOpen, Radio, Plug, Globe, ArrowUpCircle, X, Unplug } from 'lucide-react';
+import { Terminal, BookOpen, Radio, Plug, Globe, ArrowUpCircle, X, Unplug, Cpu, Square } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/status-dot';
 import { Badge } from '../ui/badge';
@@ -23,7 +23,10 @@ export function StatusBar({
   const updateProgress = useGrooveStore((s) => s.updateProgress);
   const setUpdateModalOpen = useGrooveStore((s) => s.setUpdateModalOpen);
   const navigate = useGrooveStore((s) => s.setActiveView);
+  const labRuntimes = useGrooveStore((s) => s.labRuntimes);
+  const stopLabRuntime = useGrooveStore((s) => s.stopLabRuntime);
   const activeTunnels = savedTunnels.filter((t) => t.active);
+  const runningRuntimes = (labRuntimes || []).filter((rt) => rt.status === 'connected');
   const electron = isElectron();
 
   return (
@@ -110,6 +113,26 @@ export function StatusBar({
             <span>Federation</span>
           </button>
         )}
+        {runningRuntimes.map((rt) => (
+          <div key={rt.id} className="flex items-center gap-1">
+            <button
+              onClick={() => navigate('model-lab')}
+              className="flex items-center gap-1.5 text-text-3 hover:text-text-1 cursor-pointer transition-colors"
+              title={`${rt.name} — running`}
+            >
+              <Cpu size={10} className="text-success" />
+              <span>{rt.name}</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-success" />
+            </button>
+            <button
+              onClick={() => stopLabRuntime(rt.id)}
+              className="p-0.5 text-text-4 hover:text-danger cursor-pointer transition-colors rounded"
+              title={`Stop ${rt.name}`}
+            >
+              <Square size={8} />
+            </button>
+          </div>
+        ))}
       </div>
 
       <div className="flex-1" />

@@ -135,6 +135,7 @@ export default function ModelLabView() {
   const labAssistantAgentId = useGrooveStore((s) => s.labAssistantAgentId);
   const labAssistantMode = useGrooveStore((s) => s.labAssistantMode);
   const setLabAssistantMode = useGrooveStore((s) => s.setLabAssistantMode);
+  const launchLabAssistant = useGrooveStore((s) => s.launchLabAssistant);
 
   useEffect(() => { fetchLabRuntimes(); }, [fetchLabRuntimes]);
 
@@ -234,28 +235,32 @@ export default function ModelLabView() {
             {leftCollapsed && (
               <PanelToggle collapsed onClick={() => setLeftCollapsed(false)} side="left" />
             )}
-            {labAssistantAgentId && (
-              <div className="flex items-center gap-px bg-surface-2 rounded p-px">
-                <button
-                  onClick={() => setLabAssistantMode(false)}
-                  className={cn(
-                    'px-3 py-1 text-2xs font-sans font-medium rounded-sm transition-colors cursor-pointer',
-                    !labAssistantMode ? 'text-text-0 bg-surface-4' : 'text-text-3 hover:text-text-1',
-                  )}
-                >
-                  Playground
-                </button>
-                <button
-                  onClick={() => setLabAssistantMode(true)}
-                  className={cn(
-                    'px-3 py-1 text-2xs font-sans font-medium rounded-sm transition-colors cursor-pointer',
-                    labAssistantMode ? 'text-text-0 bg-surface-4' : 'text-text-3 hover:text-text-1',
-                  )}
-                >
-                  Assistant
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-px bg-surface-2 rounded p-px">
+              <button
+                onClick={() => setLabAssistantMode(false)}
+                className={cn(
+                  'px-3 py-1 text-2xs font-sans font-medium rounded-sm transition-colors cursor-pointer',
+                  !labAssistantMode ? 'text-text-0 bg-surface-4' : 'text-text-3 hover:text-text-1',
+                )}
+              >
+                Playground
+              </button>
+              <button
+                onClick={() => {
+                  if (labAssistantAgentId) {
+                    setLabAssistantMode(true);
+                  } else {
+                    launchLabAssistant('lab-general');
+                  }
+                }}
+                className={cn(
+                  'px-3 py-1 text-2xs font-sans font-medium rounded-sm transition-colors cursor-pointer',
+                  labAssistantMode ? 'text-text-0 bg-surface-4' : 'text-text-3 hover:text-text-1',
+                )}
+              >
+                Assistant
+              </button>
+            </div>
             <div className="flex-1" />
             {rightCollapsed && (
               <PanelToggle collapsed onClick={() => setRightCollapsed(false)} side="right" />

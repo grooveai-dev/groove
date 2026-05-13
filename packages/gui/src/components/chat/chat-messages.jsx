@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { Copy, Check, ArrowRight, Download, Maximize2, X, Image as ImageIcon, RefreshCw } from 'lucide-react';
+import { Copy, Check, ArrowRight, Download, Maximize2, X, Image as ImageIcon, RefreshCw, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
 import { ThinkingIndicator } from '../ui/thinking-indicator';
@@ -435,7 +435,23 @@ function ApiTypingIndicator() {
   );
 }
 
-export function ChatMessages({ messages, isStreaming, model, mode, onImageReply, role }) {
+function ToolCallIndicator({ tool }) {
+  return (
+    <div className="max-w-[85%] py-1">
+      <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg bg-surface-3/50 border border-border-subtle/30">
+        <Loader2 size={13} className="text-accent animate-spin flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <span className="text-xs font-semibold font-sans text-text-2">{tool.name}</span>
+          {tool.summary && (
+            <span className="text-xs font-mono text-text-4 ml-1.5 truncate">{tool.summary}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ChatMessages({ messages, isStreaming, model, mode, onImageReply, role, activeTool }) {
   const scrollRef = useRef(null);
   const isAtBottomRef = useRef(true);
 
@@ -453,7 +469,7 @@ export function ChatMessages({ messages, isStreaming, model, mode, onImageReply,
     if (isAtBottomRef.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages?.length, isStreaming]);
+  }, [messages?.length, isStreaming, activeTool]);
 
   if (!messages || messages.length === 0) {
     return (
@@ -472,7 +488,8 @@ export function ChatMessages({ messages, isStreaming, model, mode, onImageReply,
         if (msg.from === 'system') return <SystemMessage key={i} msg={msg} />;
         return <AssistantMessage key={i} msg={msg} model={model} role={role} />;
       })}
-      {isStreaming && (
+      {activeTool && <ToolCallIndicator tool={activeTool} />}
+      {isStreaming && !activeTool && (
         mode === 'agent' ? (
           <ThinkingIndicator className="py-1" />
         ) : (

@@ -3,7 +3,6 @@ import { useState, useRef, useEffect } from 'react';
 import { Pencil, Pin, PinOff, Trash2, Hash, MoreHorizontal, ChevronDown, X } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { fmtNum } from '../../lib/format';
-import { ModelPicker, formatModelName } from './model-picker';
 import { cn } from '../../lib/cn';
 import { roleColor } from '../../lib/status';
 
@@ -26,7 +25,7 @@ const CHAT_ROLES = [
   { id: 'support', label: 'Support', desc: 'Customer support, FAQs' },
 ];
 
-export function ChatHeader({ conversation, model, onModelChange, role, onRoleChange, sidebarCollapsed }) {
+export function ChatHeader({ conversation, role, onRoleChange, sidebarCollapsed }) {
   const renameConversation = useGrooveStore((s) => s.renameConversation);
   const pinConversation = useGrooveStore((s) => s.pinConversation);
   const deleteConversation = useGrooveStore((s) => s.deleteConversation);
@@ -156,12 +155,6 @@ export function ChatHeader({ conversation, model, onModelChange, role, onRoleCha
             </div>
           )}
         </div>
-
-        <ModelPicker
-          value={model || { provider: conversation.provider, model: conversation.model }}
-          onChange={onModelChange}
-          disabled={false}
-        />
 
         {tokens > 0 && (
           <span className="text-2xs text-text-3 font-mono tabular-nums">{fmtNum(tokens)} tok</span>

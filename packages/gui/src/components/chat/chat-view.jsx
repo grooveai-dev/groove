@@ -33,6 +33,7 @@ export function ChatView() {
   const conversationMessages = useGrooveStore((s) => s.conversationMessages);
   const sendingMessage = useGrooveStore((s) => s.sendingMessage);
   const streamingConversationId = useGrooveStore((s) => s.streamingConversationId);
+  const conversationActiveTools = useGrooveStore((s) => s.conversationActiveTools);
   const createConversation = useGrooveStore((s) => s.createConversation);
   const setActiveConversation = useGrooveStore((s) => s.setActiveConversation);
   const sendChatMessage = useGrooveStore((s) => s.sendChatMessage);
@@ -62,6 +63,7 @@ export function ChatView() {
   const isCodexProvider = activeConversation?.provider === 'codex';
   const messages = activeConversationId ? (conversationMessages[activeConversationId] || []) : [];
   const isStreaming = streamingConversationId === activeConversationId && sendingMessage;
+  const activeTool = activeConversationId ? (conversationActiveTools?.[activeConversationId] || null) : null;
   const currentModelIsImage = activeConversation ? isImageModel(activeConversation.model) : false;
 
   const handleNewChat = useCallback(async (provider, model) => {
@@ -126,10 +128,6 @@ export function ChatView() {
     setConversationVerbosity(activeConversationId, verbosity);
   }, [activeConversationId, setConversationVerbosity]);
 
-  const currentModel = activeConversation
-    ? { provider: activeConversation.provider, model: activeConversation.model }
-    : null;
-
   return (
     <div className="flex h-full bg-surface-0">
       {/* Conversation sidebar */}
@@ -154,7 +152,7 @@ export function ChatView() {
 
         {activeConversation ? (
           <>
-            <ChatHeader conversation={activeConversation} model={currentModel} onModelChange={handleModelChange} role={activeRole} onRoleChange={handleRoleChange} sidebarCollapsed={sidebarCollapsed} />
+            <ChatHeader conversation={activeConversation} role={activeRole} onRoleChange={handleRoleChange} sidebarCollapsed={sidebarCollapsed} />
             <ChatMessages
               messages={messages}
               isStreaming={isStreaming}
@@ -162,6 +160,7 @@ export function ChatView() {
               mode={activeConversation.mode || 'api'}
               onImageReply={handleImageReply}
               role={activeRole}
+              activeTool={activeTool}
             />
             <ChatInput
               onSend={handleSend}
@@ -171,6 +170,8 @@ export function ChatView() {
               disabled={false}
               isImageModel={currentModelIsImage}
               currentModel={activeConversation.model}
+              currentProvider={activeConversation.provider}
+              onModelChange={handleModelChange}
               replyContext={replyContext}
               onClearReply={() => setReplyContext(null)}
               role={activeRole}

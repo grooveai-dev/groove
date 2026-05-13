@@ -12,6 +12,7 @@ import { StatusBar } from './status-bar';
 import { DetailPanel } from './detail-panel';
 import { CommandPalette } from './command-palette';
 import { ApprovalModal } from '../ui/approval-modal';
+import { QuestionModal } from '../ui/question-modal';
 import { QuickConnect } from '../settings/quick-connect';
 
 import { TeamTabBar } from '../../views/agents';
@@ -119,6 +120,7 @@ export function AppShell({ children, detailContent, terminalContent }) {
         <CommandPalette />
         <QuickConnect />
         <ApprovalModal />
+        <QuestionModal />
         <ToastContainer />
       </div>
     </TooltipProvider>

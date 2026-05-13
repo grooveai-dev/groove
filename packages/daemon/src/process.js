@@ -1128,7 +1128,7 @@ For normal file edits within your scope, proceed without review.
 
       const loop = new AgentLoop({ daemon: this.daemon, agent, loopConfig, logStream });
       this.handles.set(agent.id, { loop, logStream });
-      registry.update(agent.id, { status: 'running' });
+      registry.update(agent.id, { status: 'running', model: loopConfig.model, apiBase: loopConfig.apiBase });
 
       // Record spawn lifecycle event
       if (this.daemon.timeline) {

@@ -175,6 +175,12 @@ export class ModelLab {
     const rt = this.runtimes.get(id);
     if (!rt) throw new Error('Runtime not found');
 
+    // Clear disconnected flag on start/reconnect
+    if (rt._disconnected) {
+      delete rt._disconnected;
+      this._saveRuntimes();
+    }
+
     // MLX runtimes — use built-in MLXServerManager
     if (rt.type === 'mlx' && !rt.launchConfig) {
       const modelId = rt._mlxModelId || this._deriveModelId(rt, 'MLX - ');
@@ -208,7 +214,16 @@ export class ModelLab {
     }
 
     // Generic launchConfig runtimes (vLLM, TGI, etc.)
-    if (!rt.launchConfig) throw new Error('No launch config — use the assistant to set up this runtime first');
+    if (!rt.launchConfig) {
+      // Remote runtime — "start" means reconnect; verify it's reachable
+      const status = await this.getRuntimeStatus(rt);
+      if (status.online) {
+        this.daemon.broadcast({ type: 'lab:runtime:started', data: { id } });
+        this.daemon.audit.log('lab.runtime.start', { id, name: rt.name });
+        return rt;
+      }
+      throw new Error('Remote server is not reachable — start the server manually and try again');
+    }
     if (this._processes.has(id)) throw new Error('Server already running');
 
     const lc = rt.launchConfig;
@@ -268,12 +283,14 @@ export class ModelLab {
     const rt = this.runtimes.get(id);
     if (!rt) throw new Error('Runtime not found');
 
+    let killed = false;
+
     if (rt._localModelId) {
       const mm = this.daemon.modelManager;
       const ls = this.daemon.llamaServer;
       if (mm && ls) {
         const modelPath = mm.getModelPath(rt._localModelId);
-        if (modelPath) await ls.stopServer(modelPath);
+        if (modelPath) { await ls.stopServer(modelPath); killed = true; }
       }
     }
 
@@ -281,7 +298,7 @@ export class ModelLab {
       const ms = this.daemon.mlxServer;
       if (ms) {
         const hfId = rt._mlxModelId.startsWith('mlx:') ? rt._mlxModelId.slice(4) : rt._mlxModelId;
-        await ms.stopServer(hfId);
+        await ms.stopServer(hfId); killed = true;
       }
     }
 
@@ -293,6 +310,13 @@ export class ModelLab {
         try { proc.kill('SIGTERM'); } catch { clearTimeout(timeout); resolve(); }
       });
       this._processes.delete(id);
+      killed = true;
+    }
+
+    // Remote/external runtimes: mark as disconnected so status checks treat it as offline
+    if (!killed) {
+      rt._disconnected = true;
+      this._saveRuntimes();
     }
 
     this.daemon.broadcast({ type: 'lab:runtime:stopped', data: { id } });
@@ -370,6 +394,7 @@ export class ModelLab {
   }
 
   async getRuntimeStatus(rt) {
+    if (rt._disconnected) return { online: false, latency: null };
     try {
       const start = Date.now();
       const ep = localURL(rt.endpoint);

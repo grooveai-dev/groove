@@ -137,6 +137,7 @@ export class LocalProvider extends Provider {
     let model = agent.model || 'qwen2.5-coder:7b';
     let apiBase = 'http://localhost:11434/v1';
     let apiKey = agent.apiKey || null;
+    let runtimeType = 'ollama';
 
     if (agent.apiBase) {
       apiBase = agent.apiBase;
@@ -153,6 +154,7 @@ export class LocalProvider extends Provider {
       if (rt) {
         apiBase = rt.endpoint.includes('/v1') ? rt.endpoint : `${rt.endpoint}/v1`;
         if (rt.apiKey) apiKey = rt.apiKey;
+        if (rt.type) runtimeType = rt.type;
         const rtModel = rt.models?.[0];
         model = rtModel?.id || rtModel?.name || ggufId;
       }
@@ -167,6 +169,7 @@ export class LocalProvider extends Provider {
       if (rt) {
         apiBase = rt.endpoint.includes('/v1') ? rt.endpoint : `${rt.endpoint}/v1`;
         if (rt.apiKey) apiKey = rt.apiKey;
+        if (rt.type) runtimeType = rt.type;
         model = modelId;
       }
     }
@@ -176,6 +179,7 @@ export class LocalProvider extends Provider {
     return {
       apiBase,
       model,
+      runtimeType,
       contextWindow,
       temperature: typeof agent.temperature === 'number' ? agent.temperature : 0.1,
       maxResponseTokens: 4096,

@@ -24,6 +24,11 @@ export class AgentLoop extends EventEmitter {
     this.idle = true;
     this.abortController = null;
 
+    // Tool calling mode: 'native' uses OpenAI function-calling API fields,
+    // 'prompt' injects tool schemas into the system prompt and parses
+    // <tool_call> blocks from the model's text output.
+    this.toolMode = 'native';
+
     // Metrics
     this.totalTokensIn = 0;
     this.totalTokensOut = 0;
@@ -132,7 +137,7 @@ export class AgentLoop extends EventEmitter {
       const response = await this._callApi();
       if (!response || !this.running) break;
 
-      const { content, toolCalls, usage, finishReason } = response;
+      let { content, toolCalls, usage, finishReason } = response;
       consecutiveErrors = 0; // Reset on successful call
 
       // Update token tracking from API response
@@ -140,10 +145,18 @@ export class AgentLoop extends EventEmitter {
         this._updateTokens(usage);
       }
 
+      // In prompt-based mode, parse tool calls from the model's text
+      if (this.toolMode === 'prompt' && content) {
+        const parsed = this._parseToolCallsFromText(content);
+        if (parsed.length > 0) {
+          toolCalls = parsed;
+        }
+      }
+
       // Append assistant message to conversation history
       const assistantMsg = { role: 'assistant' };
       if (content) assistantMsg.content = content;
-      if (toolCalls?.length > 0) {
+      if (this.toolMode === 'native' && toolCalls?.length > 0) {
         assistantMsg.tool_calls = toolCalls.map((tc) => ({
           id: tc.id,
           type: 'function',
@@ -162,9 +175,12 @@ export class AgentLoop extends EventEmitter {
       }
 
       // Has tool calls — broadcast text before executing tools (if model sent text + tools)
-      if (content) {
-        this._writeLog({ type: 'assistant', content: content.slice(0, 2000) });
-        this.emit('output', { type: 'activity', subtype: 'assistant', data: content });
+      const displayContent = this.toolMode === 'prompt'
+        ? (content || '').replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim()
+        : content;
+      if (displayContent) {
+        this._writeLog({ type: 'assistant', content: displayContent.slice(0, 2000) });
+        this.emit('output', { type: 'activity', subtype: 'assistant', data: displayContent });
       }
 
       // Execute each tool call
@@ -211,11 +227,19 @@ export class AgentLoop extends EventEmitter {
         }
 
         // Append tool result to conversation for the model
-        this.messages.push({
-          role: 'tool',
-          tool_call_id: call.id,
-          content: result.success ? (result.result || 'Done.') : `Error: ${result.error}`,
-        });
+        const resultContent = result.success ? (result.result || 'Done.') : `Error: ${result.error}`;
+        if (this.toolMode === 'native') {
+          this.messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: resultContent,
+          });
+        } else {
+          this.messages.push({
+            role: 'user',
+            content: `<tool_result name="${toolName}">\n${resultContent}\n</tool_result>`,
+          });
+        }
       }
 
       // Context rotation is handled by the Rotator's 15s polling loop
@@ -236,11 +260,14 @@ export class AgentLoop extends EventEmitter {
     const body = {
       model: this.config.model,
       messages: this.messages,
-      tools: TOOL_DEFINITIONS,
-      tool_choice: 'auto',
       temperature: this.config.temperature ?? 0.1,
       max_tokens: this.config.maxResponseTokens || 4096,
     };
+
+    if (this.toolMode === 'native') {
+      body.tools = TOOL_DEFINITIONS;
+      body.tool_choice = 'auto';
+    }
 
     if (this.config.stream !== false) {
       body.stream = true;
@@ -282,6 +309,18 @@ export class AgentLoop extends EventEmitter {
       if (!response.ok) {
         const text = await response.text().catch(() => '');
         const errMsg = `API error ${response.status}: ${text.slice(0, 500)}`;
+
+        // Detect tool_choice rejection (vLLM, TGI, etc. without tool-calling flags)
+        // Fall back to prompt-based tool calling and retry immediately
+        if (response.status === 400 && this.toolMode === 'native' &&
+            (text.includes('tool_choice') || text.includes('tool-call-parser') || text.includes('enable-auto-tool-choice'))) {
+          this._writeLog({ type: 'system', event: 'tool-fallback', reason: 'Runtime rejected native tool calling — switching to prompt-based tools' });
+          this.toolMode = 'prompt';
+          this._injectToolPrompt();
+          delete body.tools;
+          delete body.tool_choice;
+          continue;
+        }
 
         if (response.status === 401 || response.status === 403) {
           this._writeLog({ type: 'error', text: errMsg });
@@ -403,6 +442,65 @@ export class AgentLoop extends EventEmitter {
       usage: data.usage || null,
       finishReason: choice.finish_reason,
     };
+  }
+
+  // --- Prompt-Based Tool Calling Fallback ---
+
+  _injectToolPrompt() {
+    const toolPrompt = this._buildToolPrompt();
+    const systemIdx = this.messages.findIndex(m => m.role === 'system');
+    if (systemIdx >= 0) {
+      this.messages[systemIdx].content += '\n\n' + toolPrompt;
+    } else {
+      this.messages.unshift({ role: 'system', content: toolPrompt });
+    }
+  }
+
+  _buildToolPrompt() {
+    const toolDefs = TOOL_DEFINITIONS.map(t => {
+      const f = t.function;
+      const params = Object.entries(f.parameters.properties).map(([name, schema]) => {
+        const req = f.parameters.required?.includes(name) ? ' (required)' : ' (optional)';
+        return `  - ${name}: ${schema.type}${req} — ${schema.description}`;
+      }).join('\n');
+      return `### ${f.name}\n${f.description}\nParameters:\n${params}`;
+    }).join('\n\n');
+
+    return `## Available Tools
+
+To use a tool, include a tool_call block in your response:
+
+<tool_call>
+{"name": "tool_name", "arguments": {"param1": "value1"}}
+</tool_call>
+
+You can make multiple tool calls in one response. After each tool call you will receive a <tool_result> with the output.
+
+${toolDefs}
+
+Always use tools to read, write, or search files and to run commands. Do not guess file contents.`;
+  }
+
+  _parseToolCallsFromText(content) {
+    if (!content) return [];
+    const calls = [];
+    const regex = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g;
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+      try {
+        const parsed = JSON.parse(match[1].trim());
+        if (parsed.name) {
+          calls.push({
+            id: `call_${Date.now()}_${calls.length}`,
+            function: {
+              name: parsed.name,
+              arguments: JSON.stringify(parsed.arguments || {}),
+            },
+          });
+        }
+      } catch { /* skip malformed tool call */ }
+    }
+    return calls;
   }
 
   // --- Token Tracking ---

@@ -859,7 +859,9 @@ export class ProcessManager {
     }
 
     // Validate explicit model against provider's supported models
-    if (config.model && config.model !== 'auto' && provider.constructor.models) {
+    // Skip validation for runtime: and gguf: models — they're resolved by getLoopConfig()
+    const skipModelValidation = config.model && (config.model.startsWith('runtime:') || config.model.startsWith('gguf:'));
+    if (config.model && config.model !== 'auto' && provider.constructor.models && !skipModelValidation) {
       const valid = provider.constructor.models.some(m => m.id === config.model);
       if (!valid) {
         const fallback = provider.constructor.models[0];

@@ -91,6 +91,7 @@ function AddRuntimeDialog({ open, onOpenChange }) {
 
 function RuntimeItem({ runtime, active, onSelect, onTest, onRemove, onStop, onStart, testing }) {
   const online = runtime.status === 'connected';
+  const starting = runtime.status === 'starting';
   const managed = !!(runtime._localModelId || runtime._mlxModelId || runtime.launchConfig || runtime.type === 'mlx' || runtime.type === 'llama-cpp');
   return (
     <button
@@ -102,15 +103,15 @@ function RuntimeItem({ runtime, active, onSelect, onTest, onRemove, onStop, onSt
     >
       <span className={cn(
         'w-1.5 h-1.5 rounded-full flex-shrink-0',
-        online ? 'bg-success' : runtime.status === 'error' ? 'bg-danger' : 'bg-text-4',
+        starting ? 'bg-warning animate-pulse' : online ? 'bg-success' : runtime.status === 'error' ? 'bg-danger' : 'bg-text-4',
       )} />
       <div className="flex-1 min-w-0">
         <div className={cn('text-[11px] font-sans font-medium truncate', active ? 'text-text-0' : 'text-text-2')}>
           {RUNTIME_TYPES.find((t) => t.value === runtime.type)?.label || runtime.type}
         </div>
         <div className="text-[10px] text-text-4 flex items-center gap-1.5">
-          <span className={cn('font-sans', online ? 'text-success' : 'text-danger')}>
-            {online ? 'Online' : 'Offline'}
+          <span className={cn('font-sans', starting ? 'text-warning' : online ? 'text-success' : 'text-danger')}>
+            {starting ? 'Starting...' : online ? 'Online' : 'Offline'}
           </span>
           {runtime.latency != null && online && (
             <span className="font-mono">{Math.round(runtime.latency)}ms</span>
@@ -128,7 +129,14 @@ function RuntimeItem({ runtime, active, onSelect, onTest, onRemove, onStop, onSt
             </button>
           </Tooltip>
         )}
-        {managed && !online && (
+        {starting && (
+          <Tooltip content="Starting server...">
+            <span className="p-1 text-warning">
+              <Loader2 size={10} className="animate-spin" />
+            </span>
+          </Tooltip>
+        )}
+        {managed && !online && !starting && (
           <Tooltip content="Start server">
             <button
               onClick={(e) => { e.stopPropagation(); onStart(runtime.id); }}

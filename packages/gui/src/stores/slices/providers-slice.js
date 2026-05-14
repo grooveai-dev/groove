@@ -396,12 +396,17 @@ export const createProvidersSlice = (set, get) => ({
 
   async startLabRuntime(id) {
     try {
-      get().addToast('info', 'Starting server...');
+      const runtimes = get().labRuntimes.map((r) =>
+        r.id === id ? { ...r, status: 'starting' } : r,
+      );
+      set({ labRuntimes: runtimes });
+      persistJSON('groove:labRuntimes', runtimes);
       await api.post(`/lab/runtimes/${id}/start`);
       await get().fetchLabRuntimes();
       get().setLabActiveRuntime(id);
       get().addToast('success', 'Server started');
     } catch (err) {
+      await get().fetchLabRuntimes();
       get().addToast('error', 'Failed to start server', err.message);
     }
   },

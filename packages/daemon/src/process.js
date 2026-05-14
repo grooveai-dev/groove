@@ -778,7 +778,9 @@ export class ProcessManager {
       return true;
     };
 
-    if (!isProviderAuthed(providerName)) {
+    // Skip auth fallback for local provider when model references a lab runtime or GGUF
+    const hasLabModel = config.model && (config.model.startsWith('runtime:') || config.model.startsWith('gguf:'));
+    if (!isProviderAuthed(providerName) && !(providerName === 'local' && hasLabModel)) {
       const priority = ['claude-code', 'gemini', 'codex', 'local', 'ollama'];
       const fallback = priority.find(p => p !== providerName && isProviderAuthed(p));
       if (fallback) {
@@ -790,7 +792,7 @@ export class ProcessManager {
     if (!provider) {
       throw new Error(`Unknown provider: ${providerName}`);
     }
-    if (!provider.constructor.isInstalled()) {
+    if (!provider.constructor.isInstalled() && !(providerName === 'local' && hasLabModel)) {
       const installed = getInstalledProviders();
       if (installed.length > 0) {
         throw new Error(

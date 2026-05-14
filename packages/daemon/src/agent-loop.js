@@ -10,6 +10,11 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from '
 import { resolve, dirname } from 'path';
 import { TOOL_DEFINITIONS, ToolExecutor } from './tool-executor.js';
 
+function stripThinkTags(text) {
+  if (!text) return text;
+  return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+}
+
 export class AgentLoop extends EventEmitter {
   constructor({ daemon, agent, loopConfig, logStream }) {
     super();
@@ -145,6 +150,9 @@ export class AgentLoop extends EventEmitter {
         this._updateTokens(usage);
       }
 
+      // Strip thinking tags from display content (keep raw in conversation history)
+      const displayContent = stripThinkTags(content);
+
       // In prompt-based mode, parse tool calls from the model's text
       if (this.toolMode === 'prompt' && content) {
         const parsed = this._parseToolCallsFromText(content);
@@ -153,7 +161,7 @@ export class AgentLoop extends EventEmitter {
         }
       }
 
-      // Append assistant message to conversation history
+      // Append assistant message to conversation history (raw content with thinking preserved)
       const assistantMsg = { role: 'assistant' };
       if (content) assistantMsg.content = content;
       if (this.toolMode === 'native' && toolCalls?.length > 0) {
@@ -167,20 +175,21 @@ export class AgentLoop extends EventEmitter {
 
       // No tool calls → turn complete, broadcast final text and go idle
       if (!toolCalls || toolCalls.length === 0) {
-        if (content) {
-          this._writeLog({ type: 'assistant', content: content.slice(0, 2000) });
+        if (displayContent) {
+          this._writeLog({ type: 'assistant', content: displayContent.slice(0, 2000) });
         }
-        this.emit('output', { type: 'result', subtype: 'assistant', data: content || 'Turn complete', turns: this.turns });
+        this.emit('output', { type: 'result', subtype: 'assistant', data: displayContent || 'Turn complete', turns: this.turns });
         break;
       }
 
       // Has tool calls — broadcast text before executing tools (if model sent text + tools)
-      const displayContent = this.toolMode === 'prompt'
-        ? (content || '').replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim()
-        : content;
-      if (displayContent) {
-        this._writeLog({ type: 'assistant', content: displayContent.slice(0, 2000) });
-        this.emit('output', { type: 'activity', subtype: 'assistant', data: displayContent });
+      let preToolText = displayContent;
+      if (this.toolMode === 'prompt') {
+        preToolText = stripThinkTags((content || '').replace(/<tool_call>[\s\S]*?<\/tool_call>/g, ''));
+      }
+      if (preToolText) {
+        this._writeLog({ type: 'assistant', content: preToolText.slice(0, 2000) });
+        this.emit('output', { type: 'activity', subtype: 'assistant', data: preToolText });
       }
 
       // Execute each tool call
@@ -188,13 +197,29 @@ export class AgentLoop extends EventEmitter {
         if (!this.running) break;
 
         let args;
+        let parseError = null;
         try {
           args = JSON.parse(call.function.arguments);
-        } catch {
+        } catch (e) {
+          parseError = e.message;
           args = {};
         }
 
         const toolName = call.function.name;
+
+        // Report malformed JSON back to the model instead of silently failing
+        if (parseError) {
+          const errMsg = `Invalid JSON in tool arguments: ${parseError}. Raw: ${call.function.arguments.slice(0, 200)}`;
+          this._writeLog({ type: 'tool_result', tool: toolName, success: false, output: errMsg });
+          this.emit('output', { type: 'activity', subtype: 'tool_result', data: [{ type: 'tool_result', name: toolName, success: false, output: errMsg }] });
+          if (this.toolMode === 'native') {
+            this.messages.push({ role: 'tool', tool_call_id: call.id, content: `Error: ${errMsg}` });
+          } else {
+            this.messages.push({ role: 'user', content: `<tool_result name="${toolName}">\nError: ${errMsg}\n</tool_result>` });
+          }
+          continue;
+        }
+
         const inputSummary = this._summarizeToolInput(toolName, args);
 
         // Log + broadcast tool invocation
@@ -226,8 +251,12 @@ export class AgentLoop extends EventEmitter {
           this.daemon.classifier.addEvent(this.agent.id, { type: 'error', text: result.error });
         }
 
-        // Append tool result to conversation for the model
-        const resultContent = result.success ? (result.result || 'Done.') : `Error: ${result.error}`;
+        // Append tool result to conversation — cap size to protect context window
+        const MAX_RESULT_CHARS = 30000;
+        let resultContent = result.success ? (result.result || 'Done.') : `Error: ${result.error}`;
+        if (resultContent.length > MAX_RESULT_CHARS) {
+          resultContent = resultContent.slice(0, MAX_RESULT_CHARS) + '\n... (result truncated — use offset/limit for large files, or pipe commands through head/tail)';
+        }
         if (this.toolMode === 'native') {
           this.messages.push({
             role: 'tool',
@@ -359,6 +388,10 @@ export class AgentLoop extends EventEmitter {
     let finishReason = null;
     let buffer = '';
 
+    // State machine for suppressing <think> blocks during streaming
+    let insideThink = false;
+    let streamBuf = '';
+
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
 
@@ -388,10 +421,56 @@ export class AgentLoop extends EventEmitter {
           if (choice.finish_reason) finishReason = choice.finish_reason;
           const delta = choice.delta || {};
 
-          // Stream text tokens to GUI in real-time
+          // reasoning_content: separate thinking field (vLLM, some OpenAI-compat servers)
+          // Capture for logging but don't stream to GUI
+          if (delta.reasoning_content || delta.reasoning) {
+            // Accumulate in content so it's in the conversation history
+            // but don't stream it to the GUI
+            content += delta.reasoning_content || delta.reasoning;
+          }
+
+          // Stream text tokens to GUI in real-time, suppressing <think> blocks
           if (delta.content) {
             content += delta.content;
-            this.emit('output', { type: 'activity', subtype: 'stream', data: delta.content });
+            streamBuf += delta.content;
+
+            // Process buffer — emit non-think content, suppress think content
+            let safety = 0;
+            while (streamBuf.length > 0 && safety++ < 100) {
+              if (insideThink) {
+                const closeIdx = streamBuf.indexOf('</think>');
+                if (closeIdx >= 0) {
+                  insideThink = false;
+                  streamBuf = streamBuf.slice(closeIdx + 8);
+                } else {
+                  break; // wait for more data
+                }
+              } else {
+                const openIdx = streamBuf.indexOf('<think>');
+                if (openIdx >= 0) {
+                  const before = streamBuf.slice(0, openIdx);
+                  if (before) {
+                    this.emit('output', { type: 'activity', subtype: 'stream', data: before });
+                  }
+                  insideThink = true;
+                  streamBuf = streamBuf.slice(openIdx + 7);
+                } else {
+                  // Hold back bytes that could be the start of a <think> tag
+                  let safeEnd = streamBuf.length;
+                  for (let i = Math.min(6, streamBuf.length); i >= 1; i--) {
+                    if ('<think>'.startsWith(streamBuf.slice(-i))) {
+                      safeEnd = streamBuf.length - i;
+                      break;
+                    }
+                  }
+                  if (safeEnd > 0) {
+                    this.emit('output', { type: 'activity', subtype: 'stream', data: streamBuf.slice(0, safeEnd) });
+                  }
+                  streamBuf = streamBuf.slice(safeEnd);
+                  break;
+                }
+              }
+            }
           }
 
           // Accumulate tool call deltas
@@ -417,6 +496,11 @@ export class AgentLoop extends EventEmitter {
       this._writeLog({ type: 'error', text: `Stream parse error: ${err.message}` });
       this.emit('error', { message: `Stream error: ${err.message}` });
       return null;
+    }
+
+    // Flush remaining stream buffer (e.g. unclosed <think> — treat as display content)
+    if (streamBuf) {
+      this.emit('output', { type: 'activity', subtype: 'stream', data: streamBuf });
     }
 
     return {

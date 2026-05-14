@@ -1,7 +1,7 @@
 // GROOVE — Tool Executor for Local Agent Loop
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, existsSync, openSync, readSync, closeSync } from 'fs';
 import { execSync } from 'child_process';
 import { resolve, relative, dirname, sep } from 'path';
 import { minimatch } from 'minimatch';
@@ -190,9 +190,22 @@ export class ToolExecutor {
     if (stat.isDirectory()) {
       return { success: false, error: `Path is a directory, not a file: ${filePath}` };
     }
-    // Guard against huge files
     if (stat.size > 5 * 1024 * 1024) {
       return { success: false, error: `File too large (${formatBytes(stat.size)}). Use offset/limit to read a section.` };
+    }
+
+    // Detect binary files — check first 8KB for null bytes
+    if (stat.size > 0) {
+      const probe = Buffer.alloc(Math.min(8192, stat.size));
+      const fd = openSync(resolved, 'r');
+      try {
+        readSync(fd, probe, 0, probe.length, 0);
+      } finally {
+        closeSync(fd);
+      }
+      if (probe.includes(0)) {
+        return { success: false, error: `Binary file (${formatBytes(stat.size)}). Cannot read non-text files.` };
+      }
     }
 
     const content = readFileSync(resolved, 'utf8');
@@ -207,8 +220,19 @@ export class ToolExecutor {
       lines = lines.slice(0, limit);
     }
 
+    // Auto-limit large files when no explicit limit was provided
+    const MAX_LINES = 2000;
+    let autoTruncated = false;
+    if (!limit && lines.length > MAX_LINES) {
+      lines = lines.slice(0, MAX_LINES);
+      autoTruncated = true;
+    }
+
     const numbered = lines.map((line, i) => `${startLine + i}\t${line}`).join('\n');
-    return { success: true, result: numbered, meta: { totalLines } };
+    const result = autoTruncated
+      ? numbered + `\n\n... (showing ${MAX_LINES} of ${totalLines} lines — use offset/limit to read more)`
+      : numbered;
+    return { success: true, result, meta: { totalLines } };
   }
 
   writeFile({ path: filePath, content }) {

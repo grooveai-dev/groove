@@ -720,7 +720,7 @@ export default function ModelsView() {
             <Box size={28} className="text-text-4 mb-3" />
             <div className="text-sm font-mono font-semibold text-text-1 mb-1">No local models</div>
             <div className="text-xs font-mono text-text-3 text-center max-w-sm mb-5">
-              Pull from Ollama or search HuggingFace for GGUF models to run locally.
+              Pull from Ollama or search HuggingFace for models to run locally.
             </div>
             <div className="flex gap-2">
               <Button variant="primary" onClick={() => {
@@ -855,7 +855,7 @@ export default function ModelsView() {
                     </div>
                   ) : searchResults.length === 0 ? (
                     <div className="py-6 text-center">
-                      <div className="text-xs font-mono text-text-3">Search for GGUF models</div>
+                      <div className="text-xs font-mono text-text-3">Search for models on HuggingFace</div>
                       <div className="text-2xs font-mono text-text-4 mt-1">
                         Try "qwen coder", "deepseek", "codestral", "llama"
                       </div>
@@ -869,6 +869,19 @@ export default function ModelsView() {
                             className="w-full text-left flex items-center gap-2 py-1.5 border-b border-border hover:bg-surface-2/50 transition-colors cursor-pointer"
                           >
                             <span className="text-xs font-mono font-semibold text-text-1 truncate flex-1">{r.name}</span>
+                            {r.recommendedRuntimes?.length > 0 && (
+                              <span className="flex gap-1 flex-shrink-0">
+                                {r.recommendedRuntimes.map((rt) => (
+                                  <span key={rt} className={cn(
+                                    'px-1.5 py-0.5 rounded text-[9px] font-mono font-medium leading-none',
+                                    rt === 'llama.cpp' && 'bg-blue-500/15 text-blue-400',
+                                    rt === 'vLLM' && 'bg-purple-500/15 text-purple-400',
+                                    rt === 'MLX' && 'bg-emerald-500/15 text-emerald-400',
+                                    rt === 'TGI' && 'bg-amber-500/15 text-amber-400',
+                                  )}>{rt}</span>
+                                ))}
+                              </span>
+                            )}
                             <span className="text-2xs font-mono text-text-4">{r.author}</span>
                             <span className="text-2xs font-mono text-text-4 tabular-nums">{r.downloads?.toLocaleString()}</span>
                             {expandedResult === r.id

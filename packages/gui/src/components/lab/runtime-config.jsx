@@ -9,7 +9,7 @@ import { Dialog, DialogContent } from '../ui/dialog';
 import { Select, SelectTrigger, SelectContent, SelectItem } from '../ui/select';
 import { Tooltip } from '../ui/tooltip';
 import { ScrollArea } from '../ui/scroll-area';
-import { Plus, Trash2, Loader2, WifiOff, RotateCcw, HardDrive, Play, Square, CheckCircle, AlertTriangle, ChevronRight, Wrench, Settings2 } from 'lucide-react';
+import { Plus, Trash2, Loader2, WifiOff, RotateCcw, HardDrive, Play, Square, CheckCircle, AlertTriangle, ChevronRight, Wrench, Settings2, Download } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
 const IS_APPLE = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '');
@@ -229,9 +229,11 @@ export function LaunchModel() {
   const localModels = useGrooveStore((s) => s.labLocalModels);
   const fetchLocalModels = useGrooveStore((s) => s.fetchLabLocalModels);
   const checkLlama = useGrooveStore((s) => s.checkLlamaStatus);
+  const installLlama = useGrooveStore((s) => s.installLlamaServer);
   const launchModel = useGrooveStore((s) => s.launchLocalModel);
   const launching = useGrooveStore((s) => s.labLaunching);
   const llamaInstalled = useGrooveStore((s) => s.labLlamaInstalled);
+  const llamaInstalling = useGrooveStore((s) => s.labLlamaInstalling);
   const launchPhase = useGrooveStore((s) => s.labLaunchPhase);
   const launchError = useGrooveStore((s) => s.labLaunchError);
   const launchLabAssistant = useGrooveStore((s) => s.launchLabAssistant);
@@ -395,13 +397,26 @@ export function LaunchModel() {
                       <div className="flex items-center gap-2 text-[11px] text-danger font-sans">
                         <AlertTriangle size={10} /> llama-server not found
                       </div>
-                      <code className="block text-[10px] font-mono text-text-3 bg-surface-2 px-2.5 py-1.5 rounded">brew install llama.cpp</code>
-                      <button
-                        onClick={checkLlama}
-                        className="flex items-center gap-1.5 text-[11px] font-sans text-accent hover:text-accent/80 transition-colors cursor-pointer"
-                      >
-                        <RotateCcw size={10} /> Recheck after install
-                      </button>
+                      {llamaInstalling ? (
+                        <div className="flex items-center gap-2 text-[11px] text-accent font-sans">
+                          <Loader2 size={10} className="animate-spin" /> Installing llama-server...
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={installLlama}
+                            className="flex items-center gap-1.5 text-[11px] font-sans font-medium text-surface-0 bg-accent hover:bg-accent/90 px-2.5 py-1 rounded transition-colors cursor-pointer"
+                          >
+                            <Download size={10} /> Install
+                          </button>
+                          <button
+                            onClick={checkLlama}
+                            className="flex items-center gap-1.5 text-[11px] font-sans text-text-3 hover:text-text-2 transition-colors cursor-pointer"
+                          >
+                            <RotateCcw size={10} /> Recheck
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

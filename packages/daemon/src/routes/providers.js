@@ -713,6 +713,17 @@ export function registerProviderRoutes(app, daemon) {
     res.json(daemon.llamaServer.getStatus());
   });
 
+  app.post('/api/llama/install', async (req, res) => {
+    try {
+      const { LlamaServerManager } = await import('../llama-server.js');
+      const result = await LlamaServerManager.install();
+      daemon.modelLab.refreshInstalledTools();
+      res.json({ success: true, ...result });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/mlx/status', (req, res) => {
     res.json(daemon.mlxServer.getStatus());
   });

@@ -54,6 +54,7 @@ export function SpawnWizard() {
   const spawnAgent = useGrooveStore((s) => s.spawnAgent);
   const fetchProviders = useGrooveStore((s) => s.fetchProviders);
   const teams = useGrooveStore((s) => s.teams);
+  const activeTeamId = useGrooveStore((s) => s.activeTeamId);
   const createTeam = useGrooveStore((s) => s.createTeam);
 
   const open = detailPanel?.type === 'spawn';
@@ -92,6 +93,8 @@ export function SpawnWizard() {
   const selectedProvider = providers.find((p) => p.id === provider);
   const availableModels = selectedProvider?.models || [];
   const installedProviders = providers.filter((p) => p.authType === 'api-key' ? (p.installed && p.hasKey) : p.installed);
+  const isFromModelLab = !!(detailPanel?.presetProvider || detailPanel?.presetModel);
+  const showTeamSelector = isFromModelLab || !activeTeamId;
 
   useEffect(() => {
     if (open) {
@@ -182,7 +185,9 @@ export function SpawnWizard() {
     setSpawning(true);
     try {
       let teamId;
-      if (teamMode === 'new') {
+      if (!showTeamSelector) {
+        teamId = activeTeamId;
+      } else if (teamMode === 'new') {
         const teamName = newTeamName.trim() || selectedRole || 'New Team';
         const team = await createTeam(teamName);
         teamId = team.id;
@@ -525,7 +530,8 @@ export function SpawnWizard() {
                   </div>
                 )}
 
-                {/* Team */}
+                {/* Team — only show selector when spawning from Model Lab or no active team */}
+                {showTeamSelector && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-text-2 font-sans">Team</label>
                   <div className="flex gap-1.5">
@@ -582,6 +588,7 @@ export function SpawnWizard() {
                     </div>
                   )}
                 </div>
+                )}
 
                 {/* Integrations */}
                 <div className="space-y-1.5">

@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -19,6 +19,13 @@ export function QuickConnect() {
   const [connectingId, setConnectingId] = useState(null);
   const [showWizard, setShowWizard] = useState(false);
   const wizardTunnelId = useRef(null);
+
+  useEffect(() => {
+    if (open) {
+      setShowWizard(false);
+      useGrooveStore.getState().fetchTunnels();
+    }
+  }, [open]);
 
   if (!open) return null;
 

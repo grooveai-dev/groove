@@ -42,6 +42,7 @@ export const createProvidersSlice = (set, get) => ({
   labLocalModels: [],
   labLaunching: null,
   labLlamaInstalled: null,
+  labLlamaInstalling: false,
   labLaunchPhase: null,
   labLaunchError: null,
   labAssistantAgentId: localStorage.getItem('groove:labAssistantAgentId') || null,
@@ -354,6 +355,18 @@ export const createProvidersSlice = (set, get) => ({
       const data = await api.get('/llama/status');
       set({ labLlamaInstalled: !!data.installed });
     } catch { set({ labLlamaInstalled: false }); }
+  },
+
+  async installLlamaServer() {
+    set({ labLlamaInstalling: true });
+    try {
+      await api.post('/llama/install');
+      set({ labLlamaInstalled: true, labLlamaInstalling: false });
+      get().addToast('success', 'llama-server installed successfully');
+    } catch (err) {
+      set({ labLlamaInstalling: false });
+      get().addToast('error', 'Install failed', err.message);
+    }
   },
 
   async launchLocalModel(modelId) {

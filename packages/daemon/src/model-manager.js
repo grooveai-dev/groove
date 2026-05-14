@@ -69,7 +69,6 @@ export class ModelManager {
   async search(query, { limit = 20, sort = 'downloads' } = {}) {
     const params = new URLSearchParams({
       search: query,
-      filter: 'gguf',
       sort,
       direction: '-1',
       limit: String(limit),
@@ -83,15 +82,20 @@ export class ModelManager {
     if (!res.ok) throw new Error(`HuggingFace API error: ${res.status}`);
     const models = await res.json();
 
-    return models.map((m) => ({
-      id: m.modelId || m.id,
-      name: m.modelId?.split('/').pop() || m.id,
-      author: m.modelId?.split('/')[0] || '',
-      downloads: m.downloads || 0,
-      likes: m.likes || 0,
-      tags: m.tags || [],
-      lastModified: m.lastModified,
-    }));
+    return models.map((m) => {
+      const id = m.modelId || m.id;
+      const tags = m.tags || [];
+      return {
+        id,
+        name: id.split('/').pop() || id,
+        author: id.split('/')[0] || '',
+        downloads: m.downloads || 0,
+        likes: m.likes || 0,
+        tags,
+        lastModified: m.lastModified,
+        recommendedRuntimes: inferRuntimes(id, tags),
+      };
+    });
   }
 
   async getModelFiles(repoId) {
@@ -408,4 +412,42 @@ function classifyTier(params, quant) {
   if (billions >= 25) return 'heavy';
   if (billions >= 10) return 'medium';
   return 'light';
+}
+
+function inferRuntimes(repoId, tags) {
+  const lower = repoId.toLowerCase();
+  const tagSet = new Set(tags.map((t) => t.toLowerCase()));
+  const runtimes = new Set();
+
+  // GGUF → llama.cpp and (implicitly) Ollama
+  if (tagSet.has('gguf') || lower.includes('-gguf') || lower.includes('_gguf')) {
+    runtimes.add('llama.cpp');
+  }
+
+  // MLX-optimized models
+  if (tagSet.has('mlx') || lower.includes('-mlx') || lower.includes('_mlx')) {
+    runtimes.add('MLX');
+  }
+
+  // GPTQ / AWQ quantized → vLLM handles these well
+  if (tagSet.has('gptq') || tagSet.has('awq') || lower.includes('-gptq') || lower.includes('-awq')) {
+    runtimes.add('vLLM');
+  }
+
+  // SafeTensors / standard transformer weights → vLLM, TGI, MLX
+  if (tagSet.has('safetensors') || tagSet.has('transformers')) {
+    runtimes.add('vLLM');
+    runtimes.add('TGI');
+    if (!runtimes.has('MLX')) runtimes.add('MLX');
+  }
+
+  // If nothing matched, infer from general model traits
+  if (runtimes.size === 0) {
+    if (tagSet.has('pytorch') || tagSet.has('tf') || tagSet.has('jax')) {
+      runtimes.add('vLLM');
+      runtimes.add('TGI');
+    }
+  }
+
+  return [...runtimes];
 }

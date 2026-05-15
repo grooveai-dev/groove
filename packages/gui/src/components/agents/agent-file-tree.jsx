@@ -106,10 +106,10 @@ function ContextMenu({ x, y, items, onClose }) {
   );
 }
 
-function downloadFile(path) {
+function downloadFile(path, isDir) {
   const a = document.createElement('a');
   a.href = `/api/files/download?path=${encodeURIComponent(path)}`;
-  a.download = path.split('/').pop();
+  a.download = isDir ? `${path.split('/').pop()}.zip` : path.split('/').pop();
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -138,8 +138,8 @@ function TreeEntry({ entry, depth, onOpen, expandedDirs, onToggleDir, onContextM
           onDragStartEntry(entry.path);
         }}
         onDragEnd={onDragEndEntry}
-        onDragOver={isDir ? (e) => { e.preventDefault(); e.stopPropagation(); onSetDragOver(entry.path); } : undefined}
-        onDrop={isDir ? (e) => onDropOnDir(entry.path, e) : undefined}
+        onDragOver={(e) => { e.preventDefault(); if (isDir) { e.stopPropagation(); onSetDragOver(entry.path); } }}
+        onDrop={(e) => onDropOnDir(isDir ? entry.path : (entry.path.includes('/') ? entry.path.split('/').slice(0, -1).join('/') : ''), e)}
         onClick={() => isDir ? onToggleDir(entry.path) : onOpen(entry.path)}
         onDoubleClick={handleCtxMenu}
         onContextMenu={handleCtxMenu}
@@ -500,11 +500,9 @@ export function AgentFileTree({ agentId, onCollapse }) {
     if (isDir) {
       items.push({ icon: FilePlus, label: 'New File', action: () => handleNewFileIn(entry.path) });
       items.push({ icon: FolderPlus, label: 'New Folder', action: () => handleNewFolderIn(entry.path) });
-      items.push({ separator: true });
-    } else {
-      items.push({ icon: Download, label: 'Download', action: () => downloadFile(entry.path) });
-      items.push({ separator: true });
     }
+    items.push({ icon: Download, label: isDir ? 'Download as ZIP' : 'Download', action: () => downloadFile(entry.path, isDir) });
+    items.push({ separator: true });
     items.push({ icon: Pencil, label: 'Rename', action: () => handleRename(entry) });
     items.push({ icon: Trash2, label: 'Delete', danger: true, action: () => handleDelete(entry) });
     return items;
@@ -533,7 +531,11 @@ export function AgentFileTree({ agentId, onCollapse }) {
         )}
       </div>
       <ScrollArea className="flex-1 min-h-0">
-      <div className="py-2">
+      <div
+        className="py-2 min-h-full"
+        onDragOver={(e) => { e.preventDefault(); if (dragState.draggingPath) setDragOverDir(null); }}
+        onDrop={(e) => handleDropOnDir('', e)}
+      >
         {inlineInput && (
           <InlineInput
             placeholder={inlineInput.type === 'file' ? 'filename.ext' : 'folder-name'}
@@ -595,11 +597,7 @@ export function AgentFileTree({ agentId, onCollapse }) {
             No files in scope
           </div>
         ) : (
-          <div
-            className="px-1"
-            onDragOver={(e) => { e.preventDefault(); if (dragState.draggingPath) setDragOverDir(null); }}
-            onDrop={(e) => handleDropOnDir('', e)}
-          >
+          <div className="px-1">
             <div className="flex items-center gap-1.5 px-2 py-1.5 text-2xs font-semibold text-text-3 uppercase tracking-wider">
               <Folder size={10} />
               Scope

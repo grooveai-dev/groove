@@ -107,10 +107,10 @@ function GitDot({ status }) {
   return <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', color)} />;
 }
 
-function downloadFile(path) {
+function downloadFile(path, isDir) {
   const a = document.createElement('a');
   a.href = `/api/files/download?path=${encodeURIComponent(path)}`;
-  a.download = path.split('/').pop();
+  a.download = isDir ? `${path.split('/').pop()}.zip` : path.split('/').pop();
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -140,8 +140,8 @@ function TreeNode({ entry, depth = 0, activePath, onFileClick, onDirToggle, expa
         onDragStartEntry(entry.path);
       }}
       onDragEnd={onDragEndEntry}
-      onDragOver={isDir ? (e) => { e.preventDefault(); e.stopPropagation(); onSetDragOver(entry.path); } : undefined}
-      onDrop={isDir ? (e) => onDropOnDir(entry.path, e) : undefined}
+      onDragOver={(e) => { e.preventDefault(); if (isDir) { e.stopPropagation(); onSetDragOver(entry.path); } }}
+      onDrop={(e) => onDropOnDir(isDir ? entry.path : (entry.path.includes('/') ? entry.path.split('/').slice(0, -1).join('/') : ''), e)}
       onClick={() => isDir ? onDirToggle(entry.path) : onFileClick(entry.path)}
       onDoubleClick={handleContextMenu}
       onContextMenu={handleContextMenu}
@@ -455,9 +455,7 @@ export function FileTree({ rootDir, onCollapse }) {
     }
 
     if (entry.name !== 'root') {
-      if (!isDir) {
-        items.push({ icon: Download, label: 'Download', action: () => downloadFile(entry.path) });
-      }
+      items.push({ icon: Download, label: isDir ? 'Download as ZIP' : 'Download', action: () => downloadFile(entry.path, isDir) });
       if (items.length > 0) items.push({ separator: true });
       items.push({ icon: Pencil, label: 'Rename', action: () => handleRename(entry) });
       items.push({ icon: Trash2, label: 'Delete', danger: true, action: () => handleDelete(entry) });
@@ -527,7 +525,7 @@ export function FileTree({ rootDir, onCollapse }) {
       {/* Tree */}
       <ScrollArea className="flex-1">
         <div
-          className="py-1"
+          className="py-1 min-h-full"
           onDragOver={(e) => { e.preventDefault(); if (dragState.draggingPath) setDragOverDir(null); }}
           onDrop={(e) => handleDropOnDir('', e)}
         >

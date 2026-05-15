@@ -1,7 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { resolve, sep, isAbsolute, basename } from 'path';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream, realpathSync } from 'fs';
-import { execFile, execFileSync } from 'child_process';
+import { execFile, execFileSync, spawn } from 'child_process';
 import { homedir } from 'os';
 import { lookup as mimeLookup } from '../mimetypes.js';
 
@@ -331,15 +331,37 @@ export function registerFileRoutes(app, daemon) {
     }
   });
 
-  // Download a file (serves raw with Content-Disposition)
+  // Download a file or folder (folders are streamed as zip)
   app.get('/api/files/download', (req, res) => {
     const relPath = req.query.path;
     const result = validateFilePath(relPath, getEditorRoot(daemon));
     if (result.error) return res.status(400).json({ error: result.error });
-    if (!existsSync(result.fullPath)) return res.status(404).json({ error: 'File not found' });
+    if (!existsSync(result.fullPath)) return res.status(404).json({ error: 'Not found' });
 
     const stat = statSync(result.fullPath);
-    if (stat.isDirectory()) return res.status(400).json({ error: 'Cannot download a directory' });
+
+    if (stat.isDirectory()) {
+      const folderName = basename(result.fullPath);
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(folderName)}.zip"`);
+      res.setHeader('Content-Type', 'application/zip');
+
+      const zipProc = spawn('zip', [
+        '-r', '-q', '-',
+        relPath,
+        '-x', `${relPath}/.git/*`,
+        '-x', `${relPath}/node_modules/*`,
+      ], {
+        cwd: getEditorRoot(daemon),
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      zipProc.stdout.pipe(res);
+      zipProc.stderr.on('data', () => {});
+      zipProc.on('error', () => {
+        if (!res.headersSent) res.status(500).json({ error: 'Failed to create zip' });
+      });
+      return;
+    }
 
     const name = basename(result.fullPath);
     const mime = mimeLookup(name) || 'application/octet-stream';

@@ -267,8 +267,6 @@ export class TunnelManager {
     let testResult;
     if (opts.skipTest && opts.testResult) {
       testResult = opts.testResult;
-    } else if (config.lastConnected && opts.skipTest !== false) {
-      testResult = { reachable: true, daemonRunning: true, grooveInstalled: true, remoteVersion: null };
     } else {
       testResult = await this.test(id);
     }

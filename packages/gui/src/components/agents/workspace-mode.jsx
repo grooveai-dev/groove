@@ -2,6 +2,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
+import { api } from '../../lib/api';
 import { AgentFileTree } from './agent-file-tree';
 import { DiffViewer } from './diff-viewer';
 import { CodeReview } from './code-review';
@@ -188,9 +189,17 @@ export function WorkspaceMode() {
   const startX = useRef(0);
   const startW = useRef(0);
 
+  // Fetch git HEAD content as diff baseline when no snapshot exists
   useEffect(() => {
-    setDiffMode(false);
-  }, [editorActiveFile]);
+    if (!editorActiveFile || workspaceSnapshots[editorActiveFile]) return;
+    let cancelled = false;
+    api.get(`/files/git-show?path=${encodeURIComponent(editorActiveFile)}`).then((data) => {
+      if (cancelled) return;
+      const captureSnapshot = useGrooveStore.getState().captureSnapshot;
+      captureSnapshot(editorActiveFile, data.content ?? '');
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [editorActiveFile, workspaceSnapshots]);
 
   // Set the selected agent in the store so AI features use it
   useEffect(() => {

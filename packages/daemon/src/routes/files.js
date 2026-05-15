@@ -665,24 +665,46 @@ export function registerFileRoutes(app, daemon) {
     const rawFiles = daemon.registry.getFilesTouched(req.params.id);
     const rootDir = agent.workingDir || daemon.projectDir;
 
-    // Build git diff numstat for line-level +/- counts
+    // Build git diff numstat for line-level +/- counts (unstaged + staged + untracked)
     let numstatMap = {};
     const writtenPaths = rawFiles.filter(f => f.writes > 0).map(f => f.path);
     if (writtenPaths.length > 0) {
-      try {
-        const out = execFileSync('git', ['diff', '--numstat', '--', ...writtenPaths], {
-          cwd: rootDir, timeout: 10000, maxBuffer: 2 * 1024 * 1024,
-        }).toString();
+      const parseNumstat = (out) => {
         for (const line of out.split('\n')) {
           const m = line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/);
-          if (m) {
+          if (m && !numstatMap[m[3]]) {
             numstatMap[m[3]] = {
               additions: m[1] === '-' ? 0 : Number(m[1]),
               deletions: m[2] === '-' ? 0 : Number(m[2]),
             };
           }
         }
+      };
+      try {
+        const unstaged = execFileSync('git', ['diff', '--numstat', '--', ...writtenPaths], {
+          cwd: rootDir, timeout: 10000, maxBuffer: 2 * 1024 * 1024,
+        }).toString();
+        parseNumstat(unstaged);
       } catch { /* git not available or not a repo */ }
+      try {
+        const staged = execFileSync('git', ['diff', '--cached', '--numstat', '--', ...writtenPaths], {
+          cwd: rootDir, timeout: 10000, maxBuffer: 2 * 1024 * 1024,
+        }).toString();
+        parseNumstat(staged);
+      } catch { /* ignore */ }
+      // For untracked files not covered by diff, count lines as all additions
+      for (const p of writtenPaths) {
+        if (numstatMap[p]) continue;
+        const full = isAbsolute(p) ? p : resolve(rootDir, p);
+        try {
+          const stat = statSync(full);
+          if (stat.isFile()) {
+            const content = readFileSync(full, 'utf8');
+            const lineCount = content.split('\n').length;
+            numstatMap[p] = { additions: lineCount, deletions: 0 };
+          }
+        } catch { /* file may not exist */ }
+      }
     }
 
     const files = rawFiles.map(f => {

@@ -483,6 +483,9 @@ export class Journalist {
       'Be specific. Name files, functions, and line numbers. Do not summarize vaguely.',
       'Preserve the investigation narrative — the next agent needs to understand the',
       'journey, not just the destination.',
+      'IMPORTANT: Focus on what the user ASKED the agent to do (the original task).',
+      'Do NOT include observations about unrelated code issues, potential improvements,',
+      'or things the agent noticed but did not act on. The next agent must stay on task.',
       'Keep your response under 4000 characters.',
       '',
       '---',
@@ -1024,7 +1027,13 @@ export class Journalist {
       originalTask ? `## Original Task\n\n${originalTask}\n` : '',
       ``,
       agent.role === 'planner' ? 'CRITICAL: You are a PLANNING ONLY agent. Do NOT implement code. Route all work to your team via .groove/recommended-team.json.\n' : '',
-      `Continue seamlessly — finish the work and deliver the output.`,
+      `## Instructions`,
+      ``,
+      `Continue and finish the in-progress task — deliver the output. Stay focused on that specific task only.`,
+      `- Do NOT explore the codebase looking for other things to fix or improve`,
+      `- Do NOT start new work outside the original task scope`,
+      `- Do NOT act on TODO comments, code quality issues, or improvements you notice in passing`,
+      `- If the task is already complete, report what was accomplished and STOP — await new instructions from the user`,
     ].filter(Boolean).join('\n');
 
     // Hard cap: 16000 chars — investigation context needs room to preserve the full narrative
@@ -1142,34 +1151,60 @@ export class Journalist {
    * Build a full context-resume prompt that preserves the conversation
    * thread so a fresh agent picks up where the previous session left off.
    */
-  buildConversationResumePrompt(agent, userMessage) {
+  buildConversationResumePrompt(agent, userMessage, { isRotation = false, reason } = {}) {
     const thread = this.extractConversationThread(agent);
     if (!thread) return null;
 
     const constraints = this.daemon.memory?.getConstraintsMarkdown(2000) || '';
     const discoveries = this.daemon.memory?.getDiscoveriesMarkdown(agent.role, 5, 1000, agent.scope, agent.teamId) || '';
 
+    // Extract the user's original task from the conversation — the first substantial
+    // user message is almost always the task assignment. This anchors the new agent.
+    const originalTask = this._extractOriginalTask(thread);
+
+    // Rotation and idle-resume need very different framing. During rotation the agent
+    // has no new user message — it must continue the exact in-progress task without
+    // drifting. During idle-resume the user explicitly sent a message to continue.
+    const isIdleResume = !isRotation && userMessage && userMessage.trim().length > 0;
+
+    const taskFocusBlock = isRotation ? [
+      `## CRITICAL: Task Focus`,
+      ``,
+      `You were auto-rotated (reason: ${reason || 'context_management'}) — this is a routine context refresh, NOT a new assignment.`,
+      originalTask ? `Your task: ${originalTask}` : '',
+      ``,
+      `Rules:`,
+      `- Continue ONLY the task described in the conversation below`,
+      `- Do NOT explore the codebase looking for other things to fix or improve`,
+      `- Do NOT start new work that was not part of the original task`,
+      `- Do NOT act on TODO comments, code quality issues, or improvements you notice in passing`,
+      `- If the task is complete, report what was done and STOP — await new instructions from the user`,
+      `- If the task is in progress, pick up exactly where the previous session left off`,
+      ``,
+    ] : [];
+
     let prompt = [
       `# Session Context Resume`,
       ``,
-      `You are continuing a session that went idle. Below is the full conversation`,
-      `from your previous session — your actual exchanges with the user. Pick up`,
-      `exactly where you left off. The user's new message follows at the end.`,
+      isRotation
+        ? `You are continuing a session after an automatic context rotation. Your context was refreshed but your task has NOT changed. The conversation below is your previous session — continue the same work.`
+        : `You are continuing a session that went idle. Below is the full conversation from your previous session — your actual exchanges with the user. Pick up exactly where you left off. The user's new message follows at the end.`,
       ``,
       `Role: ${agent.role} | Provider: ${agent.provider} | Scope: ${agent.scope?.join(', ') || 'unrestricted'}`,
       agent.workingDir ? `Working directory: ${agent.workingDir}` : '',
       ``,
+      ...taskFocusBlock,
       constraints ? `## Project Constraints\n\n${constraints}\n` : '',
       discoveries ? `## Known Issues & Fixes\n\n${discoveries}\n` : '',
       `## Previous Conversation\n\n${thread}`,
       ``,
       `---`,
       ``,
-      `## New Message From User`,
+      isIdleResume ? `## New Message From User\n\n${userMessage}` : '',
       ``,
-      userMessage,
-      ``,
-      `Continue seamlessly from the conversation above. You have the full context of what was discussed, what was tried, what worked and what didn't. Do not ask the user to repeat anything.`,
+      isRotation
+        ? `Continue the in-progress task from the conversation above. Stay focused on that task only. Do not ask the user to repeat anything. If the task was already completed, state that and wait for new instructions.`
+        : `Continue seamlessly from the conversation above. You have the full context of what was discussed, what was tried, what worked and what didn't. Do not ask the user to repeat anything.`,
     ].filter(Boolean).join('\n');
 
     // Hard cap at 80K chars (~20K tokens) to leave plenty of room in context window
@@ -1180,28 +1215,38 @@ export class Journalist {
         prompt = [
           `# Session Context Resume`,
           ``,
-          `You are continuing a session that went idle. Below is the conversation`,
-          `from your previous session (older turns summarized to fit). Pick up`,
-          `exactly where you left off.`,
+          isRotation
+            ? `You are continuing after an automatic context rotation. Your task has NOT changed.`
+            : `You are continuing a session that went idle (older turns summarized to fit). Pick up exactly where you left off.`,
           ``,
           `Role: ${agent.role} | Scope: ${agent.scope?.join(', ') || 'unrestricted'}`,
           agent.workingDir ? `Working directory: ${agent.workingDir}` : '',
           ``,
+          ...taskFocusBlock,
           constraints ? `## Project Constraints\n\n${constraints}\n` : '',
           `## Previous Conversation\n\n${smallerThread}`,
           ``,
           `---`,
           ``,
-          `## New Message From User`,
+          isIdleResume ? `## New Message From User\n\n${userMessage}` : '',
           ``,
-          userMessage,
-          ``,
-          `Continue seamlessly. Do not ask the user to repeat anything.`,
+          isRotation
+            ? `Continue the in-progress task only. Do not explore or start new work. If done, state that and wait.`
+            : `Continue seamlessly. Do not ask the user to repeat anything.`,
         ].filter(Boolean).join('\n');
       }
     }
 
     return prompt;
+  }
+
+  _extractOriginalTask(thread) {
+    // Find the first substantial USER message in the thread — that's the task.
+    const match = thread.match(/\[USER\]:\n([\s\S]*?)(?=\n\n---|\n\[CLAUDE\]:|$)/);
+    if (!match) return '';
+    const firstMsg = match[1].trim();
+    if (firstMsg.length < 10) return '';
+    return firstMsg.length > 500 ? firstMsg.slice(0, 500) + '...' : firstMsg;
   }
 
   // --- Workspace Grouping ---

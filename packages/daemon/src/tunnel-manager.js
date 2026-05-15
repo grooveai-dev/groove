@@ -37,6 +37,18 @@ function sshCmd(cmd) {
   return `bash -lc '${nvmProbe}${cmd}'`;
 }
 
+function npmGlobalInstall(pkg, user) {
+  const base = `npm i -g --prefer-online ${pkg}`;
+  if (user === 'root') return base;
+  return `${base} || sudo -n ${base}`;
+}
+
+function isPermissionError(output) {
+  return /EACCES|permission denied|sudo.*password/i.test(output);
+}
+
+const PERMISSION_HINT = 'npm global install requires write access. Either install Node via nvm (recommended) or configure passwordless sudo for npm on the remote server.';
+
 export class TunnelManager {
   constructor(daemon) {
     this.daemon = daemon;
@@ -446,7 +458,7 @@ export class TunnelManager {
       const keyArgs = config.sshKeyPath ? ['-i', config.sshKeyPath] : [];
       const sshBase = [...keyArgs, '-p', String(config.port || 22), '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes', target];
       const pinnedPkg = `groove-dev@${localVer}`;
-      const installCmd = config.user === 'root' ? `npm i -g --prefer-online ${pinnedPkg}` : `sudo npm i -g --prefer-online ${pinnedPkg}`;
+      const installCmd = npmGlobalInstall(pinnedPkg, config.user);
 
       try {
         execFileSync('ssh', [...sshBase, sshCmd(installCmd)], {
@@ -455,8 +467,7 @@ export class TunnelManager {
           stdio: ['pipe', 'pipe', 'pipe'],
         });
       } catch {
-        const fallbackPkg = 'groove-dev';
-        const fallbackCmd = config.user === 'root' ? `npm i -g --prefer-online ${fallbackPkg}` : `sudo npm i -g --prefer-online ${fallbackPkg}`;
+        const fallbackCmd = npmGlobalInstall('groove-dev', config.user);
         execFileSync('ssh', [...sshBase, sshCmd(fallbackCmd)], {
           encoding: 'utf8',
           timeout: 120000,
@@ -533,7 +544,7 @@ export class TunnelManager {
     const sshBase = [...keyArgs, '-p', String(config.port || 22), '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes', target];
     const localVer = getLocalVersion();
     const pkg = localVer !== '0.0.0' ? `groove-dev@${localVer}` : 'groove-dev';
-    const installCmd = config.user === 'root' ? `npm i -g --prefer-online ${pkg}` : `sudo npm i -g --prefer-online ${pkg}`;
+    const installCmd = npmGlobalInstall(pkg, config.user);
 
     let usedFallback = false;
     try {
@@ -554,7 +565,7 @@ export class TunnelManager {
         }
       } else {
         if (localVer !== '0.0.0' && pkg.includes('@')) {
-          const fallbackCmd = config.user === 'root' ? 'npm i -g --prefer-online groove-dev' : 'sudo npm i -g --prefer-online groove-dev';
+          const fallbackCmd = npmGlobalInstall('groove-dev', config.user);
           try {
             execFileSync('ssh', [...sshBase, sshCmd(fallbackCmd)], {
               encoding: 'utf8',
@@ -565,6 +576,7 @@ export class TunnelManager {
           } catch { /* fall through to original error */ }
         }
         if (!usedFallback) {
+          if (isPermissionError(errOutput)) throw new Error(PERMISSION_HINT);
           throw new Error(`Remote upgrade failed: ${errOutput.slice(-400)}`);
         }
       }
@@ -670,12 +682,10 @@ export class TunnelManager {
       throw new Error(`Failed to check remote environment: ${err.message}`);
     }
 
-    // Step 2: Install groove-dev globally (use sudo if not root)
+    // Step 2: Install groove-dev globally (try user-space first, sudo fallback)
     const localVer = getLocalVersion();
     const pkg = localVer !== '0.0.0' ? `groove-dev@${localVer}` : 'groove-dev';
-    const installCmd = config.user === 'root'
-      ? `npm i -g --prefer-online ${pkg}`
-      : `sudo npm i -g --prefer-online ${pkg}`;
+    const installCmd = npmGlobalInstall(pkg, config.user);
 
     try {
       execFileSync('ssh', [
@@ -697,7 +707,7 @@ export class TunnelManager {
           throw new Error(`npm install failed after cleanup: ${retryOutput.slice(-400)}`);
         }
       } else if (localVer !== '0.0.0' && pkg.includes('@')) {
-        const fallbackCmd = config.user === 'root' ? 'npm i -g --prefer-online groove-dev' : 'sudo npm i -g --prefer-online groove-dev';
+        const fallbackCmd = npmGlobalInstall('groove-dev', config.user);
         try {
           execFileSync('ssh', [...sshBase, remoteCmd(fallbackCmd)], {
             encoding: 'utf8',
@@ -706,9 +716,11 @@ export class TunnelManager {
           });
         } catch (err2) {
           const output = err2.stdout?.toString() || err2.stderr?.toString() || err2.message;
+          if (isPermissionError(output)) throw new Error(PERMISSION_HINT);
           throw new Error(`npm install failed: ${output.slice(-400)}`);
         }
       } else {
+        if (isPermissionError(errOutput)) throw new Error(PERMISSION_HINT);
         throw new Error(`npm install failed: ${errOutput.slice(-400)}`);
       }
     }
@@ -752,7 +764,7 @@ export class TunnelManager {
     const keyArgs = config.sshKeyPath ? ['-i', config.sshKeyPath] : [];
     const sshBase = [...keyArgs, '-p', String(config.port || 22), '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes', target];
     const pinnedPkg = `groove-dev@${localVer}`;
-    const installCmd = config.user === 'root' ? `npm i -g --prefer-online ${pinnedPkg}` : `sudo npm i -g --prefer-online ${pinnedPkg}`;
+    const installCmd = npmGlobalInstall(pinnedPkg, config.user);
 
     try {
       execFileSync('ssh', [...sshBase, sshCmd(installCmd)], {
@@ -771,7 +783,7 @@ export class TunnelManager {
           throw new Error(`npm install failed after cleanup: ${retryOutput.slice(-400)}`);
         }
       } else {
-        const fallbackCmd = config.user === 'root' ? 'npm i -g --prefer-online groove-dev' : 'sudo npm i -g --prefer-online groove-dev';
+        const fallbackCmd = npmGlobalInstall('groove-dev', config.user);
         execFileSync('ssh', [...sshBase, sshCmd(fallbackCmd)], {
           encoding: 'utf8',
           timeout: 120000,

@@ -367,7 +367,8 @@ export class Rotator extends EventEmitter {
       if (typeof journalist.buildConversationResumePrompt === 'function') {
         const conversationPrompt = journalist.buildConversationResumePrompt(
           agent,
-          options.additionalPrompt || ''
+          options.additionalPrompt || '',
+          { isRotation: true, reason: options.reason || 'auto' }
         );
         if (conversationPrompt && conversationPrompt.length > 500) {
           brief = conversationPrompt;

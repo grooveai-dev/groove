@@ -176,8 +176,8 @@ export function DiffViewer({ filePath, gitDiffData, originalContent, modifiedCon
     if (gitDiffData?.original !== undefined) {
       setGitOriginal(gitDiffData.original);
     } else if (originalContent === undefined && !snapshot && !file?.originalContent) {
-      api.get(`/files/git-diff?path=${encodeURIComponent(filePath)}`).then((data) => {
-        if (data?.original !== undefined) setGitOriginal(data.original);
+      api.get(`/files/git-show?path=${encodeURIComponent(filePath)}`).then((data) => {
+        if (data?.content !== undefined) setGitOriginal(data.content);
       }).catch(() => {});
     }
   }, [filePath, gitDiffData, snapshot, file?.originalContent, originalContent]);

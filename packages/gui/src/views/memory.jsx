@@ -346,9 +346,22 @@ export default function MemoryView() {
     if (keeperEditing) setEditorOpen(true);
   }, [keeperEditing]);
 
-  const filtered = search
-    ? keeperItems.filter((item) => item.tag.includes(search.toLowerCase()))
+  const searchLower = search.toLowerCase();
+  const filtered = searchLower
+    ? keeperItems.filter((item) => item.tag.includes(searchLower))
     : keeperItems;
+
+  const filteredTree = searchLower
+    ? keeperTree
+        .map((node) => {
+          const tagMatch = node.tag.includes(searchLower);
+          const matchingChildren = (node.children || []).filter((c) => c.tag.includes(searchLower));
+          if (tagMatch) return node;
+          if (matchingChildren.length > 0) return { ...node, children: matchingChildren };
+          return null;
+        })
+        .filter(Boolean)
+    : keeperTree;
 
   const handleNew = () => {
     setKeeperEditing({ tag: '', content: '', isNew: true });
@@ -464,24 +477,38 @@ export default function MemoryView() {
             </div>
           </div>
         ) : viewMode === 'tree' ? (
-          <div className="p-3 space-y-0.5" onDragOver={(e) => e.preventDefault()}>
-            {keeperTree.map((node) => (
-              <TreeGroup
-                key={node.tag} node={node} onSelect={handleTreeSelect}
-                dragOverTag={dragOverTag}
-                onDragStart={(tag) => setDraggingTag(tag)}
-                onDragOver={(tag) => { if (tag !== draggingTag) setDragOverTag(tag); }}
-                onDragLeave={() => setDragOverTag(null)}
-                onDrop={handleDrop}
-              />
-            ))}
-          </div>
+          filteredTree.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-32 gap-2">
+              <Search size={18} className="text-text-4" />
+              <p className="text-xs text-text-3">No memories matching &ldquo;{search}&rdquo;</p>
+            </div>
+          ) : (
+            <div className="p-3 space-y-0.5" onDragOver={(e) => e.preventDefault()}>
+              {filteredTree.map((node) => (
+                <TreeGroup
+                  key={node.tag} node={node} onSelect={handleTreeSelect}
+                  dragOverTag={dragOverTag}
+                  onDragStart={(tag) => setDraggingTag(tag)}
+                  onDragOver={(tag) => { if (tag !== draggingTag) setDragOverTag(tag); }}
+                  onDragLeave={() => setDragOverTag(null)}
+                  onDrop={handleDrop}
+                />
+              ))}
+            </div>
+          )
         ) : (
-          <div className="p-3 space-y-2">
-            {filtered.map((item) => (
-              <MemoryCard key={item.tag} item={item} onEdit={handleEdit} onDelete={(tag) => deleteKeeperItem(tag)} />
-            ))}
-          </div>
+          filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-32 gap-2">
+              <Search size={18} className="text-text-4" />
+              <p className="text-xs text-text-3">No memories matching &ldquo;{search}&rdquo;</p>
+            </div>
+          ) : (
+            <div className="p-3 space-y-2">
+              {filtered.map((item) => (
+                <MemoryCard key={item.tag} item={item} onEdit={handleEdit} onDelete={(tag) => deleteKeeperItem(tag)} />
+              ))}
+            </div>
+          )
         )}
       </ScrollArea>
 

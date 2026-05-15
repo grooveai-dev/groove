@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { api } from '../../lib/api';
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen, FileEdit, Eye, FilePlus, FolderPlus, RefreshCw, ChevronsDownUp, PanelLeftClose, Pencil, Trash2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, File, Folder, FolderOpen, FileEdit, Eye, FilePlus, FolderPlus, RefreshCw, ChevronsDownUp, PanelLeftClose, Pencil, Trash2, Download } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
 
 const FILE_COLORS = {
@@ -104,6 +104,15 @@ function ContextMenu({ x, y, items, onClose }) {
       )}
     </div>
   );
+}
+
+function downloadFile(path) {
+  const a = document.createElement('a');
+  a.href = `/api/files/download?path=${encodeURIComponent(path)}`;
+  a.download = path.split('/').pop();
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 function TreeEntry({ entry, depth, onOpen, expandedDirs, onToggleDir, onContextMenu, dragState, onDragStartEntry, onDragEndEntry, onSetDragOver, onDropOnDir }) {
@@ -336,10 +345,36 @@ export function AgentFileTree({ agentId, onCollapse }) {
     setDragState(prev => prev.dragOverPath === path ? prev : { ...prev, dragOverPath: path });
   }
 
+  async function handleExternalDrop(targetDir, nativeFiles) {
+    const toUpload = [];
+    for (const file of nativeFiles) {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      toUpload.push({ name: file.name, content: base64 });
+    }
+    try {
+      const result = await api.post('/files/upload', { dir: targetDir, files: toUpload });
+      addToast('success', `Uploaded ${result.total} file${result.total !== 1 ? 's' : ''}`);
+      handleRefresh();
+    } catch (err) {
+      addToast('error', 'Upload failed', err.message);
+    }
+  }
+
   async function handleDropOnDir(targetDirPath, e) {
     e.preventDefault();
     e.stopPropagation();
     setDragState({ draggingPath: null, dragOverPath: null });
+
+    // External files from desktop
+    if (e.dataTransfer?.files?.length > 0) {
+      handleExternalDrop(targetDirPath, Array.from(e.dataTransfer.files));
+      return;
+    }
 
     let data;
     try { data = JSON.parse(e.dataTransfer.getData('application/json')); } catch { return; }
@@ -466,6 +501,9 @@ export function AgentFileTree({ agentId, onCollapse }) {
       items.push({ icon: FilePlus, label: 'New File', action: () => handleNewFileIn(entry.path) });
       items.push({ icon: FolderPlus, label: 'New Folder', action: () => handleNewFolderIn(entry.path) });
       items.push({ separator: true });
+    } else {
+      items.push({ icon: Download, label: 'Download', action: () => downloadFile(entry.path) });
+      items.push({ separator: true });
     }
     items.push({ icon: Pencil, label: 'Rename', action: () => handleRename(entry) });
     items.push({ icon: Trash2, label: 'Delete', danger: true, action: () => handleDelete(entry) });
@@ -530,7 +568,17 @@ export function AgentFileTree({ agentId, onCollapse }) {
                     : <Eye size={12} className="text-info flex-shrink-0" />
                   }
                   <span className="truncate text-text-1 flex-1">{name}</span>
-                  {hasWrites && <span className="text-2xs text-warning/60 flex-shrink-0">{f.writes}w</span>}
+                  {hasWrites && (
+                    f.additions != null || f.deletions != null ? (
+                      <span className="flex items-center gap-1 text-2xs flex-shrink-0 font-mono">
+                        {f.additions > 0 && <span className="text-success">+{f.additions}</span>}
+                        {f.deletions > 0 && <span className="text-danger">-{f.deletions}</span>}
+                        {!f.additions && !f.deletions && <span className="text-warning/60">new</span>}
+                      </span>
+                    ) : (
+                      <span className="text-2xs text-warning/60 flex-shrink-0">{f.writes} {f.writes === 1 ? 'write' : 'writes'}</span>
+                    )
+                  )}
                 </button>
               );
             })}
@@ -549,7 +597,7 @@ export function AgentFileTree({ agentId, onCollapse }) {
         ) : (
           <div
             className="px-1"
-            onDragOver={(e) => { if (!dragState.draggingPath) return; e.preventDefault(); setDragOverDir(null); }}
+            onDragOver={(e) => { e.preventDefault(); if (dragState.draggingPath) setDragOverDir(null); }}
             onDrop={(e) => handleDropOnDir('', e)}
           >
             <div className="flex items-center gap-1.5 px-2 py-1.5 text-2xs font-semibold text-text-3 uppercase tracking-wider">

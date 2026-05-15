@@ -58,7 +58,7 @@ export class Keeper {
 
   save(tag, content) {
     if (!tag || typeof tag !== 'string') throw new Error('Tag is required');
-    if (content === undefined || content === null) throw new Error('Content is required');
+    if (content === undefined || content === null || !String(content).trim()) throw new Error('Content is required');
     const normalized = this._normalize(tag);
     if (!normalized) throw new Error('Tag is required');
     const filePath = this._tagToPath(normalized);
@@ -129,7 +129,7 @@ export class Keeper {
   update(tag, content) {
     const normalized = this._normalize(tag);
     if (!normalized) throw new Error('Tag is required');
-    if (content === undefined || content === null) throw new Error('Content is required');
+    if (content === undefined || content === null || !String(content).trim()) throw new Error('Content is required');
     const filePath = this._tagToPath(normalized);
     if (!existsSync(filePath)) throw new Error(`Memory #${normalized} does not exist`);
     writeFileSync(filePath, String(content));
@@ -151,6 +151,41 @@ export class Keeper {
     delete this._index[normalized];
     this._saveIndex();
     return true;
+  }
+
+  move(oldTag, newTag) {
+    const oldNorm = this._normalize(oldTag);
+    const newNorm = this._normalize(newTag);
+    if (!oldNorm || !newNorm) throw new Error('Both old and new tags are required');
+    if (oldNorm === newNorm) return this._index[oldNorm];
+    const oldPath = this._tagToPath(oldNorm);
+    if (!existsSync(oldPath)) throw new Error(`Memory #${oldNorm} does not exist`);
+    if (this._index[newNorm]) throw new Error(`Memory #${newNorm} already exists`);
+    const content = readFileSync(oldPath, 'utf8');
+    const newPath = this._tagToPath(newNorm);
+    this._ensureParentDir(newPath);
+    writeFileSync(newPath, content);
+    unlinkSync(oldPath);
+    this._index[newNorm] = { ...this._index[oldNorm], tag: newNorm, updatedAt: new Date().toISOString() };
+    delete this._index[oldNorm];
+    // Move children too (e.g. moving "a" to "b/a" also moves "a/child" to "b/a/child")
+    const prefix = oldNorm + '/';
+    for (const tag of Object.keys(this._index)) {
+      if (tag.startsWith(prefix)) {
+        const childSuffix = tag.slice(prefix.length);
+        const childNewTag = newNorm + '/' + childSuffix;
+        const childOldPath = this._tagToPath(tag);
+        const childNewPath = this._tagToPath(childNewTag);
+        const childContent = readFileSync(childOldPath, 'utf8');
+        this._ensureParentDir(childNewPath);
+        writeFileSync(childNewPath, childContent);
+        unlinkSync(childOldPath);
+        this._index[childNewTag] = { ...this._index[tag], tag: childNewTag, updatedAt: new Date().toISOString() };
+        delete this._index[tag];
+      }
+    }
+    this._saveIndex();
+    return { tag: newNorm, ...this._index[newNorm] };
   }
 
   // ── Doc (AI-generated) ───────────────────────────────────

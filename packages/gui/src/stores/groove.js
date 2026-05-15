@@ -306,7 +306,15 @@ export const useGrooveStore = create((set, get) => ({
               const filePath = block.input?.file_path || block.input?.path;
               if (filePath && agentId === get().workspaceAgentId) {
                 const relPath = filePath.replace(/^\/[^/]+.*?\/groove\//, '');
-                get().openFile(relPath);
+                const hasActiveFile = get().editorActiveFile;
+                if (hasActiveFile) {
+                  // Add to tabs without switching away from the user's current file
+                  set((s) => ({
+                    editorOpenTabs: s.editorOpenTabs.includes(relPath) ? s.editorOpenTabs : [...s.editorOpenTabs, relPath],
+                  }));
+                } else {
+                  get().openFile(relPath);
+                }
               }
             }
           }

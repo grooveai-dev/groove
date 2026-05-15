@@ -1,10 +1,10 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGrooveStore } from '../stores/groove';
 import { Button } from '../components/ui/button';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Dialog, DialogContent } from '../components/ui/dialog';
-import { BookOpen, Plus, Search, Trash2, Pencil, ChevronRight, Hash, FolderOpen, Clock, Save, Link2, FileText, Sparkles, HelpCircle } from 'lucide-react';
+import { BookOpen, Plus, Search, Trash2, Pencil, ChevronRight, Hash, FolderOpen, Clock, Save, Link2, FileText, Sparkles, HelpCircle, GripVertical } from 'lucide-react';
 
 const COMMANDS = [
   { cmd: 'save',     args: '#tag',                desc: 'Save the message and send it to the agent' },
@@ -249,38 +249,71 @@ function InstructModal({ open, onOpenChange }) {
   );
 }
 
-function TreeGroup({ node, onSelect }) {
+function TreeItem({ tag, label, isDoc, indent, isDragOver, onSelect, onDragStart, onDragOver, onDragLeave, onDrop }) {
+  return (
+    <div
+      draggable
+      onDragStart={(e) => { e.dataTransfer.setData('text/plain', tag); e.dataTransfer.effectAllowed = 'move'; onDragStart?.(tag); }}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver?.(tag); }}
+      onDragLeave={() => onDragLeave?.()}
+      onDrop={(e) => { e.preventDefault(); onDrop?.(e.dataTransfer.getData('text/plain'), tag); }}
+      onClick={() => onSelect({ tag })}
+      className={`flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-xs transition-colors cursor-pointer group ${isDragOver ? 'bg-accent/15 border border-accent/30 border-dashed' : 'hover:bg-surface-2'}`}
+      style={indent ? { paddingLeft: `${8 + indent * 16}px` } : undefined}
+    >
+      <GripVertical size={10} className="text-text-4 opacity-0 group-hover:opacity-50 flex-shrink-0 cursor-grab" />
+      <Hash size={11} className="text-text-4 flex-shrink-0" />
+      <span className="font-medium text-text-2 truncate">{label}</span>
+      {isDoc && <Sparkles size={9} className="text-purple flex-shrink-0" />}
+    </div>
+  );
+}
+
+function TreeGroup({ node, onSelect, dragOverTag, onDragStart, onDragOver, onDragLeave, onDrop }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.children && node.children.length > 0;
 
+  if (!hasChildren) {
+    return (
+      <TreeItem
+        tag={node.tag} label={node.tag} isDoc={node.type === 'doc'}
+        isDragOver={dragOverTag === node.tag}
+        onSelect={onSelect} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
+      />
+    );
+  }
+
   return (
-    <div>
+    <div
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver?.(node.tag); }}
+      onDragLeave={() => onDragLeave?.()}
+      onDrop={(e) => { e.preventDefault(); onDrop?.(e.dataTransfer.getData('text/plain'), node.tag); }}
+    >
       <button
-        onClick={() => hasChildren ? setExpanded(!expanded) : onSelect(node)}
-        className="flex items-center gap-1.5 w-full px-2 py-1 rounded-md text-xs text-text-2 hover:bg-surface-2 transition-colors cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+        className={`flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-xs transition-colors cursor-pointer ${dragOverTag === node.tag ? 'bg-accent/15 border border-accent/30 border-dashed' : 'hover:bg-surface-2'}`}
       >
-        {hasChildren ? (
-          <ChevronRight size={12} className={`transition-transform ${expanded ? 'rotate-90' : ''}`} />
-        ) : (
-          <Hash size={12} className="text-text-4" />
-        )}
-        <FolderOpen size={12} className={hasChildren ? 'text-accent' : 'text-text-4'} />
-        <span className="font-medium">{node.tag}</span>
-        {hasChildren && (
-          <span className="text-2xs text-text-4 ml-auto">{node.children.length}</span>
-        )}
+        <ChevronRight size={12} className={`transition-transform text-text-4 ${expanded ? 'rotate-90' : ''}`} />
+        <FolderOpen size={12} className="text-accent" />
+        <span className="font-medium text-text-1">{node.tag}</span>
+        {!node.virtual && node.type === 'doc' && <Sparkles size={9} className="text-purple" />}
+        <span className="text-2xs text-text-4 ml-auto">{node.children.length}</span>
       </button>
-      {expanded && hasChildren && (
-        <div className="ml-4 mt-0.5 space-y-0.5">
+      {expanded && (
+        <div className="mt-0.5 space-y-0.5">
+          {!node.virtual && (
+            <TreeItem
+              tag={node.tag} label={node.tag} isDoc={node.type === 'doc'} indent={1}
+              isDragOver={false}
+              onSelect={onSelect} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
+            />
+          )}
           {node.children.map((child) => (
-            <button
-              key={child.tag}
-              onClick={() => onSelect(child)}
-              className="flex items-center gap-1.5 w-full px-2 py-1 rounded-md text-xs text-text-3 hover:text-text-1 hover:bg-surface-2 transition-colors cursor-pointer"
-            >
-              <Hash size={10} className="text-text-4" />
-              <span>{child.tag.split('/').pop()}</span>
-            </button>
+            <TreeItem
+              key={child.tag} tag={child.tag} label={child.tag.split('/').pop()} isDoc={child.type === 'doc'} indent={1}
+              isDragOver={dragOverTag === child.tag}
+              onSelect={onSelect} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
+            />
           ))}
         </div>
       )}
@@ -297,12 +330,15 @@ export default function MemoryView() {
   const saveKeeperItem = useGrooveStore((s) => s.saveKeeperItem);
   const updateKeeperItem = useGrooveStore((s) => s.updateKeeperItem);
   const deleteKeeperItem = useGrooveStore((s) => s.deleteKeeperItem);
+  const moveKeeperItem = useGrooveStore((s) => s.moveKeeperItem);
   const getKeeperItem = useGrooveStore((s) => s.getKeeperItem);
   const setKeeperEditing = useGrooveStore((s) => s.setKeeperEditing);
 
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState('list');
   const [editorOpen, setEditorOpen] = useState(false);
+  const [dragOverTag, setDragOverTag] = useState(null);
+  const [draggingTag, setDraggingTag] = useState(null);
 
   useEffect(() => { fetchKeeperItems(); }, []);
 
@@ -344,8 +380,22 @@ export default function MemoryView() {
     await handleEdit(node);
   };
 
+  const handleDrop = useCallback(async (sourceTag, targetTag) => {
+    setDragOverTag(null);
+    setDraggingTag(null);
+    if (!sourceTag || !targetTag || sourceTag === targetTag) return;
+    // Don't drop onto self or own children
+    if (targetTag.startsWith(sourceTag + '/')) return;
+    const sourceName = sourceTag.split('/').pop();
+    const newTag = targetTag + '/' + sourceName;
+    if (sourceTag === newTag) return;
+    try {
+      await moveKeeperItem(sourceTag, newTag);
+    } catch { /* toast handles */ }
+  }, [moveKeeperItem]);
+
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="flex-shrink-0 px-4 py-3 border-b border-border">
         <div className="flex items-center justify-between gap-3 mb-3">
@@ -394,7 +444,7 @@ export default function MemoryView() {
       </div>
 
       {/* Content */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         {keeperItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-3">
             <BookOpen size={32} className="text-text-4" />
@@ -414,24 +464,17 @@ export default function MemoryView() {
             </div>
           </div>
         ) : viewMode === 'tree' ? (
-          <div className="p-3 space-y-1">
+          <div className="p-3 space-y-0.5" onDragOver={(e) => e.preventDefault()}>
             {keeperTree.map((node) => (
-              <TreeGroup key={node.tag} node={node} onSelect={handleTreeSelect} />
+              <TreeGroup
+                key={node.tag} node={node} onSelect={handleTreeSelect}
+                dragOverTag={dragOverTag}
+                onDragStart={(tag) => setDraggingTag(tag)}
+                onDragOver={(tag) => { if (tag !== draggingTag) setDragOverTag(tag); }}
+                onDragLeave={() => setDragOverTag(null)}
+                onDrop={handleDrop}
+              />
             ))}
-            {keeperItems
-              .filter((item) => !item.tag.includes('/') && !keeperTree.some((t) => t.tag === item.tag && t.children?.length))
-              .map((item) => (
-                <button
-                  key={item.tag}
-                  onClick={() => handleEdit(item)}
-                  className="flex items-center gap-1.5 w-full px-2 py-1 rounded-md text-xs text-text-2 hover:bg-surface-2 transition-colors cursor-pointer"
-                >
-                  <Hash size={12} className="text-text-4" />
-                  <span className="font-medium">{item.tag}</span>
-                  {item.type === 'doc' && <Sparkles size={10} className="text-purple" />}
-                  <span className="text-2xs text-text-4 ml-auto">{formatRelative(item.updatedAt)}</span>
-                </button>
-              ))}
           </div>
         ) : (
           <div className="p-3 space-y-2">

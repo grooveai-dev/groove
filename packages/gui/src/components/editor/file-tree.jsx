@@ -6,7 +6,7 @@ import { api } from '../../lib/api';
 import {
   ChevronRight, ChevronDown, File, Folder, FolderOpen,
   FolderPlus, Search, RefreshCw, Trash2, Pencil, FilePlus,
-  ChevronsDownUp, PanelLeftClose,
+  ChevronsDownUp, PanelLeftClose, Download,
 } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
 
@@ -105,6 +105,15 @@ function GitDot({ status }) {
   if (!status) return null;
   const color = status === 'A' || status === '?' ? 'bg-success' : status === 'D' ? 'bg-danger' : 'bg-warning';
   return <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', color)} />;
+}
+
+function downloadFile(path) {
+  const a = document.createElement('a');
+  a.href = `/api/files/download?path=${encodeURIComponent(path)}`;
+  a.download = path.split('/').pop();
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 function TreeNode({ entry, depth = 0, activePath, onFileClick, onDirToggle, expanded, onContextMenu, dragState, onDragStartEntry, onDragEndEntry, onSetDragOver, onDropOnDir, gitStatusMap }) {
@@ -298,6 +307,12 @@ export function FileTree({ rootDir, onCollapse }) {
     e.stopPropagation();
     setDragState({ draggingPath: null, dragOverPath: null });
 
+    // External files from desktop
+    if (e.dataTransfer?.files?.length > 0) {
+      handleExternalDrop(targetDirPath, Array.from(e.dataTransfer.files));
+      return;
+    }
+
     let data;
     try { data = JSON.parse(e.dataTransfer.getData('application/json')); } catch { return; }
     if (!data?.path) return;
@@ -410,6 +425,26 @@ export function FileTree({ rootDir, onCollapse }) {
     }
   }
 
+  async function handleExternalDrop(targetDir, nativeFiles) {
+    const toUpload = [];
+    for (const file of nativeFiles) {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      toUpload.push({ name: file.name, content: base64 });
+    }
+    try {
+      const result = await api.post('/files/upload', { dir: targetDir, files: toUpload });
+      addToast('success', `Uploaded ${result.total} file${result.total !== 1 ? 's' : ''}`);
+      fetchTreeDir(targetDir);
+    } catch (err) {
+      addToast('error', 'Upload failed', err.message);
+    }
+  }
+
   function buildContextMenuItems(entry) {
     const isDir = entry.type === 'dir';
     const items = [];
@@ -420,11 +455,13 @@ export function FileTree({ rootDir, onCollapse }) {
     }
 
     if (entry.name !== 'root') {
+      if (!isDir) {
+        items.push({ icon: Download, label: 'Download', action: () => downloadFile(entry.path) });
+      }
       if (items.length > 0) items.push({ separator: true });
       items.push({ icon: Pencil, label: 'Rename', action: () => handleRename(entry) });
       items.push({ icon: Trash2, label: 'Delete', danger: true, action: () => handleDelete(entry) });
     } else {
-      // Root context — only new file/folder
       items.length = 0;
       items.push({ icon: FilePlus, label: 'New File', action: () => handleNewFile('') });
       items.push({ icon: FolderPlus, label: 'New Folder', action: () => handleNewFolder('') });
@@ -491,7 +528,7 @@ export function FileTree({ rootDir, onCollapse }) {
       <ScrollArea className="flex-1">
         <div
           className="py-1"
-          onDragOver={(e) => { if (!dragState.draggingPath) return; e.preventDefault(); setDragOverDir(null); }}
+          onDragOver={(e) => { e.preventDefault(); if (dragState.draggingPath) setDragOverDir(null); }}
           onDrop={(e) => handleDropOnDir('', e)}
         >
           {/* Inline input at root level */}

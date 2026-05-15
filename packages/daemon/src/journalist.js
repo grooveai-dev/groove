@@ -644,20 +644,14 @@ export class Journalist {
         proc.stdin.write(stdinData);
         proc.stdin.end();
         proc.stdout.on('data', (d) => { stdout += d.toString(); });
-        const timer = setTimeout(() => { proc.kill(); reject(new Error('Headless timeout')); }, 60_000);
+        const timer = setTimeout(() => { proc.kill(); reject(new Error('Headless timeout')); }, 120_000);
         proc.on('exit', (code) => {
           clearTimeout(timer);
           if (code !== 0) return reject(new Error(`Headless exited with code ${code}`));
           this._recordHeadlessUsage(stdout, trackAs, modelId);
-          const lines = stdout.split('\n');
-          for (const line of lines) {
-            try {
-              const json = JSON.parse(line);
-              if (json.result) return resolve(json.result);
-              if (json.content?.[0]?.text) return resolve(json.content[0].text);
-            } catch { /* not json */ }
-          }
-          resolve(stdout.trim());
+          const extracted = this._parseHeadlessOutput(stdout);
+          if (extracted) return resolve(extracted);
+          reject(new Error('Headless produced no usable output'));
         });
         return;
       }
@@ -666,22 +660,59 @@ export class Journalist {
         env: { ...process.env, ...env },
         cwd: this.daemon.projectDir,
         maxBuffer: 1024 * 1024 * 5,
-        timeout: 60_000,
+        timeout: 120_000,
       }, (err, stdout, stderr) => {
         if (err) return reject(err);
         this._recordHeadlessUsage(stdout, trackAs, modelId);
-        const lines = stdout.split('\n');
-        for (const line of lines) {
-          try {
-            const data = JSON.parse(line);
-            if (data.type === 'result' && data.result) {
-              return resolve(data.result);
-            }
-          } catch { /* skip */ }
-        }
-        resolve(stdout);
+        const extracted = this._parseHeadlessOutput(stdout);
+        if (extracted) return resolve(extracted);
+        reject(new Error('Headless produced no usable output'));
       });
     });
+  }
+
+  _parseHeadlessOutput(stdout) {
+    const lines = stdout.split('\n');
+    let resultText = '';
+    let assistantText = '';
+    let codexText = '';
+    let networkText = '';
+
+    for (const line of lines) {
+      try {
+        const json = JSON.parse(line);
+
+        // Claude/Gemini stream-json: {"type":"result","result":"..."}
+        if (typeof json.result === 'string' && json.result.trim()) {
+          resultText = json.result;
+        }
+
+        // Claude/Gemini assistant message: {"type":"assistant","message":{"content":[{"type":"text","text":"..."}]}}
+        const msgContent = json.message?.content?.[0]?.text || json.content?.[0]?.text;
+        if (msgContent && msgContent.trim()) {
+          assistantText = msgContent;
+        }
+
+        // Codex --json: {"type":"item.completed","item":{"type":"agent_message","text":"..."}}
+        if (json.type === 'item.completed' && json.item?.type === 'agent_message' && json.item.text?.trim()) {
+          codexText = json.item.text;
+        }
+
+        // Groove Network: {"type":"done|complete|result","text":"..."}
+        if ((json.type === 'done' || json.type === 'complete') && typeof json.text === 'string' && json.text.trim()) {
+          networkText = json.text;
+        }
+      } catch { /* not json */ }
+    }
+
+    if (resultText) return resultText;
+    if (codexText) return codexText;
+    if (networkText) return networkText;
+    if (assistantText) return assistantText;
+    // Ollama / plain-text providers: raw text output (no JSON)
+    const plain = stdout.trim();
+    if (plain && !plain.startsWith('{') && plain.length > 20) return plain;
+    return null;
   }
 
   parseSynthesisResult(text, agents) {

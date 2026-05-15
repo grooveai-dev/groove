@@ -5,7 +5,7 @@ import {
   FileEdit, Search, Terminal, CheckCircle2, AlertCircle,
   RotateCw, Zap, Wrench, Eye, Code2, Bug,
   ChevronDown, Paperclip, GripHorizontal,
-  FileCode, X,
+  FileCode, X, File, Image as ImageIcon, Film, Upload,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useGrooveStore } from '../../stores/groove';
@@ -231,6 +231,94 @@ function FormattedText({ text }) {
   );
 }
 
+// ── Lightbox ────────────────────────────────────────────────
+
+function Lightbox({ src, type, onClose }) {
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape') onClose(); }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={onClose}>
+      <button onClick={onClose} className="absolute top-4 right-4 p-2 text-white/70 hover:text-white cursor-pointer z-10">
+        <X size={20} />
+      </button>
+      <div className="max-w-[90vw] max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+        {type === 'video' ? (
+          <video src={src} controls autoPlay className="max-w-full max-h-[85vh] rounded-lg" />
+        ) : (
+          <img src={src} className="max-w-full max-h-[85vh] rounded-lg object-contain" alt="" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Attachment display in messages ──────────────────────────
+
+function AttachmentGrid({ attachments }) {
+  const [lightbox, setLightbox] = useState(null);
+  if (!attachments || attachments.length === 0) return null;
+
+  const images = attachments.filter((a) => a.type === 'image');
+  const videos = attachments.filter((a) => a.type === 'video');
+  const files = attachments.filter((a) => a.type === 'file');
+
+  return (
+    <>
+      {lightbox && <Lightbox src={lightbox.src} type={lightbox.type} onClose={() => setLightbox(null)} />}
+      {(images.length > 0 || videos.length > 0) && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {images.map((att, i) => (
+            <button
+              key={i}
+              onClick={() => setLightbox({ src: att.dataUrl, type: 'image' })}
+              className="relative group rounded-md overflow-hidden border border-border-subtle hover:border-accent/40 transition-colors cursor-pointer flex-shrink-0"
+            >
+              <img src={att.dataUrl} className="w-16 h-16 object-cover" alt={att.name} />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                <Eye size={14} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+            </button>
+          ))}
+          {videos.map((att, i) => (
+            <button
+              key={i}
+              onClick={() => setLightbox({ src: att.dataUrl, type: 'video' })}
+              className="relative group rounded-md overflow-hidden border border-border-subtle hover:border-accent/40 transition-colors cursor-pointer flex-shrink-0"
+            >
+              <video src={att.dataUrl} className="w-16 h-16 object-cover" muted />
+              <div className="absolute inset-0 bg-black/30 group-hover:bg-black/40 transition-colors flex items-center justify-center">
+                <Film size={14} className="text-white" />
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+      {files.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {files.map((att, i) => (
+            <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-3 border border-border-subtle">
+              <File size={11} className="text-text-3 flex-shrink-0" />
+              <span className="text-[11px] font-sans text-text-1 truncate max-w-[140px]">{att.name}</span>
+              <span className="text-[10px] font-mono text-text-4">{formatFileSize(att.size)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
 // ── Message components ───────────────────────────────────────
 
 function UserMessage({ msg }) {
@@ -238,9 +326,12 @@ function UserMessage({ msg }) {
     <div className="flex justify-end pl-8">
       <div className="max-w-[90%]">
         <div className="px-3.5 py-2.5 rounded-lg border bg-info/10 border-info/25">
-          <div className="text-[12px] font-sans whitespace-pre-wrap break-words leading-relaxed text-text-0">
-            <FormattedText text={msg.text} />
-          </div>
+          {msg.text && (
+            <div className="text-[12px] font-sans whitespace-pre-wrap break-words leading-relaxed text-text-0">
+              <FormattedText text={msg.text} />
+            </div>
+          )}
+          <AttachmentGrid attachments={msg.attachments} />
         </div>
         <div className="text-[10px] text-text-4 font-sans mt-1 text-right">{timeAgo(msg.timestamp)}</div>
       </div>
@@ -536,6 +627,9 @@ export function AgentFeed({ agent }) {
   const [sending, setSending] = useState(false);
   const [inputHeight, setInputHeight] = useState(88);
   const [providerModels, setProviderModels] = useState([]);
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const dragRef = useRef(null);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
@@ -630,46 +724,89 @@ export function AgentFeed({ agent }) {
     }
   }, [timeline.length, sending, isThinking]);
 
-  async function handleFileSelect(e) {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-    const addToast = useGrooveStore.getState().addToast;
+  function getFileType(file) {
+    if (file.type.startsWith('image/')) return 'image';
+    if (file.type.startsWith('video/')) return 'video';
+    return 'file';
+  }
 
-    const uploaded = [];
+  async function handleFileSelect(e) {
+    const files = Array.from(e.target.files || e.dataTransfer?.files || []);
+    if (files.length === 0) return;
+
+    const newPending = [];
     for (const file of files) {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const type = getFileType(file);
+      const entry = { id, name: file.name, size: file.size, type, status: 'reading', file };
+
+      if (type === 'image' || type === 'video') {
+        const dataUrl = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(file);
+        });
+        entry.dataUrl = dataUrl;
+      }
+      entry.status = 'pending';
+      newPending.push(entry);
+    }
+
+    setPendingFiles((prev) => [...prev, ...newPending]);
+    if (e.target?.value != null) e.target.value = '';
+    inputRef.current?.focus();
+  }
+
+  function removePendingFile(id) {
+    setPendingFiles((prev) => prev.filter((f) => f.id !== id));
+  }
+
+  async function uploadPendingFiles() {
+    if (pendingFiles.length === 0) return [];
+    setUploading(true);
+    const addToast = useGrooveStore.getState().addToast;
+    const results = [];
+
+    for (const pf of pendingFiles) {
+      setPendingFiles((prev) => prev.map((f) => f.id === pf.id ? { ...f, status: 'uploading' } : f));
       try {
         const base64 = await new Promise((resolve, reject) => {
           const reader = new FileReader();
-          reader.onload = () => resolve(reader.result.split(',')[1]); // strip data:...;base64,
+          reader.onload = () => resolve(reader.result.split(',')[1]);
           reader.onerror = reject;
-          reader.readAsDataURL(file);
+          reader.readAsDataURL(pf.file);
         });
-        await api.post(`/agents/${agent.id}/upload`, { filename: file.name, content: base64 });
-        uploaded.push(file.name);
+        await api.post(`/agents/${agent.id}/upload`, { filename: pf.name, content: base64 });
+        setPendingFiles((prev) => prev.map((f) => f.id === pf.id ? { ...f, status: 'done' } : f));
+        results.push({ name: pf.name, size: pf.size, type: pf.type, dataUrl: pf.dataUrl || null });
       } catch (err) {
-        addToast('error', `Upload failed: ${file.name}`, err.message);
+        setPendingFiles((prev) => prev.map((f) => f.id === pf.id ? { ...f, status: 'error' } : f));
+        addToast('error', `Upload failed: ${pf.name}`, err.message);
       }
     }
-
-    if (uploaded.length > 0) {
-      const names = uploaded.join(', ');
-      setInput((prev) => (prev ? prev + '\n' : '') + `[Uploaded: ${names}] — I've uploaded these files to your working directory. Read them and use their content.`);
-      addToast('success', `Uploaded ${uploaded.length} file${uploaded.length > 1 ? 's' : ''}`);
-    }
-
-    e.target.value = '';
-    inputRef.current?.focus();
+    setUploading(false);
+    return results;
   }
 
   async function handleSend() {
     const text = input.trim();
-    if ((!text && !pendingSnippet) || sending) return;
+    const hasFiles = pendingFiles.length > 0;
+    if ((!text && !pendingSnippet && !hasFiles) || sending) return;
 
     if (text === '/rotate') {
       const rotateAgent = useGrooveStore.getState().rotateAgent;
       setInput('');
       try { await rotateAgent(agent.id); } catch {}
       return;
+    }
+
+    setSending(true);
+    isAtBottomRef.current = true;
+
+    let uploadedAttachments = [];
+    if (hasFiles) {
+      uploadedAttachments = await uploadPendingFiles();
     }
 
     const parts = [];
@@ -684,17 +821,24 @@ export function AgentFeed({ agent }) {
         parts.push('```\n' + s.code + '\n```');
       }
     }
+
+    if (uploadedAttachments.length > 0) {
+      const names = uploadedAttachments.map((a) => a.name).join(', ');
+      parts.push(`[Uploaded: ${names}] — I've uploaded these files to your working directory. Read them and use their content.`);
+    }
+
     const message = parts.join('\n\n');
 
+    const attachments = uploadedAttachments.length > 0 ? uploadedAttachments : undefined;
     setInput('');
     clearSnippet();
-    setSending(true);
-    isAtBottomRef.current = true;
+    setPendingFiles([]);
+
     requestAnimationFrame(() => {
       if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     });
     try {
-      await instructAgent(agent.id, message);
+      await instructAgent(agent.id, message, attachments);
     } catch { /* toast handles */ }
     setSending(false);
     inputRef.current?.focus();
@@ -785,22 +929,89 @@ export function AgentFeed({ agent }) {
           );
         })()}
 
-        <div className="flex flex-col rounded-lg border border-border-subtle bg-surface-0 transition-colors overflow-hidden focus-within:border-text-4/40">
+        <div
+          className={cn(
+            'flex flex-col rounded-lg border bg-surface-0 transition-colors overflow-hidden focus-within:border-text-4/40',
+            dragOver ? 'border-accent border-dashed bg-accent/[0.03]' : 'border-border-subtle',
+          )}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            if (e.dataTransfer?.files?.length) handleFileSelect(e);
+          }}
+        >
           <input
             ref={fileInputRef}
             type="file"
             multiple
-            accept=".pdf,.png,.jpg,.jpeg,.gif,.svg,.csv,.txt,.md,.json,.yaml,.yml,.docx,.pptx,.xlsx"
+            accept="image/*,video/*,.pdf,.csv,.txt,.md,.json,.yaml,.yml,.docx,.pptx,.xlsx,.xml,.html,.py,.js,.ts,.jsx,.tsx,.go,.rs,.c,.cpp,.h,.java,.rb,.sh,.sql,.log"
             onChange={handleFileSelect}
             className="hidden"
           />
-          {/* Textarea — full width */}
+
+          {/* Drag overlay */}
+          {dragOver && (
+            <div className="flex items-center justify-center gap-2 py-3 text-accent">
+              <Upload size={16} />
+              <span className="text-xs font-sans font-medium">Drop files here</span>
+            </div>
+          )}
+
+          {/* Pending file previews */}
+          {pendingFiles.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-3 pt-2.5 pb-1">
+              {pendingFiles.map((pf) => (
+                <div key={pf.id} className={cn(
+                  'relative group flex items-center gap-1.5 rounded-md border overflow-hidden',
+                  pf.status === 'error' ? 'border-danger/30 bg-danger/5' : 'border-border-subtle bg-surface-2',
+                  pf.status === 'uploading' && 'opacity-70',
+                )}>
+                  {pf.type === 'image' && pf.dataUrl ? (
+                    <img src={pf.dataUrl} className="w-12 h-12 object-cover" alt={pf.name} />
+                  ) : pf.type === 'video' && pf.dataUrl ? (
+                    <div className="relative w-12 h-12">
+                      <video src={pf.dataUrl} className="w-12 h-12 object-cover" muted />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                        <Film size={12} className="text-white" />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 px-2 py-1.5">
+                      <File size={12} className="text-text-3 flex-shrink-0" />
+                      <span className="text-[11px] font-sans text-text-1 truncate max-w-[100px]">{pf.name}</span>
+                      <span className="text-[10px] font-mono text-text-4">{formatFileSize(pf.size)}</span>
+                    </div>
+                  )}
+                  {pf.status === 'uploading' && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-surface-0/60">
+                      <Loader2 size={14} className="text-accent animate-spin" />
+                    </div>
+                  )}
+                  {pf.status === 'error' && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-danger/10">
+                      <AlertCircle size={14} className="text-danger" />
+                    </div>
+                  )}
+                  <button
+                    onClick={() => removePendingFile(pf.id)}
+                    className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-surface-0/80 text-text-4 hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                  >
+                    <X size={9} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Textarea */}
           <div className="relative px-1">
             {input && KEEPER_DETECT_RE.test(input) && (
               <div
                 ref={highlightRef}
                 aria-hidden
-                className="absolute inset-0 px-3 py-2.5 text-[13px] leading-[20px] font-sans pointer-events-none whitespace-pre-wrap break-words overflow-y-hidden"
+                className="absolute inset-y-0 left-1 right-1 px-3 py-2.5 text-[13px] leading-[20px] font-sans pointer-events-none whitespace-pre-wrap break-words overflow-hidden"
                 style={{ height: inputHeight }}
               >
                 {highlightKeeperInput(input)}
@@ -812,22 +1023,13 @@ export function AgentFeed({ agent }) {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
               onScroll={(e) => { if (highlightRef.current) highlightRef.current.scrollTop = e.target.scrollTop; }}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (e.dataTransfer?.files?.length) {
-                  const dt = new DataTransfer();
-                  for (const f of e.dataTransfer.files) dt.items.add(f);
-                  fileInputRef.current.files = dt.files;
-                  fileInputRef.current.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-              }}
-              placeholder={pendingSnippet ? 'Add a message (optional)...'
+              placeholder={pendingFiles.length > 0 ? 'Add a message (optional)...'
+                : pendingSnippet ? 'Add a message (optional)...'
                 : isAlive ? 'Send an instruction...' : 'Continue this session...'}
               rows={1}
               className={cn(
                 'w-full resize-none px-3 py-2.5 text-[13px] leading-[20px]',
-                'bg-transparent font-sans relative z-10',
+                'bg-transparent font-sans relative z-10 whitespace-pre-wrap break-words',
                 'placeholder:text-text-4',
                 'focus:outline-none',
                 input && KEEPER_DETECT_RE.test(input)
@@ -842,11 +1044,17 @@ export function AgentFeed({ agent }) {
             {/* Left: attach */}
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="w-7 h-7 flex items-center justify-center rounded-md text-text-4 hover:text-text-1 transition-colors cursor-pointer"
+              className={cn(
+                'w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer',
+                pendingFiles.length > 0 ? 'text-accent hover:text-accent/80' : 'text-text-4 hover:text-text-1',
+              )}
               title="Attach file"
             >
               <Paperclip size={14} />
             </button>
+            {pendingFiles.length > 0 && (
+              <span className="text-[10px] font-mono text-accent">{pendingFiles.length} file{pendingFiles.length > 1 ? 's' : ''}</span>
+            )}
             {/* Model selector */}
             {providerModels.length > 1 && (
               <div className="relative flex items-center">
@@ -886,11 +1094,11 @@ export function AgentFeed({ agent }) {
             ) : (
               <button
                 onClick={handleSend}
-                disabled={(!input.trim() && !pendingSnippet) || sending}
+                disabled={(!input.trim() && !pendingSnippet && pendingFiles.length === 0) || sending}
                 className={cn(
                   'w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer',
                   'disabled:opacity-15 disabled:cursor-not-allowed',
-                  (input.trim() || pendingSnippet)
+                  (input.trim() || pendingSnippet || pendingFiles.length > 0)
                     ? 'text-text-0 hover:text-text-1'
                     : 'text-text-4',
                 )}

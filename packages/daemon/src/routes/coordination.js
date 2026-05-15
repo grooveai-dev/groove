@@ -249,6 +249,19 @@ export function registerCoordinationRoutes(app, daemon) {
     }
   });
 
+  app.post('/api/keeper/move', (req, res) => {
+    try {
+      const { oldTag, newTag } = req.body || {};
+      if (!oldTag || !newTag) return res.status(400).json({ error: 'oldTag and newTag are required' });
+      const item = daemon.keeper.move(oldTag, newTag);
+      daemon.audit.log('keeper.move', { oldTag, newTag: item.tag });
+      daemon.broadcast({ type: 'keeper:moved', oldTag, item });
+      res.json(item);
+    } catch (err) {
+      res.status(err.message.includes('does not exist') ? 404 : 400).json({ error: err.message });
+    }
+  });
+
   app.delete('/api/keeper/link/:tag(*)', (req, res) => {
     try {
       const { docPath } = req.body || {};
@@ -288,6 +301,9 @@ export function registerCoordinationRoutes(app, daemon) {
         doc = await daemon.journalist.callHeadless(prompt, { trackAs: '__keeper_doc__' });
       } else {
         doc = `# ${tag}\n\n*Auto-generated document from conversation*\n\n${transcript.slice(0, 5000)}`;
+      }
+      if (!doc || !doc.trim()) {
+        return res.status(502).json({ error: 'AI synthesis returned empty content — try again' });
       }
       const item = daemon.keeper.saveDoc(tag, doc);
       daemon.audit.log('keeper.doc', { tag: item.tag, agentId });

@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { resolve, sep, isAbsolute } from 'path';
+import { resolve, sep, isAbsolute, basename } from 'path';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, unlinkSync, renameSync, rmSync, createReadStream, realpathSync } from 'fs';
 import { execFile, execFileSync } from 'child_process';
 import { homedir } from 'os';
@@ -331,6 +331,53 @@ export function registerFileRoutes(app, daemon) {
     }
   });
 
+  // Download a file (serves raw with Content-Disposition)
+  app.get('/api/files/download', (req, res) => {
+    const relPath = req.query.path;
+    const result = validateFilePath(relPath, getEditorRoot(daemon));
+    if (result.error) return res.status(400).json({ error: result.error });
+    if (!existsSync(result.fullPath)) return res.status(404).json({ error: 'File not found' });
+
+    const stat = statSync(result.fullPath);
+    if (stat.isDirectory()) return res.status(400).json({ error: 'Cannot download a directory' });
+
+    const name = basename(result.fullPath);
+    const mime = mimeLookup(name) || 'application/octet-stream';
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(name)}"`);
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Length', stat.size);
+    createReadStream(result.fullPath).pipe(res);
+  });
+
+  // Upload files (base64-encoded) to a target directory
+  app.post('/api/files/upload', (req, res) => {
+    const { dir = '', files } = req.body;
+    const rootDir = getEditorRoot(daemon);
+    if (!rootDir) return res.status(400).json({ error: 'Editor root not set' });
+    if (!Array.isArray(files) || files.length === 0) return res.status(400).json({ error: 'files[] required' });
+    if (files.length > 50) return res.status(400).json({ error: 'Max 50 files per upload' });
+
+    const uploaded = [];
+    for (const file of files) {
+      if (!file.name || !file.content) continue;
+      const safeName = String(file.name).replace(/\.\./g, '').replace(/\//g, '_');
+      if (!safeName) continue;
+      const relPath = dir ? `${dir}/${safeName}` : safeName;
+      const result = validateFilePath(relPath, rootDir);
+      if (result.error) continue;
+
+      try {
+        const parentDir = resolve(result.fullPath, '..');
+        mkdirSync(parentDir, { recursive: true });
+        const buf = Buffer.from(file.content, 'base64');
+        writeFileSync(result.fullPath, buf);
+        daemon.audit.log('file.upload', { path: relPath, size: buf.length });
+        uploaded.push({ path: relPath, size: buf.length });
+      } catch { /* skip failed files */ }
+    }
+    res.json({ uploaded, total: uploaded.length });
+  });
+
   // Create a new file
   app.post('/api/files/create', (req, res) => {
     const { path: relPath, content = '' } = req.body;
@@ -595,9 +642,31 @@ export function registerFileRoutes(app, daemon) {
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
     const rawFiles = daemon.registry.getFilesTouched(req.params.id);
     const rootDir = agent.workingDir || daemon.projectDir;
+
+    // Build git diff numstat for line-level +/- counts
+    let numstatMap = {};
+    const writtenPaths = rawFiles.filter(f => f.writes > 0).map(f => f.path);
+    if (writtenPaths.length > 0) {
+      try {
+        const out = execFileSync('git', ['diff', '--numstat', '--', ...writtenPaths], {
+          cwd: rootDir, timeout: 10000, maxBuffer: 2 * 1024 * 1024,
+        }).toString();
+        for (const line of out.split('\n')) {
+          const m = line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/);
+          if (m) {
+            numstatMap[m[3]] = {
+              additions: m[1] === '-' ? 0 : Number(m[1]),
+              deletions: m[2] === '-' ? 0 : Number(m[2]),
+            };
+          }
+        }
+      } catch { /* git not available or not a repo */ }
+    }
+
     const files = rawFiles.map(f => {
       const fullPath = isAbsolute(f.path) ? f.path : resolve(rootDir, f.path);
-      return { ...f, exists: existsSync(fullPath) };
+      const stats = numstatMap[f.path] || null;
+      return { ...f, exists: existsSync(fullPath), additions: stats?.additions ?? null, deletions: stats?.deletions ?? null };
     });
     res.json({ files, total: files.length });
   });

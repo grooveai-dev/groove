@@ -95,12 +95,19 @@ export const createAgentsSlice = (set, get) => ({
 
   // ── Chat ──────────────────────────────────────────────────
 
-  addChatMessage(agentId, from, text, isQuery = false) {
+  addChatMessage(agentId, from, text, isQuery = false, attachments = undefined) {
     set((s) => {
       const history = { ...s.chatHistory };
       if (!history[agentId]) history[agentId] = [];
-      history[agentId] = [...history[agentId].slice(-100), { from, text, timestamp: Date.now(), isQuery }];
-      persistJSON('groove:chatHistory', history);
+      const msg = { from, text, timestamp: Date.now(), isQuery };
+      if (attachments?.length) msg.attachments = attachments;
+      history[agentId] = [...history[agentId].slice(-100), msg];
+      const forStorage = { ...history };
+      forStorage[agentId] = forStorage[agentId].map((m) => {
+        if (!m.attachments?.length) return m;
+        return { ...m, attachments: m.attachments.map(({ dataUrl, ...rest }) => rest) };
+      });
+      persistJSON('groove:chatHistory', forStorage);
       return { chatHistory: history };
     });
   },
@@ -120,7 +127,7 @@ export const createAgentsSlice = (set, get) => ({
     }
   },
 
-  async instructAgent(id, message) {
+  async instructAgent(id, message, attachments = undefined) {
     // ── Keeper command interception ─────────────────────────
     const keeperCmd = message.match(/\[(save|append|update|delete|view|doc|link|read|instruct)\]/i);
     if (keeperCmd) {
@@ -131,7 +138,7 @@ export const createAgentsSlice = (set, get) => ({
       }
     }
 
-    get().addChatMessage(id, 'user', message, false);
+    get().addChatMessage(id, 'user', message, false, attachments);
     set((s) => ({ thinkingAgents: new Set([...s.thinkingAgents, id]) }));
 
     // Auto-attach active file context when in workspace mode
@@ -329,6 +336,18 @@ export const createAgentsSlice = (set, get) => ({
       get().addToast('success', `Deleted #${tag}`);
     } catch (err) {
       get().addToast('error', 'Failed to delete memory', err.message);
+    }
+  },
+
+  async moveKeeperItem(oldTag, newTag) {
+    try {
+      const item = await api.post('/keeper/move', { oldTag, newTag });
+      get().fetchKeeperItems();
+      get().addToast('success', `Moved #${oldTag} → #${item.tag}`);
+      return item;
+    } catch (err) {
+      get().addToast('error', 'Failed to move memory', err.message);
+      throw err;
     }
   },
 

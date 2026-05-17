@@ -47,7 +47,7 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
 
     const term = new XTerm({
       theme: THEME,
-      fontFamily: "'JetBrains Mono Variable', 'SF Mono', monospace",
+      fontFamily: "'SF Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace",
       fontSize: 12,
       lineHeight: 1.1,
       letterSpacing: 0,

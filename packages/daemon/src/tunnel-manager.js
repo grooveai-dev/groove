@@ -225,6 +225,14 @@ export class TunnelManager {
     const keyArgs = config.sshKeyPath ? ['-i', config.sshKeyPath] : [];
 
     try {
+      const probeCmd = [
+        `NV=$(node --version 2>/dev/null || echo "");`,
+        `echo "__NODE__${`$\{NV\}`}__NODE_END__";`,
+        `S=$(curl -sf http://localhost:${REMOTE_PORT}/api/status 2>/dev/null);`,
+        `if [ -n "$S" ]; then echo "__GROOVE_RUNNING__$S__GROOVE_END__";`,
+        `else which groove >/dev/null 2>&1 && echo __GROOVE_VER__$(groove --version 2>/dev/null || echo unknown)__GROOVE_STOPPED__ || echo __GROOVE_NOT_INSTALLED__; fi`,
+      ].join(' ');
+
       const result = execFileSync('ssh', [
         ...keyArgs,
         '-p', String(config.port || 22),
@@ -232,27 +240,32 @@ export class TunnelManager {
         '-o', 'StrictHostKeyChecking=accept-new',
         '-o', 'BatchMode=yes',
         target,
-        sshCmd(`S=$(curl -sf http://localhost:${REMOTE_PORT}/api/status 2>/dev/null); if [ -n "$S" ]; then echo "__GROOVE_RUNNING__$S__GROOVE_END__"; else which groove >/dev/null 2>&1 && echo __GROOVE_VER__$(groove --version 2>/dev/null || echo unknown)__GROOVE_STOPPED__ || echo __GROOVE_NOT_INSTALLED__; fi`),
+        sshCmd(probeCmd),
       ], {
         encoding: 'utf8',
         timeout: 15000,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
+      const nodeMatch = result.match(/__NODE__(.+?)__NODE_END__/);
+      const nodeVersionRaw = nodeMatch ? nodeMatch[1].trim() : '';
+      const nodeInstalled = nodeVersionRaw.startsWith('v');
+      const nodeVersion = nodeInstalled ? nodeVersionRaw : null;
+
       if (result.includes('__GROOVE_NOT_INSTALLED__')) {
-        return { reachable: true, daemonRunning: false, grooveInstalled: false };
+        return { reachable: true, daemonRunning: false, grooveInstalled: false, nodeInstalled, nodeVersion };
       }
       if (result.includes('__GROOVE_STOPPED__')) {
         const verMatch = result.match(/__GROOVE_VER__(.+?)__GROOVE_STOPPED__/);
         const remoteVersion = verMatch ? verMatch[1].trim() : null;
-        return { reachable: true, daemonRunning: false, grooveInstalled: true, remoteVersion };
+        return { reachable: true, daemonRunning: false, grooveInstalled: true, remoteVersion, nodeInstalled, nodeVersion };
       }
       const runMatch = result.match(/__GROOVE_RUNNING__(.+?)__GROOVE_END__/);
       let remoteVersion = null;
       if (runMatch) {
         try { remoteVersion = JSON.parse(runMatch[1]).version || null; } catch { /* ignore */ }
       }
-      return { reachable: true, daemonRunning: true, grooveInstalled: true, remoteVersion };
+      return { reachable: true, daemonRunning: true, grooveInstalled: true, remoteVersion, nodeInstalled, nodeVersion };
     } catch (err) {
       const stderr = err.stderr?.toString() || '';
       if (stderr.includes('Permission denied')) {
@@ -271,14 +284,17 @@ export class TunnelManager {
 
     if (this.active.has(id)) {
       const existing = this.active.get(id);
-      return { localPort: existing.localPort, pid: existing.pid };
+      return { localPort: existing.localPort, pid: existing.pid, name: config.name };
     }
 
     this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'testing' } });
 
+    // For known servers, skip the full test — tunnel first, check version after
     let testResult;
     if (opts.skipTest && opts.testResult) {
       testResult = opts.testResult;
+    } else if (config.lastConnected && opts.skipTest !== false) {
+      testResult = { reachable: true, daemonRunning: true, grooveInstalled: true, remoteVersion: null };
     } else {
       testResult = await this.test(id);
     }
@@ -286,22 +302,19 @@ export class TunnelManager {
       throw new Error(testResult.error || 'Host unreachable');
     }
 
+    // First-time only: install groove if missing, start daemon if not running
     let preConnectHandled = false;
     if (!testResult.daemonRunning && !testResult.grooveInstalled) {
       this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'installing' } });
       await this.remoteInstall(id);
       preConnectHandled = true;
     } else if (!testResult.daemonRunning && testResult.grooveInstalled) {
-      const localVer = getLocalVersion();
-      if (testResult.remoteVersion && testResult.remoteVersion !== localVer) {
-        this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'upgrading', from: testResult.remoteVersion, to: localVer } });
-        await this._remoteUpgrade(id, config);
-      }
       this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'starting' } });
       await this.autoStart(id);
       preConnectHandled = true;
     }
 
+    // Establish SSH tunnel
     this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'connecting' } });
 
     const localPort = await this._findAvailablePort();
@@ -357,9 +370,7 @@ export class TunnelManager {
       failCount: 0,
     });
 
-    // Verify the remote daemon is actually reachable through the tunnel.
-    // The cached test result (line 270) assumes daemonRunning=true based on
-    // lastConnected, but the daemon may have stopped since then.
+    // Verify daemon is reachable through tunnel, start if needed
     let remoteAlive = false;
     try {
       const probe = await fetch(`http://localhost:${localPort}/api/health`, {
@@ -371,7 +382,6 @@ export class TunnelManager {
     if (!remoteAlive && config.autoStart) {
       this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'starting' } });
       await this.autoStart(id);
-      // Give the daemon a moment to accept connections through the tunnel
       for (let i = 0; i < 5; i++) {
         await new Promise(r => setTimeout(r, 1000));
         try {
@@ -385,9 +395,9 @@ export class TunnelManager {
       this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'waiting', message: 'Remote daemon not running. Start it manually or enable auto-start.' } });
     }
 
-    const skipUpgrade = remoteAlive && testResult.remoteVersion && testResult.remoteVersion === getLocalVersion();
-    if (remoteAlive && !preConnectHandled && !skipUpgrade) {
-      await this._checkAndUpgradeRunning(id, config, localPort);
+    // Auto-upgrade: check version through tunnel, upgrade if behind (non-blocking)
+    if (remoteAlive && !preConnectHandled) {
+      this._checkAndUpgradeRunning(id, config, localPort).catch(() => {});
     }
 
     const remoteVer = testResult?.remoteVersion || null;
@@ -440,97 +450,93 @@ export class TunnelManager {
   }
 
   async _checkAndUpgradeRunning(id, config, localPort) {
-    const localVer = getLocalVersion();
-    if (localVer === '0.0.0') return;
-
     try {
+      // Get remote daemon version
       const resp = await fetch(`http://localhost:${localPort}/api/status`, {
         signal: AbortSignal.timeout(5000),
       });
       if (!resp.ok) return;
       const status = await resp.json();
-      const oldVersion = status.version;
-      if (!oldVersion || oldVersion === localVer) return;
+      const remoteVer = status.version;
+      if (!remoteVer) return;
 
-      this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'upgrading', from: oldVersion, to: localVer } });
-
+      // Check latest version on npm (from the remote server)
       const target = `${config.user}@${config.host}`;
       const keyArgs = config.sshKeyPath ? ['-i', config.sshKeyPath] : [];
       const sshBase = [...keyArgs, '-p', String(config.port || 22), '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes', target];
-      const pinnedPkg = `groove-dev@${localVer}`;
-      const installCmd = npmGlobalInstall(pinnedPkg, config.user);
+
+      let npmVer;
+      try {
+        npmVer = execFileSync('ssh', [...sshBase, sshCmd('npm view groove-dev version 2>/dev/null')], {
+          encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'],
+        }).trim();
+      } catch { return; }
+
+      if (!npmVer || npmVer === remoteVer) {
+        const localVer = getLocalVersion();
+        this.daemon.broadcast({ type: 'tunnel.version-info', data: { id, localVersion: localVer, remoteVersion: remoteVer, match: remoteVer === localVer } });
+        return;
+      }
+
+      // Remote is behind npm — upgrade
+      this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'upgrading', from: remoteVer, to: npmVer } });
+
+      const installCmd = npmGlobalInstall(`groove-dev@${npmVer}`, config.user);
+      const cleanupCmd = 'rm -rf $(npm root -g)/.groove-dev-* $(npm root -g)/groove-dev 2>/dev/null || true';
 
       try {
         execFileSync('ssh', [...sshBase, sshCmd(installCmd)], {
-          encoding: 'utf8',
-          timeout: 120000,
-          stdio: ['pipe', 'pipe', 'pipe'],
+          encoding: 'utf8', timeout: 120000, stdio: ['pipe', 'pipe', 'pipe'],
         });
-      } catch {
-        const fallbackCmd = npmGlobalInstall('groove-dev', config.user);
-        execFileSync('ssh', [...sshBase, sshCmd(fallbackCmd)], {
-          encoding: 'utf8',
-          timeout: 120000,
-          stdio: ['pipe', 'pipe', 'pipe'],
-        });
+      } catch (err) {
+        const errOutput = err.stdout?.toString() || err.stderr?.toString() || err.message;
+        if (errOutput.includes('ENOTEMPTY')) {
+          execFileSync('ssh', [...sshBase, sshCmd(cleanupCmd)], { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] });
+          execFileSync('ssh', [...sshBase, sshCmd(installCmd)], { encoding: 'utf8', timeout: 120000, stdio: ['pipe', 'pipe', 'pipe'] });
+        } else {
+          throw err;
+        }
       }
 
-      const verOutput = execFileSync('ssh', [...sshBase, sshCmd('groove --version')], {
-        encoding: 'utf8',
-        timeout: 10000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }).trim();
-      const installedVer = verOutput.replace(/[^0-9.]/g, '') || verOutput.trim();
-
-      if (installedVer !== localVer) {
-        this.daemon.broadcast({ type: 'tunnel.version-mismatch', data: { id, localVersion: localVer, remoteVersion: installedVer, message: 'Pinned version not available on npm, installed latest' } });
-      }
-
+      // Restart remote daemon
       const cdPrefix = config.projectDir ? `cd "${config.projectDir}" && ` : '';
       const setProjectDir = config.projectDir
         ? `curl -sf -X POST -H 'Content-Type: application/json' --data '{"path":"${config.projectDir}"}' http://localhost:${REMOTE_PORT}/api/project-dir > /dev/null 2>&1 || true; `
         : '';
       const restartCmd = `kill $(lsof -t -i:${REMOTE_PORT}) 2>/dev/null || true; sleep 2; ${cdPrefix}GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:${REMOTE_PORT}/api/status && (${setProjectDir}true) || true`;
-      const restartResult = execFileSync('ssh', [...sshBase, sshCmd(restartCmd)], {
-        encoding: 'utf8',
-        timeout: 60000,
-        stdio: ['pipe', 'pipe', 'pipe'],
+      execFileSync('ssh', [...sshBase, sshCmd(restartCmd)], {
+        encoding: 'utf8', timeout: 60000, stdio: ['pipe', 'pipe', 'pipe'],
       });
 
+      // Verify through tunnel
       let daemonVer = null;
-      try { daemonVer = JSON.parse(restartResult.trim()).version || null; } catch { /* parse failed */ }
-
       for (let i = 0; i < 3; i++) {
         try {
           const check = await fetch(`http://localhost:${localPort}/api/status`, {
             signal: AbortSignal.timeout(3000),
           });
           if (check.ok) {
-            const checkData = await check.json();
-            daemonVer = checkData.version || daemonVer;
+            daemonVer = (await check.json()).version || null;
             break;
           }
         } catch { /* retry */ }
         await new Promise(r => setTimeout(r, 2000));
       }
 
+      const localVer = getLocalVersion();
       if (daemonVer) {
         this.daemon.broadcast({ type: 'tunnel.version-info', data: { id, localVersion: localVer, remoteVersion: daemonVer, match: daemonVer === localVer } });
       } else {
-        this.daemon.broadcast({ type: 'tunnel.upgrade-failed', data: { id, error: 'Daemon did not respond after restart', from: oldVersion, attempted: localVer } });
+        this.daemon.broadcast({ type: 'tunnel.upgrade-failed', data: { id, error: 'Daemon did not respond after restart', from: remoteVer, attempted: npmVer } });
       }
 
-      this.daemon.audit.log('tunnel.upgrade', { id, from: oldVersion, to: daemonVer || installedVer });
+      this.daemon.audit.log('tunnel.upgrade', { id, from: remoteVer, to: daemonVer || npmVer });
     } catch (err) {
       try {
         const verify = await fetch(`http://localhost:${localPort}/api/status`, { signal: AbortSignal.timeout(5000) });
         if (verify.ok) {
           const verifyData = await verify.json();
-          if (verifyData.version === localVer) {
-            this.daemon.broadcast({ type: 'tunnel.version-info', data: { id, localVersion: localVer, remoteVersion: verifyData.version, match: true } });
-            return;
-          }
-          this.daemon.broadcast({ type: 'tunnel.version-mismatch', data: { id, localVersion: localVer, remoteVersion: verifyData.version, message: 'Upgrade timed out but remote is reachable' } });
+          this.daemon.broadcast({ type: 'tunnel.version-info', data: { id, localVersion: getLocalVersion(), remoteVersion: verifyData.version, match: false } });
           return;
         }
       } catch { /* tunnel verification failed */ }

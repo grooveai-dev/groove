@@ -4,7 +4,7 @@ import { useGrooveStore } from '../stores/groove';
 import { Button } from '../components/ui/button';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Dialog, DialogContent } from '../components/ui/dialog';
-import { BookOpen, Plus, Search, Trash2, Pencil, ChevronRight, Hash, FolderOpen, Clock, Save, Link2, FileText, Sparkles, HelpCircle, GripVertical } from 'lucide-react';
+import { BookOpen, Plus, Search, Trash2, Pencil, ChevronRight, Hash, FolderOpen, Clock, Save, Link2, FileText, Sparkles, HelpCircle, GripVertical, CornerLeftUp } from 'lucide-react';
 
 const COMMANDS = [
   { cmd: 'save',     args: '#tag',                desc: 'Save the message and send it to the agent' },
@@ -114,7 +114,7 @@ function MemoryCard({ item, onEdit, onDelete }) {
   );
 }
 
-function EditorModal({ open, onOpenChange, editing, onSave }) {
+function EditorModal({ open, onOpenChange, editing, onSave, onRename }) {
   const [tag, setTag] = useState('');
   const [content, setContent] = useState('');
   const textareaRef = useRef(null);
@@ -132,9 +132,15 @@ function EditorModal({ open, onOpenChange, editing, onSave }) {
     }
   }, [open]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!tag.trim() || editing?.readOnly) return;
-    onSave(tag.trim(), content);
+    const originalTag = editing?.tag || '';
+    const newTag = tag.trim();
+    if (!editing?.isNew && newTag !== originalTag) {
+      await onRename(originalTag, newTag, content);
+    } else {
+      onSave(newTag, content);
+    }
     onOpenChange(false);
   };
 
@@ -148,27 +154,30 @@ function EditorModal({ open, onOpenChange, editing, onSave }) {
   const isNew = editing?.isNew;
   const readOnly = editing?.readOnly;
   const title = readOnly ? `#${editing?.tag || ''}` : isNew ? 'New Memory' : `Edit #${editing?.tag || ''}`;
+  const tagChanged = !isNew && tag.trim() !== (editing?.tag || '');
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent title={title} description="Memory content" className="max-w-2xl">
         <div className="p-5 space-y-4" onKeyDown={handleKeyDown}>
-          {isNew && (
-            <div>
-              <label className="block text-xs font-medium text-text-2 mb-1.5">Tag</label>
-              <div className="flex items-center gap-1">
-                <span className="text-sm text-text-3">#</span>
-                <input
-                  type="text"
-                  value={tag}
-                  onChange={(e) => setTag(e.target.value.replace(/[^a-zA-Z0-9/_-]/g, '').toLowerCase())}
-                  placeholder="project/feature-name"
-                  className="flex-1 px-2 py-1.5 text-sm font-mono rounded-md bg-surface-0 border border-border text-text-0 placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
-                />
-              </div>
-              <p className="text-2xs text-text-4 mt-1">Use / for hierarchy: groove/memory-system</p>
+          <div>
+            <label className="block text-xs font-medium text-text-2 mb-1.5">
+              {isNew ? 'Tag' : 'Title'}
+              {tagChanged && <span className="ml-2 text-2xs text-warning">(will rename)</span>}
+            </label>
+            <div className="flex items-center gap-1">
+              <span className="text-sm text-text-3">#</span>
+              <input
+                type="text"
+                value={tag}
+                onChange={(e) => !readOnly && setTag(e.target.value.replace(/[^a-zA-Z0-9/_-]/g, '').toLowerCase())}
+                readOnly={readOnly}
+                placeholder="project/feature-name"
+                className="flex-1 px-2 py-1.5 text-sm font-mono rounded-md bg-surface-0 border border-border text-text-0 placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+              />
             </div>
-          )}
+            {isNew && <p className="text-2xs text-text-4 mt-1">Use / for hierarchy: groove/memory-system</p>}
+          </div>
           <div>
             {!readOnly && <label className="block text-xs font-medium text-text-2 mb-1.5">Content</label>}
             <textarea
@@ -196,7 +205,7 @@ function EditorModal({ open, onOpenChange, editing, onSave }) {
               {!readOnly && (
                 <Button variant="primary" size="sm" onClick={handleSave} disabled={!tag.trim()}>
                   <Save size={14} />
-                  Save
+                  {tagChanged ? 'Rename & Save' : 'Save'}
                 </Button>
               )}
             </div>
@@ -249,7 +258,7 @@ function InstructModal({ open, onOpenChange }) {
   );
 }
 
-function TreeItem({ tag, label, isDoc, indent, isDragOver, onSelect, onDragStart, onDragOver, onDragLeave, onDrop }) {
+function TreeItem({ tag, label, isDoc, indent, isDragOver, onSelect, onEdit, onDelete, onDragStart, onDragOver, onDragLeave, onDrop }) {
   return (
     <div
       draggable
@@ -257,19 +266,34 @@ function TreeItem({ tag, label, isDoc, indent, isDragOver, onSelect, onDragStart
       onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver?.(tag); }}
       onDragLeave={() => onDragLeave?.()}
       onDrop={(e) => { e.preventDefault(); onDrop?.(e.dataTransfer.getData('text/plain'), tag); }}
-      onClick={() => onSelect({ tag })}
       className={`flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-xs transition-colors cursor-pointer group ${isDragOver ? 'bg-accent/15 border border-accent/30 border-dashed' : 'hover:bg-surface-2'}`}
       style={indent ? { paddingLeft: `${8 + indent * 16}px` } : undefined}
     >
       <GripVertical size={10} className="text-text-4 opacity-0 group-hover:opacity-50 flex-shrink-0 cursor-grab" />
       <Hash size={11} className="text-text-4 flex-shrink-0" />
-      <span className="font-medium text-text-2 truncate">{label}</span>
+      <span className="font-medium text-text-2 truncate flex-1" onClick={() => onSelect({ tag })}>{label}</span>
       {isDoc && <Sparkles size={9} className="text-purple flex-shrink-0" />}
+      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+        <button
+          onClick={(e) => { e.stopPropagation(); onEdit?.({ tag }); }}
+          className="p-1 rounded text-text-4 hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+          title="Edit"
+        >
+          <Pencil size={11} />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete?.(tag); }}
+          className="p-1 rounded text-text-4 hover:text-danger hover:bg-danger/10 transition-colors cursor-pointer"
+          title="Delete"
+        >
+          <Trash2 size={11} />
+        </button>
+      </div>
     </div>
   );
 }
 
-function TreeGroup({ node, onSelect, dragOverTag, onDragStart, onDragOver, onDragLeave, onDrop }) {
+function TreeGroup({ node, onSelect, onEdit, onDelete, dragOverTag, onDragStart, onDragOver, onDragLeave, onDrop }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.children && node.children.length > 0;
 
@@ -278,7 +302,8 @@ function TreeGroup({ node, onSelect, dragOverTag, onDragStart, onDragOver, onDra
       <TreeItem
         tag={node.tag} label={node.tag} isDoc={node.type === 'doc'}
         isDragOver={dragOverTag === node.tag}
-        onSelect={onSelect} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
+        onSelect={onSelect} onEdit={onEdit} onDelete={onDelete}
+        onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
       />
     );
   }
@@ -305,14 +330,16 @@ function TreeGroup({ node, onSelect, dragOverTag, onDragStart, onDragOver, onDra
             <TreeItem
               tag={node.tag} label={node.tag} isDoc={node.type === 'doc'} indent={1}
               isDragOver={false}
-              onSelect={onSelect} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
+              onSelect={onSelect} onEdit={onEdit} onDelete={onDelete}
+              onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
             />
           )}
           {node.children.map((child) => (
             <TreeItem
               key={child.tag} tag={child.tag} label={child.tag.split('/').pop()} isDoc={child.type === 'doc'} indent={1}
               isDragOver={dragOverTag === child.tag}
-              onSelect={onSelect} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
+              onSelect={onSelect} onEdit={onEdit} onDelete={onDelete}
+              onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
             />
           ))}
         </div>
@@ -335,7 +362,7 @@ export default function MemoryView() {
   const setKeeperEditing = useGrooveStore((s) => s.setKeeperEditing);
 
   const [search, setSearch] = useState('');
-  const [viewMode, setViewMode] = useState('list');
+  const [viewMode, setViewMode] = useState('tree');
   const [editorOpen, setEditorOpen] = useState(false);
   const [dragOverTag, setDragOverTag] = useState(null);
   const [draggingTag, setDraggingTag] = useState(null);
@@ -383,6 +410,12 @@ export default function MemoryView() {
     setKeeperEditing(null);
   };
 
+  const handleRename = async (oldTag, newTag, content) => {
+    await moveKeeperItem(oldTag, newTag);
+    await updateKeeperItem(newTag, content);
+    setKeeperEditing(null);
+  };
+
   const handleEditorClose = (open) => {
     setEditorOpen(open);
     if (!open) setKeeperEditing(null);
@@ -397,10 +430,9 @@ export default function MemoryView() {
     setDragOverTag(null);
     setDraggingTag(null);
     if (!sourceTag || !targetTag || sourceTag === targetTag) return;
-    // Don't drop onto self or own children
     if (targetTag.startsWith(sourceTag + '/')) return;
     const sourceName = sourceTag.split('/').pop();
-    const newTag = targetTag + '/' + sourceName;
+    const newTag = targetTag === '__root__' ? sourceName : targetTag + '/' + sourceName;
     if (sourceTag === newTag) return;
     try {
       await moveKeeperItem(sourceTag, newTag);
@@ -487,6 +519,7 @@ export default function MemoryView() {
               {filteredTree.map((node) => (
                 <TreeGroup
                   key={node.tag} node={node} onSelect={handleTreeSelect}
+                  onEdit={handleEdit} onDelete={(tag) => deleteKeeperItem(tag)}
                   dragOverTag={dragOverTag}
                   onDragStart={(tag) => setDraggingTag(tag)}
                   onDragOver={(tag) => { if (tag !== draggingTag) setDragOverTag(tag); }}
@@ -494,6 +527,17 @@ export default function MemoryView() {
                   onDrop={handleDrop}
                 />
               ))}
+              {draggingTag && draggingTag.includes('/') && (
+                <div
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverTag('__root__'); }}
+                  onDragLeave={() => setDragOverTag(null)}
+                  onDrop={(e) => { e.preventDefault(); handleDrop(e.dataTransfer.getData('text/plain'), '__root__'); }}
+                  className={`flex items-center gap-2 px-3 py-2 mt-2 rounded-md border border-dashed text-xs transition-colors ${dragOverTag === '__root__' ? 'border-accent/50 bg-accent/10 text-accent' : 'border-border text-text-4'}`}
+                >
+                  <CornerLeftUp size={12} />
+                  <span>Drop here to move to root</span>
+                </div>
+              )}
             </div>
           )
         ) : (
@@ -518,6 +562,7 @@ export default function MemoryView() {
         onOpenChange={handleEditorClose}
         editing={keeperEditing}
         onSave={handleSave}
+        onRename={handleRename}
       />
 
       {/* Instruct Modal (command reference) */}

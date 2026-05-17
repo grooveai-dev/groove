@@ -696,21 +696,19 @@ class WorkspaceManager {
         }
 
         emitProgress('Installing Groove on remote server...');
-        const isRoot = conn.user === 'root';
-        const localVer = app.getVersion();
-        const pinnedPkg = `groove-dev@${localVer}`;
-        const latestPkg = 'groove-dev';
-        const installCmd = (pkg) => isRoot ? `npm i -g ${pkg}` : `sudo npm i -g ${pkg}`;
+        const npmInstallPkg = (pkg) => {
+          const base = `npm i -g --prefer-online ${pkg}`;
+          return conn.user === 'root' ? base : `${base} || sudo -n ${base}`;
+        };
         try {
-          sshExec(installCmd(pinnedPkg), 120000);
-        } catch (e) {
-          emitProgress('Pinned version failed — trying latest...');
-          try {
-            sshExec(installCmd(latestPkg), 120000);
-          } catch (e2) {
-            proc.kill();
-            throw new Error(`Failed to install Groove on remote server: ${e2.message || 'npm install failed'}`);
+          sshExec(npmInstallPkg('groove-dev'), 120000);
+        } catch (e2) {
+          proc.kill();
+          const errMsg = e2.message || 'npm install failed';
+          if (/EACCES|permission denied|sudo.*password/i.test(errMsg)) {
+            throw new Error('npm global install requires write access. Either install Node via nvm (recommended) or configure passwordless sudo for npm on the remote server.');
           }
+          throw new Error(`Failed to install Groove on remote server: ${errMsg}`);
         }
       }
 
@@ -727,59 +725,47 @@ class WorkspaceManager {
       }
     }
 
-    let didUpgrade = false;
-
     if (!healthy) {
       proc.kill();
       throw new Error('Remote daemon started but not responding on port 31415 — check firewall settings or try again');
     }
 
-    const localVersion = app.getVersion();
-    try {
-      const resp = await fetch(`http://localhost:${localPort}/api/status`, { signal: AbortSignal.timeout(3000) });
-      if (resp.ok) {
+    // Background upgrade check — don't block the connection
+    (async () => {
+      try {
+        const resp = await fetch(`http://localhost:${localPort}/api/status`, { signal: AbortSignal.timeout(5000) });
+        if (!resp.ok) return;
         const status = await resp.json();
         const remoteVersion = status.version;
-        if (remoteVersion && remoteVersion !== localVersion) {
-          didUpgrade = true;
-          emitProgress(`Updating remote Groove ${remoteVersion} → ${localVersion}...`);
-          const upgradeCmd = (pkg) => conn.user === 'root' ? `npm i -g ${pkg}` : `sudo npm i -g ${pkg}`;
-          try {
-            sshExec(upgradeCmd(`groove-dev@${localVersion}`), 120000);
-          } catch (e) {
-            console.error('[ssh] Remote upgrade failed:', e.message);
-            emitProgress('Pinned upgrade failed — trying latest...');
-            try {
-              sshExec(upgradeCmd('groove-dev'), 120000);
-            } catch (e2) {
-              console.error('[ssh] Unpinned upgrade also failed:', e2.message);
-              emitProgress('Remote upgrade failed — running older version');
-            }
-          }
-          healthy = false;
-          try { sshExec('kill $(lsof -t -i:31415) 2>/dev/null || true', 10000); } catch {}
-          await new Promise(r => setTimeout(r, 2000));
-          try {
-            const restartResult = sshExec('GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:31415/api/health > /dev/null && echo __DAEMON_OK__ || echo __DAEMON_FAIL__', 60000);
-            if (restartResult.includes('__DAEMON_OK__')) {
-              healthy = true;
-            }
-          } catch {}
-          if (!healthy && !await checkHealth(5, 3000)) {
-            emitProgress('Remote updated but daemon slow to restart — retrying...');
-            await new Promise(r => setTimeout(r, 5000));
-            if (!await checkHealth(3, 3000)) {
-              emitProgress('Remote daemon slow to start, attempting connection...');
-            }
-          }
-        }
-      }
-    } catch {}
+        if (!remoteVersion) return;
 
-    if (didUpgrade && !await checkHealth(5, 3000)) {
-      proc.kill();
-      throw new Error('Remote daemon started but not responding on port 31415 — check firewall settings or try again');
-    }
+        let npmVer;
+        try {
+          npmVer = sshExec('npm view groove-dev version 2>/dev/null', 15000);
+        } catch { return; }
+        if (!npmVer || npmVer === remoteVersion) return;
+
+        const npmInstall = (pkg) => {
+          const base = `npm i -g --prefer-online ${pkg}`;
+          return conn.user === 'root' ? base : `${base} || sudo -n ${base}`;
+        };
+        const cleanCmd = 'rm -rf $(npm root -g)/.groove-dev-* 2>/dev/null || true';
+        try {
+          sshExec(npmInstall(`groove-dev@${npmVer}`), 120000);
+        } catch (e) {
+          const errMsg = e.message || '';
+          if (errMsg.includes('ENOTEMPTY')) {
+            try { sshExec(cleanCmd, 15000); } catch {}
+            try { sshExec(npmInstall(`groove-dev@${npmVer}`), 120000); } catch { return; }
+          } else { return; }
+        }
+        try { sshExec('kill $(lsof -t -i:31415) 2>/dev/null || true', 10000); } catch {}
+        await new Promise(r => setTimeout(r, 3000));
+        try {
+          sshExec('GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 3; curl -sf http://localhost:31415/api/health > /dev/null || true', 60000);
+        } catch {}
+      } catch {}
+    })();
 
     this._sshTunnels = this._sshTunnels || new Map();
     this._sshTunnels.set(id, proc);

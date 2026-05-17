@@ -7,7 +7,7 @@ import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import {
   FolderSearch, Check, X, AlertTriangle, Loader2,
-  ExternalLink, Server, KeyRound, Settings, Plug,
+  ExternalLink, Server, KeyRound, Settings, Plug, Terminal, Copy, RefreshCw,
 } from 'lucide-react';
 
 const STEPS = [
@@ -110,6 +110,111 @@ function InfoCard({ icon: Icon, title, iconColor, children }) {
   );
 }
 
+function CopyableCommand({ command }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex items-center gap-1.5 group">
+      <code className="flex-1 text-2xs font-mono text-text-1 bg-surface-0 px-2.5 py-1.5 rounded-md border border-border-subtle truncate">
+        {command}
+      </code>
+      <button
+        onClick={() => { navigator.clipboard.writeText(command); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+        className="p-1.5 text-text-4 hover:text-text-1 cursor-pointer transition-colors flex-shrink-0"
+        title="Copy"
+      >
+        {copied ? <Check size={11} className="text-success" /> : <Copy size={11} />}
+      </button>
+    </div>
+  );
+}
+
+function SetupStatus({ testResult, user, host, sshPort, testLoading, onRetest }) {
+  const allGood = testResult.nodeInstalled && testResult.grooveInstalled && testResult.daemonRunning;
+  const needsNode = !testResult.nodeInstalled;
+  const needsGroove = testResult.nodeInstalled && !testResult.grooveInstalled;
+  const needsDaemon = testResult.grooveInstalled && !testResult.daemonRunning;
+  const sshTarget = `${user}@${host}${sshPort !== 22 ? ` -p ${sshPort}` : ''}`;
+
+  if (allGood) {
+    return (
+      <InfoCard icon={Check} title="Ready to Connect" iconColor="bg-success/10 text-success">
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-2 text-2xs font-sans">
+            <StatusDot status="running" size="sm" />
+            <span className="text-text-1">Node.js {testResult.nodeVersion}</span>
+          </div>
+          <div className="flex items-center gap-2 text-2xs font-sans">
+            <StatusDot status="running" size="sm" />
+            <span className="text-text-1">Groove Installed{testResult.remoteVersion ? ` (v${testResult.remoteVersion})` : ''}</span>
+          </div>
+          <div className="flex items-center gap-2 text-2xs font-sans">
+            <StatusDot status="running" size="sm" />
+            <span className="text-text-1">Daemon Running</span>
+          </div>
+        </div>
+      </InfoCard>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-warning/25 bg-gradient-to-br from-warning/[0.04] to-transparent px-5 py-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0">
+            <Terminal size={13} className="text-warning" />
+          </div>
+          <span className="text-sm font-semibold text-text-0 font-sans">Remote Setup Required</span>
+        </div>
+        <button
+          onClick={onRetest}
+          disabled={testLoading}
+          className="flex items-center gap-1 text-2xs text-text-3 hover:text-text-1 font-sans cursor-pointer transition-colors disabled:opacity-50"
+        >
+          <RefreshCw size={10} className={testLoading ? 'animate-spin' : ''} />
+          Re-test
+        </button>
+      </div>
+
+      <div className="space-y-2.5 mb-3">
+        <div className="flex items-center gap-2 text-2xs font-sans">
+          <StatusDot status={testResult.reachable ? 'running' : 'crashed'} size="sm" />
+          <span className="text-text-1">Reachable</span>
+        </div>
+        <div className="flex items-center gap-2 text-2xs font-sans">
+          <StatusDot status={testResult.nodeInstalled ? 'running' : 'stopped'} size="sm" />
+          <span className="text-text-1">Node.js{testResult.nodeVersion ? ` ${testResult.nodeVersion}` : ''}</span>
+        </div>
+        <div className="flex items-center gap-2 text-2xs font-sans">
+          <StatusDot status={testResult.grooveInstalled ? 'running' : 'stopped'} size="sm" />
+          <span className="text-text-1">Groove{testResult.remoteVersion ? ` v${testResult.remoteVersion}` : ''}</span>
+        </div>
+        <div className="flex items-center gap-2 text-2xs font-sans">
+          <StatusDot status={testResult.daemonRunning ? 'running' : 'stopped'} size="sm" />
+          <span className="text-text-1">Daemon</span>
+        </div>
+      </div>
+
+      <div className="border-t border-border-subtle pt-3 space-y-2">
+        <p className="text-2xs text-text-3 font-sans">SSH in and run{needsNode ? '' : needsGroove ? '' : ''}:</p>
+        <CopyableCommand command={`ssh ${sshTarget}`} />
+        {needsNode && (
+          <>
+            <CopyableCommand command='curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash' />
+            <CopyableCommand command="source ~/.bashrc && nvm install 20" />
+          </>
+        )}
+        {(needsNode || needsGroove) && (
+          <CopyableCommand command="npm i -g groove-dev" />
+        )}
+        {(needsNode || needsGroove || needsDaemon) && (
+          <CopyableCommand command="groove start" />
+        )}
+        <p className="text-2xs text-text-4 font-sans mt-1">Then click Re-test above.</p>
+      </div>
+    </div>
+  );
+}
+
 export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
   const remoteHomedir = useGrooveStore((s) => s.remoteHomedir);
   const [step, setStep] = useState(0);
@@ -140,6 +245,13 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
       setAutoConnect(server.autoConnect || false);
       setCompletedSteps([0, 1]);
       setStep(2);
+      setTestResult(null);
+      setTestLoading(true);
+      onTest().then((result) => {
+        setTestResult(result);
+      }).catch((err) => {
+        setTestResult({ error: err.message || 'Test failed' });
+      }).finally(() => setTestLoading(false));
     } else {
       setName('');
       setHost('');
@@ -150,6 +262,7 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
       setAutoConnect(false);
       setCompletedSteps([]);
       setStep(0);
+      setTestResult(null);
     }
   }, [server]);
 
@@ -402,22 +515,14 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
           </FieldCard>
 
           {testResult && !testResult.error ? (
-            <InfoCard icon={Check} title="Test Results" iconColor="bg-success/10 text-success">
-              <div className="space-y-2.5">
-                <div className="flex items-center gap-2 text-2xs font-sans">
-                  <StatusDot status={testResult.reachable ? 'running' : 'crashed'} size="sm" />
-                  <span className="text-text-1">Reachable</span>
-                </div>
-                <div className="flex items-center gap-2 text-2xs font-sans">
-                  <StatusDot status={testResult.grooveInstalled ? 'running' : 'stopped'} size="sm" />
-                  <span className="text-text-1">Groove Installed</span>
-                </div>
-                <div className="flex items-center gap-2 text-2xs font-sans">
-                  <StatusDot status={testResult.daemonRunning ? 'running' : 'stopped'} size="sm" />
-                  <span className="text-text-1">Daemon Running</span>
-                </div>
-              </div>
-            </InfoCard>
+            <SetupStatus
+              testResult={testResult}
+              user={user}
+              host={host}
+              sshPort={sshPort}
+              testLoading={testLoading}
+              onRetest={handleTest}
+            />
           ) : (
             <InfoCard icon={Server} title={name || 'Server'}>
               <div className="space-y-2 text-2xs font-sans">

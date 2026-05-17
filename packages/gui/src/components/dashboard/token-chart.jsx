@@ -107,7 +107,7 @@ const TokenChart = memo(function TokenChart({ data }) {
     ctx.setLineDash([]);
 
     // ── Floating Y labels ───────────────────────────────────
-    ctx.font = "9px 'JetBrains Mono Variable', monospace";
+    ctx.font = "9px 'SF Mono', ui-monospace, Menlo, Consolas, monospace";
     ctx.textAlign = 'left';
     ctx.fillStyle = hexAlpha(HEX.text3, 0.5);
     ctx.fillText(`${fmtNum(maxBurn)}/m`, pad.left + 4, pad.top + 10);
@@ -224,7 +224,7 @@ const TokenChart = memo(function TokenChart({ data }) {
         ctx.fillStyle = line.color; ctx.fill();
         ctx.font = "8px 'Inter Variable', sans-serif";
         ctx.fillStyle = HEX.text3; ctx.fillText(line.label, tx + 14, rowY);
-        ctx.font = "9px 'JetBrains Mono Variable', monospace";
+        ctx.font = "9px 'SF Mono', ui-monospace, Menlo, Consolas, monospace";
         ctx.fillStyle = HEX.text0; ctx.textAlign = 'right';
         ctx.fillText(line.value, tx + tooltipW - 8, rowY);
         ctx.textAlign = 'left';

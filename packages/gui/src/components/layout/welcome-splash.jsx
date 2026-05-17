@@ -64,7 +64,14 @@ export function WelcomeSplash() {
     try {
       await connectTunnel(server.id);
     } catch (err) {
-      addToast('error', 'Connection failed', err?.message || 'Unknown error');
+      const detail = err?.message || 'Unknown error';
+      const isSetupIssue = /permission|EACCES|sudo|Node\.js is not installed|npm install failed|write access/i.test(detail);
+      if (isSetupIssue) {
+        toggleQuickConnect();
+        addToast('warning', 'Remote setup needed', 'Follow the instructions to set up the remote server.');
+      } else {
+        addToast('error', 'Connection failed', detail);
+      }
     }
     setConnectingId(null);
   }

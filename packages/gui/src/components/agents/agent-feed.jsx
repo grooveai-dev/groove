@@ -674,11 +674,12 @@ export function AgentFeed({ agent }) {
     const seen = new Set();
 
     // Deduplicate chat messages (same text within 5s = duplicate)
-    for (const msg of chatHistory) {
+    for (let ci = 0; ci < chatHistory.length; ci++) {
+      const msg = chatHistory[ci];
       const key = `${msg.from}:${msg.text?.slice(0, 100)}`;
       const dupeWindow = items.find((i) => i.kind === 'chat' && `${i.from}:${i.text?.slice(0, 100)}` === key && Math.abs(i.ts - msg.timestamp) < 5000);
       if (dupeWindow) continue;
-      items.push({ ...msg, kind: 'chat', ts: msg.timestamp });
+      items.push({ ...msg, kind: 'chat', ts: msg.timestamp, _chatIdx: ci });
       seen.add(msg.text);
     }
 
@@ -722,7 +723,7 @@ export function AgentFeed({ agent }) {
         }
       });
     }
-  }, [timeline.length, sending, isThinking]);
+  }, [timeline.length, sending]);
 
   function getFileType(file) {
     if (file.type.startsWith('image/')) return 'image';
@@ -874,13 +875,12 @@ export function AgentFeed({ agent }) {
         )}
         {timeline.map((item, i) => {
           if (item.kind === 'activity-group') {
-            // Only the last activity group is "live" if agent is still running
             const isLastGroup = !timeline.slice(i + 1).some((t) => t.kind === 'activity-group' || t.from === 'agent');
-            return <div key={`grp-${i}`}><ActivityGroup entries={item.entries} isLive={isAlive && isLastGroup} /></div>;
+            return <div key={`grp-${item.entries[0]?.ts || i}`}><ActivityGroup entries={item.entries} isLive={isAlive && isLastGroup} /></div>;
           }
-          if (item.from === 'user') return <UserMessage key={`msg-${i}`} msg={item} />;
-          if (item.from === 'system') return <SystemMessage key={`msg-${i}`} msg={item} />;
-          return <AgentMessage key={`msg-${i}`} msg={item} agent={agent} />;
+          if (item.from === 'user') return <UserMessage key={`user-${item._chatIdx}`} msg={item} />;
+          if (item.from === 'system') return <SystemMessage key={`sys-${item._chatIdx}`} msg={item} />;
+          return <AgentMessage key={`agent-${item._chatIdx}`} msg={item} agent={agent} />;
         })}
         <AnimatePresence>
           {(sending || isThinking) && (

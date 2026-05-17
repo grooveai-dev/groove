@@ -507,6 +507,7 @@ export class ProcessManager {
 
     if (finalStatus === 'completed' && agent.role === 'planner') {
       this._extractRecommendedTeam(agent, logPath);
+      this._consumeRecommendedTeamAutonomous(agent);
       this._handleReviewComplete(agent);
     }
 
@@ -534,7 +535,7 @@ export class ProcessManager {
 
     this._checkPhase2(agent.id);
 
-    if (finalStatus === 'completed' && agent.role === 'fullstack' && agent.teamId) {
+    if (finalStatus === 'completed' && agent.role === 'fullstack' && agent.teamId && agent.metadata?.isQcPhase2) {
       this._triggerReview(agent);
     }
 
@@ -1756,6 +1757,114 @@ For normal file edits within your scope, proceed without review.
   }
 
   /**
+   * Daemon-autonomous consumption of recommended-team.json.
+   * If the file exists and the GUI hasn't already consumed it (no _pendingPhase2
+   * for this team), broadcast a notification so the GUI picks it up on next tick.
+   * This closes the race where GUI polling stops before the file is written.
+   */
+  _consumeRecommendedTeamAutonomous(agent) {
+    try {
+      const workDir = agent.workingDir || this.daemon.projectDir;
+      const targetPath = resolve(workDir, '.groove', 'recommended-team.json');
+      if (!existsSync(targetPath)) return;
+
+      const teamId = agent.teamId || null;
+
+      // If phase 2 is already pending for this team, GUI already consumed it
+      const pending = this.daemon._pendingPhase2 || [];
+      if (teamId && pending.some(g => g.agents.some(a => a.teamId === teamId))) return;
+
+      // Broadcast so the GUI knows to fetch — even if its polling interval was cleared
+      this.daemon.broadcast({
+        type: 'recommended-team:ready',
+        teamId,
+        agentId: agent.id,
+        agentName: agent.name,
+      });
+
+      // Delayed self-consumption: if the GUI doesn't consume within 5s, daemon does it directly
+      setTimeout(() => {
+        if (!existsSync(targetPath)) return; // GUI consumed it
+        try {
+          const raw = JSON.parse(readFileSync(targetPath, 'utf8'));
+          delete raw._meta;
+          const agentConfigs = Array.isArray(raw) ? raw : (raw.agents || []);
+          if (agentConfigs.length === 0) return;
+
+          const phase1 = agentConfigs.filter(a => !a.phase || a.phase === 1);
+          const phase2 = agentConfigs.filter(a => a.phase === 2);
+          if (phase1.length === 0) return;
+
+          // Check again — GUI may have consumed during the timeout
+          const currentPending = this.daemon._pendingPhase2 || [];
+          if (teamId && currentPending.some(g => g.agents.some(a => a.teamId === teamId))) return;
+
+          const baseDir = agent.workingDir || this.daemon.projectDir;
+          const projectDir = raw.projectDir || null;
+          let projectWorkingDir = baseDir;
+          if (projectDir) {
+            const safeName = String(projectDir).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64);
+            projectWorkingDir = resolve(baseDir, safeName);
+            mkdirSync(projectWorkingDir, { recursive: true });
+          }
+
+          const defaultTeamId = teamId || this.daemon.teams.getDefault()?.id || null;
+          const phase1Ids = [];
+
+          // Spawn phase 1 agents
+          const spawnPromises = phase1.map(async (config) => {
+            try {
+              const validated = validateAgentConfig({
+                role: config.role,
+                scope: config.scope || [],
+                prompt: config.prompt || '',
+                provider: config.provider || agent.provider || this.daemon.config?.defaultProvider,
+                model: config.model || agent.model || this.daemon.config?.defaultModel || 'auto',
+                permission: config.permission || 'auto',
+                workingDir: config.workingDir || projectWorkingDir,
+                name: config.name || undefined,
+              });
+              validated.teamId = defaultTeamId;
+              const spawned = await this.spawn(validated);
+              phase1Ids.push(spawned.id);
+              return spawned;
+            } catch (err) {
+              console.error(`[Groove] Autonomous team launch: failed to spawn ${config.role}: ${err.message}`);
+              return null;
+            }
+          });
+
+          Promise.all(spawnPromises).then(() => {
+            // Set up phase 2 pending
+            if (phase2.length > 0 && phase1Ids.length > 0) {
+              this.daemon._pendingPhase2 = this.daemon._pendingPhase2 || [];
+              this.daemon._pendingPhase2.push({
+                waitFor: phase1Ids,
+                agents: phase2.map(c => ({
+                  role: c.role, scope: c.scope || [], prompt: c.prompt || '',
+                  provider: c.provider || agent.provider || this.daemon.config?.defaultProvider,
+                  model: c.model || agent.model || this.daemon.config?.defaultModel || 'auto',
+                  permission: c.permission || 'auto',
+                  workingDir: c.workingDir || projectWorkingDir,
+                  name: c.name || undefined,
+                  teamId: defaultTeamId,
+                })),
+              });
+            }
+
+            // Clean up the file
+            try { unlinkSync(targetPath); } catch { /* */ }
+            this.daemon.audit?.log('team.autonomousLaunch', { teamId: defaultTeamId, phase1: phase1Ids.length, phase2: phase2.length });
+            console.log(`[Groove] Autonomous team launch: ${phase1Ids.length} phase 1 agents spawned for team ${defaultTeamId}`);
+          });
+        } catch (err) {
+          console.error(`[Groove] Autonomous team consumption failed: ${err.message}`);
+        }
+      }, 5000);
+    } catch { /* best effort */ }
+  }
+
+  /**
    * Check if a completed/crashed agent was the last phase 1 agent in a team.
    * If so, auto-spawn the phase 2 (QC/finisher) agents.
    */
@@ -1834,13 +1943,26 @@ For normal file edits within your scope, proceed without review.
           try {
             const validated = validateAgentConfig(config);
             if (!validated.teamId) validated.teamId = this.daemon.teams.getDefault()?.id || null;
+            validated.metadata = { ...(validated.metadata || {}), isQcPhase2: true };
+            const existingId = existing?.id || null;
             const p = this.spawn(validated).then((agent) => {
+              registry.update(agent.id, { metadata: { ...(agent.metadata || {}), isQcPhase2: true } });
               this.daemon.broadcast({
                 type: 'phase2:spawned',
                 agentId: agent.id,
+                oldAgentId: existingId,
                 name: agent.name,
                 role: agent.role,
               });
+              if (existingId) {
+                this.daemon.broadcast({
+                  type: 'rotation:complete',
+                  agentId: agent.id,
+                  oldAgentId: existingId,
+                  agentName: agent.name,
+                  reason: 'phase2_respawn',
+                });
+              }
               this.daemon.audit.log('phase2.autoSpawn', { id: agent.id, name: agent.name, role: agent.role });
             }).catch((err) => {
               console.error(`[Groove] Phase 2 spawn failed for ${config.role}: ${err.message}`);
@@ -1884,6 +2006,7 @@ For normal file edits within your scope, proceed without review.
     const teamId = agent.teamId;
     if (!teamId) return;
     if (this._reviewTriggered.has(teamId)) return;
+    this._reviewTriggered.add(teamId);
 
     const registry = this.daemon.registry;
     const teamAgents = registry.getAll().filter(a => a.teamId === teamId);
@@ -1898,7 +2021,6 @@ For normal file edits within your scope, proceed without review.
       a.role !== 'planner' && (a.status === 'running' || a.status === 'starting'));
     if (hasRunning) return;
 
-    this._reviewTriggered.add(teamId);
     this._reviewPending.add(teamId);
 
     const journalist = this.daemon.journalist;
@@ -1910,6 +2032,12 @@ For normal file edits within your scope, proceed without review.
     for (const a of teamAgents) {
       if (a.role === 'planner') continue;
       for (const f of (journalist?.getAgentFiles(a) || [])) allFiles.add(f);
+    }
+
+    if (!originalSpec.trim() && !plannerResult.trim() && allFiles.size === 0) {
+      console.log(`[Groove] Review skipped for team ${teamId}: no spec, plan, or files to review`);
+      this._reviewPending.delete(teamId);
+      return;
     }
 
     const reviewPrompt = `You are reviewing a completed team build against the original specification.

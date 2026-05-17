@@ -169,10 +169,11 @@ export const createAgentsSlice = (set, get) => ({
         return data;
       }
 
-      // CLI agent: was stopped + resumed/rotated — transfer state to new agent ID
+      // CLI agent: was stopped + resumed/rotated — transfer state to new agent ID.
+      // Only transfer if the rotation:complete WebSocket handler hasn't already done it.
       const newAgent = data;
       for (const key of ['chatHistory', 'activityLog', 'tokenTimeline']) {
-        if (snapshot[key]?.length) {
+        if (snapshot[key]?.length && !get()[key]?.[newAgent.id]?.length) {
           set((s) => ({ [key]: { ...s[key], [newAgent.id]: [...snapshot[key]] } }));
         }
       }
@@ -380,6 +381,13 @@ export const createAgentsSlice = (set, get) => ({
       get().addChatMessage(agentId, 'system', text);
     };
 
+    const startThinking = () => {
+      set((s) => ({ thinkingAgents: new Set([...s.thinkingAgents, agentId]) }));
+    };
+    const stopThinking = () => {
+      set((s) => { const next = new Set(s.thinkingAgents); next.delete(agentId); return { thinkingAgents: next }; });
+    };
+
     try {
       switch (command) {
         case 'instruct': {
@@ -391,8 +399,11 @@ export const createAgentsSlice = (set, get) => ({
           if (tags.length === 0) { addSystemMsg('Usage: save #tag your message here'); return true; }
           const content = rest.replace(/#[\w/.-]+/g, '').trim();
           if (!content) { addSystemMsg('Usage: save #tag your message here'); return true; }
-          await get().saveKeeperItem(tags[0], content);
-          addSystemMsg(`Saved to #${tags[0]}`);
+          startThinking();
+          try {
+            await get().saveKeeperItem(tags[0], content);
+            addSystemMsg(`Saved to #${tags[0]}`);
+          } finally { stopThinking(); }
           return { passthrough: content };
         }
 
@@ -400,36 +411,48 @@ export const createAgentsSlice = (set, get) => ({
           if (tags.length === 0) { addSystemMsg('Usage: append #tag content to add'); return true; }
           const content = rest.replace(/#[\w/.-]+/g, '').trim();
           if (!content) { addSystemMsg('Usage: append #tag content to add'); return true; }
-          await get().appendKeeperItem(tags[0], content);
-          addSystemMsg(`Appended to #${tags[0]}`);
+          startThinking();
+          try {
+            await get().appendKeeperItem(tags[0], content);
+            addSystemMsg(`Appended to #${tags[0]}`);
+          } finally { stopThinking(); }
           return { passthrough: content };
         }
 
         case 'update': {
           if (tags.length === 0) { addSystemMsg('Usage: [update] #tag'); return true; }
           get().addChatMessage(agentId, 'user', message, false);
-          const existing = await get().getKeeperItem(tags[0]);
-          set({ keeperEditing: { tag: tags[0], content: existing?.content || '', isNew: !existing } });
+          startThinking();
+          try {
+            const existing = await get().getKeeperItem(tags[0]);
+            set({ keeperEditing: { tag: tags[0], content: existing?.content || '', isNew: !existing } });
+          } finally { stopThinking(); }
           return true;
         }
 
         case 'delete': {
           if (tags.length === 0) { addSystemMsg('Usage: [delete] #tag'); return true; }
           get().addChatMessage(agentId, 'user', message, false);
-          await get().deleteKeeperItem(tags[0]);
-          addSystemMsg(`Deleted #${tags[0]}`);
+          startThinking();
+          try {
+            await get().deleteKeeperItem(tags[0]);
+            addSystemMsg(`Deleted #${tags[0]}`);
+          } finally { stopThinking(); }
           return true;
         }
 
         case 'view': {
           if (tags.length === 0) { addSystemMsg('Usage: [view] #tag'); return true; }
           get().addChatMessage(agentId, 'user', message, false);
-          const item = await get().getKeeperItem(tags[0]);
-          if (item) {
-            set({ keeperEditing: { tag: tags[0], content: item.content, isNew: false, readOnly: true } });
-          } else {
-            addSystemMsg(`#${tags[0]} not found`);
-          }
+          startThinking();
+          try {
+            const item = await get().getKeeperItem(tags[0]);
+            if (item) {
+              set({ keeperEditing: { tag: tags[0], content: item.content, isNew: false, readOnly: true } });
+            } else {
+              addSystemMsg(`#${tags[0]} not found`);
+            }
+          } finally { stopThinking(); }
           return true;
         }
 
@@ -437,21 +460,22 @@ export const createAgentsSlice = (set, get) => ({
           if (tags.length === 0) { addSystemMsg('Usage: [read] #tag1 #tag2 ...'); return true; }
           const userText = rest.replace(/#[\w/.-]+/g, '').trim();
           get().addChatMessage(agentId, 'user', message, false);
-          const readBrief = await api.post('/keeper/pull', { tags });
-          if (readBrief?.brief) {
-            const memoryBlock = `\n\n---\nContext from memories (${tags.map(t => '#' + t).join(', ')}):\n\n${readBrief.brief}`;
-            set((s) => ({ thinkingAgents: new Set([...s.thinkingAgents, agentId]) }));
-            await api.post(`/agents/${encodeURIComponent(agentId)}/instruct`, {
-              message: userText ? `${userText}${memoryBlock}` : `Here is context from my tagged memories:\n\n${readBrief.brief}`,
-            });
-            addSystemMsg(`Sent ${tags.map(t => '#' + t).join(', ')} to agent`);
-          } else {
-            addSystemMsg(`No memories found for ${tags.map(t => '#' + t).join(', ')}`);
-            if (userText) {
-              set((s) => ({ thinkingAgents: new Set([...s.thinkingAgents, agentId]) }));
-              await api.post(`/agents/${encodeURIComponent(agentId)}/instruct`, { message: userText });
+          startThinking();
+          try {
+            const readBrief = await api.post('/keeper/pull', { tags });
+            if (readBrief?.brief) {
+              const memoryBlock = `\n\n---\nContext from memories (${tags.map(t => '#' + t).join(', ')}):\n\n${readBrief.brief}`;
+              await api.post(`/agents/${encodeURIComponent(agentId)}/instruct`, {
+                message: userText ? `${userText}${memoryBlock}` : `Here is context from my tagged memories:\n\n${readBrief.brief}`,
+              });
+              addSystemMsg(`Sent ${tags.map(t => '#' + t).join(', ')} to agent`);
+            } else {
+              addSystemMsg(`No memories found for ${tags.map(t => '#' + t).join(', ')}`);
+              if (userText) {
+                await api.post(`/agents/${encodeURIComponent(agentId)}/instruct`, { message: userText });
+              }
             }
-          }
+          } finally { stopThinking(); }
           return true;
         }
 
@@ -459,12 +483,15 @@ export const createAgentsSlice = (set, get) => ({
           if (tags.length === 0) { addSystemMsg('Usage: [doc] #tag'); return true; }
           get().addChatMessage(agentId, 'user', message, false);
           addSystemMsg(`Generating doc for #${tags[0]}...`);
-          const history = get().chatHistory[agentId] || [];
-          const result = await api.post('/keeper/doc', { tag: tags[0], chatHistory: history, agentId });
-          if (result?.content) {
-            addSystemMsg(`Doc #${tags[0]} generated (${result.size}B)`);
-            set({ keeperEditing: { tag: tags[0], content: result.content, isNew: false } });
-          }
+          startThinking();
+          try {
+            const history = get().chatHistory[agentId] || [];
+            const result = await api.post('/keeper/doc', { tag: tags[0], chatHistory: history, agentId });
+            if (result?.content) {
+              addSystemMsg(`Doc #${tags[0]} generated (${result.size}B)`);
+              set({ keeperEditing: { tag: tags[0], content: result.content, isNew: false } });
+            }
+          } finally { stopThinking(); }
           return true;
         }
 
@@ -473,12 +500,16 @@ export const createAgentsSlice = (set, get) => ({
           if (!linkMatch || tags.length === 0) { addSystemMsg('Usage: [link] #tag path/to/doc'); return true; }
           const docPath = linkMatch[2].trim();
           get().addChatMessage(agentId, 'user', message, false);
-          await api.post('/keeper/link', { tag: tags[0], docPath });
-          addSystemMsg(`Linked #${tags[0]} → ${docPath}`);
+          startThinking();
+          try {
+            await api.post('/keeper/link', { tag: tags[0], docPath });
+            addSystemMsg(`Linked #${tags[0]} → ${docPath}`);
+          } finally { stopThinking(); }
           return true;
         }
       }
     } catch (err) {
+      stopThinking();
       addSystemMsg(`Keeper error: ${err.message}`);
       return true;
     }

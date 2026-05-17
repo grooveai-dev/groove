@@ -198,7 +198,11 @@ export const useGrooveStore = create((set, get) => ({
             }
           }
           for (const id of removed) delete timeline[id];
-          set({ agents, tokenTimeline: timeline, hydrated: true });
+          const updates = { agents, tokenTimeline: timeline, hydrated: true };
+          if (removed.length > 0 && st.detailPanel?.type === 'agent' && removed.includes(st.detailPanel.agentId)) {
+            updates.detailPanel = null;
+          }
+          set(updates);
           break;
         }
 
@@ -365,6 +369,10 @@ export const useGrooveStore = create((set, get) => ({
           }
           break;
         }
+
+        case 'recommended-team:ready':
+          if (!get().recommendedTeam) get().checkRecommendedTeam();
+          break;
 
         case 'phase2:spawned':
           get().addToast('info', `QC agent ${msg.name} auto-spawned`, 'Auditing phase 1 work');

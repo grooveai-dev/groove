@@ -41,13 +41,25 @@ export function QuickConnect() {
         });
       }
       setConnectingId(null);
+      toggle();
       return;
     } catch (err) {
-      let detail = err?.message || 'Unknown error';
-      if (detail.toLowerCase().includes('port forward')) {
-        detail += ' — Try testing the connection first, or check your SSH key configuration.';
+      const detail = err?.message || 'Unknown error';
+      const isSetupIssue = /permission|EACCES|sudo|Node\.js is not installed|npm install failed|write access/i.test(detail);
+      if (isSetupIssue) {
+        const tunnel = savedTunnels.find((t) => t.id === id);
+        if (tunnel) {
+          wizardTunnelId.current = tunnel.id;
+          setShowWizard(true);
+          addToast('warning', 'Remote setup needed', 'Follow the instructions to set up the remote server.');
+        }
+      } else {
+        let msg = detail;
+        if (msg.toLowerCase().includes('port forward')) {
+          msg += ' — Try testing the connection first, or check your SSH key configuration.';
+        }
+        addToast('error', 'Connection failed', msg);
       }
-      addToast('error', 'Connection failed', detail);
     }
     setConnectingId(null);
   }
@@ -95,7 +107,7 @@ export function QuickConnect() {
               )}
               <Radio size={15} className="text-accent" />
               <span className="text-sm font-semibold text-text-0 font-sans">
-                {showWizard ? 'Add Connection' : 'Quick Connect'}
+                {showWizard ? (wizardTunnelId.current ? 'Connection Setup' : 'Add Connection') : 'Quick Connect'}
               </span>
             </div>
             <button onClick={handleClose} className="p-1 text-text-4 hover:text-text-1 cursor-pointer transition-colors">
@@ -105,7 +117,7 @@ export function QuickConnect() {
 
           {showWizard ? (
             <SSHWizard
-              server={null}
+              server={wizardTunnelId.current ? savedTunnels.find((t) => t.id === wizardTunnelId.current) || null : null}
               onSave={async (data) => {
                 const existingId = data.id || wizardTunnelId.current;
                 if (existingId) {

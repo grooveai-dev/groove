@@ -116,7 +116,7 @@ const TpsChart = memo(function TpsChart() {
     }
     ctx.setLineDash([]);
 
-    ctx.font = "9px 'JetBrains Mono Variable', monospace";
+    ctx.font = "9px 'SF Mono', ui-monospace, Menlo, Consolas, monospace";
     ctx.textAlign = 'left';
     ctx.fillStyle = hexAlpha(HEX.text3, 0.5);
     ctx.fillText(`${maxVal.toFixed(1)} t/s`, pad.left + 4, pad.top + 10);

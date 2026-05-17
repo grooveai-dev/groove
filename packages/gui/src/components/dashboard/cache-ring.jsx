@@ -68,11 +68,11 @@ const CacheRing = memo(function CacheRing({ cacheRead = 0, cacheCreation = 0, to
     // Center text
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `600 ${size * 0.2}px 'JetBrains Mono Variable', monospace`;
+    ctx.font = `600 ${size * 0.2}px 'SF Mono', ui-monospace, Menlo, Consolas, monospace`;
     ctx.fillStyle = HEX.text0;
     ctx.fillText(`${Math.round(hitRate)}%`, cx, cy - 3);
 
-    ctx.font = `500 ${size * 0.08}px 'JetBrains Mono Variable', monospace`;
+    ctx.font = `500 ${size * 0.08}px 'SF Mono', ui-monospace, Menlo, Consolas, monospace`;
     ctx.fillStyle = HEX.text3;
     ctx.fillText('CACHE', cx, cy + size * 0.13);
   }, [cacheRead, cacheCreation, totalInput, size, total, hitRate]);

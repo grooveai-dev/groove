@@ -91,7 +91,7 @@ export const ActivityChart = memo(function ActivityChart() {
       }
       ctx.setLineDash([]);
 
-      ctx.font = "9px 'JetBrains Mono Variable', monospace";
+      ctx.font = "9px 'SF Mono', ui-monospace, Menlo, Consolas, monospace";
       ctx.textAlign = 'left';
       ctx.fillStyle = hexAlpha(HEX.text3, 0.5);
       ctx.fillText(`${maxVal.toFixed(1)} t/s`, pad.left + 4, pad.top + 10);
@@ -142,7 +142,7 @@ export const ActivityChart = memo(function ActivityChart() {
         ctx.fillStyle = hexAlpha(HEX.surface0, 0.92);
         ctx.beginPath(); ctx.roundRect(tx, ty, tooltipW, tooltipH, 4); ctx.fill();
         ctx.strokeStyle = hexAlpha(HEX.text4, 0.2); ctx.lineWidth = 1; ctx.stroke();
-        ctx.font = "9px 'JetBrains Mono Variable', monospace";
+        ctx.font = "9px 'SF Mono', ui-monospace, Menlo, Consolas, monospace";
         ctx.textAlign = 'center';
         ctx.fillStyle = HEX.text0;
         ctx.fillText(`${(d.tps || 0).toFixed(1)} t/s`, tx + tooltipW / 2, ty + 17);
@@ -165,7 +165,7 @@ export const ActivityChart = memo(function ActivityChart() {
       }
       ctx.setLineDash([]);
 
-      ctx.font = "9px 'JetBrains Mono Variable', monospace";
+      ctx.font = "9px 'SF Mono', ui-monospace, Menlo, Consolas, monospace";
       ctx.textAlign = 'left';
       ctx.fillStyle = hexAlpha(HEX.text3, 0.5);
       ctx.fillText(String(maxVal), pad.left + 4, pad.top + 10);
@@ -252,7 +252,7 @@ export const ActivityChart = memo(function ActivityChart() {
           ctx.fillStyle = line.color; ctx.fill();
           ctx.font = "8px 'Inter Variable', sans-serif";
           ctx.fillStyle = HEX.text3; ctx.fillText(line.label, tx + 14, rowY);
-          ctx.font = "9px 'JetBrains Mono Variable', monospace";
+          ctx.font = "9px 'SF Mono', ui-monospace, Menlo, Consolas, monospace";
           ctx.fillStyle = HEX.text0; ctx.textAlign = 'right';
           ctx.fillText(line.value, tx + tooltipW - 8, rowY);
           ctx.textAlign = 'left';

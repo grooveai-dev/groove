@@ -730,42 +730,46 @@ class WorkspaceManager {
       throw new Error('Remote daemon started but not responding on port 31415 — check firewall settings or try again');
     }
 
-    // Background upgrade check — don't block the connection
-    (async () => {
-      try {
-        const resp = await fetch(`http://localhost:${localPort}/api/status`, { signal: AbortSignal.timeout(5000) });
-        if (!resp.ok) return;
+    // Check if remote needs updating (compare against npm, not local version)
+    emitProgress('Checking for updates...');
+    try {
+      const resp = await fetch(`http://localhost:${localPort}/api/status`, { signal: AbortSignal.timeout(5000) });
+      if (resp.ok) {
         const status = await resp.json();
         const remoteVersion = status.version;
-        if (!remoteVersion) return;
-
-        let npmVer;
-        try {
-          npmVer = sshExec('npm view groove-dev version 2>/dev/null', 15000);
-        } catch { return; }
-        if (!npmVer || npmVer === remoteVersion) return;
-
-        const npmInstall = (pkg) => {
-          const base = `npm i -g --prefer-online ${pkg}`;
-          return conn.user === 'root' ? base : `${base} || sudo -n ${base}`;
-        };
-        const cleanCmd = 'rm -rf $(npm root -g)/.groove-dev-* 2>/dev/null || true';
-        try {
-          sshExec(npmInstall(`groove-dev@${npmVer}`), 120000);
-        } catch (e) {
-          const errMsg = e.message || '';
-          if (errMsg.includes('ENOTEMPTY')) {
-            try { sshExec(cleanCmd, 15000); } catch {}
-            try { sshExec(npmInstall(`groove-dev@${npmVer}`), 120000); } catch { return; }
-          } else { return; }
+        if (remoteVersion) {
+          let npmVer;
+          try { npmVer = sshExec('npm view groove-dev version 2>/dev/null', 15000); } catch {}
+          if (npmVer && npmVer !== remoteVersion) {
+            emitProgress(`Updating Groove v${remoteVersion} → v${npmVer}...`);
+            const npmInstall = (pkg) => {
+              const base = `npm i -g --prefer-online ${pkg}`;
+              return conn.user === 'root' ? base : `${base} || sudo -n ${base}`;
+            };
+            const cleanCmd = 'rm -rf $(npm root -g)/.groove-dev-* 2>/dev/null || true';
+            let upgraded = false;
+            try {
+              sshExec(npmInstall(`groove-dev@${npmVer}`), 120000);
+              upgraded = true;
+            } catch (e) {
+              if ((e.message || '').includes('ENOTEMPTY')) {
+                try { sshExec(cleanCmd, 15000); } catch {}
+                try { sshExec(npmInstall(`groove-dev@${npmVer}`), 120000); upgraded = true; } catch {}
+              }
+            }
+            if (upgraded) {
+              emitProgress('Restarting remote daemon...');
+              try { sshExec('kill $(lsof -t -i:31415) 2>/dev/null || true', 10000); } catch {}
+              await new Promise(r => setTimeout(r, 2000));
+              try {
+                sshExec('GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:31415/api/health > /dev/null || true', 60000);
+              } catch {}
+              await checkHealth(5, 2000);
+            }
+          }
         }
-        try { sshExec('kill $(lsof -t -i:31415) 2>/dev/null || true', 10000); } catch {}
-        await new Promise(r => setTimeout(r, 3000));
-        try {
-          sshExec('GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 3; curl -sf http://localhost:31415/api/health > /dev/null || true', 60000);
-        } catch {}
-      } catch {}
-    })();
+      }
+    } catch {}
 
     this._sshTunnels = this._sshTunnels || new Map();
     this._sshTunnels.set(id, proc);

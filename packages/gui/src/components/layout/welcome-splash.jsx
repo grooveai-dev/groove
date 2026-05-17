@@ -41,6 +41,7 @@ export function WelcomeSplash() {
   const toggleQuickConnect = useGrooveStore((s) => s.toggleQuickConnect);
   const addToast = useGrooveStore((s) => s.addToast);
 
+  const tunnelStep = useGrooveStore((s) => s.tunnelConnectStep);
   const [browsing, setBrowsing] = useState(false);
   const [connectingId, setConnectingId] = useState(null);
 
@@ -216,7 +217,14 @@ export function WelcomeSplash() {
                       </button>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         {connectingId === server.id ? (
-                          <Loader2 size={14} className="text-text-3 animate-spin" />
+                          <div className="flex items-center gap-1.5">
+                            <Loader2 size={14} className="text-text-3 animate-spin" />
+                            {tunnelStep?.id === server.id && tunnelStep?.step && (
+                              <span className="text-2xs text-text-3 font-sans">
+                                {{ testing: 'Testing…', installing: 'Installing…', checking: 'Checking for updates…', upgrading: 'Updating remote…', starting: 'Starting daemon…', connecting: 'Connecting…', forwarding: 'Establishing tunnel…' }[tunnelStep.step] || tunnelStep.step}
+                              </span>
+                            )}
+                          </div>
                         ) : server.active ? (
                           <>
                             <button

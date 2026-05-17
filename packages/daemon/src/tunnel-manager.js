@@ -395,9 +395,9 @@ export class TunnelManager {
       this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'waiting', message: 'Remote daemon not running. Start it manually or enable auto-start.' } });
     }
 
-    // Auto-upgrade: check version through tunnel, upgrade if behind (non-blocking)
+    // Auto-upgrade: check version through tunnel, upgrade if behind
     if (remoteAlive && !preConnectHandled) {
-      this._checkAndUpgradeRunning(id, config, localPort).catch(() => {});
+      await this._checkAndUpgradeRunning(id, config, localPort);
     }
 
     const remoteVer = testResult?.remoteVersion || null;
@@ -451,6 +451,8 @@ export class TunnelManager {
 
   async _checkAndUpgradeRunning(id, config, localPort) {
     try {
+      this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'checking' } });
+
       // Get remote daemon version
       const resp = await fetch(`http://localhost:${localPort}/api/status`, {
         signal: AbortSignal.timeout(5000),

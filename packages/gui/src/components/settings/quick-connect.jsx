@@ -191,7 +191,7 @@ export function QuickConnect() {
                             <Loader2 size={14} className="text-text-3 animate-spin" />
                             {tunnelStep?.id === server.id && tunnelStep?.step && (
                               <span className="text-2xs text-text-3 font-sans">
-                                {{ testing: 'Testing…', installing: 'Installing…', upgrading: 'Updating remote…', starting: 'Starting daemon…', connecting: 'Connecting…', forwarding: 'Establishing tunnel…' }[tunnelStep.step] || tunnelStep.step}
+                                {{ testing: 'Testing…', installing: 'Installing…', checking: 'Checking for updates…', upgrading: 'Updating remote…', starting: 'Starting daemon…', connecting: 'Connecting…', forwarding: 'Establishing tunnel…' }[tunnelStep.step] || tunnelStep.step}
                               </span>
                             )}
                           </div>

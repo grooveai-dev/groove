@@ -574,6 +574,7 @@ export class Scheduler {
             teamId: team.id,
           })),
         });
+        this.daemon.processes._persistPendingPhase2();
       }
 
       this.runningAgents.set(schedule.id, {

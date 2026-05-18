@@ -2,7 +2,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
-import { api } from '../../lib/api';
 import { AgentFileTree } from './agent-file-tree';
 import { DiffViewer } from './diff-viewer';
 import { CodeReview } from './code-review';
@@ -61,9 +60,7 @@ function AgentRail({ agents, activeId, onSelect }) {
   );
 }
 
-function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggleDiff, workspaceSnapshots, onBackToTeam, onToggleReview, reviewMode, onCmdP }) {
-  const hasSnapshot = activeFile && workspaceSnapshots[activeFile];
-
+function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggleDiff, onBackToTeam, onToggleReview, reviewMode, onCmdP }) {
   return (
     <div className="flex items-stretch h-8 bg-surface-2 border-b border-border flex-shrink-0">
       <div className="flex items-stretch flex-1 min-w-0 overflow-x-auto scrollbar-none">
@@ -106,7 +103,7 @@ function TabBar({ tabs, activeFile, files, onSelect, onClose, diffMode, onToggle
             <Search size={12} />
           </button>
         </Tooltip>
-        {hasSnapshot && (
+        {activeFile && (
           <>
             <button
               onClick={() => onToggleDiff(false)}
@@ -162,7 +159,6 @@ export function WorkspaceMode() {
   const setWorkspaceAgent = useGrooveStore((s) => s.setWorkspaceAgent);
   const workspaceReviewMode = useGrooveStore((s) => s.workspaceReviewMode);
   const toggleReviewMode = useGrooveStore((s) => s.toggleReviewMode);
-  const workspaceSnapshots = useGrooveStore((s) => s.workspaceSnapshots);
   const setWorkspaceMode = useGrooveStore((s) => s.setWorkspaceMode);
   const setQuickSearchOpen = useGrooveStore((s) => s.setEditorQuickSearchOpen);
 
@@ -188,18 +184,6 @@ export function WorkspaceMode() {
   const treeDragging = useRef(false);
   const startX = useRef(0);
   const startW = useRef(0);
-
-  // Fetch git HEAD content as diff baseline when no snapshot exists
-  useEffect(() => {
-    if (!editorActiveFile || workspaceSnapshots[editorActiveFile]) return;
-    let cancelled = false;
-    api.get(`/files/git-show?path=${encodeURIComponent(editorActiveFile)}`).then((data) => {
-      if (cancelled) return;
-      const captureSnapshot = useGrooveStore.getState().captureSnapshot;
-      captureSnapshot(editorActiveFile, data.content ?? '');
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [editorActiveFile, workspaceSnapshots]);
 
   // Set the selected agent in the store so AI features use it
   useEffect(() => {
@@ -323,7 +307,6 @@ export function WorkspaceMode() {
                 onClose={closeFile}
                 diffMode={diffMode}
                 onToggleDiff={setDiffMode}
-                workspaceSnapshots={workspaceSnapshots}
                 onBackToTeam={() => setWorkspaceMode(false)}
                 onToggleReview={toggleReviewMode}
                 reviewMode={workspaceReviewMode}

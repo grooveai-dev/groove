@@ -24,6 +24,7 @@ import ModelLabView from './views/model-lab';
 import NetworkView from './views/network';
 import ChatView from './views/chat';
 import MemoryView from './views/memory';
+import FleetView from './views/fleet';
 
 // Agent components
 import { AgentPanel } from './components/agents/agent-panel';
@@ -77,6 +78,7 @@ function ViewRouter() {
     case 'federation':  content = <FederationView />;  break;
     case 'settings':    content = <SettingsView />;    break;
     case 'chat':        content = <ChatView />;        break;
+    case 'fleet':       content = <FleetView />;       break;
     case 'memory':      content = <MemoryView />;      break;
     case 'network':     content = networkUnlocked ? <NetworkView /> : <AgentsView />; break;
     default:            content = <AgentsView />;

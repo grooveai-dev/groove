@@ -25,6 +25,14 @@ export const createUiSlice = (set, get) => ({
   // ── Toasts ────────────────────────────────────────────────
   toasts: [],
 
+  // ── Fleet View ─────────────────────────────────────────────
+  fleetSelectedAgents: [null, null],
+  fleetSplitMode: false,
+  fleetSidebarWidth: Number(localStorage.getItem('groove:fleetSidebarWidth')) || 240,
+  fleetSidebarCollapsed: {},
+  fleetSearch: '',
+  fleetUnreadMap: {},
+
   // ── Version / Auto-Update ──────────────────────────────────
   version: null,
   updateReady: null,
@@ -33,7 +41,34 @@ export const createUiSlice = (set, get) => ({
 
   // ── Navigation ────────────────────────────────────────────
 
-  setActiveView(view) { set({ activeView: view }); },
+  setActiveView(view) {
+    const prev = get().activeView;
+    const updates = { activeView: view };
+    if (prev === 'fleet' && view !== 'fleet') {
+      const sel = get().fleetSelectedAgents;
+      const primaryId = sel[0] || sel[1];
+      if (primaryId) {
+        const tid = get().activeTeamId;
+        const panel = { type: 'agent', agentId: primaryId };
+        updates.detailPanel = panel;
+        updates.teamDetailPanels = { ...get().teamDetailPanels, [tid]: panel };
+      }
+    }
+    if (view === 'fleet' && prev !== 'fleet') {
+      const dp = get().detailPanel;
+      const sel = get().fleetSelectedAgents;
+      if (!sel[0] && !sel[1] && dp?.type === 'agent' && dp.agentId) {
+        updates.fleetSelectedAgents = [dp.agentId, null];
+      }
+      const tid = get().activeTeamId;
+      updates.detailPanel = null;
+      updates.teamDetailPanels = { ...get().teamDetailPanels, [tid]: null };
+      const allCollapsed = {};
+      for (const t of get().teams) allCollapsed[t.id] = true;
+      updates.fleetSidebarCollapsed = allCollapsed;
+    }
+    set(updates);
+  },
 
   openDetail(descriptor) {
     const tid = get().activeTeamId;
@@ -71,6 +106,41 @@ export const createUiSlice = (set, get) => ({
     if (!expanded[id]) delete expanded[id];
     set({ expandedNodes: expanded });
     persistJSON('groove:expandedNodes', expanded);
+  },
+
+  // ── Fleet View ────────────────────────────────────────────
+
+  fleetSelectAgent(agentId, pane = 0) {
+    const selected = [...get().fleetSelectedAgents];
+    selected[pane] = agentId;
+    const updates = { fleetSelectedAgents: selected };
+    if (pane === 1 && agentId !== null && !get().fleetSplitMode) {
+      updates.fleetSplitMode = true;
+    }
+    if (pane === 1 && agentId === null) {
+      updates.fleetSplitMode = false;
+    }
+    set(updates);
+  },
+  fleetToggleSplit() {
+    const next = !get().fleetSplitMode;
+    const selected = [...get().fleetSelectedAgents];
+    if (!next) selected[1] = null;
+    set({ fleetSplitMode: next, fleetSelectedAgents: selected });
+  },
+  fleetSetSidebarWidth(width) {
+    const w = Math.max(180, Math.min(400, width));
+    set({ fleetSidebarWidth: w });
+    localStorage.setItem('groove:fleetSidebarWidth', String(w));
+  },
+  fleetToggleTeamCollapsed(teamId) {
+    const collapsed = { ...get().fleetSidebarCollapsed };
+    collapsed[teamId] = !collapsed[teamId];
+    set({ fleetSidebarCollapsed: collapsed });
+  },
+  fleetSetSearch(text) { set({ fleetSearch: text }); },
+  fleetMarkRead(agentId) {
+    set((s) => ({ fleetUnreadMap: { ...s.fleetUnreadMap, [agentId]: Date.now() } }));
   },
 
   // ── Toasts ────────────────────────────────────────────────

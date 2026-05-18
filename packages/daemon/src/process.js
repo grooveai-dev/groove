@@ -349,6 +349,7 @@ export class ProcessManager {
     this._reviewTriggered = new Set(); // teamIds that have had review triggered (one round only)
     this._pendingReviews = new Map(); // teamId -> { reviewAgentId }
     this._reviewPending = new Set(); // teamIds with review in progress (blocks preview launch)
+    this._phase2Debounce = new Map(); // groupIndex -> timer (300ms settle delay)
 
     this._stallWatchdog = setInterval(() => this._checkStalls(), STALL_CHECK_INTERVAL_MS);
     if (this._stallWatchdog.unref) this._stallWatchdog.unref();
@@ -1850,6 +1851,7 @@ For normal file edits within your scope, proceed without review.
                   teamId: defaultTeamId,
                 })),
               });
+              this._persistPendingPhase2();
             }
 
             // Clean up the file
@@ -1867,133 +1869,253 @@ For normal file edits within your scope, proceed without review.
   /**
    * Check if a completed/crashed agent was the last phase 1 agent in a team.
    * If so, auto-spawn the phase 2 (QC/finisher) agents.
+   *
+   * Uses a 300ms debounce so rapid parallel completions settle before the
+   * allDone check, and defers splicing the pending group until spawns succeed.
    */
   _checkPhase2(completedAgentId) {
     const pending = this.daemon._pendingPhase2;
-    if (!pending || pending.length === 0) return;
-
-    const registry = this.daemon.registry;
+    if (!pending || pending.length === 0) {
+      console.log(`[Groove:Phase2] _checkPhase2(${completedAgentId}): no pending groups, skipping`);
+      return;
+    }
 
     for (let i = pending.length - 1; i >= 0; i--) {
       const group = pending[i];
       if (!group.waitFor.includes(completedAgentId)) continue;
 
-      // Check if ALL phase 1 agents in this group are done
-      const allDone = group.waitFor.every((id) => {
+      // Debounce: cancel any existing timer for this group and restart.
+      // This lets parallel agent completions (50-100ms apart) settle
+      // before we evaluate the allDone condition.
+      const debounceKey = group.waitFor.join(',');
+      const existingTimer = this._phase2Debounce.get(debounceKey);
+      if (existingTimer) clearTimeout(existingTimer);
+
+      const groupRef = group;
+      const timer = setTimeout(() => {
+        this._phase2Debounce.delete(debounceKey);
+        this._executePhase2Check(completedAgentId, groupRef);
+      }, 300);
+      this._phase2Debounce.set(debounceKey, timer);
+      console.log(`[Groove:Phase2] _checkPhase2(${completedAgentId}): debounce scheduled for group [${debounceKey}]`);
+    }
+  }
+
+  _executePhase2Check(completedAgentId, group) {
+    const pending = this.daemon._pendingPhase2;
+    if (!pending || !pending.includes(group)) {
+      console.log(`[Groove:Phase2] _executePhase2Check: group no longer in pending queue, skipping`);
+      return;
+    }
+
+    if (group._spawning) {
+      console.log(`[Groove:Phase2] _executePhase2Check: group already spawning, skipping`);
+      return;
+    }
+
+    const registry = this.daemon.registry;
+    const allDone = group.waitFor.every((id) => {
+      const a = registry.get(id);
+      return !a || a.status === 'completed' || a.status === 'crashed' || a.status === 'stopped' || a.status === 'killed';
+    });
+
+    if (!allDone) {
+      const still = group.waitFor.filter((id) => {
         const a = registry.get(id);
-        return !a || a.status === 'completed' || a.status === 'crashed' || a.status === 'stopped' || a.status === 'killed';
+        return a && a.status !== 'completed' && a.status !== 'crashed' && a.status !== 'stopped' && a.status !== 'killed';
       });
+      console.log(`[Groove:Phase2] _executePhase2Check(${completedAgentId}): not all done, still waiting on [${still.join(', ')}]`);
+      return;
+    }
 
-      if (allDone) {
-        // Remove from pending
-        pending.splice(i, 1);
+    console.log(`[Groove:Phase2] All phase 1 agents done for group [${group.waitFor.join(', ')}], spawning phase 2`);
 
-        // Check if phase 1 agents did any real work by looking at file modifications.
-        // If no agent modified any files, there's nothing to QC.
-        const journalist = this.daemon.journalist;
-        const phase1Idle = group.waitFor.every((id) => {
-          const a = registry.get(id);
-          if (!a) return true;
-          const files = journalist?.getAgentFiles(a) || [];
-          return files.length === 0;
-        });
+    // Mark group as in-flight (don't splice yet — wait for spawns to succeed)
+    group._spawning = true;
 
-        // Track that phase 2 spawns are in-flight for this team so
-        // _checkPreviewReady doesn't race ahead of the async spawn calls.
-        const groupTeamId = group.agents[0]?.teamId || this.daemon.teams.getDefault()?.id || null;
-        if (!this._phase2Spawning) this._phase2Spawning = new Map();
-        const spawnPromises = [];
+    const journalist = this.daemon.journalist;
+    const phase1Idle = group.waitFor.every((id) => {
+      const a = registry.get(id);
+      if (!a) return true;
+      const files = journalist?.getAgentFiles(a) || [];
+      return files.length === 0;
+    });
 
-        // Auto-spawn phase 2 agents — if phase 1 was idle, clear the prompt
-        // so QC also waits for instructions instead of auditing nothing
-        for (const config of group.agents) {
-          if (phase1Idle) config.prompt = '';
+    const groupTeamId = group.agents[0]?.teamId || this.daemon.teams.getDefault()?.id || null;
+    if (!this._phase2Spawning) this._phase2Spawning = new Map();
+    const spawnPromises = [];
+    let reusedCount = 0;
 
-          // Dedup: check if team already has an agent with this role
-          const teamId = config.teamId || this.daemon.teams.getDefault()?.id || null;
-          const existing = teamId ? registry.getAll().find((a) =>
-            a.teamId === teamId && a.role === config.role && a.id !== undefined
-          ) : null;
+    for (const config of group.agents) {
+      if (phase1Idle) config.prompt = '';
 
-          if (existing && (existing.status === 'running' || existing.status === 'starting')) {
-            // Agent already active — reuse it instead of spawning a duplicate
-            if (config.prompt) {
-              this.sendMessage(existing.id, config.prompt, 'planner').catch((err) => {
-                console.error(`[Groove] Phase 2 reuse message failed for ${existing.name}: ${err.message}`);
-              });
-            }
-            this.daemon.audit.log('phase2.reuse', { id: existing.id, name: existing.name, role: existing.role });
-            this.daemon.broadcast({
-              type: 'phase2:spawned',
-              agentId: existing.id,
-              name: existing.name,
-              role: existing.role,
-              reused: true,
-            });
-            continue;
-          }
+      const teamId = config.teamId || this.daemon.teams.getDefault()?.id || null;
+      const existing = teamId ? registry.getAll().find((a) =>
+        a.teamId === teamId && a.role === config.role && a.id !== undefined
+      ) : null;
 
-          if (existing && (existing.status === 'completed' || existing.status === 'stopped' || existing.status === 'crashed' || existing.status === 'killed')) {
-            // Previous agent finished — remove it and respawn with the same name
-            config.name = existing.name;
-            registry.remove(existing.id);
-            this.daemon.locks.release(existing.id);
-          }
-
-          try {
-            const validated = validateAgentConfig(config);
-            if (!validated.teamId) validated.teamId = this.daemon.teams.getDefault()?.id || null;
-            validated.metadata = { ...(validated.metadata || {}), isQcPhase2: true };
-            const existingId = existing?.id || null;
-            const p = this.spawn(validated).then((agent) => {
-              registry.update(agent.id, { metadata: { ...(agent.metadata || {}), isQcPhase2: true } });
-              this.daemon.broadcast({
-                type: 'phase2:spawned',
-                agentId: agent.id,
-                oldAgentId: existingId,
-                name: agent.name,
-                role: agent.role,
-              });
-              if (existingId) {
-                this.daemon.broadcast({
-                  type: 'rotation:complete',
-                  agentId: agent.id,
-                  oldAgentId: existingId,
-                  agentName: agent.name,
-                  reason: 'phase2_respawn',
-                });
-              }
-              this.daemon.audit.log('phase2.autoSpawn', { id: agent.id, name: agent.name, role: agent.role });
-            }).catch((err) => {
-              console.error(`[Groove] Phase 2 spawn failed for ${config.role}: ${err.message}`);
-              this.daemon.broadcast({
-                type: 'phase2:failed',
-                role: config.role,
-                error: err.message,
-              });
-            });
-            spawnPromises.push(p);
-          } catch (err) {
-            console.error(`[Groove] Phase 2 config invalid for ${config.role}: ${err.message}`);
-            this.daemon.broadcast({
-              type: 'phase2:failed',
-              role: config.role,
-              error: err.message,
-            });
-          }
-        }
-
-        // Mark this team as having phase 2 spawns in-flight. Cleared once
-        // all spawn promises settle so _checkPreviewReady won't race ahead.
-        if (spawnPromises.length > 0 && groupTeamId) {
-          this._phase2Spawning.set(groupTeamId, (this._phase2Spawning.get(groupTeamId) || 0) + spawnPromises.length);
-          Promise.allSettled(spawnPromises).then(() => {
-            const remaining = (this._phase2Spawning.get(groupTeamId) || 0) - spawnPromises.length;
-            if (remaining <= 0) this._phase2Spawning.delete(groupTeamId);
-            else this._phase2Spawning.set(groupTeamId, remaining);
+      if (existing && (existing.status === 'running' || existing.status === 'starting')) {
+        if (config.prompt) {
+          this.sendMessage(existing.id, config.prompt, 'planner').catch((err) => {
+            console.error(`[Groove:Phase2] Reuse message failed for ${existing.name}: ${err.message}`);
           });
         }
+        this.daemon.audit.log('phase2.reuse', { id: existing.id, name: existing.name, role: existing.role });
+        this.daemon.broadcast({
+          type: 'phase2:spawned',
+          agentId: existing.id,
+          name: existing.name,
+          role: existing.role,
+          reused: true,
+        });
+        reusedCount++;
+        console.log(`[Groove:Phase2] Reused existing agent ${existing.name} (${existing.id}) for role ${config.role}`);
+        continue;
       }
+
+      if (existing && (existing.status === 'completed' || existing.status === 'stopped' || existing.status === 'crashed' || existing.status === 'killed')) {
+        config.name = existing.name;
+        registry.remove(existing.id);
+        this.daemon.locks.release(existing.id);
+      }
+
+      try {
+        const validated = validateAgentConfig(config);
+        if (!validated.teamId) validated.teamId = this.daemon.teams.getDefault()?.id || null;
+        validated.metadata = { ...(validated.metadata || {}), isQcPhase2: true };
+        const existingId = existing?.id || null;
+        const p = this.spawn(validated).then((agent) => {
+          registry.update(agent.id, { metadata: { ...(agent.metadata || {}), isQcPhase2: true } });
+          this.daemon.broadcast({
+            type: 'phase2:spawned',
+            agentId: agent.id,
+            oldAgentId: existingId,
+            name: agent.name,
+            role: agent.role,
+          });
+          if (existingId) {
+            this.daemon.broadcast({
+              type: 'rotation:complete',
+              agentId: agent.id,
+              oldAgentId: existingId,
+              agentName: agent.name,
+              reason: 'phase2_respawn',
+            });
+          }
+          this.daemon.audit.log('phase2.autoSpawn', { id: agent.id, name: agent.name, role: agent.role });
+          console.log(`[Groove:Phase2] Spawned ${agent.name} (${agent.id}) for role ${validated.role}`);
+          return { status: 'spawned', agentId: agent.id };
+        }).catch((err) => {
+          console.error(`[Groove:Phase2] Spawn failed for ${config.role}: ${err.message}`);
+          this.daemon.broadcast({
+            type: 'phase2:failed',
+            role: config.role,
+            error: err.message,
+          });
+          throw err;
+        });
+        spawnPromises.push(p);
+      } catch (err) {
+        console.error(`[Groove:Phase2] Config invalid for ${config.role}: ${err.message}`);
+        this.daemon.broadcast({
+          type: 'phase2:failed',
+          role: config.role,
+          error: err.message,
+        });
+      }
+    }
+
+    if (spawnPromises.length === 0 && reusedCount === 0) {
+      console.error(`[Groove:Phase2] No spawns attempted and no reuses for group [${group.waitFor.join(', ')}]`);
+      this.daemon.broadcast({
+        type: 'phase2:failed',
+        role: group.agents.map(a => a.role).join(', '),
+        error: 'No phase 2 agents could be spawned or reused',
+      });
+      // Remove failed group from pending and persist
+      const idx = pending.indexOf(group);
+      if (idx !== -1) pending.splice(idx, 1);
+      this._persistPendingPhase2();
+      return;
+    }
+
+    if (spawnPromises.length > 0 && groupTeamId) {
+      this._phase2Spawning.set(groupTeamId, (this._phase2Spawning.get(groupTeamId) || 0) + spawnPromises.length);
+    }
+
+    if (spawnPromises.length > 0) {
+      Promise.allSettled(spawnPromises).then((results) => {
+        const succeeded = results.filter(r => r.status === 'fulfilled').length;
+        const failed = results.filter(r => r.status === 'rejected').length;
+
+        console.log(`[Groove:Phase2] Spawn results: ${succeeded} succeeded, ${failed} failed, ${reusedCount} reused`);
+
+        if (succeeded > 0 || reusedCount > 0) {
+          // At least one spawn succeeded — remove group from pending
+          const idx = pending.indexOf(group);
+          if (idx !== -1) pending.splice(idx, 1);
+          this._persistPendingPhase2();
+          console.log(`[Groove:Phase2] Group removed from pending queue`);
+        } else {
+          // All spawns failed — keep group in pending for retry, broadcast failure
+          group._spawning = false;
+          console.error(`[Groove:Phase2] All spawns failed for group [${group.waitFor.join(', ')}], keeping in queue for retry`);
+          this.daemon.broadcast({
+            type: 'phase2:failed',
+            role: group.agents.map(a => a.role).join(', '),
+            error: 'All phase 2 spawn attempts failed',
+            retryable: true,
+          });
+        }
+
+        // Clear in-flight counter
+        if (groupTeamId) {
+          const remaining = (this._phase2Spawning.get(groupTeamId) || 0) - spawnPromises.length;
+          if (remaining <= 0) this._phase2Spawning.delete(groupTeamId);
+          else this._phase2Spawning.set(groupTeamId, remaining);
+        }
+      });
+    } else {
+      // All agents were reused, no async spawns — remove group now
+      const idx = pending.indexOf(group);
+      if (idx !== -1) pending.splice(idx, 1);
+      this._persistPendingPhase2();
+      console.log(`[Groove:Phase2] Group removed from pending queue (all reused)`);
+    }
+  }
+
+  _persistPendingPhase2() {
+    try {
+      const pending = this.daemon._pendingPhase2 || [];
+      const saveable = pending.filter(g => !g._spawning);
+      const filePath = resolve(this.daemon.grooveDir, 'pending-phase2.json');
+      if (saveable.length === 0) {
+        try { unlinkSync(filePath); } catch { /* already gone */ }
+      } else {
+        writeFileSync(filePath, JSON.stringify(saveable, null, 2));
+      }
+    } catch (err) {
+      console.error(`[Groove:Phase2] Failed to persist pending-phase2.json: ${err.message}`);
+    }
+  }
+
+  loadPendingPhase2() {
+    try {
+      const filePath = resolve(this.daemon.grooveDir, 'pending-phase2.json');
+      if (!existsSync(filePath)) return;
+      const data = JSON.parse(readFileSync(filePath, 'utf8'));
+      if (Array.isArray(data) && data.length > 0) {
+        this.daemon._pendingPhase2 = this.daemon._pendingPhase2 || [];
+        for (const group of data) {
+          const isDupe = this.daemon._pendingPhase2.some(g =>
+            g.waitFor.join(',') === group.waitFor.join(',')
+          );
+          if (!isDupe) this.daemon._pendingPhase2.push(group);
+        }
+        console.log(`[Groove:Phase2] Loaded ${data.length} pending phase 2 group(s) from disk`);
+      }
+    } catch (err) {
+      console.error(`[Groove:Phase2] Failed to load pending-phase2.json: ${err.message}`);
     }
   }
 

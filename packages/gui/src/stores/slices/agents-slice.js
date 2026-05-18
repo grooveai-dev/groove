@@ -188,6 +188,10 @@ export const createAgentsSlice = (set, get) => ({
       if (get().labAssistantAgentId === id) {
         localStorage.setItem('groove:labAssistantAgentId', newAgent.id);
         set({ labAssistantAgentId: newAgent.id });
+      } else if (get().activeView === 'fleet') {
+        const sel = get().fleetSelectedAgents;
+        const pane = sel[1] === id ? 1 : 0;
+        get().fleetSelectAgent(newAgent.id, pane);
       } else {
         get().selectAgent(newAgent.id);
       }

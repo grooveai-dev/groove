@@ -418,6 +418,7 @@ export function registerTeamRoutes(app, daemon) {
               teamId: defaultTeamId,
             })),
           });
+          daemon.processes._persistPendingPhase2();
         }
       }
 
@@ -632,6 +633,7 @@ export function registerTeamRoutes(app, daemon) {
             teamId: defaultTeamId,
           })),
         });
+        daemon.processes._persistPendingPhase2();
       }
 
       daemon.audit.log('team-builder.launch', {

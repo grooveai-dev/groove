@@ -168,21 +168,21 @@ function SideBySideView({ pairs }) {
 
 export function DiffViewer({ filePath, gitDiffData, originalContent, modifiedContent }) {
   const file = useGrooveStore((s) => s.editorFiles[filePath]);
-  const snapshot = useGrooveStore((s) => s.workspaceSnapshots[filePath]);
   const [viewMode, setViewMode] = useState('side-by-side');
-  const [gitOriginal, setGitOriginal] = useState(null);
+  const [headContent, setHeadContent] = useState(undefined);
 
   useEffect(() => {
-    if (gitDiffData?.original !== undefined) {
-      setGitOriginal(gitDiffData.original);
-    } else if (originalContent === undefined && !snapshot && !file?.originalContent) {
-      api.get(`/files/git-show?path=${encodeURIComponent(filePath)}`).then((data) => {
-        if (data?.content !== undefined) setGitOriginal(data.content);
-      }).catch(() => {});
-    }
-  }, [filePath, gitDiffData, snapshot, file?.originalContent, originalContent]);
+    if (originalContent !== undefined || gitDiffData?.original !== undefined) return;
+    let cancelled = false;
+    setHeadContent(undefined);
+    api.get(`/files/git-show?path=${encodeURIComponent(filePath)}`).then((data) => {
+      if (!cancelled) setHeadContent(data?.content ?? '');
+    }).catch(() => { if (!cancelled) setHeadContent(''); });
+    return () => { cancelled = true; };
+  }, [filePath, gitDiffData, originalContent]);
 
-  const original = originalContent ?? gitOriginal ?? snapshot ?? file?.originalContent ?? '';
+  const loading = originalContent === undefined && gitDiffData?.original === undefined && headContent === undefined;
+  const original = originalContent ?? gitDiffData?.original ?? headContent ?? '';
   const modified = modifiedContent ?? file?.content ?? '';
 
   const diffLines = useMemo(() => computeDiff(original, modified), [original, modified]);
@@ -197,6 +197,14 @@ export function DiffViewer({ filePath, gitDiffData, originalContent, modifiedCon
     return { adds, dels };
   }, [diffLines]);
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full text-text-4 text-xs font-sans">
+        Loading diff…
+      </div>
+    );
+  }
+
   if (!original && !modified) {
     return (
       <div className="flex items-center justify-center h-full text-text-4 text-xs font-sans">
@@ -205,7 +213,7 @@ export function DiffViewer({ filePath, gitDiffData, originalContent, modifiedCon
     );
   }
 
-  if (original === modified && !gitDiffData) {
+  if (original === modified) {
     return (
       <div className="flex items-center justify-center h-full text-text-4 text-xs font-sans">
         No changes detected

@@ -588,6 +588,9 @@ export class Daemon {
       console.log(`  ${resumableIds.size} agent-loop session(s) marked as resumable`);
     }
 
+    // Restore pending phase 2 groups from disk
+    this.processes.loadPendingPhase2();
+
     // Migrate old agents without teamId to default team
     this.teams.migrateAgents();
 

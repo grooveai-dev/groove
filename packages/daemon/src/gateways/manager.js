@@ -874,6 +874,7 @@ export class GatewayManager {
               teamId: defaultTeamId,
             })),
           });
+          this.daemon.processes._persistPendingPhase2();
         }
       }
 

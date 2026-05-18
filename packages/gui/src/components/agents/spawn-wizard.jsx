@@ -94,7 +94,8 @@ export function SpawnWizard() {
   const availableModels = selectedProvider?.models || [];
   const installedProviders = providers.filter((p) => p.authType === 'api-key' ? (p.installed && p.hasKey) : p.installed);
   const isFromModelLab = !!(detailPanel?.presetProvider || detailPanel?.presetModel);
-  const showTeamSelector = isFromModelLab || !activeTeamId;
+  const presetTeamId = detailPanel?.presetTeamId || null;
+  const showTeamSelector = !presetTeamId && (isFromModelLab || !activeTeamId);
 
   useEffect(() => {
     if (open) {
@@ -185,7 +186,9 @@ export function SpawnWizard() {
     setSpawning(true);
     try {
       let teamId;
-      if (!showTeamSelector) {
+      if (presetTeamId) {
+        teamId = presetTeamId;
+      } else if (!showTeamSelector) {
         teamId = activeTeamId;
       } else if (teamMode === 'new') {
         const teamName = newTeamName.trim() || selectedRole || 'New Team';

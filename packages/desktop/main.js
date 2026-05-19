@@ -739,7 +739,7 @@ class WorkspaceManager {
         const remoteVersion = status.version;
         if (remoteVersion) {
           let npmVer;
-          try { npmVer = sshExec('npm view groove-dev version 2>/dev/null', 15000); } catch {}
+          try { npmVer = execFileSync('npm', ['view', 'groove-dev', 'version'], { encoding: 'utf8', timeout: 10000, stdio: 'pipe' }).trim(); } catch {}
           if (npmVer && npmVer !== remoteVersion) {
             emitProgress(`Updating Groove v${remoteVersion} → v${npmVer}...`);
             const npmInstall = (pkg) => {

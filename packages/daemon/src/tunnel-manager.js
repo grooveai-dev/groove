@@ -453,7 +453,7 @@ export class TunnelManager {
     try {
       this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'checking' } });
 
-      // Get remote daemon version
+      // Get remote daemon version through the already-open tunnel
       const resp = await fetch(`http://localhost:${localPort}/api/status`, {
         signal: AbortSignal.timeout(5000),
       });
@@ -462,15 +462,11 @@ export class TunnelManager {
       const remoteVer = status.version;
       if (!remoteVer) return;
 
-      // Check latest version on npm (from the remote server)
-      const target = `${config.user}@${config.host}`;
-      const keyArgs = config.sshKeyPath ? ['-i', config.sshKeyPath] : [];
-      const sshBase = [...keyArgs, '-p', String(config.port || 22), '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes', target];
-
+      // Check latest version on npm locally (same registry everywhere, no extra SSH)
       let npmVer;
       try {
-        npmVer = execFileSync('ssh', [...sshBase, sshCmd('npm view groove-dev version 2>/dev/null')], {
-          encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'],
+        npmVer = execFileSync('npm', ['view', 'groove-dev', 'version'], {
+          encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'],
         }).trim();
       } catch { return; }
 

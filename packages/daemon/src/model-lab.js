@@ -8,6 +8,7 @@ import { homedir } from 'os';
 import { spawn } from 'child_process';
 import { LlamaServerManager } from './llama-server.js';
 import { MLXServerManager } from './mlx-server.js';
+import { OllamaProvider } from './providers/ollama.js';
 const RUNTIME_TYPES = ['ollama', 'vllm', 'llama-cpp', 'mlx', 'tgi', 'openai-compatible'];
 const DEFAULT_OLLAMA_ENDPOINT = 'http://localhost:11434';
 const GLOBAL_GROOVE_DIR = resolve(homedir(), '.groove');
@@ -698,11 +699,13 @@ export class ModelLab {
 
   listLocalModels() {
     const models = [];
+    const seen = new Set();
 
     // GGUF models from ModelManager
     const mm = this.daemon.modelManager;
     if (mm) {
       for (const m of mm.getInstalled().filter((m) => m.exists)) {
+        seen.add(m.id);
         models.push({ ...m, type: 'gguf', compatibleBackends: ['llama-cpp'] });
       }
     }
@@ -711,9 +714,21 @@ export class ModelLab {
     try {
       const hfModels = MLXServerManager.scanModels();
       for (const m of hfModels) {
+        seen.add(m.id);
         models.push(m);
       }
     } catch { /* scan may fail */ }
+
+    // Ollama installed models
+    try {
+      if (OllamaProvider.isInstalled()) {
+        for (const m of OllamaProvider.getInstalledModels()) {
+          if (seen.has(m.id)) continue;
+          seen.add(m.id);
+          models.push({ ...m, type: 'ollama', compatibleBackends: ['ollama'] });
+        }
+      }
+    } catch { /* ollama may not be available */ }
 
     return models;
   }

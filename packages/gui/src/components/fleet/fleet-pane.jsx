@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
@@ -28,18 +28,37 @@ const STATUS_LABEL = {
 };
 
 export function FleetPane({ agentId, paneIndex }) {
-  const agent = useGrooveStore((s) => s.agents.find((a) => a.id === agentId));
+  const liveAgent = useGrooveStore((s) => s.agents.find((a) => a.id === agentId));
   const fleetSelectAgent = useGrooveStore((s) => s.fleetSelectAgent);
   const fleetMarkRead = useGrooveStore((s) => s.fleetMarkRead);
+
+  const lastAgentRef = useRef(liveAgent);
+  const [gone, setGone] = useState(false);
+  const goneTimer = useRef(null);
+
+  if (liveAgent) {
+    lastAgentRef.current = liveAgent;
+    if (gone) setGone(false);
+    if (goneTimer.current) { clearTimeout(goneTimer.current); goneTimer.current = null; }
+  }
+
+  useEffect(() => {
+    if (!liveAgent && agentId && !gone) {
+      goneTimer.current = setTimeout(() => setGone(true), 2000);
+      return () => { if (goneTimer.current) clearTimeout(goneTimer.current); };
+    }
+  }, [liveAgent, agentId, gone]);
 
   useEffect(() => {
     if (agentId) fleetMarkRead(agentId);
   }, [agentId, fleetMarkRead]);
 
+  const agent = liveAgent || lastAgentRef.current;
+
   if (!agent) {
     return (
       <div className="h-full flex items-center justify-center text-text-4">
-        <p className="text-xs font-sans">Agent not found</p>
+        <p className="text-xs font-sans">Select an agent</p>
       </div>
     );
   }

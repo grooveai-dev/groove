@@ -93,6 +93,17 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
 
         if (msg.type === 'terminal:spawned' && msg.requestId === requestId && !termIdRef.current) {
           termIdRef.current = msg.id;
+          setTimeout(() => {
+            try { fitRef.current?.fit(); } catch {}
+            const c = term.cols, r = term.rows;
+            if (c > 1 && r > 1 && termIdRef.current) {
+              const w = useGrooveStore.getState().ws;
+              if (w?.readyState === WebSocket.OPEN) {
+                w.send(JSON.stringify({ type: 'terminal:resize', id: termIdRef.current, rows: r, cols: c }));
+                lastSizeRef.current = { cols: c, rows: r };
+              }
+            }
+          }, 50);
         } else if (msg.type === 'terminal:output' && msg.id === termIdRef.current) {
           term.write(msg.data);
         } else if (msg.type === 'terminal:exit' && msg.id === termIdRef.current) {
@@ -114,9 +125,9 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
       term.onResize(({ cols, rows }) => {
         if (cols === lastSizeRef.current.cols && rows === lastSizeRef.current.rows) return;
         if (cols < 2 || rows < 2) return;
-        lastSizeRef.current = { cols, rows };
         const ws = useGrooveStore.getState().ws;
         if (ws?.readyState === WebSocket.OPEN && termIdRef.current) {
+          lastSizeRef.current = { cols, rows };
           ws.send(JSON.stringify({ type: 'terminal:resize', id: termIdRef.current, rows, cols }));
         }
       });
@@ -124,7 +135,10 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
 
     requestAnimationFrame(() => {
       try { fitAddon.fit(); } catch {}
-      trySpawn();
+      requestAnimationFrame(() => {
+        try { fitAddon.fit(); } catch {}
+        trySpawn();
+      });
     });
 
     const observer = new ResizeObserver(() => {
@@ -149,6 +163,16 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
     if (visible && fitRef.current) {
       requestAnimationFrame(() => {
         try { fitRef.current.fit(); } catch {}
+        if (termRef.current && termIdRef.current) {
+          const c = termRef.current.cols, r = termRef.current.rows;
+          if (c > 1 && r > 1) {
+            const ws = useGrooveStore.getState().ws;
+            if (ws?.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'terminal:resize', id: termIdRef.current, rows: r, cols: c }));
+              lastSizeRef.current = { cols: c, rows: r };
+            }
+          }
+        }
       });
     }
   }, [visible]);

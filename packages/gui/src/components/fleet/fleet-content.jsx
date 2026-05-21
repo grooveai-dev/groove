@@ -5,7 +5,10 @@ import { useGrooveStore } from '../../stores/groove';
 import { FleetPane } from './fleet-pane';
 
 export function FleetContent() {
-  const selected = useGrooveStore((s) => s.fleetSelectedAgents);
+  const rawSelected = useGrooveStore((s) => s.fleetSelectedAgents);
+  const lastSelectedRef = useRef(rawSelected);
+  if (rawSelected[0] || rawSelected[1]) lastSelectedRef.current = rawSelected;
+  const selected = (rawSelected[0] || rawSelected[1]) ? rawSelected : lastSelectedRef.current;
   const splitMode = useGrooveStore((s) => s.fleetSplitMode);
   const fleetSelectAgent = useGrooveStore((s) => s.fleetSelectAgent);
 

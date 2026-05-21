@@ -199,8 +199,10 @@ export const useGrooveStore = create((set, get) => ({
           }
           for (const id of removed) delete timeline[id];
           const updates = { agents, tokenTimeline: timeline, hydrated: true };
-          if (removed.length > 0 && st.detailPanel?.type === 'agent' && removed.includes(st.detailPanel.agentId)) {
-            updates.detailPanel = null;
+          if (removed.length > 0) {
+            if (st.detailPanel?.type === 'agent' && removed.includes(st.detailPanel.agentId)) {
+              updates.detailPanel = null;
+            }
           }
           set(updates);
           break;
@@ -527,8 +529,15 @@ export const useGrooveStore = create((set, get) => ({
               const tid = get().activeTeamId;
               teamDetailPanels = { ...s.teamDetailPanels, [tid]: newPanel };
             }
+            let fleetSelectedAgents = s.fleetSelectedAgents;
+            if (fleetSelectedAgents[0] === oldId || fleetSelectedAgents[1] === oldId) {
+              fleetSelectedAgents = [
+                fleetSelectedAgents[0] === oldId ? newId : fleetSelectedAgents[0],
+                fleetSelectedAgents[1] === oldId ? newId : fleetSelectedAgents[1],
+              ];
+            }
             try { localStorage.setItem('groove:chatHistory', JSON.stringify(chatHistory)); } catch {}
-            return { chatHistory, tokenTimeline, activityLog, chatInputs, detailPanel, teamDetailPanels };
+            return { chatHistory, tokenTimeline, activityLog, chatInputs, detailPanel, teamDetailPanels, fleetSelectedAgents };
           });
           break;
         }

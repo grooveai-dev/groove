@@ -28,7 +28,12 @@ const STATUS_LABEL = {
 };
 
 export function FleetPane({ agentId, paneIndex }) {
-  const liveAgent = useGrooveStore((s) => s.agents.find((a) => a.id === agentId));
+  const effectiveId = agentId || null;
+  const lastIdRef = useRef(effectiveId);
+  if (effectiveId) lastIdRef.current = effectiveId;
+  const resolvedId = effectiveId || lastIdRef.current;
+
+  const liveAgent = useGrooveStore((s) => resolvedId ? s.agents.find((a) => a.id === resolvedId) : null);
   const fleetSelectAgent = useGrooveStore((s) => s.fleetSelectAgent);
   const fleetMarkRead = useGrooveStore((s) => s.fleetMarkRead);
 
@@ -43,15 +48,15 @@ export function FleetPane({ agentId, paneIndex }) {
   }
 
   useEffect(() => {
-    if (!liveAgent && agentId && !gone) {
-      goneTimer.current = setTimeout(() => setGone(true), 2000);
+    if (!liveAgent && resolvedId && !gone) {
+      goneTimer.current = setTimeout(() => setGone(true), 3000);
       return () => { if (goneTimer.current) clearTimeout(goneTimer.current); };
     }
-  }, [liveAgent, agentId, gone]);
+  }, [liveAgent, resolvedId, gone]);
 
   useEffect(() => {
-    if (agentId) fleetMarkRead(agentId);
-  }, [agentId, fleetMarkRead]);
+    if (effectiveId) fleetMarkRead(effectiveId);
+  }, [effectiveId, fleetMarkRead]);
 
   const agent = liveAgent || lastAgentRef.current;
 

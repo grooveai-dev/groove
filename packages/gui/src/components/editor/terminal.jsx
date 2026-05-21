@@ -85,6 +85,7 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
       }
 
       const requestId = `spawn-${++spawnSeq}`;
+      const initialCols = term.cols;
       ws.send(JSON.stringify({ type: 'terminal:spawn', cols: term.cols, rows: term.rows, requestId }));
 
       function onMessage(event) {
@@ -101,6 +102,14 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
               if (w?.readyState === WebSocket.OPEN) {
                 w.send(JSON.stringify({ type: 'terminal:resize', id: termIdRef.current, rows: r, cols: c }));
                 lastSizeRef.current = { cols: c, rows: r };
+                if (c !== initialCols) {
+                  setTimeout(() => {
+                    term.clear();
+                    if (w.readyState === WebSocket.OPEN && termIdRef.current) {
+                      w.send(JSON.stringify({ type: 'terminal:input', id: termIdRef.current, data: '\x0c' }));
+                    }
+                  }, 80);
+                }
               }
             }
           }, 50);
@@ -133,21 +142,42 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
       });
     }
 
+    let hasSpawned = false;
+    function tryInitSpawn() {
+      if (hasSpawned) return;
+      if (term.cols >= 10 && term.rows >= 2) {
+        hasSpawned = true;
+        trySpawn();
+      }
+    }
+
     requestAnimationFrame(() => {
       try { fitAddon.fit(); } catch {}
       requestAnimationFrame(() => {
         try { fitAddon.fit(); } catch {}
-        trySpawn();
+        tryInitSpawn();
       });
     });
 
+    const spawnFallback = setTimeout(() => {
+      if (!hasSpawned) {
+        try { fitAddon.fit(); } catch {}
+        hasSpawned = true;
+        trySpawn();
+      }
+    }, 3000);
+
     const observer = new ResizeObserver(() => {
       if (!visibleRef.current) return;
-      requestAnimationFrame(() => { try { fitAddon.fit(); } catch {} });
+      requestAnimationFrame(() => {
+        try { fitAddon.fit(); } catch {}
+        tryInitSpawn();
+      });
     });
     observer.observe(containerRef.current);
 
     return () => {
+      clearTimeout(spawnFallback);
       observer.disconnect();
       if (handlerRef.current) {
         handlerRef.current.ws.removeEventListener('message', handlerRef.current.handler);

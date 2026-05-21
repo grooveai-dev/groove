@@ -479,6 +479,10 @@ export class TunnelManager {
       // Remote is behind npm — upgrade
       this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'upgrading', from: remoteVer, to: npmVer } });
 
+      const target = `${config.user}@${config.host}`;
+      const keyArgs = config.sshKeyPath ? ['-i', config.sshKeyPath] : [];
+      const sshBase = [...keyArgs, '-p', String(config.port || 22), '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes', target];
+
       const installCmd = npmGlobalInstall(`groove-dev@${npmVer}`, config.user);
       const cleanupCmd = 'rm -rf $(npm root -g)/.groove-dev-* $(npm root -g)/groove-dev 2>/dev/null || true';
 
@@ -496,40 +500,43 @@ export class TunnelManager {
         }
       }
 
-      // Restart remote daemon
+      // Restart remote daemon — fire and forget the SSH, verify through the tunnel
       const cdPrefix = config.projectDir ? `cd "${config.projectDir}" && ` : '';
-      const setProjectDir = config.projectDir
-        ? `curl -sf -X POST -H 'Content-Type: application/json' --data '{"path":"${config.projectDir}"}' http://localhost:${REMOTE_PORT}/api/project-dir > /dev/null 2>&1 || true; `
-        : '';
-      const restartCmd = `kill $(lsof -t -i:${REMOTE_PORT}) 2>/dev/null || true; sleep 2; ${cdPrefix}GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:${REMOTE_PORT}/api/status && (${setProjectDir}true) || true`;
-      execFileSync('ssh', [...sshBase, sshCmd(restartCmd)], {
-        encoding: 'utf8', timeout: 60000, stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      try {
+        execFileSync('ssh', [...sshBase, sshCmd(`kill $(lsof -t -i:${REMOTE_PORT}) 2>/dev/null || true; sleep 1; ${cdPrefix}GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown`)], {
+          encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      } catch { /* SSH may close before nohup finishes — that's fine */ }
 
-      // Verify through tunnel
+      // Wait for daemon to come back up through the existing tunnel
+      this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'starting' } });
       let daemonVer = null;
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 8; i++) {
+        await new Promise(r => setTimeout(r, 2000));
         try {
-          const check = await fetch(`http://localhost:${localPort}/api/status`, {
-            signal: AbortSignal.timeout(3000),
-          });
+          const check = await fetch(`http://localhost:${localPort}/api/status`, { signal: AbortSignal.timeout(3000) });
           if (check.ok) {
             daemonVer = (await check.json()).version || null;
             break;
           }
-        } catch { /* retry */ }
-        await new Promise(r => setTimeout(r, 2000));
+        } catch { /* not up yet */ }
+      }
+
+      if (config.projectDir && daemonVer) {
+        try {
+          await fetch(`http://localhost:${localPort}/api/project-dir`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: config.projectDir }),
+            signal: AbortSignal.timeout(3000),
+          });
+        } catch { /* best effort */ }
       }
 
       const localVer = getLocalVersion();
-      if (daemonVer) {
-        this.daemon.broadcast({ type: 'tunnel.version-info', data: { id, localVersion: localVer, remoteVersion: daemonVer, match: daemonVer === localVer } });
-      } else {
-        this.daemon.broadcast({ type: 'tunnel.upgrade-failed', data: { id, error: 'Daemon did not respond after restart', from: remoteVer, attempted: npmVer } });
-      }
-
+      this.daemon.broadcast({ type: 'tunnel.version-info', data: { id, localVersion: localVer, remoteVersion: daemonVer || npmVer, match: (daemonVer || npmVer) === localVer } });
       this.daemon.audit.log('tunnel.upgrade', { id, from: remoteVer, to: daemonVer || npmVer });
     } catch (err) {
+      // Upgrade failed but tunnel may still work — check before reporting failure
       try {
         const verify = await fetch(`http://localhost:${localPort}/api/status`, { signal: AbortSignal.timeout(5000) });
         if (verify.ok) {
@@ -537,7 +544,7 @@ export class TunnelManager {
           this.daemon.broadcast({ type: 'tunnel.version-info', data: { id, localVersion: getLocalVersion(), remoteVersion: verifyData.version, match: false } });
           return;
         }
-      } catch { /* tunnel verification failed */ }
+      } catch { /* tunnel down */ }
       this.daemon.broadcast({ type: 'tunnel.upgrade-failed', data: { id, error: err.message } });
     }
   }

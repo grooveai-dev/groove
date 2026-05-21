@@ -759,12 +759,11 @@ class WorkspaceManager {
             }
             if (upgraded) {
               emitProgress('Restarting remote daemon...');
-              try { sshExec('kill $(lsof -t -i:31415) 2>/dev/null || true', 10000); } catch {}
-              await new Promise(r => setTimeout(r, 2000));
               try {
-                sshExec('GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:31415/api/health > /dev/null || true', 60000);
-              } catch {}
-              await checkHealth(5, 2000);
+                sshExec('kill $(lsof -t -i:31415) 2>/dev/null || true; sleep 1; GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown', 15000);
+              } catch { /* SSH may close before nohup finishes — that's fine */ }
+              emitProgress('Waiting for remote daemon...');
+              await checkHealth(8, 2000);
             }
           }
         }

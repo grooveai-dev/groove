@@ -29,7 +29,7 @@ describe('Rotator', () => {
       },
       journalist: {
         async generateHandoffBrief(agent, options = {}) {
-          return `Handoff brief for ${agent.name}`;
+          return `## Handoff Brief\nAgent ${agent.name} was working on backend tasks in the project. The agent completed several file edits and ran tests successfully. Key context: the agent was modifying API routes and updating validation logic. Resume from where this agent left off and continue the implementation.`;
         },
       },
       memory: {

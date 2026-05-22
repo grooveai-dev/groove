@@ -206,6 +206,14 @@ export class MemoryStore {
 
     const nextN = (chain[0]?.rotationN || 0) + 1;
 
+    // Strip sections that embed previous chain content to prevent recursive
+    // nesting — each chain entry should contain only its OWN brief, not copies
+    // of all prior briefs. The "Rotation History" and "Known Issues" sections
+    // are the primary vectors for this duplication.
+    let briefText = entry.brief || '(no brief)';
+    briefText = briefText.replace(/## Rotation History[\s\S]*?(?=## [A-Z]|$)/, '').trim();
+    briefText = briefText.replace(/## Known Issues & Fixes[\s\S]*?(?=## [A-Z]|$)/, '').trim();
+
     const block = [
       `## Rotation ${nextN} — ${entry.timestamp || new Date().toISOString()} (${entry.agentId || '?'} → ${entry.newAgentId || '?'})`,
       `**Reason:** ${entry.reason || 'unknown'}`,
@@ -213,7 +221,7 @@ export class MemoryStore {
       entry.contextUsage != null ? `**Context at rotation:** ${Math.round(entry.contextUsage * 100)}%` : '',
       '',
       '**Brief summary:**',
-      truncate(entry.brief || '(no brief)', HANDOFF_BRIEF_MAX_CHARS),
+      truncate(briefText, HANDOFF_BRIEF_MAX_CHARS),
       '',
     ].filter(Boolean).join('\n');
 

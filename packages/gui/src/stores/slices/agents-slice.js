@@ -66,6 +66,15 @@ export const createAgentsSlice = (set, get) => ({
   async killAgent(id, purge = false) {
     try {
       await api.delete(`/agents/${encodeURIComponent(id)}?purge=${purge}`);
+      const dp = get().detailPanel;
+      if (dp?.type === 'agent' && dp.agentId === id) {
+        const tid = get().activeTeamId;
+        set({ detailPanel: null, teamDetailPanels: { ...get().teamDetailPanels, [tid]: null } });
+      }
+      const sel = get().fleetSelectedAgents;
+      if (sel[0] === id || sel[1] === id) {
+        set({ fleetSelectedAgents: [sel[0] === id ? null : sel[0], sel[1] === id ? null : sel[1]] });
+      }
       if (purge) {
         set((s) => {
           const chatHistory = { ...s.chatHistory };

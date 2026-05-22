@@ -35,6 +35,7 @@ export class Rotator extends EventEmitter {
     this.lastRotationTime = new Map(); // agentId -> timestamp of last rotation
     this._lastContextState = new Map(); // agentId -> { contextUsage, timestamp }
     this.compactionCounts = new Map(); // agentId -> number of natural compactions
+    this.userMessageTimes = new Map(); // agentId -> timestamp of last user message
     this.enabled = false;
     this.liveScores = {};
     this.scoreHistory = {};
@@ -116,6 +117,10 @@ export class Rotator extends EventEmitter {
       this.interval = null;
     }
     this.enabled = false;
+  }
+
+  recordUserMessage(agentId) {
+    this.userMessageTimes.set(agentId, Date.now());
   }
 
   _isOnCooldown(agentId, cooldownMs = COOLDOWN_MS) {
@@ -284,14 +289,13 @@ export class Rotator extends EventEmitter {
       if (this._isOnCooldown(agent.id, QUALITY_COOLDOWN_MS)) continue;
 
       // Effective quality threshold depends on provider type.
-      // Self-managing providers (Claude Code): threshold = 15. Only rotate on
-      // truly catastrophic degradation. Normal debugging naturally produces
-      // errors, retries, and bash repetitions — the scoring model treats these
-      // as degradation but they're expected behavior during investigation.
-      // A threshold of 40 (the default) kills debugging sessions at ~8 minutes.
+      // Self-managing providers (Claude Code): threshold = 25. Only rotate on
+      // severe degradation. Normal debugging naturally produces errors, retries,
+      // and bash repetitions — the scoring model treats these as degradation
+      // but they're expected behavior during investigation.
       let effectiveQualityThreshold;
       if (selfManagesContext) {
-        effectiveQualityThreshold = 15;
+        effectiveQualityThreshold = 25;
       } else {
         effectiveQualityThreshold = QUALITY_THRESHOLD;
         if (compactions >= 3) effectiveQualityThreshold = 55;
@@ -300,10 +304,27 @@ export class Rotator extends EventEmitter {
         }
       }
 
+      // Context-awareness guard for self-managing providers: if the provider
+      // recently compacted and context is low, it's managing itself — the
+      // quality score alone is too unreliable to override that.
+      if (selfManagesContext && agent.contextUsage < 0.6) {
+        continue;
+      }
+
+      // User-activity guard: if the user sent a message recently, the cost of
+      // disrupting the session is much higher than letting it continue. Require
+      // catastrophic degradation (score < 5) before rotating.
+      const lastUserMsg = this.userMessageTimes.get(agent.id);
+      const userActiveRecently = lastUserMsg && (Date.now() - lastUserMsg) < 5 * 60 * 1000;
+      if (userActiveRecently) {
+        effectiveQualityThreshold = 5;
+      }
+
       const quality = this.scoreLiveSession(agent);
       if (quality.hasEnoughData && quality.score < effectiveQualityThreshold) {
         // For self-managing providers, effectiveQualityThreshold IS the severe
-        // threshold (15) — any score below it is catastrophic, rotate immediately.
+        // threshold (25, or 5 if user is active) — any score below it is
+        // catastrophic, rotate immediately.
         // For others, severe = < 25, moderate = 25-40/55.
         const severeThreshold = selfManagesContext ? effectiveQualityThreshold : 25;
         if (quality.score < severeThreshold) {
@@ -331,11 +352,35 @@ export class Rotator extends EventEmitter {
     }
   }
 
+  _detectIdleLoop(agentName) {
+    const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
+    const recentLowToken = this.rotationHistory.filter(r =>
+      r.agentName === agentName &&
+      new Date(r.timestamp).getTime() > thirtyMinAgo &&
+      (r.oldTokens || 0) < 2000
+    );
+    return recentLowToken.length >= 3;
+  }
+
   async rotate(agentId, options = {}) {
     const { registry, processes, journalist } = this.daemon;
     const agent = registry.get(agentId);
     if (!agent) throw new Error(`Agent ${agentId} not found`);
     if (this.rotating.has(agentId)) throw new Error(`Agent ${agentId} is already rotating`);
+
+    // Idle rotation loop detection: if this agent name has completed 3+ times
+    // in the last 30 minutes with minimal tokens, the system is spinning — each
+    // replacement arrives blind, does nothing, and completes. Stop the cycle.
+    if (this._detectIdleLoop(agent.name)) {
+      console.warn(`  Rotator: ${agent.name} is in an idle rotation loop (3+ low-token rotations in 30 min). Skipping respawn — waiting for user input.`);
+      this.daemon.broadcast({
+        type: 'rotation:blocked',
+        agentId,
+        agentName: agent.name,
+        reason: 'idle_loop_detected',
+      });
+      return null;
+    }
 
     this.rotating.add(agentId);
 
@@ -386,6 +431,30 @@ export class Rotator extends EventEmitter {
         }
       }
 
+      // Brief quality validation: if an AUTOMATIC rotation produces a brief
+      // with too little meaningful content, the new agent will arrive blind.
+      // Block it rather than spawning an agent that can't continue the work.
+      // Manual rotations (user-requested) are never blocked — the user accepts the risk.
+      const isAutoRotation = options.reason && options.reason !== 'manual';
+      if (isAutoRotation && !usedConversationThread) {
+        const briefContent = brief
+          .replace(/^#.*$/gm, '')           // strip markdown headers
+          .replace(/^[-*].*role:.*$/gim, '') // strip metadata lines
+          .replace(/^\s*$/gm, '')           // strip blank lines
+          .trim();
+        if (briefContent.length < 200) {
+          console.warn(`  Rotator: ${agent.name} handoff brief has only ${briefContent.length} chars of content — low-confidence handoff, skipping rotation`);
+          this.rotating.delete(agentId);
+          this.daemon.broadcast({
+            type: 'rotation:blocked',
+            agentId,
+            agentName: agent.name,
+            reason: 'low_confidence_handoff',
+          });
+          return null;
+        }
+      }
+
       if (agent.role === 'planner' && !brief.includes('PLANNING ONLY')) {
         brief = 'CRITICAL: You are a PLANNING ONLY agent. Do NOT implement code. Route all work to your team via .groove/recommended-team.json.\n\n' + brief;
       }
@@ -423,9 +492,10 @@ export class Rotator extends EventEmitter {
       const respawnModel = routingMode.mode === 'auto' ? 'auto' : agent.model;
 
       // Remove old agent BEFORE spawning so registry.add() won't dedup the name
-      // (appending "-2", "-2-2", etc.). Save config in case we need to re-add on failure.
+      // (appending "-2", "-2-2", etc.). Silent removal: the spawn's registry.add()
+      // will flush both removed+changed in one broadcast, preventing GUI flicker.
       const savedConfig = { ...agent };
-      registry.remove(agentId);
+      registry.remove(agentId, { silent: true });
       this.daemon.locks.release(agentId);
 
       let newAgent;
@@ -443,7 +513,8 @@ export class Rotator extends EventEmitter {
           isRotation: true,
         });
       } catch (spawnErr) {
-        // Spawn failed — re-add old agent so the user can see and retry.
+        // Spawn failed — flush the silent removal so GUI sees it, then re-add.
+        registry.flushPendingRemovals();
         registry.add({
           role: savedConfig.role, scope: savedConfig.scope, provider: savedConfig.provider,
           model: savedConfig.model, prompt: savedConfig.prompt, permission: savedConfig.permission,

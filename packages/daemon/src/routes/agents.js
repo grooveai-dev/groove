@@ -428,6 +428,7 @@ export function registerAgentRoutes(app, daemon) {
 
       // Record user feedback so the journalist can include it in future agent context
       if (daemon.journalist) daemon.journalist.recordUserFeedback(agent, finalMessage);
+      if (daemon.rotator) daemon.rotator.recordUserMessage(req.params.id);
 
       // Agent loop path — send message directly to the running loop
       const wrappedMessage = wrapWithRoleReminder(agent.role, finalMessage);
@@ -449,20 +450,26 @@ export function registerAgentRoutes(app, daemon) {
         if (daemon.processes.isRunning(req.params.id)) {
           await daemon.processes.kill(req.params.id);
         }
-        daemon.registry.remove(req.params.id);
+        daemon.registry.remove(req.params.id, { silent: true });
         daemon.locks.release(req.params.id);
 
-        const newAgent = await daemon.processes.spawn({
-          role: oldConfig.role,
-          scope: oldConfig.scope,
-          provider: oldConfig.provider,
-          model: oldConfig.model,
-          prompt: finalMessage,
-          permission: oldConfig.permission || 'full',
-          workingDir: oldConfig.workingDir,
-          name: oldConfig.name,
-          teamId: oldConfig.teamId,
-        });
+        let newAgent;
+        try {
+          newAgent = await daemon.processes.spawn({
+            role: oldConfig.role,
+            scope: oldConfig.scope,
+            provider: oldConfig.provider,
+            model: oldConfig.model,
+            prompt: finalMessage,
+            permission: oldConfig.permission || 'full',
+            workingDir: oldConfig.workingDir,
+            name: oldConfig.name,
+            teamId: oldConfig.teamId,
+          });
+        } catch (spawnErr) {
+          daemon.registry.flushPendingRemovals();
+          throw spawnErr;
+        }
         daemon.audit.log('agent.instruct', { id: req.params.id, newId: newAgent.id, resumed: false });
         return res.json(newAgent);
       }
@@ -472,21 +479,27 @@ export function registerAgentRoutes(app, daemon) {
       // run one prompt per spawn and cannot resume sessions.
       if (provider?.constructor?.nonInteractive && !daemon.processes.isRunning(req.params.id)) {
         const oldConfig = { ...agent };
-        daemon.registry.remove(req.params.id);
+        daemon.registry.remove(req.params.id, { silent: true });
         daemon.locks.release(req.params.id);
 
-        const newAgent = await daemon.processes.spawn({
-          role: oldConfig.role,
-          scope: oldConfig.scope,
-          provider: oldConfig.provider,
-          model: oldConfig.model,
-          prompt: finalMessage,
-          introContext: oldConfig.introContext,
-          permission: oldConfig.permission || 'full',
-          workingDir: oldConfig.workingDir,
-          name: oldConfig.name,
-          teamId: oldConfig.teamId,
-        });
+        let newAgent;
+        try {
+          newAgent = await daemon.processes.spawn({
+            role: oldConfig.role,
+            scope: oldConfig.scope,
+            provider: oldConfig.provider,
+            model: oldConfig.model,
+            prompt: finalMessage,
+            introContext: oldConfig.introContext,
+            permission: oldConfig.permission || 'full',
+            workingDir: oldConfig.workingDir,
+            name: oldConfig.name,
+            teamId: oldConfig.teamId,
+          });
+        } catch (spawnErr) {
+          daemon.registry.flushPendingRemovals();
+          throw spawnErr;
+        }
         daemon.audit.log('agent.instruct', { id: req.params.id, newId: newAgent.id, resumed: false });
         return res.json(newAgent);
       }

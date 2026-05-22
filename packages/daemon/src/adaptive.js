@@ -110,13 +110,43 @@ export class AdaptiveThresholds {
     const selfManages = options.selfManagesContext ?? false;
     let score = 70; // Baseline: decent session
 
-    // Error rate: -5 per error normally, -2 for self-managing (errors during debugging are expected)
+    // --- Error-related penalties ---
+    // For self-managing providers, errorCount/errorTrend/repetitions are often
+    // correlated: running scripts that produce error output triggers all three.
+    // Cap the combined penalty so one root cause can't stack across signals.
     const errorCount = signals.errorCount || 0;
-    score -= errorCount * (selfManages ? 2 : 5);
-
-    // Repetitions: 3+ Write/Edit to the same file in a sliding window
+    const toolOutputErrors = signals.toolOutputErrors || 0;
     const repetitions = signals.repetitions || 0;
-    score -= Math.min(repetitions * 6, 30);
+    const errorTrend = signals.errorTrend || 0;
+
+    let errorPenalty, repetitionPenalty, errorTrendPenalty;
+
+    if (selfManages) {
+      // Tool output errors (is_error on tool results from scripts/tests) get
+      // a reduced rate — they're normal workflow, not agent failures
+      const agentErrors = errorCount - toolOutputErrors;
+      errorPenalty = (Math.max(agentErrors, 0) * 2) + (toolOutputErrors * 1);
+      repetitionPenalty = Math.min(repetitions * 6, 30);
+      errorTrendPenalty = errorTrend > 0 ? errorTrend * 3 : 0;
+
+      // Cap: all error-related signals combined max -35 for self-managing
+      const totalErrorRelated = errorPenalty + repetitionPenalty + errorTrendPenalty;
+      if (totalErrorRelated > 35) {
+        const scale = 35 / totalErrorRelated;
+        errorPenalty = Math.round(errorPenalty * scale);
+        repetitionPenalty = Math.round(repetitionPenalty * scale);
+        errorTrendPenalty = Math.round(errorTrendPenalty * scale);
+      }
+    } else {
+      errorPenalty = errorCount * 5;
+      repetitionPenalty = Math.min(repetitions * 6, 30);
+      errorTrendPenalty = errorTrend > 0 ? errorTrend * 6 : 0;
+    }
+
+    score -= errorPenalty;
+    score -= repetitionPenalty;
+    score -= errorTrendPenalty;
+    if (errorTrend < 0) score += 3; // Errors decreasing = good
 
     // Out-of-scope access: each violation costs 10 points
     const scopeViolations = signals.scopeViolations || 0;
@@ -133,11 +163,6 @@ export class AdaptiveThresholds {
     // File churn: same file written 5+ times — genuine circular refactoring
     const fileChurn = signals.fileChurn || 0;
     score -= fileChurn * 10;
-
-    // Error trend: increasing errors in second half = degradation
-    const errorTrend = signals.errorTrend || 0;
-    if (errorTrend > 0) score -= errorTrend * (selfManages ? 3 : 6);
-    if (errorTrend < 0) score += 3;
 
     // Files written: productivity signal
     const filesWritten = signals.filesWritten || 0;
@@ -182,6 +207,7 @@ export class AdaptiveThresholds {
   extractSignals(entries, agentScope) {
     const signals = {
       errorCount: 0,
+      toolOutputErrors: 0,  // is_error tool results (script output, test failures — not agent errors)
       repetitions: 0,
       scopeViolations: 0,
       toolCalls: 0,
@@ -208,6 +234,7 @@ export class AdaptiveThresholds {
 
       if (entry.type === 'error') {
         signals.errorCount++;
+        if (entry.source === 'tool_output') signals.toolOutputErrors++;
       }
 
       // Track assistant output lengths for decay detection

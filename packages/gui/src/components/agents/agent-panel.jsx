@@ -88,7 +88,7 @@ export function AgentPanel() {
   const agentId = detailPanel?.type === 'agent' ? detailPanel.agentId : null;
   const liveAgent = agentId ? agents.find((a) => a.id === agentId) : null;
   if (liveAgent) cachedAgentRef.current = liveAgent;
-  else if (cachedAgentRef.current && cachedAgentRef.current.id !== agentId) cachedAgentRef.current = null;
+  else if (cachedAgentRef.current && agentId && cachedAgentRef.current.id !== agentId) cachedAgentRef.current = null;
   const agent = liveAgent || cachedAgentRef.current;
   const isAlive = liveAgent?.status === 'running' || liveAgent?.status === 'starting';
 

@@ -312,16 +312,17 @@ export class Daemon {
 
     // Single unified registry change listener (broadcast + file I/O + coordination)
     this.registry.on('change', (delta) => {
-      if (delta && delta.removed) {
-        this.broadcast({ type: 'state:delta', data: { changed: [], removed: delta.removed } });
-      } else if (delta && delta.changed) {
-        const changedAgents = delta.changed
-          .map((id) => this.registry.get(id))
-          .filter(Boolean);
-        this.broadcast({ type: 'state:delta', data: { changed: enrichAgents(changedAgents), removed: [] } });
-      } else {
-        // Fallback: full state broadcast
+      if (!delta || (!delta.removed && !delta.changed)) {
         this.broadcast({ type: 'state', data: enrichAgents(this.registry.getAll()) });
+      } else {
+        const data = { changed: [], removed: [] };
+        if (delta.removed?.length) data.removed = delta.removed;
+        if (delta.changed?.length) {
+          data.changed = enrichAgents(delta.changed.map((id) => this.registry.get(id)).filter(Boolean));
+        }
+        if (data.changed.length > 0 || data.removed.length > 0) {
+          this.broadcast({ type: 'state:delta', data });
+        }
       }
       _debouncedRegistryIo();
       this.teams.onAgentChange();

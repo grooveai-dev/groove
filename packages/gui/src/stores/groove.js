@@ -199,11 +199,6 @@ export const useGrooveStore = create((set, get) => ({
           }
           for (const id of removed) delete timeline[id];
           const updates = { agents, tokenTimeline: timeline, hydrated: true };
-          if (removed.length > 0) {
-            if (st.detailPanel?.type === 'agent' && removed.includes(st.detailPanel.agentId)) {
-              updates.detailPanel = null;
-            }
-          }
           set(updates);
           break;
         }

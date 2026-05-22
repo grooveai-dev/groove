@@ -28,7 +28,8 @@ exports.default = async function (context) {
 
   // electron-builder strips node_modules from extraResources copies.
   // Copy them back from the source bundle before code signing.
-  const sourceNM = join(__dirname, '.daemon-bundle', 'node_modules');
+  const daemonBundleDir = join(__dirname, '.daemon-bundle');
+  const sourceNM = join(daemonBundleDir, 'node_modules');
   let resourcesDir;
   let contentsDir;
   if (platform === 'darwin') {
@@ -40,6 +41,14 @@ exports.default = async function (context) {
   }
   const targetNM = join(resourcesDir, 'daemon', 'node_modules');
 
+  if (!existsSync(sourceNM) && existsSync(join(daemonBundleDir, 'package.json'))) {
+    console.log('  • afterPack: daemon node_modules missing — reinstalling');
+    execSync('npm install --omit=dev --ignore-scripts', {
+      cwd: daemonBundleDir,
+      stdio: 'inherit',
+      env: Object.assign({}, process.env, { npm_config_workspaces: 'false' }),
+    });
+  }
   if (existsSync(sourceNM)) {
     console.log(`  • afterPack: copying daemon node_modules to ${targetNM}`);
     cpSync(sourceNM, targetNM, { recursive: true });
@@ -57,8 +66,17 @@ exports.default = async function (context) {
   }
 
   // Restore moe-training/node_modules (extraFiles strips them the same way).
-  const moeSourceNM = join(__dirname, '.moe-training-bundle', 'node_modules');
+  const moeBundleDir = join(__dirname, '.moe-training-bundle');
+  const moeSourceNM = join(moeBundleDir, 'node_modules');
   const moeTargetNM = join(contentsDir, 'moe-training', 'node_modules');
+  if (!existsSync(moeSourceNM) && existsSync(join(moeBundleDir, 'package.json'))) {
+    console.log('  • afterPack: moe-training node_modules missing — reinstalling');
+    execSync('npm install --omit=dev', {
+      cwd: moeBundleDir,
+      stdio: 'inherit',
+      env: Object.assign({}, process.env, { npm_config_workspaces: 'false' }),
+    });
+  }
   if (existsSync(moeSourceNM)) {
     console.log(`  • afterPack: copying moe-training node_modules to ${moeTargetNM}`);
     cpSync(moeSourceNM, moeTargetNM, { recursive: true });

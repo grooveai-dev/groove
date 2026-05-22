@@ -1975,7 +1975,7 @@ For normal file edits within your scope, proceed without review.
 
       if (existing && (existing.status === 'completed' || existing.status === 'stopped' || existing.status === 'crashed' || existing.status === 'killed')) {
         config.name = existing.name;
-        registry.remove(existing.id);
+        registry.remove(existing.id, { silent: true });
         this.daemon.locks.release(existing.id);
       }
 
@@ -2516,11 +2516,13 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
     const config = { ...agent };
     const sessionId = agent.sessionId;
 
-    // Stop if running, then remove old entry so we can re-register with same name
+    // Stop if running, then remove old entry so we can re-register with same name.
+    // Silent removal: the add() below will flush both removed+changed in one broadcast,
+    // preventing the GUI from seeing an empty agents list between remove and re-add.
     if (this.handles.has(agentId)) {
       await this.kill(agentId);
     }
-    registry.remove(agentId);
+    registry.remove(agentId, { silent: true });
     locks.release(agentId);
 
     // Build resume command
@@ -2648,7 +2650,7 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
     if (this.handles.has(agentId)) {
       await this.kill(agentId);
     }
-    registry.remove(agentId);
+    registry.remove(agentId, { silent: true });
     locks.release(agentId);
 
     const newAgent = await this.spawn({
@@ -2698,7 +2700,7 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
     if (this.handles.has(agentId)) {
       await this.kill(agentId);
     }
-    registry.remove(agentId);
+    registry.remove(agentId, { silent: true });
     locks.release(agentId);
 
     const newAgent = registry.add({
@@ -3005,6 +3007,10 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
     const agent = this.daemon.registry.get(agentId);
     const wrapped = agent ? wrapWithRoleReminder(agent.role, message) : message;
 
+    if (source === 'user' && this.daemon.rotator) {
+      this.daemon.rotator.recordUserMessage(agentId);
+    }
+
     if (this.daemon.trajectoryCapture) {
       try { this.daemon.trajectoryCapture.onUserMessage(agentId, message, source); } catch (e) { /* fail silent */ }
     }
@@ -3025,6 +3031,9 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
     const agent = this.daemon.registry.get(agentId);
     const wrapped = agent ? wrapWithRoleReminder(agent.role, message) : message;
     this.pendingMessages.set(agentId, { message: wrapped, timestamp: Date.now() });
+    if (this.daemon.rotator) {
+      this.daemon.rotator.recordUserMessage(agentId);
+    }
     this.daemon.broadcast({ type: 'agent:message_queued', agentId, message: wrapped });
   }
 

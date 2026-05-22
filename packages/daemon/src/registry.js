@@ -12,6 +12,7 @@ export class Registry extends EventEmitter {
     this.state = state;
     this.agents = new Map();
     this._counters = new Map();
+    this._pendingRemovals = [];
     this._initCounters();
   }
 
@@ -62,7 +63,10 @@ export class Registry extends EventEmitter {
     };
 
     this.agents.set(agent.id, agent);
-    this.emit('change', { changed: [agent.id] });
+    const removed = this._pendingRemovals.splice(0);
+    const delta = { changed: [agent.id] };
+    if (removed.length > 0) delta.removed = removed;
+    this.emit('change', delta);
     return agent;
   }
 
@@ -89,13 +93,24 @@ export class Registry extends EventEmitter {
     return agent;
   }
 
-  remove(id) {
+  remove(id, { silent = false } = {}) {
     const agent = this.agents.get(id);
     if (!agent) return false;
 
     this.agents.delete(id);
-    this.emit('change', { removed: [id] });
+    if (silent) {
+      this._pendingRemovals.push(id);
+    } else {
+      this.emit('change', { removed: [id] });
+    }
     return true;
+  }
+
+  flushPendingRemovals() {
+    const removed = this._pendingRemovals.splice(0);
+    if (removed.length > 0) {
+      this.emit('change', { removed });
+    }
   }
 
   findByRole(role) {

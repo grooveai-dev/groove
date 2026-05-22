@@ -63,7 +63,9 @@ export class TaskClassifier {
         }
         if (block.type === 'tool_result') {
           if (block.is_error) {
-            window.push({ type: 'error', timestamp: Date.now() });
+            // Tag source so the quality scorer can distinguish tool output errors
+            // (script failures, test output) from agent behavioral errors
+            window.push({ type: 'error', source: 'tool_output', timestamp: Date.now() });
             extracted = true;
           }
         }

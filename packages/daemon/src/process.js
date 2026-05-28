@@ -2526,7 +2526,7 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
     locks.release(agentId);
 
     // Build resume command
-    const { command: rawCommand, args, env } = provider.buildResumeCommand(sessionId, message, config.model);
+    const { command: rawCommand, args, env } = provider.buildResumeCommand(sessionId, message, config.model, { fast: config.fast });
     const command = resolveProviderCommand(config.provider || 'claude-code') || rawCommand;
 
     // Set up log capture

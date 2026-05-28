@@ -3,7 +3,8 @@
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, unlinkSync, renameSync, copyFileSync } from 'fs';
 import { writeFile } from 'node:fs/promises';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
+import { randomUUID } from 'crypto';
 
 export class StateManager {
   constructor(grooveDir) {
@@ -39,7 +40,11 @@ export class StateManager {
     if (existsSync(this.path)) {
       try { copyFileSync(this.path, this.backupPath); } catch { /* non-fatal */ }
     }
-    await writeFile(this.path, JSON.stringify(this.data, null, 2));
+    // Atomic write: write to temp file, then rename (rename is atomic on POSIX).
+    // Prevents SIGKILL during write from leaving state.json truncated/empty.
+    const tmpPath = resolve(dirname(this.path), `state.${randomUUID().slice(0, 8)}.tmp`);
+    await writeFile(tmpPath, JSON.stringify(this.data, null, 2));
+    renameSync(tmpPath, this.path);
   }
 
   get(key) {

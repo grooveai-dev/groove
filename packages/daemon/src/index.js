@@ -717,9 +717,22 @@ export class Daemon {
     this._gc();
     this._gcInterval = setInterval(() => this._gc(), 24 * 60 * 60 * 1000);
 
-    // Periodic state save — crash protection (every 30s)
+    // Periodic state save — crash protection (every 5s)
+    this._lastSavedAgentCount = this.registry.getAll().length;
     this._stateSaveInterval = setInterval(async () => {
-      try { this.state.set('agents', this.registry.getAll()); await this.state.save(); } catch {}
+      try {
+        const agents = this.registry.getAll();
+        // Safety: never overwrite a populated state with an empty one.
+        // An empty registry while agents existed before signals a bug, not
+        // legitimate cleanup — skip the save so .bak stays valid.
+        if (agents.length === 0 && this._lastSavedAgentCount > 0) {
+          console.warn(`[Groove:State] Skipping save — registry unexpectedly empty (was ${this._lastSavedAgentCount} agents). This prevents silent data loss.`);
+          return;
+        }
+        this._lastSavedAgentCount = agents.length;
+        this.state.set('agents', agents);
+        await this.state.save();
+      } catch {}
     }, 5000);
   }
 

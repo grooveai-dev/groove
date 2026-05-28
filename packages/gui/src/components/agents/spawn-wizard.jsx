@@ -83,6 +83,7 @@ export function SpawnWizard() {
   const [preflightDialog, setPreflightDialog] = useState(null);
   const [ollamaInstalled, setOllamaInstalled] = useState([]);
   const [ollamaServerRunning, setOllamaServerRunning] = useState(false);
+  const [fast, setFast] = useState(false);
   const [teamMode, setTeamMode] = useState('new');
   const [newTeamName, setNewTeamName] = useState('');
   const [selectedTeamId, setSelectedTeamId] = useState('');
@@ -141,7 +142,7 @@ export function SpawnWizard() {
         setPersonalities(Array.isArray(data) ? data : data.personalities || []);
       }).catch(() => {});
       setRole(''); setCustomRole(''); setName('');
-      setProvider(_presetProvider); setModel(_presetModel);
+      setProvider(_presetProvider); setModel(_presetModel); setFast(false);
       setTeamMode('new'); setSelectedTeamId('');
       setNewTeamName(_presetModel
         ? _presetModel.split(':').pop().replace(/[-_]/g, ' ')
@@ -206,6 +207,7 @@ export function SpawnWizard() {
         ...(selectedIntegrations.length > 0 && { integrations: selectedIntegrations }),
         ...(selectedIntegrations.length > 0 && { integrationApproval }),
         ...(selectedRepos.length > 0 && { repos: selectedRepos }),
+        ...(fast && { fast: true }),
         ...(selectedPersonality && { personality: selectedPersonality }),
         ...(selectedRole === 'ambassador' && selectedPeerId && { peerId: selectedPeerId }),
         ...(teamId && { teamId }),
@@ -512,6 +514,33 @@ export function SpawnWizard() {
                       <Badge variant="warning">No API key — set with: groove set-key {provider} YOUR_KEY</Badge>
                     )}
                   </div>
+                )}
+
+                {/* Fast mode — available for Opus models on Claude Code */}
+                {provider === 'claude-code' && model && model.includes('opus') && (
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={fast}
+                      onClick={() => setFast(!fast)}
+                      className={cn(
+                        'relative w-8 h-[18px] rounded-full transition-colors flex-shrink-0',
+                        fast ? 'bg-accent' : 'bg-surface-5',
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'absolute top-[2px] left-[2px] w-[14px] h-[14px] rounded-full bg-white transition-transform',
+                          fast && 'translate-x-[14px]',
+                        )}
+                      />
+                    </button>
+                    <div>
+                      <span className="text-xs font-semibold text-text-0 font-sans">Fast mode</span>
+                      <span className="text-2xs text-text-3 font-sans ml-1.5">Faster output, same model</span>
+                    </div>
+                  </label>
                 )}
 
                 {/* Ollama model status */}

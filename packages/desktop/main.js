@@ -1072,9 +1072,18 @@ ipcMain.handle('install-update', async () => {
   isQuitting = true;
 
   if (workspaces) {
-    for (const proc of workspaces._daemonProcesses.values()) {
-      try { proc.disconnect(); } catch {}
+    // Graceful shutdown: SIGTERM lets daemons save state before dying.
+    // Wait up to 3s, then SIGKILL as fallback.
+    const procs = [...workspaces._daemonProcesses.values()];
+    for (const proc of procs) {
+      try { proc.kill('SIGTERM'); } catch {}
+    }
+    await new Promise(r => setTimeout(r, 3000));
+    for (const proc of procs) {
       try { proc.kill('SIGKILL'); } catch {}
+    }
+    for (const proc of procs) {
+      try { proc.disconnect(); } catch {}
     }
     workspaces._daemonProcesses.clear();
   }

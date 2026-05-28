@@ -608,6 +608,12 @@ export function AgentFeed({ agent }) {
   const isThinking = useGrooveStore((s) => s.thinkingAgents?.has(agent.id));
   const cachedChatRef = useRef(EMPTY);
   const cachedActivityRef = useRef(EMPTY);
+  const cachedAgentIdRef = useRef(agent.id);
+  if (cachedAgentIdRef.current !== agent.id) {
+    cachedAgentIdRef.current = agent.id;
+    cachedChatRef.current = EMPTY;
+    cachedActivityRef.current = EMPTY;
+  }
   if (rawChatHistory.length > 0) cachedChatRef.current = rawChatHistory;
   if (rawActivityLog.length > 0) cachedActivityRef.current = rawActivityLog;
   const chatHistory = rawChatHistory.length > 0 ? rawChatHistory : cachedChatRef.current;

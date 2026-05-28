@@ -75,7 +75,10 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
       onSelectionChange?.(text || '');
     });
 
+    // ── Spawn logic ──────────────────────────────────────────────
     let spawnAttempts = 0;
+    let outputReady = false;
+
     function trySpawn() {
       spawnAttempts++;
       const ws = useGrooveStore.getState().ws;
@@ -85,7 +88,6 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
       }
 
       const requestId = `spawn-${++spawnSeq}`;
-      const initialCols = term.cols;
       ws.send(JSON.stringify({ type: 'terminal:spawn', cols: term.cols, rows: term.rows, requestId }));
 
       function onMessage(event) {
@@ -94,28 +96,31 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
 
         if (msg.type === 'terminal:spawned' && msg.requestId === requestId && !termIdRef.current) {
           termIdRef.current = msg.id;
+          // Give the shell time to start and the layout to fully settle,
+          // then correct dimensions, wipe any garbled output, and redraw.
           setTimeout(() => {
-            try { fitRef.current?.fit(); } catch {}
+            try { fitAddon.fit(); } catch {}
             const c = term.cols, r = term.rows;
             if (c > 1 && r > 1 && termIdRef.current) {
               const w = useGrooveStore.getState().ws;
               if (w?.readyState === WebSocket.OPEN) {
                 w.send(JSON.stringify({ type: 'terminal:resize', id: termIdRef.current, rows: r, cols: c }));
                 lastSizeRef.current = { cols: c, rows: r };
-                if (c !== initialCols) {
-                  setTimeout(() => {
-                    term.clear();
-                    if (w.readyState === WebSocket.OPEN && termIdRef.current) {
-                      w.send(JSON.stringify({ type: 'terminal:input', id: termIdRef.current, data: '\x0c' }));
-                    }
-                  }, 80);
-                }
               }
             }
-          }, 50);
+            // Wipe xterm so garbled output from wrong-sized PTY is never visible
+            term.reset();
+            outputReady = true;
+            // Ask the shell to clear screen and redraw its prompt
+            const w2 = useGrooveStore.getState().ws;
+            if (w2?.readyState === WebSocket.OPEN && termIdRef.current) {
+              w2.send(JSON.stringify({ type: 'terminal:input', id: termIdRef.current, data: '\x0c' }));
+            }
+          }, 300);
         } else if (msg.type === 'terminal:output' && msg.id === termIdRef.current) {
-          term.write(msg.data);
+          if (outputReady) term.write(msg.data);
         } else if (msg.type === 'terminal:exit' && msg.id === termIdRef.current) {
+          outputReady = true;
           term.write('\r\n\x1b[90m[session ended]\x1b[0m\r\n');
           termIdRef.current = null;
         }
@@ -131,59 +136,86 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
         }
       });
 
+      // Debounce resize messages so rapid drag doesn't flood
+      // the PTY with SIGWINCHs that cause staircase redraws
+      let resizeTimer = null;
       term.onResize(({ cols, rows }) => {
         if (cols === lastSizeRef.current.cols && rows === lastSizeRef.current.rows) return;
         if (cols < 2 || rows < 2) return;
-        const ws = useGrooveStore.getState().ws;
-        if (ws?.readyState === WebSocket.OPEN && termIdRef.current) {
-          lastSizeRef.current = { cols, rows };
-          ws.send(JSON.stringify({ type: 'terminal:resize', id: termIdRef.current, rows, cols }));
-        }
+        lastSizeRef.current = { cols, rows };
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          const { cols: c, rows: r } = lastSizeRef.current;
+          const ws = useGrooveStore.getState().ws;
+          if (ws?.readyState === WebSocket.OPEN && termIdRef.current) {
+            ws.send(JSON.stringify({ type: 'terminal:resize', id: termIdRef.current, rows: r, cols: c }));
+          }
+        }, 150);
       });
     }
 
+    // ── Deferred spawn — wait for container to be visible & stable ──
     let hasSpawned = false;
+    let settleTimer = null;
+
     function tryInitSpawn() {
       if (hasSpawned) return;
-      if (term.cols >= 10 && term.rows >= 2) {
-        hasSpawned = true;
-        trySpawn();
+      const el = containerRef.current;
+      // Container must have meaningful pixel dimensions (not hidden/mid-layout)
+      if (!el || el.offsetWidth < 200 || el.offsetHeight < 50) {
+        clearTimeout(settleTimer);
+        settleTimer = null;
+        return;
       }
+      // Already waiting for settle
+      if (settleTimer) return;
+      // Wait 200ms for layout to fully stabilize before spawning
+      settleTimer = setTimeout(() => {
+        if (hasSpawned) return;
+        const el2 = containerRef.current;
+        if (!el2 || el2.offsetWidth < 200 || el2.offsetHeight < 50) {
+          settleTimer = null;
+          return;
+        }
+        hasSpawned = true;
+        try { fitAddon.fit(); } catch {}
+        trySpawn();
+      }, 200);
     }
 
-    requestAnimationFrame(() => {
-      try { fitAddon.fit(); } catch {}
-      requestAnimationFrame(() => {
-        try { fitAddon.fit(); } catch {}
-        tryInitSpawn();
-      });
-    });
+    requestAnimationFrame(tryInitSpawn);
 
-    const spawnFallback = setTimeout(() => {
+    // Absolute fallback — if observer never fires, spawn after 5s
+    const fallback = setTimeout(() => {
       if (!hasSpawned) {
-        try { fitAddon.fit(); } catch {}
         hasSpawned = true;
+        try { fitAddon.fit(); } catch {}
         trySpawn();
       }
-    }, 3000);
+    }, 5000);
 
     const observer = new ResizeObserver(() => {
       if (!visibleRef.current) return;
       requestAnimationFrame(() => {
-        try { fitAddon.fit(); } catch {}
-        tryInitSpawn();
+        if (!hasSpawned) {
+          tryInitSpawn();
+        } else {
+          try { fitAddon.fit(); } catch {}
+        }
       });
     });
     observer.observe(containerRef.current);
 
     return () => {
-      clearTimeout(spawnFallback);
+      clearTimeout(settleTimer);
+      clearTimeout(fallback);
       observer.disconnect();
       if (handlerRef.current) {
         handlerRef.current.ws.removeEventListener('message', handlerRef.current.handler);
       }
       term.dispose();
       fitRef.current = null;
+      termRef.current = null;
       mountedRef.current = false;
     };
   }, []);
@@ -193,16 +225,6 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
     if (visible && fitRef.current) {
       requestAnimationFrame(() => {
         try { fitRef.current.fit(); } catch {}
-        if (termRef.current && termIdRef.current) {
-          const c = termRef.current.cols, r = termRef.current.rows;
-          if (c > 1 && r > 1) {
-            const ws = useGrooveStore.getState().ws;
-            if (ws?.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'terminal:resize', id: termIdRef.current, rows: r, cols: c }));
-              lastSizeRef.current = { cols: c, rows: r };
-            }
-          }
-        }
       });
     }
   }, [visible]);

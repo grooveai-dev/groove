@@ -97,6 +97,9 @@ export class Registry extends EventEmitter {
     const agent = this.agents.get(id);
     if (!agent) return false;
 
+    const caller = new Error().stack.split('\n').slice(1, 4).map(l => l.trim()).join(' <- ');
+    console.log(`[Groove:Registry] REMOVE agent ${agent.name} (${id}) role=${agent.role} status=${agent.status} team=${agent.teamId} silent=${silent} | ${caller}`);
+
     this.agents.delete(id);
     if (silent) {
       this._pendingRemovals.push(id);

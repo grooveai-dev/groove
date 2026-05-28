@@ -39,6 +39,7 @@ export class ClaudeCodeProvider extends Provider {
   static authType = 'subscription';
   static managesOwnContext = true; // Claude Code compacts context internally (~25-37% → 2-8%)
   static models = [
+    { id: 'claude-opus-4-8', name: 'Claude Opus 4.8', tier: 'heavy', contextWindow: 1_000_000 },
     { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', tier: 'heavy', contextWindow: 1_000_000 },
     { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', tier: 'medium', contextWindow: 200_000 },
     { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', tier: 'light', contextWindow: 200_000 },
@@ -104,6 +105,10 @@ export class ClaudeCodeProvider extends Provider {
       args.push('--effort', agent.effort);
     }
 
+    if (agent.fast) {
+      args.push('--fast');
+    }
+
     // Pass the initial prompt as positional arg (includes GROOVE context)
     const fullPrompt = this.buildFullPrompt(agent);
     if (fullPrompt) {
@@ -117,13 +122,14 @@ export class ClaudeCodeProvider extends Provider {
     };
   }
 
-  buildResumeCommand(sessionId, prompt, model) {
+  buildResumeCommand(sessionId, prompt, model, options = {}) {
     // Resume a previous session — preserves full conversation history
     // No cold start, no handoff brief needed
     const args = ['--resume', sessionId, '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
     const knockSettings = ClaudeCodeProvider._buildKnockSettings();
     if (knockSettings) args.push('--settings', knockSettings);
     if (model) args.push('--model', model);
+    if (options.fast) args.push('--fast');
     if (prompt) args.push(prompt);
     return { command: 'claude', args, env: {} };
   }

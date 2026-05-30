@@ -8,7 +8,7 @@ import { MediaViewer, isMediaFile } from '../components/editor/media-viewer';
 import { EditorStatusBar } from '../components/editor/editor-status-bar';
 import { GotoLine } from '../components/editor/goto-line';
 import { Breadcrumbs } from '../components/editor/breadcrumbs';
-import { Code2, Eye, FileCode, PanelLeftOpen } from 'lucide-react';
+import { Code2, Eye, FileCode, PanelLeftOpen, Upload } from 'lucide-react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 
@@ -37,6 +37,11 @@ export default function EditorView() {
   const [showGotoLine, setShowGotoLine] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
+  const [dragOver, setDragOver] = useState(false);
+  const dragCounter = useRef(0);
+  const addToast = useGrooveStore((s) => s.addToast);
+  const fetchTreeDir = useGrooveStore((s) => s.fetchTreeDir);
+
   const editorViewRef = useRef(null);
   const dragging = useRef(false);
   const startX = useRef(0);
@@ -61,6 +66,47 @@ export default function EditorView() {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // External file drop handler — upload files dropped anywhere in the editor
+  function handleDragEnter(e) {
+    e.preventDefault();
+    dragCounter.current++;
+    if (e.dataTransfer?.types?.includes('Files')) setDragOver(true);
+  }
+  function handleDragLeave(e) {
+    e.preventDefault();
+    dragCounter.current--;
+    if (dragCounter.current <= 0) { dragCounter.current = 0; setDragOver(false); }
+  }
+  function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }
+  async function handleDrop(e) {
+    e.preventDefault();
+    dragCounter.current = 0;
+    setDragOver(false);
+    const nativeFiles = e.dataTransfer?.files;
+    if (!nativeFiles?.length) return;
+
+    const toUpload = [];
+    for (const file of Array.from(nativeFiles)) {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      toUpload.push({ name: file.name, content: base64 });
+    }
+    try {
+      const result = await api.post('/files/upload', { dir: '', files: toUpload });
+      addToast('success', `Uploaded ${result.total} file${result.total !== 1 ? 's' : ''}`);
+      fetchTreeDir('');
+    } catch (err) {
+      addToast('error', 'Upload failed', err.message);
+    }
+  }
 
   // Sidebar resize handlers
   const onSidebarMouseDown = useCallback((e) => {
@@ -129,7 +175,22 @@ export default function EditorView() {
       )}
 
       {/* Editor area */}
-      <div className="flex-1 flex flex-col min-w-0 bg-surface-1">
+      <div
+        className="flex-1 flex flex-col min-w-0 bg-surface-1 relative"
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
+        {/* Drop overlay */}
+        {dragOver && (
+          <div className="absolute inset-0 z-50 bg-accent/8 border-2 border-dashed border-accent/40 rounded-lg flex items-center justify-center pointer-events-none">
+            <div className="flex flex-col items-center gap-2 text-accent">
+              <Upload size={32} />
+              <span className="text-sm font-semibold font-sans">Drop files to upload</span>
+            </div>
+          </div>
+        )}
 
         {/* Tab bar */}
         <EditorTabs />

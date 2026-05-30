@@ -34,7 +34,8 @@ function validateField(value, name) {
 
 function sshCmd(cmd) {
   const nvmProbe = 'export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; ';
-  return `bash -lc '${nvmProbe}${cmd}'`;
+  const npmGlobalProbe = '[ -d "$HOME/.npm-global/bin" ] && export PATH="$HOME/.npm-global/bin:$PATH"; ';
+  return `bash -lc '${nvmProbe}${npmGlobalProbe}${cmd}'`;
 }
 
 function npmGlobalInstall(pkg, user) {
@@ -354,8 +355,19 @@ export class TunnelManager {
     }
 
     if (!tunnelUp) {
-      try { process.kill(tunnel.pid); } catch { /* ignore */ }
-      throw new Error(`SSH tunnel started but port forward not active${stderrBuf.trim() ? ': ' + stderrBuf.trim() : ''}`);
+      // Remote daemon likely not running — start it and retry the port check
+      this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'starting' } });
+      try { await this.autoStart(id); } catch { /* best effort */ }
+      for (let elapsed = 0; elapsed < 15000; elapsed += 500) {
+        await new Promise((r) => setTimeout(r, 500));
+        if (tunnel.exitCode !== null) break;
+        tunnelUp = await this._isPortInUse(localPort);
+        if (tunnelUp) break;
+      }
+      if (!tunnelUp) {
+        try { process.kill(tunnel.pid); } catch { /* ignore */ }
+        throw new Error(`SSH tunnel started but remote daemon not reachable${stderrBuf.trim() ? ': ' + stderrBuf.trim() : ''}`);
+      }
     }
 
     tunnel.unref();
@@ -379,7 +391,7 @@ export class TunnelManager {
       remoteAlive = probe.ok;
     } catch { /* not reachable */ }
 
-    if (!remoteAlive && config.autoStart) {
+    if (!remoteAlive) {
       this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'starting' } });
       await this.autoStart(id);
       for (let i = 0; i < 5; i++) {
@@ -391,8 +403,6 @@ export class TunnelManager {
           if (retry.ok) { remoteAlive = true; break; }
         } catch { /* retry */ }
       }
-    } else if (!remoteAlive && !config.autoStart) {
-      this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'waiting', message: 'Remote daemon not running. Start it manually or enable auto-start.' } });
     }
 
     // Auto-upgrade: check version through tunnel, upgrade if behind

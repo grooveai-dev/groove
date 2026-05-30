@@ -1,10 +1,21 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { useRef, useCallback, useState } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import { LayoutList } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { FleetPane } from './fleet-pane';
+import { RecommendedTeamCard } from '../agents/recommended-team-card';
 
 export function FleetContent() {
+  const allAgents = useGrooveStore((s) => s.agents);
+  const checkRecommendedTeam = useGrooveStore((s) => s.checkRecommendedTeam);
+  const recommendedTeam = useGrooveStore((s) => s.recommendedTeam);
+
+  useEffect(() => {
+    const hasPlanner = allAgents.some((a) => a.role === 'planner' && (a.status === 'running' || a.status === 'starting'));
+    if (!hasPlanner) return;
+    const interval = setInterval(() => checkRecommendedTeam(), 5000);
+    return () => clearInterval(interval);
+  }, [allAgents, checkRecommendedTeam]);
   const rawSelected = useGrooveStore((s) => s.fleetSelectedAgents);
   const lastSelectedRef = useRef(rawSelected);
   if (rawSelected[0] || rawSelected[1]) lastSelectedRef.current = rawSelected;
@@ -67,7 +78,7 @@ export function FleetContent() {
   if (!selected[0] && !selected[1]) {
     return (
       <div
-        className="flex-1 flex flex-col items-center justify-center gap-3 text-text-3"
+        className="flex-1 flex flex-col items-center justify-center gap-3 text-text-3 relative"
         onDragOver={(e) => handleDragOver(e, 'left')}
         onDragLeave={handleDragLeave}
         onDrop={(e) => handleDrop(e, 0)}
@@ -75,13 +86,15 @@ export function FleetContent() {
         <LayoutList size={32} strokeWidth={1} className="text-text-4" />
         <p className="text-sm font-sans">Select an agent or drag one here</p>
         <p className="text-xs font-sans text-text-4">Cmd+Click or drag to open side-by-side</p>
+        <RecommendedTeamCard />
       </div>
     );
   }
 
   if (!splitMode || !selected[1]) {
     return (
-      <div className="flex-1 flex min-w-0 min-h-0">
+      <div className="flex-1 flex min-w-0 min-h-0 relative">
+        <RecommendedTeamCard />
         <div className="flex-1 min-w-0 min-h-0">
           <FleetPane agentId={selected[0]} paneIndex={0} />
         </div>
@@ -107,7 +120,8 @@ export function FleetContent() {
   }
 
   return (
-    <div className="flex-1 flex min-w-0 min-h-0">
+    <div className="flex-1 flex min-w-0 min-h-0 relative">
+      <RecommendedTeamCard />
       <div
         ref={leftRef}
         className={`min-w-0 min-h-0 ${dropTarget === 'left' ? 'ring-2 ring-inset ring-accent/30' : ''}`}

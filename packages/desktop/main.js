@@ -296,13 +296,14 @@ class WorkspaceManager {
       titleBarStyle: IS_MAC ? 'hiddenInset' : 'default',
       backgroundColor: '#0a0a0a',
       title: `${name} — Groove (Remote)`,
-      show: false,
+      show: true,
       webPreferences: {
         preload: join(__dirname, 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
         backgroundThrottling: false,
+        partition: `persist:remote-${localPort}`,
       },
     });
 
@@ -395,11 +396,7 @@ class WorkspaceManager {
 
     win.webContents.on('did-finish-load', () => { loadRetries = 0; });
 
-    // Clear HTTP cache before loading remote GUI — prevents stale bundles after npm update
-    win.webContents.session.clearCache().then(() => {
-      win.loadURL(remoteUrl);
-    });
-    win.once('ready-to-show', () => win.show());
+    win.loadURL(remoteUrl);
 
     win.webContents.setWindowOpenHandler(({ url }) => {
       try {
@@ -941,7 +938,7 @@ class WorkspaceManager {
     const template = [
       ...instanceItems,
       ...(instanceItems.length > 0 ? [{ type: 'separator' }] : []),
-      { label: 'Open Folder...', click: () => this._openFolderDialog() },
+      { label: 'New Window', click: () => this._openFolderDialog(), accelerator: 'CommandOrControl+N' },
       ...(recentItems.length > 0 ? [
         { type: 'separator' },
         { label: 'Recent Projects', enabled: false },
@@ -1708,6 +1705,9 @@ function createTray() {
       workspaces._homeWindow.show();
       workspaces._homeWindow.focus();
     }
+  });
+  tray.on('double-click', () => {
+    workspaces?._openFolderDialog();
   });
   workspaces?._updateTrayMenu();
 }

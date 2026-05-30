@@ -156,22 +156,35 @@ export function registerFileRoutes(app, daemon) {
     if (absPath.includes('\0')) return res.status(400).json({ error: 'Invalid path' });
     if (!existsSync(absPath)) return res.status(404).json({ error: 'Not found' });
 
+    const showFiles = req.query.files === 'true';
+    const showHidden = req.query.hidden === 'true';
+
     try {
-      const entries = readdirSync(absPath, { withFileTypes: true })
-        .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
+      const raw = readdirSync(absPath, { withFileTypes: true });
+
+      const dirs = raw
+        .filter((e) => e.isDirectory() && (showHidden || !e.name.startsWith('.')) && e.name !== 'node_modules')
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((e) => {
           const full = resolve(absPath, e.name);
           let hasChildren = false;
           try {
             hasChildren = readdirSync(full, { withFileTypes: true })
-              .some((c) => c.isDirectory() && !c.name.startsWith('.') && c.name !== 'node_modules');
+              .some((c) => c.isDirectory() && (showHidden || !c.name.startsWith('.')) && c.name !== 'node_modules');
           } catch { /* unreadable */ }
-          return { name: e.name, path: full, hasChildren };
+          return { name: e.name, path: full, hasChildren, type: 'dir' };
         });
 
+      let files = [];
+      if (showFiles) {
+        files = raw
+          .filter((e) => e.isFile() && (showHidden || !e.name.startsWith('.')))
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((e) => ({ name: e.name, path: resolve(absPath, e.name), type: 'file' }));
+      }
+
       const parent = absPath === '/' ? null : resolve(absPath, '..');
-      res.json({ current: absPath, parent, dirs: entries });
+      res.json({ current: absPath, parent, dirs, files });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

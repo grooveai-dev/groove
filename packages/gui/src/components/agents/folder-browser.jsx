@@ -6,7 +6,7 @@ import { api } from '../../lib/api';
 import { cn } from '../../lib/cn';
 import {
   FolderOpen, FolderClosed, ChevronRight, Home, HardDrive,
-  ArrowUp, Check, Loader2,
+  ArrowUp, Check, Loader2, FileKey,
 } from 'lucide-react';
 
 function BreadcrumbPath({ path, onNavigate }) {
@@ -43,29 +43,39 @@ function BreadcrumbPath({ path, onNavigate }) {
   );
 }
 
-export function FolderBrowser({ open, onOpenChange, currentPath, onSelect, homePath, mandatory = false, title }) {
+export function FolderBrowser({ open, onOpenChange, currentPath, onSelect, homePath, mandatory = false, title, mode = 'directory' }) {
   const home = homePath || '/home';
   const [path, setPath] = useState(currentPath || home);
   const [entries, setEntries] = useState([]);
+  const [files, setFiles] = useState([]);
+  const [selectedFile, setSelectedFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const isFileMode = mode === 'file';
+
   useEffect(() => {
     if (open) {
-      navigateTo(currentPath || home);
+      setSelectedFile(null);
+      const startPath = currentPath || home;
+      navigateTo(isFileMode && startPath.includes('/') ? startPath.split('/').slice(0, -1).join('/') || '/' : startPath);
     }
   }, [open]);
 
   async function navigateTo(target) {
     setLoading(true);
     setError(null);
+    setSelectedFile(null);
     try {
-      const data = await api.get(`/browse-system?path=${encodeURIComponent(target)}`);
+      const params = `path=${encodeURIComponent(target)}${isFileMode ? '&files=true&hidden=true' : ''}`;
+      const data = await api.get(`/browse-system?${params}`);
       setPath(data.current || target);
       setEntries(data.dirs || []);
+      setFiles(isFileMode ? (data.files || []) : []);
     } catch (err) {
       setError(err.message);
       setEntries([]);
+      setFiles([]);
     }
     setLoading(false);
   }
@@ -80,7 +90,7 @@ export function FolderBrowser({ open, onOpenChange, currentPath, onSelect, homeP
   }
 
   function handleSelect() {
-    onSelect(path);
+    onSelect(isFileMode && selectedFile ? selectedFile : path);
     if (!mandatory) onOpenChange(false);
   }
 
@@ -137,9 +147,9 @@ export function FolderBrowser({ open, onOpenChange, currentPath, onSelect, homeP
                   <p className="text-xs text-danger font-sans">{error}</p>
                 </div>
               )}
-              {!loading && !error && entries.length === 0 && (
+              {!loading && !error && entries.length === 0 && files.length === 0 && (
                 <div className="px-4 py-6 text-center">
-                  <p className="text-xs text-text-3 font-sans">No subdirectories</p>
+                  <p className="text-xs text-text-3 font-sans">{isFileMode ? 'No files found' : 'No subdirectories'}</p>
                 </div>
               )}
               {!loading && !error && entries.map((entry) => (
@@ -161,13 +171,31 @@ export function FolderBrowser({ open, onOpenChange, currentPath, onSelect, homeP
                   )}
                 </button>
               ))}
+              {!loading && !error && files.map((file) => (
+                <button
+                  key={file.path}
+                  onClick={() => setSelectedFile(file.path)}
+                  className={cn(
+                    'w-full flex items-center gap-2.5 px-3.5 py-2 text-left cursor-pointer',
+                    'transition-colors border-b border-border-subtle last:border-0',
+                    selectedFile === file.path ? 'bg-accent/10' : 'hover:bg-surface-4',
+                  )}
+                >
+                  <FileKey size={15} className={cn('flex-shrink-0', selectedFile === file.path ? 'text-accent' : 'text-text-3')} />
+                  <span className={cn('text-sm font-sans truncate flex-1', selectedFile === file.path ? 'text-accent font-medium' : 'text-text-0')}>{file.name}</span>
+                </button>
+              ))}
             </div>
           </div>
 
           {/* Current selection */}
           <div className="flex items-center gap-3 bg-surface-4/50 rounded-lg px-3.5 py-2.5 border border-border-subtle">
-            <FolderOpen size={16} className="text-accent flex-shrink-0" />
-            <span className="text-xs font-mono text-text-1 truncate flex-1">{path}</span>
+            {isFileMode && selectedFile ? (
+              <FileKey size={16} className="text-accent flex-shrink-0" />
+            ) : (
+              <FolderOpen size={16} className="text-accent flex-shrink-0" />
+            )}
+            <span className="text-xs font-mono text-text-1 truncate flex-1">{isFileMode && selectedFile ? selectedFile : path}</span>
           </div>
 
           {/* Actions */}
@@ -175,8 +203,8 @@ export function FolderBrowser({ open, onOpenChange, currentPath, onSelect, homeP
             {!mandatory && (
               <Button variant="ghost" size="md" onClick={() => onOpenChange(false)}>Cancel</Button>
             )}
-            <Button variant="primary" size="md" onClick={handleSelect} className="gap-1.5">
-              <Check size={14} /> Select Folder
+            <Button variant="primary" size="md" onClick={handleSelect} disabled={isFileMode && !selectedFile} className="gap-1.5">
+              <Check size={14} /> {isFileMode ? 'Select File' : 'Select Folder'}
             </Button>
           </div>
         </div>

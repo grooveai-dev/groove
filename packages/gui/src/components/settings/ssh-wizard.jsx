@@ -81,29 +81,29 @@ function ToggleSwitch({ value, onChange }) {
 
 function FieldCard({ icon: Icon, title, children }) {
   return (
-    <div className="rounded-xl border border-border-subtle bg-surface-1/80 px-5 py-4 flex flex-col gap-2.5">
-      <div className="flex items-center gap-2.5">
-        <div className="w-7 h-7 rounded-lg bg-accent/10 border border-accent/10 flex items-center justify-center flex-shrink-0">
-          <Icon size={13} className="text-accent" />
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded bg-[rgba(255,255,255,0.04)] border border-[#2c313a] flex items-center justify-center flex-shrink-0">
+          <Icon size={15} className="text-[#8b95a5]" />
         </div>
-        <span className="text-sm font-semibold text-text-0 font-sans">{title}</span>
+        <span className="text-[15px] font-semibold text-[#e6e8ed]" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif", letterSpacing: '-0.2px' }}>{title}</span>
       </div>
-      <div className="mt-0.5">{children}</div>
+      <div>{children}</div>
     </div>
   );
 }
 
 function InfoCard({ icon: Icon, title, iconColor, children }) {
   return (
-    <div className="rounded-xl border border-border-subtle bg-surface-1/80 px-5 py-4">
-      <div className="flex items-center gap-2.5 mb-3">
+    <div>
+      <div className="flex items-center gap-3 mb-4">
         <div className={cn(
-          'w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0',
-          iconColor || 'bg-accent/10',
+          'w-8 h-8 rounded border border-[#2c313a] flex items-center justify-center flex-shrink-0',
+          iconColor || 'bg-[rgba(255,255,255,0.04)]',
         )}>
-          <Icon size={13} className={iconColor ? undefined : 'text-accent'} />
+          <Icon size={15} className={iconColor ? undefined : 'text-[#8b95a5]'} />
         </div>
-        <span className="text-sm font-semibold text-text-0 font-sans">{title}</span>
+        <span className="text-[15px] font-semibold text-[#e6e8ed]" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif", letterSpacing: '-0.2px' }}>{title}</span>
       </div>
       {children}
     </div>
@@ -342,11 +342,13 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
     setConnecting(false);
   }
 
-  const inputCls = 'h-9 px-3 text-xs bg-surface-0 border border-border-subtle rounded-lg text-text-0 font-sans placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent/50 focus:border-accent/30 transition-colors';
-  const monoInputCls = 'h-9 px-3 text-xs bg-surface-0 border border-border-subtle rounded-lg text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent/50 focus:border-accent/30 transition-colors';
+  const inputCls = 'h-[38px] px-[13px] text-[13px] bg-[#1e2127] border border-[#2c313a] rounded text-[#e6e8ed] placeholder:text-[#4a5060] focus:outline-none focus:border-[#33afbc] focus:bg-[#1a1e25] transition-colors';
+  const monoInputCls = 'h-[38px] px-[13px] text-[13px] bg-[#1e2127] border border-[#2c313a] rounded text-[#e6e8ed] placeholder:text-[#4a5060] focus:outline-none focus:border-[#33afbc] focus:bg-[#1a1e25] transition-colors';
+  const inputStyle = { fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif" };
+  const monoStyle = { fontFamily: "ui-monospace, 'SF Mono', Monaco, monospace" };
 
   return (
-    <div className="p-5">
+    <div className="p-6">
       <StepIndicator
         steps={STEPS}
         currentStep={step}
@@ -359,22 +361,24 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
           <FieldCard icon={Server} title="Server Info">
             <div className="space-y-3">
               <div>
-                <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">Name</label>
+                <label className="block text-[10.5px] font-medium text-[#8b95a5] mb-1.5 uppercase tracking-wider" style={{ fontFamily: "ui-monospace, 'SF Mono', Monaco, monospace", letterSpacing: '0.6px' }}>Name</label>
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="api-vps"
                   className={cn(inputCls, 'w-full')}
+                  style={inputStyle}
                   autoFocus
                 />
               </div>
               <div>
-                <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">Host</label>
+                <label className="block text-[10.5px] font-medium text-[#8b95a5] mb-1.5 uppercase tracking-wider" style={{ fontFamily: "ui-monospace, 'SF Mono', Monaco, monospace", letterSpacing: '0.6px' }}>Host</label>
                 <input
                   value={host}
                   onChange={(e) => setHost(e.target.value)}
                   placeholder="165.22.180.45"
                   className={cn(monoInputCls, 'w-full')}
+                  style={monoStyle}
                 />
               </div>
             </div>
@@ -383,21 +387,23 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
           <FieldCard icon={Settings} title="Connection">
             <div className="space-y-3">
               <div>
-                <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">User</label>
+                <label className="block text-[10.5px] font-medium text-[#8b95a5] mb-1.5 uppercase tracking-wider" style={{ fontFamily: "ui-monospace, 'SF Mono', Monaco, monospace", letterSpacing: '0.6px' }}>User</label>
                 <input
                   value={user}
                   onChange={(e) => setUser(e.target.value)}
                   placeholder="root"
                   className={cn(monoInputCls, 'w-full')}
+                  style={monoStyle}
                 />
               </div>
               <div>
-                <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">SSH Port</label>
+                <label className="block text-[10.5px] font-medium text-[#8b95a5] mb-1.5 uppercase tracking-wider" style={{ fontFamily: "ui-monospace, 'SF Mono', Monaco, monospace", letterSpacing: '0.6px' }}>SSH Port</label>
                 <input
                   value={sshPort}
                   onChange={(e) => setSshPort(Number(e.target.value) || 22)}
                   type="number"
-                  className={cn(monoInputCls, 'w-24')}
+                  className={cn(monoInputCls, 'w-28')}
+                  style={monoStyle}
                 />
               </div>
             </div>
@@ -410,74 +416,72 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
           <FieldCard icon={KeyRound} title="SSH Key">
             <div className="space-y-3">
               <div>
-                <label className="text-2xs font-semibold text-text-2 font-sans mb-1.5 block">Key Path</label>
-                <div className="flex items-center gap-1.5">
+                <label className="block text-[10.5px] font-medium text-[#8b95a5] mb-1.5 uppercase tracking-wider" style={{ fontFamily: "ui-monospace, 'SF Mono', Monaco, monospace", letterSpacing: '0.6px' }}>Key Path</label>
+                <div className="flex items-center gap-2">
                   <input
                     value={sshKeyPath}
                     onChange={(e) => setSshKeyPath(e.target.value)}
                     placeholder="~/.ssh/id_ed25519"
                     className={cn(monoInputCls, 'flex-1 min-w-0')}
+                    style={monoStyle}
                     autoFocus
                   />
-                  <Button
-                    variant="secondary"
-                    size="sm"
+                  <button
                     onClick={() => setKeyBrowserOpen(true)}
-                    className="h-9 px-2.5 flex-shrink-0"
+                    className="h-[38px] px-3 rounded bg-transparent border border-[#3e4451] text-[#8b95a5] hover:border-[#4a5060] hover:text-[#e6e8ed] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors flex-shrink-0"
                   >
-                    <FolderSearch size={13} />
-                  </Button>
+                    <FolderSearch size={15} />
+                  </button>
                 </div>
-                <p className="text-2xs text-text-4 font-sans mt-1.5">
+                <p className="text-xs text-[#6e7681] mt-2" style={monoStyle}>
                   Leave blank to use default SSH agent.
                 </p>
               </div>
-              <Button
-                variant="secondary"
-                size="sm"
+              <button
                 onClick={handleTest}
                 disabled={testLoading}
-                className="h-8 text-2xs gap-1.5"
+                className="inline-flex items-center gap-2 h-9 px-4 rounded bg-transparent border border-[#3e4451] text-[#8b95a5] text-[12.5px] font-medium cursor-pointer transition-colors hover:border-[#4a5060] hover:text-[#e6e8ed] hover:bg-[rgba(255,255,255,0.025)] disabled:opacity-30 disabled:cursor-not-allowed"
+                style={inputStyle}
               >
-                {testLoading ? <Loader2 size={11} className="animate-spin" /> : <Plug size={11} />}
+                {testLoading ? <Loader2 size={13} className="animate-spin" /> : <Plug size={13} />}
                 Test Connection
-              </Button>
+              </button>
             </div>
           </FieldCard>
 
           <div className="space-y-4">
             <InfoCard icon={Server} title="Target">
-              <div className="space-y-2 text-2xs font-sans">
+              <div className="space-y-2.5 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-text-3">Host</span>
-                  <span className="text-text-1 font-mono">{host || '—'}</span>
+                  <span className="text-[#6e7681] uppercase text-[11px] tracking-wide" style={monoStyle}>Host</span>
+                  <span className="text-[#e6e8ed] text-xs" style={monoStyle}>{host || '—'}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-text-3">User</span>
-                  <span className="text-text-1 font-mono">{user || '—'}</span>
+                  <span className="text-[#6e7681] uppercase text-[11px] tracking-wide" style={monoStyle}>User</span>
+                  <span className="text-[#e6e8ed] text-xs" style={monoStyle}>{user || '—'}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-text-3">Port</span>
-                  <span className="text-text-1 font-mono">{sshPort}</span>
+                  <span className="text-[#6e7681] uppercase text-[11px] tracking-wide" style={monoStyle}>Port</span>
+                  <span className="text-[#e6e8ed] text-xs" style={monoStyle}>{sshPort}</span>
                 </div>
               </div>
             </InfoCard>
 
             {testResult && (
               <div className={cn(
-                'px-4 py-3 rounded-xl text-2xs font-sans flex items-start gap-2',
+                'px-4 py-3.5 rounded text-xs flex items-start gap-2.5',
                 testResult.error
-                  ? 'bg-danger/8 border border-danger/20 text-danger'
+                  ? 'bg-[#1e2127] border border-[#ef4444]/25 text-[#ef4444]'
                   : testResult.reachable
-                    ? 'bg-success/8 border border-success/20 text-success'
-                    : 'bg-warning/8 border border-warning/20 text-warning',
-              )}>
+                    ? 'bg-[#1e2127] border border-[#33afbc]/25 text-[#33afbc]'
+                    : 'bg-[#1e2127] border border-[#fbbf24]/25 text-[#fbbf24]',
+              )} style={inputStyle}>
                 {testResult.error ? (
-                  <><X size={11} className="mt-0.5 flex-shrink-0" /> {testResult.error}</>
+                  <><X size={13} className="mt-0.5 flex-shrink-0" /> {testResult.error}</>
                 ) : testResult.reachable ? (
-                  <><Check size={11} className="mt-0.5 flex-shrink-0" /> Server reachable</>
+                  <><Check size={13} className="mt-0.5 flex-shrink-0" /> Server reachable</>
                 ) : (
-                  <><AlertTriangle size={11} className="mt-0.5 flex-shrink-0" /> Host unreachable</>
+                  <><AlertTriangle size={13} className="mt-0.5 flex-shrink-0" /> Host unreachable</>
                 )}
               </div>
             )}
@@ -489,6 +493,8 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
             currentPath={sshKeyPath || '~/.ssh'}
             homePath={remoteHomedir}
             onSelect={(path) => setSshKeyPath(path)}
+            mode="file"
+            title="Select SSH Key"
           />
         </div>
       )}
@@ -601,48 +607,44 @@ export function SSHWizard({ server, onSave, onTest, onConnect, onCancel }) {
         </div>
       )}
 
-      <div className="flex items-center justify-between mt-5">
-        <Button
-          variant="ghost"
-          size="sm"
+      <div className="flex items-center justify-between mt-6">
+        <button
           onClick={step === 0 ? onCancel : step === 3 ? onCancel : handleBack}
-          className="h-8 text-xs px-4 text-text-3"
+          className="inline-flex items-center h-9 px-4 rounded bg-transparent border border-[#3e4451] text-[#8b95a5] text-[12.5px] font-medium cursor-pointer transition-colors hover:border-[#4a5060] hover:text-[#e6e8ed] hover:bg-[rgba(255,255,255,0.025)]"
+          style={inputStyle}
         >
           {step === 0 ? 'Cancel' : step === 3 ? 'Done' : 'Back'}
-        </Button>
+        </button>
         {step < 3 && (
           <div className="flex gap-2">
             {step === 2 ? (
-              <Button
-                variant="primary"
-                size="sm"
+              <button
                 onClick={handleConnect}
                 disabled={connecting || saving}
-                className="h-8 text-xs px-4 gap-1.5"
+                className="inline-flex items-center gap-2 h-9 px-5 rounded bg-[#33afbc] text-[#0a0c10] text-[12.5px] font-semibold cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                style={inputStyle}
               >
-                {connecting ? <Loader2 size={12} className="animate-spin" /> : <Plug size={12} />}
+                {connecting ? <Loader2 size={14} className="animate-spin" /> : <Plug size={14} />}
                 {connecting ? 'Connecting...' : 'Connect'}
-              </Button>
+              </button>
             ) : step === 1 ? (
-              <Button
-                variant="primary"
-                size="sm"
+              <button
                 onClick={handleSaveAndSetup}
                 disabled={saving}
-                className="h-8 text-xs px-4"
+                className="inline-flex items-center h-9 px-5 rounded bg-[#33afbc] text-[#0a0c10] text-[12.5px] font-semibold cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                style={inputStyle}
               >
                 {saving ? 'Saving...' : 'Next'}
-              </Button>
+              </button>
             ) : (
-              <Button
-                variant="primary"
-                size="sm"
+              <button
                 onClick={handleNext}
                 disabled={!canAdvanceStep0()}
-                className="h-8 text-xs px-4"
+                className="inline-flex items-center h-9 px-5 rounded bg-[#33afbc] text-[#0a0c10] text-[12.5px] font-semibold cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                style={inputStyle}
               >
                 Next
-              </Button>
+              </button>
             )}
           </div>
         )}

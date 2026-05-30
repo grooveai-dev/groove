@@ -19,6 +19,7 @@ import { Select, SelectTrigger, SelectContent, SelectItem } from '../components/
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Tooltip } from '../components/ui/tooltip';
 import { TuningSlider } from '../components/ui/slider';
+import { RecommendedTeamCard } from '../components/agents/recommended-team-card';
 
 const NODE_TYPES = { agentNode: AgentNode, rootNode: RootNode };
 const NODE_W = 220;
@@ -1233,17 +1234,7 @@ function EmptyState({ onPlanner, onSpawn, onTeamBuilder }) {
   );
 }
 
-/* ── Recommended Team Launch Card ─────────────────────────── */
-
-const ROLE_ICONS = { backend: Server, frontend: Monitor, fullstack: Code2, testing: TestTube, security: Shield };
-
-const NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
-
-function sanitizeName(raw) {
-  return raw.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
-}
-
-function RecommendedTeamCard() {
+function _RecommendedTeamCard_removed() { return null; /* extracted to components/agents/recommended-team-card.jsx */
   const recommendedTeam = useGrooveStore((s) => s.recommendedTeam);
   const launchRecommendedTeam = useGrooveStore((s) => s.launchRecommendedTeam);
   const teamLaunchConfig = useGrooveStore((s) => s.teamLaunchConfig);

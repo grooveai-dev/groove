@@ -1580,6 +1580,7 @@ export default function SettingsView() {
   const [folderBrowserOpen, setFolderBrowserOpen] = useState(false);
   const addToast = useGrooveStore((s) => s.addToast);
   const remoteHomedir = useGrooveStore((s) => s.remoteHomedir);
+  const tunneled = useGrooveStore((s) => s.tunneled);
   const providerRefreshTick = useGrooveStore((s) => s._providerRefreshTick);
 
   function loadProviders() {
@@ -1764,7 +1765,7 @@ export default function SettingsView() {
                       {config.defaultWorkingDir || 'Project root'}
                     </code>
                     <Button variant="secondary" size="sm" onClick={async () => {
-                      if (window.groove?.folders?.select) {
+                      if (window.groove?.folders?.select && !tunneled) {
                         const dir = await window.groove.folders.select({
                           title: 'Select Working Directory',
                           defaultPath: config?.defaultWorkingDir || undefined,

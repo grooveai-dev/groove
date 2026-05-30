@@ -17,12 +17,14 @@ export function QuickConnect() {
   const addToast = useGrooveStore((s) => s.addToast);
   const tunnelStep = useGrooveStore((s) => s.tunnelConnectStep);
   const [connectingId, setConnectingId] = useState(null);
+  const [openingServer, setOpeningServer] = useState(null);
   const [showWizard, setShowWizard] = useState(false);
   const wizardTunnelId = useRef(null);
 
   useEffect(() => {
     if (open) {
       setShowWizard(false);
+      setOpeningServer(null);
       useGrooveStore.getState().fetchTunnels();
     }
   }, [open]);
@@ -34,14 +36,15 @@ export function QuickConnect() {
     try {
       await useGrooveStore.getState().connectTunnel(id);
       const tunnel = savedTunnels.find((t) => t.id === id);
+      setConnectingId(null);
+      setOpeningServer({ name: tunnel?.name || 'Remote' });
       if (tunnel?.host) {
         addToast('info', `Add ${tunnel.host} to Federation Whitelist?`, '', {
           label: 'Add',
           onClick: () => useGrooveStore.getState().addToWhitelist(tunnel.host),
         });
       }
-      setConnectingId(null);
-      toggle();
+      setTimeout(() => { setOpeningServer(null); toggle(); }, 4000);
       return;
     } catch (err) {
       const detail = err?.message || 'Unknown error';
@@ -90,32 +93,55 @@ export function QuickConnect() {
           exit={{ opacity: 0, y: -10, scale: 0.98 }}
           transition={{ duration: 0.15 }}
           className={cn(
-            'fixed top-[15%] left-1/2 -translate-x-1/2 z-50 bg-surface-1 border border-border rounded-lg shadow-2xl overflow-hidden',
-            showWizard ? 'w-[520px]' : 'w-[400px]',
+            'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-[#24282f] border border-[#2c313a] rounded-lg shadow-2xl overflow-hidden',
+            showWizard ? 'w-[680px]' : 'w-[480px]',
           )}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-[#2c313a]">
+            <div className="flex items-center gap-3">
               {showWizard && (
                 <button
                   onClick={() => setShowWizard(false)}
-                  className="p-1 -ml-1 text-text-4 hover:text-text-1 cursor-pointer transition-colors"
+                  className="p-1.5 -ml-1 text-[#6e7681] hover:text-[#e6e8ed] cursor-pointer transition-colors"
                 >
-                  <ArrowLeft size={14} />
+                  <ArrowLeft size={16} />
                 </button>
               )}
-              <Radio size={15} className="text-accent" />
-              <span className="text-sm font-semibold text-text-0 font-sans">
+              <Radio size={17} className="text-[#33afbc]" />
+              <span className="text-base font-semibold text-[#e6e8ed]" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif", letterSpacing: '-0.2px' }}>
                 {showWizard ? (wizardTunnelId.current ? 'Connection Setup' : 'Add Connection') : 'Quick Connect'}
               </span>
             </div>
-            <button onClick={handleClose} className="p-1 text-text-4 hover:text-text-1 cursor-pointer transition-colors">
-              <X size={14} />
+            <button onClick={handleClose} className="p-1.5 text-[#6e7681] hover:text-[#e6e8ed] cursor-pointer transition-colors">
+              <X size={16} />
             </button>
           </div>
 
-          {showWizard ? (
+          {openingServer ? (
+            <div className="px-6 py-12 text-center">
+              <div className="relative w-14 h-14 mx-auto mb-5">
+                <span className="absolute inset-0 rounded-full border-2 border-[#33afbc]/20 animate-ping" style={{ animationDuration: '2s' }} />
+                <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-[#33afbc] animate-spin" style={{ animationDuration: '1s' }} />
+                <span className="absolute inset-[6px] rounded-full bg-[#33afbc]/8 flex items-center justify-center">
+                  <Server size={18} className="text-[#33afbc]" />
+                </span>
+              </div>
+              <p className="text-base font-semibold text-[#e6e8ed] mb-1.5" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif" }}>
+                Opening {openingServer.name}
+              </p>
+              <p className="text-sm text-[#6e7681]" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif" }}>
+                Loading remote dashboard...
+              </p>
+              <button
+                onClick={() => { setOpeningServer(null); toggle(); }}
+                className="mt-6 text-xs text-[#6e7681] hover:text-[#e6e8ed] cursor-pointer transition-colors"
+                style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif" }}
+              >
+                Dismiss
+              </button>
+            </div>
+          ) : showWizard ? (
             <SSHWizard
               server={wizardTunnelId.current ? savedTunnels.find((t) => t.id === wizardTunnelId.current) || null : null}
               onSave={async (data) => {
@@ -145,45 +171,49 @@ export function QuickConnect() {
           ) : (
             <>
               {/* Server list */}
-              <div className="overflow-y-auto max-h-[320px] py-1">
+              <div className="overflow-y-auto max-h-[400px] py-2">
                 {savedTunnels.length === 0 ? (
-                  <div className="px-4 py-8 text-center">
-                    <Server size={24} className="text-text-4 mx-auto mb-2" />
-                    <p className="text-sm text-text-3 font-sans">No saved servers</p>
-                    <p className="text-2xs text-text-4 font-sans mt-1">Add a connection to get started.</p>
-                    <Button
-                      variant="primary"
-                      size="sm"
+                  <div className="px-6 py-10 text-center">
+                    <Server size={32} className="text-[#6e7681] mx-auto mb-3" />
+                    <p className="text-base font-semibold text-[#e6e8ed]" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif" }}>No saved servers</p>
+                    <p className="text-xs text-[#6e7681] mt-1.5" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif" }}>Add a connection to get started.</p>
+                    <button
                       onClick={() => { wizardTunnelId.current = null; setShowWizard(true); }}
-                      className="h-8 text-xs gap-1.5 mt-3"
+                      className="inline-flex items-center gap-1.5 h-9 px-5 mt-4 rounded bg-[#33afbc] text-[#0a0c10] text-sm font-semibold cursor-pointer transition-opacity hover:opacity-90"
+                      style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif" }}
                     >
-                      <Plus size={12} /> Add Connection
-                    </Button>
+                      <Plus size={14} /> Add Connection
+                    </button>
                   </div>
                 ) : (
                   savedTunnels.map((server) => (
                     <div
                       key={server.id}
                       className={cn(
-                        'w-full flex items-center gap-3 px-4 py-2.5 transition-colors',
-                        'hover:bg-surface-5',
+                        'w-full flex items-center gap-4 px-5 py-3.5 transition-colors',
+                        'hover:bg-[#2c313a]',
                         connectingId === server.id && 'opacity-60 pointer-events-none',
                       )}
                     >
-                      <Server size={15} className={server.active ? 'text-success' : 'text-text-4'} />
+                      <div className={cn(
+                        'w-10 h-10 rounded flex items-center justify-center flex-shrink-0',
+                        server.active ? 'bg-[#33afbc]/10' : 'bg-[rgba(255,255,255,0.04)]',
+                      )}>
+                        <Server size={18} className={server.active ? 'text-[#33afbc]' : 'text-[#8b95a5]'} />
+                      </div>
                       <button
                         onClick={() => server.active ? handleOpenRemote(server) : handleConnect(server.id)}
                         disabled={connectingId === server.id}
                         className="flex-1 min-w-0 text-left cursor-pointer"
                       >
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-text-0 font-sans truncate">{server.name}</span>
+                          <span className="text-sm font-semibold text-[#e6e8ed] truncate" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif", letterSpacing: '-0.2px' }}>{server.name}</span>
                           {server.active && <StatusDot status="running" size="sm" />}
                           {server.remoteVersion && (
-                            <span className="text-2xs font-mono text-text-4 ml-1">v{server.remoteVersion}</span>
+                            <span className="text-xs text-[#6e7681] ml-1" style={{ fontFamily: "ui-monospace, 'SF Mono', Monaco, monospace" }}>v{server.remoteVersion}</span>
                           )}
                         </div>
-                        <span className="text-2xs text-text-4 font-mono">{server.user}@{server.host}</span>
+                        <span className="text-xs text-[#6e7681]" style={{ fontFamily: "ui-monospace, 'SF Mono', Monaco, monospace" }}>{server.user}@{server.host}</span>
                       </button>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         {connectingId === server.id ? (
@@ -267,12 +297,13 @@ export function QuickConnect() {
               </div>
 
               {/* Footer with Add button */}
-              <div className="px-4 py-2.5 border-t border-border-subtle">
+              <div className="px-5 py-3.5 border-t border-[#2c313a]">
                 <button
                   onClick={() => { wizardTunnelId.current = null; setShowWizard(true); }}
-                  className="flex items-center gap-1.5 text-2xs text-accent hover:text-accent/80 font-sans font-medium cursor-pointer transition-colors"
+                  className="flex items-center gap-2 text-sm text-[#33afbc] hover:opacity-80 font-semibold cursor-pointer transition-opacity"
+                  style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif" }}
                 >
-                  <Plus size={10} /> Add new connection
+                  <Plus size={14} /> Add new connection
                 </button>
               </div>
             </>

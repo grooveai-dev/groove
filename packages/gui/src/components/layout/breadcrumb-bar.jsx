@@ -140,13 +140,13 @@ export function BreadcrumbBar({
   const [instanceName, setInstanceName] = useState(null);
 
   useEffect(() => {
-    if (window.groove?.getInstanceInfo) {
+    const urlParam = new URLSearchParams(window.location.search).get('instance');
+    if (urlParam) {
+      setInstanceName(urlParam);
+    } else if (window.groove?.getInstanceInfo) {
       window.groove.getInstanceInfo().then(info => {
         if (info?.name) setInstanceName(info.name);
       });
-    } else {
-      const param = new URLSearchParams(window.location.search).get('instance');
-      if (param) setInstanceName(param);
     }
   }, []);
 

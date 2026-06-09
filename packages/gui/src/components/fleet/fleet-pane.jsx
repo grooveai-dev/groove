@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, PanelRight } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/badge';
@@ -27,7 +27,7 @@ const STATUS_LABEL = {
   rotating: 'Rotating',
 };
 
-export function FleetPane({ agentId, paneIndex }) {
+export function FleetPane({ agentId, paneIndex, readOnly = false }) {
   const effectiveId = agentId || null;
   const lastIdRef = useRef(effectiveId);
   if (effectiveId) lastIdRef.current = effectiveId;
@@ -36,6 +36,9 @@ export function FleetPane({ agentId, paneIndex }) {
   const liveAgent = useGrooveStore((s) => resolvedId ? s.agents.find((a) => a.id === resolvedId) : null);
   const fleetSelectAgent = useGrooveStore((s) => s.fleetSelectAgent);
   const fleetMarkRead = useGrooveStore((s) => s.fleetMarkRead);
+  const openDetail = useGrooveStore((s) => s.openDetail);
+  const detailPanel = useGrooveStore((s) => s.detailPanel);
+  const isPanelOpen = detailPanel?.type === 'agent' && detailPanel?.agentId === resolvedId;
 
   const lastAgentRef = useRef(liveAgent);
   const [gone, setGone] = useState(false);
@@ -93,6 +96,16 @@ export function FleetPane({ agentId, paneIndex }) {
           {ctxPct}%
         </span>
         <button
+          onClick={() => openDetail({ type: 'agent', agentId: resolvedId })}
+          className={cn(
+            'p-1 rounded-md transition-colors cursor-pointer',
+            isPanelOpen ? 'text-accent' : 'text-text-3 hover:text-text-0 hover:bg-surface-3',
+          )}
+          title="Open agent panel"
+        >
+          <PanelRight size={14} />
+        </button>
+        <button
           onClick={() => fleetSelectAgent(null, paneIndex)}
           className="p-1 rounded-md text-text-3 hover:text-text-0 hover:bg-surface-3 transition-colors cursor-pointer"
           title="Close pane"
@@ -103,7 +116,7 @@ export function FleetPane({ agentId, paneIndex }) {
 
       {/* Agent feed */}
       <div className="flex-1 min-h-0">
-        <AgentFeed agent={agent} />
+        <AgentFeed agent={agent} readOnly={readOnly} />
       </div>
     </div>
   );

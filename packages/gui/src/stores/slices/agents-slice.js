@@ -38,6 +38,8 @@ export const createAgentsSlice = (set, get) => ({
   // ── Agent Actions ─────────────────────────────────────────
 
   selectAgent(id) {
+    // In fleet view, selection is managed by fleetSelectAgent — don't override detail panel here
+    if (get().activeView === 'fleet') return;
     const tid = get().activeTeamId;
     const match = get().agents.find((a) => a.id === id);
     if (tid && match && match.teamId && match.teamId !== tid) return;

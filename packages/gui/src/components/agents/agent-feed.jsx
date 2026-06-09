@@ -601,7 +601,7 @@ function SnippetTag({ snippet, onRemove }) {
 
 // ── Main Feed ────────────────────────────────────────────────
 
-export function AgentFeed({ agent }) {
+export function AgentFeed({ agent, readOnly = false }) {
   const rawChatHistory = useGrooveStore((s) => s.chatHistory[agent.id]) || EMPTY;
   const rawActivityLog = useGrooveStore((s) => s.activityLog[agent.id]) || EMPTY;
   const instructAgent = useGrooveStore((s) => s.instructAgent);
@@ -903,8 +903,8 @@ export function AgentFeed({ agent }) {
         </AnimatePresence>
       </div>
 
-      {/* Input area */}
-      <div className="bg-surface-1/50 flex-shrink-0">
+      {/* Input area — hidden in readOnly (fleet single-pane) mode, chat is in the right detail panel */}
+      {readOnly ? null : <div className="bg-surface-1/50 flex-shrink-0">
         {/* Drag handle */}
         <div
           ref={dragRef}
@@ -1115,7 +1115,7 @@ export function AgentFeed({ agent }) {
           </div>
         </div>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

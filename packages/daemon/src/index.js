@@ -46,6 +46,7 @@ import { MLXServerManager } from './mlx-server.js';
 import { RepoImporter } from './repo-import.js';
 import { ConversationManager } from './conversations.js';
 import { Toys } from './toys.js';
+import { InnerChat } from './innerchat.js';
 import { TrajectoryCapture, ConsentManager } from '../../../moe-training/client/index.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 import { bindDaemon as bindGrooveNetworkDaemon } from './providers/groove-network.js';
@@ -158,6 +159,7 @@ export class Daemon {
     this.repoImporter = new RepoImporter(this);
     this.modelLab = new ModelLab(this);
     this.toys = new Toys(this);
+    this.innerchat = new InnerChat(this);
     this.trajectoryCapture = null;
 
     // Hook teams.delete to clean up agent-loop session files

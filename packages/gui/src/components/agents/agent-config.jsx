@@ -548,6 +548,7 @@ export function AgentConfig({ agent }) {
             { value: 'default', label: 'Default' },
             { value: 'high', label: 'High' },
             { value: 'max', label: 'Max' },
+            { value: 'ultra', label: 'Ultra' },
           ]}
           value={effort}
           onChange={handleEffort}

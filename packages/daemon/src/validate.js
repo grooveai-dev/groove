@@ -112,7 +112,7 @@ export function validateAgentConfig(config) {
     if (!isNaN(v) && v >= 0 && v <= 100) verbosity = Math.round(v);
   }
 
-  const validEffort = ['min', 'low', 'default', 'high', 'max'];
+  const validEffort = ['min', 'low', 'default', 'high', 'max', 'ultra'];
   const effort = validEffort.includes(config.effort) ? config.effort : undefined;
 
   const validRouting = ['fixed', 'auto', 'auto-floor'];
@@ -227,7 +227,7 @@ export function validateGatewayConfig(config) {
   };
 }
 
-const VALID_REASONING_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh'];
+const VALID_REASONING_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh', 'ultra'];
 const VALID_VERBOSITIES = ['low', 'medium'];
 
 export function validateReasoningEffort(value) {

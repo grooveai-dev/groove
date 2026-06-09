@@ -102,6 +102,20 @@ export const createAgentsSlice = (set, get) => ({
     }
   },
 
+  // ── InnerChat ─────────────────────────────────────────────
+
+  innerchatMessages: loadJSON('groove:innerchatMessages') || {},
+
+  async sendInnerChat(fromId, toId, message) {
+    try {
+      const msg = await api.post('/innerchat/send', { from: fromId, to: toId, message });
+      return msg;
+    } catch (err) {
+      get().addToast('error', 'InnerChat failed', err.message);
+      throw err;
+    }
+  },
+
   // ── Chat ──────────────────────────────────────────────────
 
   addChatMessage(agentId, from, text, isQuery = false, attachments = undefined) {

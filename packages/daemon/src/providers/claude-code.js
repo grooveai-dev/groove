@@ -39,6 +39,7 @@ export class ClaudeCodeProvider extends Provider {
   static authType = 'subscription';
   static managesOwnContext = true; // Claude Code compacts context internally (~25-37% → 2-8%)
   static models = [
+    { id: 'claude-fable-5', name: 'Claude Fable 5', tier: 'heavy', contextWindow: 1_000_000 },
     { id: 'claude-opus-4-8', name: 'Claude Opus 4.8', tier: 'heavy', contextWindow: 1_000_000 },
     { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', tier: 'heavy', contextWindow: 1_000_000 },
     { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', tier: 'medium', contextWindow: 200_000 },
@@ -74,7 +75,7 @@ export class ClaudeCodeProvider extends Provider {
   normalizeConfig(config) {
     if (typeof config.reasoningEffort === 'number') {
       const e = config.reasoningEffort;
-      config.effort = e <= 20 ? 'none' : e <= 40 ? 'low' : e <= 60 ? 'medium' : e <= 80 ? 'high' : 'xhigh';
+      config.effort = e <= 15 ? 'none' : e <= 30 ? 'low' : e <= 50 ? 'medium' : e <= 70 ? 'high' : e <= 85 ? 'xhigh' : 'ultra';
     }
     return config;
   }

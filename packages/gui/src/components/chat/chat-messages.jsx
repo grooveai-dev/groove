@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { Copy, Check, ArrowRight, Download, Maximize2, X, Image as ImageIcon, RefreshCw, Loader2 } from 'lucide-react';
+import { Copy, Check, ArrowRight, Download, Maximize2, X, Image as ImageIcon, RefreshCw, Loader2, MessageSquare } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
 import { ThinkingIndicator } from '../ui/thinking-indicator';
@@ -391,6 +391,29 @@ function SystemMessage({ msg }) {
   );
 }
 
+function InnerChatMessage({ msg }) {
+  const senderName = msg.innerchat?.fromAgent?.name || 'Agent';
+  const senderRole = msg.innerchat?.fromAgent?.role;
+  const cleanText = stripEmojis(msg.text);
+  return (
+    <div className="max-w-[85%]">
+      <div className="flex items-center gap-1.5 mb-1">
+        <MessageSquare size={11} className="text-warning" />
+        <span className="text-2xs font-sans font-medium text-warning">InnerChat</span>
+        <span className="text-2xs font-sans text-text-3">from</span>
+        <span className="text-2xs font-sans font-medium text-text-1">{senderName}</span>
+        {senderRole && <span className="text-2xs font-sans text-text-3">{senderRole}</span>}
+      </div>
+      <div className="border-l-2 border-warning/40 pl-3.5 py-1">
+        <div className="text-sm text-text-1 font-sans whitespace-pre-wrap break-words leading-relaxed">
+          <RenderedMarkdown text={cleanText} />
+        </div>
+      </div>
+      <div className="text-2xs text-text-4 font-sans mt-1">{timeAgo(msg.timestamp)}</div>
+    </div>
+  );
+}
+
 function StreamingCursor() {
   return (
     <span className="inline-block w-2 h-4 bg-accent/60 ml-0.5 animate-pulse rounded-sm" />
@@ -484,6 +507,7 @@ export function ChatMessages({ messages, isStreaming, model, mode, onImageReply,
       {messages.map((msg, i) => {
         if (msg.type === 'image-loading') return <ImageLoadingMessage key={i} msg={msg} />;
         if (msg.type === 'image') return <ImageMessage key={i} msg={msg} onReply={onImageReply} />;
+        if (msg.from === 'innerchat') return <InnerChatMessage key={i} msg={msg} />;
         if (msg.from === 'user') return <UserMessage key={i} msg={msg} />;
         if (msg.from === 'system') return <SystemMessage key={i} msg={msg} />;
         return <AssistantMessage key={i} msg={msg} model={model} role={role} />;

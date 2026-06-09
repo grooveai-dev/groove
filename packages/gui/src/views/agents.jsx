@@ -1470,7 +1470,7 @@ function _RecommendedTeamCard_removed() { return null; /* extracted to component
                     <div className="space-y-1">
                       <label className="flex items-center gap-1 text-2xs text-text-3 font-sans"><Gauge size={10} />Effort Level</label>
                       <div className="flex bg-surface-3 rounded-md p-0.5 border border-border-subtle">
-                        {[{ value: 'min', label: 'Min' }, { value: 'low', label: 'Low' }, { value: 'default', label: 'Default' }, { value: 'high', label: 'High' }, { value: 'max', label: 'Max' }].map((opt) => (
+                        {[{ value: 'min', label: 'Min' }, { value: 'low', label: 'Low' }, { value: 'default', label: 'Default' }, { value: 'high', label: 'High' }, { value: 'max', label: 'Max' }, { value: 'ultra', label: 'Ultra' }].map((opt) => (
                           <button
                             key={opt.value}
                             onClick={() => handleAgentField(i, 'effort', opt.value)}

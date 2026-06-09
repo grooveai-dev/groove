@@ -120,6 +120,15 @@ export const createUiSlice = (set, get) => ({
     if (pane === 1 && agentId === null) {
       updates.fleetSplitMode = false;
     }
+    const primaryId = agentId || selected[0];
+    if (primaryId) {
+      const tid = get().activeTeamId;
+      const panel = { type: 'agent', agentId: primaryId };
+      updates.detailPanel = panel;
+      updates.teamDetailPanels = { ...get().teamDetailPanels, [tid]: panel };
+    } else {
+      updates.detailPanel = null;
+    }
     set(updates);
   },
   fleetToggleSplit() {

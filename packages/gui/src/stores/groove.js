@@ -367,6 +367,57 @@ export const useGrooveStore = create((set, get) => ({
           break;
         }
 
+        case 'innerchat:sent': {
+          const ic = msg.data;
+          get().addChatMessage(ic.to.id, 'innerchat', ic.message, false);
+          set((s) => {
+            const icMsgs = { ...s.innerchatMessages };
+            icMsgs[ic.id] = ic;
+            persistJSON('groove:innerchatMessages', icMsgs);
+            return { innerchatMessages: icMsgs };
+          });
+          // Tag the chat message with innerchat metadata
+          set((s) => {
+            const history = { ...s.chatHistory };
+            const arr = history[ic.to.id] || [];
+            if (arr.length > 0) {
+              const last = arr[arr.length - 1];
+              if (last.from === 'innerchat' && last.text === ic.message) {
+                arr[arr.length - 1] = { ...last, innerchat: { messageId: ic.id, fromAgent: ic.from } };
+                history[ic.to.id] = arr;
+                persistJSON('groove:chatHistory', history);
+                return { chatHistory: history };
+              }
+            }
+            return {};
+          });
+          break;
+        }
+
+        case 'innerchat:response': {
+          const ic = msg.data;
+          get().addChatMessage(ic.from.id, 'innerchat', ic.response, false);
+          set((s) => {
+            const icMsgs = { ...s.innerchatMessages };
+            icMsgs[ic.id] = ic;
+            persistJSON('groove:innerchatMessages', icMsgs);
+            // Tag the response chat message with innerchat metadata
+            const history = { ...s.chatHistory };
+            const arr = history[ic.from.id] || [];
+            if (arr.length > 0) {
+              const last = arr[arr.length - 1];
+              if (last.from === 'innerchat' && last.text === ic.response) {
+                arr[arr.length - 1] = { ...last, innerchat: { messageId: ic.id, fromAgent: ic.to } };
+                history[ic.from.id] = arr;
+                persistJSON('groove:chatHistory', history);
+              }
+            }
+            return { innerchatMessages: icMsgs, chatHistory: history };
+          });
+          get().addToast('info', `${ic.to.name} replied to ${ic.from.name}`, 'InnerChat response received');
+          break;
+        }
+
         case 'recommended-team:ready':
           if (!get().recommendedTeam) get().checkRecommendedTeam();
           break;

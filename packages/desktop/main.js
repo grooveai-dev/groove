@@ -277,11 +277,17 @@ class WorkspaceManager {
   }
 
   openRemote(localPort, name) {
-    const id = `remote-${localPort}`;
+    const safeName = name.replace(/[^a-zA-Z0-9-_]/g, '_');
+    const id = `remote-${safeName}`;
 
     if (this.instances.has(id)) {
       const inst = this.instances.get(id);
       if (inst.window && !inst.window.isDestroyed()) {
+        if (inst.port !== localPort) {
+          inst.port = localPort;
+          const remoteUrl = `http://localhost:${localPort}?instance=${encodeURIComponent(name)}`;
+          inst.window.loadURL(remoteUrl);
+        }
         inst.window.show();
         inst.window.focus();
         return inst;
@@ -303,7 +309,7 @@ class WorkspaceManager {
         nodeIntegration: false,
         sandbox: true,
         backgroundThrottling: false,
-        partition: `persist:remote-${localPort}`,
+        partition: `persist:remote-${name.replace(/[^a-zA-Z0-9-_]/g, '_')}`,
       },
     });
 
@@ -1254,9 +1260,12 @@ ipcMain.handle('close-remote-window', (event) => {
 
 ipcMain.handle('close-remote-by-port', (_event, port) => {
   if (!workspaces || !port) return;
-  const id = `remote-${port}`;
-  const inst = workspaces.instances.get(id);
-  if (inst?.window && !inst.window.isDestroyed()) inst.window.close();
+  for (const [id, inst] of workspaces.instances) {
+    if (inst.remote && inst.port === port && inst.window && !inst.window.isDestroyed()) {
+      inst.window.close();
+      break;
+    }
+  }
 });
 
 // --- Home window IPC ---

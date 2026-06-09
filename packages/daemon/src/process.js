@@ -1582,6 +1582,11 @@ For normal file edits within your scope, proceed without review.
 
     registry.update(agentId, updates);
 
+    // Notify innerchat for response capture
+    if (this.daemon.innerchat) {
+      this.daemon.innerchat.onAgentOutput(agentId, output);
+    }
+
     // Throttle streaming broadcasts to 4/sec per agent
     const isStreaming = output.type !== 'result';
     if (isStreaming) {

@@ -6,7 +6,7 @@ let toastCounter = 0;
 
 export const createUiSlice = (set, get) => ({
   // ── Navigation ────────────────────────────────────────────
-  activeView: 'agents',           // 'agents' | 'editor' | 'dashboard' | 'marketplace' | 'teams' | 'settings'
+  activeView: 'agents',           // 'agents' | 'editor' | 'dashboard' | 'marketplace' | 'teams' | 'auto-agents' | 'settings'
   detailPanel: null,              // null | { type: 'agent', agentId } | { type: 'spawn' } | { type: 'journalist' }
   teamDetailPanels: {},            // { [teamId]: detailPanel } — persists panel state per team
   commandPaletteOpen: false,
@@ -91,7 +91,19 @@ export const createUiSlice = (set, get) => ({
     localStorage.setItem('groove:detailWidth', String(w));
   },
   setTerminalVisible(v) {
-    set({ terminalVisible: v });
+    const updates = { terminalVisible: v };
+    // In fleet view, opening the terminal auto-opens the agent panel so the
+    // terminal is constrained to the left column rather than spanning full width.
+    if (v && get().activeView === 'fleet') {
+      const selectedId = get().fleetSelectedAgents[0];
+      if (selectedId && !get().detailPanel) {
+        const tid = get().activeTeamId;
+        const panel = { type: 'agent', agentId: selectedId };
+        updates.detailPanel = panel;
+        updates.teamDetailPanels = { ...get().teamDetailPanels, [tid]: panel };
+      }
+    }
+    set(updates);
     localStorage.setItem('groove:terminalVisible', String(v));
   },
   setTerminalHeight(h) {

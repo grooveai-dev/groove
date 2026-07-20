@@ -418,12 +418,19 @@ function ProviderCard({ provider, onKeyChange }) {
 
           {/* Connected state */}
           {provider.hasKey && !settingKey && (
-            <div className="flex items-center gap-2 mb-3">
-              <div className="flex-1 flex items-center gap-1.5 h-8 px-2.5 bg-success/8 border border-success/20 rounded-md text-2xs font-sans text-success">
-                <Check size={10} /> API Connected
+            <div className="space-y-1.5 mb-3">
+              {isSubscription && isReady && (
+                <div className="flex items-center gap-1.5 h-8 px-2.5 bg-accent/8 border border-accent/20 rounded-md text-2xs font-sans text-accent">
+                  <Check size={10} /> Subscription active
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 flex items-center gap-1.5 h-8 px-2.5 bg-success/8 border border-success/20 rounded-md text-2xs font-sans text-success">
+                  <Check size={10} /> {isSubscription ? 'API key stored (usage credits)' : 'API Connected'}
+                </div>
+                <button onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }} className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans">Edit</button>
+                <button onClick={handleDeleteKey} className="text-2xs text-text-4 hover:text-danger cursor-pointer font-sans">Remove</button>
               </div>
-              <button onClick={() => { setSettingKey(true); setShowKey(false); setKeyInput(''); }} className="text-2xs text-text-4 hover:text-accent cursor-pointer font-sans">Edit</button>
-              <button onClick={handleDeleteKey} className="text-2xs text-text-4 hover:text-danger cursor-pointer font-sans">Remove</button>
             </div>
           )}
 
@@ -492,7 +499,7 @@ function ProviderCard({ provider, onKeyChange }) {
               className="w-full h-8 text-2xs gap-1.5 mt-2"
             >
               <Key size={11} />
-              Add API key for headless mode
+              {provider.id === 'claude-code' ? 'Add API key (usage credits + headless)' : 'Add API key for headless mode'}
             </Button>
           )}
         </div>

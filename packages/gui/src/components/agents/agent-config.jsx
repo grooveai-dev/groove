@@ -164,6 +164,8 @@ export function AgentConfig({ agent }) {
   const [savingPersonality, setSavingPersonality] = useState(false);
   const [installedIntegrations, setInstalledIntegrations] = useState([]);
   const [claudeAuth, setClaudeAuth] = useState(null);
+  const [authMode, setAuthMode] = useState(agent.authMode || 'subscription');
+  const [claudeHasKey, setClaudeHasKey] = useState(false);
 
   const isAlive = agent.status === 'running' || agent.status === 'starting';
 
@@ -173,6 +175,9 @@ export function AgentConfig({ agent }) {
     api.get('/repos/imported').then((data) => setImportedRepos((Array.isArray(data) ? data : []).filter((r) => r.status === 'active'))).catch(() => {});
     if (agent.provider === 'claude-code') {
       api.get('/providers/claude-code/auth').then((data) => setClaudeAuth(data)).catch(() => setClaudeAuth(null));
+      api.get('/credentials')
+        .then((list) => setClaudeHasKey(Array.isArray(list) && list.some((c) => c.provider === 'claude-code')))
+        .catch(() => setClaudeHasKey(false));
     }
     function onChanged() { loadProviders(); }
     window.addEventListener('groove:providers-changed', onChanged);
@@ -182,6 +187,10 @@ export function AgentConfig({ agent }) {
   function loadProviders() {
     api.get('/providers').then((data) => setProviders(Array.isArray(data) ? data : [])).catch(() => {});
   }
+
+  useEffect(() => {
+    setAuthMode(agent.authMode || 'subscription');
+  }, [agent.id, agent.authMode]);
 
   useEffect(() => {
     setSelectedModel(agent.model || '');
@@ -210,6 +219,18 @@ export function AgentConfig({ agent }) {
   }, [agent.id, agent.name]);
 
   const currentProvider = providers.find((p) => p.id === agent.provider);
+
+  async function handleAuthModeSwap(mode) {
+    const prev = authMode;
+    setAuthMode(mode);
+    try {
+      await api.patch(`/agents/${agent.id}`, { authMode: mode });
+      addToast('success', `Billing → ${mode === 'usage' ? 'usage credits' : 'subscription'}`);
+    } catch (err) {
+      setAuthMode(prev);
+      addToast('error', 'Failed to change billing mode', err.message);
+    }
+  }
 
   async function handleModelSwap(providerId, modelId) {
     setSelectedModel(modelId);
@@ -319,6 +340,38 @@ export function AgentConfig({ agent }) {
                   </button>
                 );
               })}
+            </div>
+          )}
+          {/* Billing mode — subscription (OAuth) vs usage credits (API key) */}
+          {agent.provider === 'claude-code' && (
+            <div className="mt-3 pt-3 border-t border-border-subtle">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-2xs font-medium text-text-2 font-sans">Billing</span>
+                <div className="flex gap-1 p-0.5 rounded-md bg-surface-3">
+                  {[
+                    { id: 'subscription', label: 'Subscription' },
+                    { id: 'usage', label: 'Usage credits' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.id}
+                      onClick={() => handleAuthModeSwap(opt.id)}
+                      disabled={opt.id === 'usage' && !claudeHasKey}
+                      className={cn(
+                        'px-2 py-1 rounded text-2xs font-semibold font-sans transition-colors',
+                        opt.id === 'usage' && !claudeHasKey && 'opacity-40 cursor-not-allowed',
+                        authMode === opt.id ? 'bg-accent text-white' : 'text-text-2 hover:text-text-0',
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="text-2xs text-text-3 font-sans mt-1.5">
+                {!claudeHasKey
+                  ? 'Add an Anthropic API key in Settings → Providers to enable usage credits.'
+                  : 'Applies on next rotation or restart — the running process keeps its current billing.'}
+              </p>
             </div>
           )}
         </div>

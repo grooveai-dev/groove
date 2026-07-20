@@ -15,6 +15,7 @@ import {
   Check, Users, Plus,
 } from 'lucide-react';
 import { api } from '../../lib/api';
+import { useToast } from '../../lib/hooks/use-toast';
 import { Dialog, DialogContent } from '../ui/dialog';
 import { INTEGRATION_LOGOS } from '../../lib/integration-logos';
 
@@ -52,6 +53,7 @@ export function SpawnWizard() {
   const detailPanel = useGrooveStore((s) => s.detailPanel);
   const closeDetail = useGrooveStore((s) => s.closeDetail);
   const spawnAgent = useGrooveStore((s) => s.spawnAgent);
+  const toast = useToast();
   const fetchProviders = useGrooveStore((s) => s.fetchProviders);
   const teams = useGrooveStore((s) => s.teams);
   const activeTeamId = useGrooveStore((s) => s.activeTeamId);
@@ -84,6 +86,8 @@ export function SpawnWizard() {
   const [ollamaInstalled, setOllamaInstalled] = useState([]);
   const [ollamaServerRunning, setOllamaServerRunning] = useState(false);
   const [fast, setFast] = useState(false);
+  const [authMode, setAuthMode] = useState('subscription');
+  const [claudeHasKey, setClaudeHasKey] = useState(false);
   const [teamMode, setTeamMode] = useState('new');
   const [newTeamName, setNewTeamName] = useState('');
   const [selectedTeamId, setSelectedTeamId] = useState('');
@@ -142,7 +146,7 @@ export function SpawnWizard() {
         setPersonalities(Array.isArray(data) ? data : data.personalities || []);
       }).catch(() => {});
       setRole(''); setCustomRole(''); setName('');
-      setProvider(_presetProvider); setModel(_presetModel); setFast(false);
+      setProvider(_presetProvider); setModel(_presetModel); setFast(false); setAuthMode('subscription');
       setTeamMode('new'); setSelectedTeamId('');
       setNewTeamName(_presetModel
         ? _presetModel.split(':').pop().replace(/[-_]/g, ' ')
@@ -172,6 +176,13 @@ export function SpawnWizard() {
       }
     }).catch(() => setRecommendations([]));
   }, [selectedRole, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    api.get('/credentials')
+      .then((list) => setClaudeHasKey(Array.isArray(list) && list.some((c) => c.provider === 'claude-code')))
+      .catch(() => setClaudeHasKey(false));
+  }, [open]);
 
   useEffect(() => {
     if (!open || provider !== 'ollama') { setOllamaInstalled([]); return; }
@@ -208,6 +219,7 @@ export function SpawnWizard() {
         ...(selectedIntegrations.length > 0 && { integrationApproval }),
         ...(selectedRepos.length > 0 && { repos: selectedRepos }),
         ...(fast && { fast: true }),
+        ...(provider === 'claude-code' && { authMode }),
         ...(selectedPersonality && { personality: selectedPersonality }),
         ...(selectedRole === 'ambassador' && selectedPeerId && { peerId: selectedPeerId }),
         ...(teamId && { teamId }),
@@ -220,6 +232,10 @@ export function SpawnWizard() {
 
   async function handleSpawn() {
     if (!selectedRole) return;
+    if (provider === 'claude-code' && authMode === 'usage' && !claudeHasKey) {
+      toast.error('Add an Anthropic API key in Settings → Providers to spawn with usage credits.');
+      return;
+    }
     try {
       const preflight = await api.post('/agents/preflight', {
         role: selectedRole,
@@ -541,6 +557,39 @@ export function SpawnWizard() {
                       <span className="text-2xs text-text-3 font-sans ml-1.5">Faster output, same model</span>
                     </div>
                   </label>
+                )}
+
+                {/* Billing mode — subscription (OAuth) vs usage credits (API key) */}
+                {provider === 'claude-code' && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-text-2 font-sans">Billing</label>
+                    <div className="flex gap-1 p-0.5 rounded-md bg-surface-3 w-fit">
+                      {[
+                        { id: 'subscription', label: 'Subscription' },
+                        { id: 'usage', label: 'Usage credits' },
+                      ].map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setAuthMode(opt.id)}
+                          className={cn(
+                            'px-2.5 py-1 rounded text-2xs font-semibold font-sans transition-colors',
+                            authMode === opt.id ? 'bg-accent text-white' : 'text-text-2 hover:text-text-0',
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    {authMode === 'usage' && !claudeHasKey && (
+                      <p className="text-2xs text-warning font-sans">
+                        No Anthropic API key stored — add one in Settings → Providers before spawning.
+                      </p>
+                    )}
+                    {authMode === 'subscription' && (
+                      <p className="text-2xs text-text-3 font-sans">Uses your Claude Code login (Pro/Max).</p>
+                    )}
+                  </div>
                 )}
 
                 {/* Ollama model status */}

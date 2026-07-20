@@ -4,7 +4,7 @@
 import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
 
-const SAFE_FIELDS = new Set(['status', 'pid', 'tokensUsed', 'contextUsage', 'lastActivity', 'model', 'provider', 'name', 'routingMode', 'routingReason', 'sessionId', 'skills', 'integrations', 'repos', 'workingDir', 'effort', 'costUsd', 'durationMs', 'turns', 'inputTokens', 'outputTokens', 'teamId', 'permission', 'scope', 'integrationApproval', 'personality', 'metadata']);
+const SAFE_FIELDS = new Set(['status', 'pid', 'tokensUsed', 'contextUsage', 'lastActivity', 'model', 'provider', 'name', 'routingMode', 'routingReason', 'authMode', 'sessionId', 'skills', 'integrations', 'repos', 'workingDir', 'effort', 'costUsd', 'durationMs', 'turns', 'inputTokens', 'outputTokens', 'teamId', 'permission', 'scope', 'integrationApproval', 'personality', 'metadata']);
 
 export class Registry extends EventEmitter {
   constructor(state) {
@@ -46,6 +46,7 @@ export class Registry extends EventEmitter {
       scope: config.scope || [],
       provider: config.provider || 'claude-code',
       model: config.model || null,
+      authMode: config.authMode || 'subscription',
       prompt: config.prompt || '',
       permission: config.permission || 'full',
       workingDir: config.workingDir || process.cwd(),

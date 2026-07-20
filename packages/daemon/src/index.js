@@ -47,6 +47,8 @@ import { RepoImporter } from './repo-import.js';
 import { ConversationManager } from './conversations.js';
 import { Toys } from './toys.js';
 import { InnerChat } from './innerchat.js';
+import { AutoState } from './autostate.js';
+import { Orchestrator } from './orchestrator.js';
 import { TrajectoryCapture, ConsentManager } from '../../../moe-training/client/index.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 import { bindDaemon as bindGrooveNetworkDaemon } from './providers/groove-network.js';
@@ -160,6 +162,8 @@ export class Daemon {
     this.modelLab = new ModelLab(this);
     this.toys = new Toys(this);
     this.innerchat = new InnerChat(this);
+    this.autoState = new AutoState(this.grooveDir);
+    this.orchestrator = new Orchestrator(this);
     this.trajectoryCapture = null;
 
     // Hook teams.delete to clean up agent-loop session files
@@ -613,6 +617,7 @@ export class Daemon {
         this.journalist.start();
         this.rotator.start();
         this.scheduler.start();
+        this.orchestrator.start();
         this.timeline.start();
         this.gateways.start();
         this.federation.initialize();
@@ -837,6 +842,7 @@ export class Daemon {
     this.journalist.stop();
     this.rotator.stop();
     this.scheduler.stop();
+    this.orchestrator.stop();
     this.timeline.stop();
     if (this._gcInterval) clearInterval(this._gcInterval);
     if (this._stateSaveInterval) clearInterval(this._stateSaveInterval);

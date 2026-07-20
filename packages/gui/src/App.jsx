@@ -25,6 +25,7 @@ import NetworkView from './views/network';
 import ChatView from './views/chat';
 import MemoryView from './views/memory';
 import FleetView from './views/fleet';
+import AutoAgentsView from './views/auto-agents';
 
 // Agent components
 import { AgentPanel } from './components/agents/agent-panel';
@@ -73,6 +74,7 @@ function ViewRouter() {
     case 'dashboard':   content = <DashboardView />;   break;
     case 'marketplace': content = <MarketplaceView />; break;
     case 'teams':       content = <TeamsView />;       break;
+    case 'auto-agents': content = <AutoAgentsView />; break;
     case 'models':      content = <ModelsView />;      break;
     case 'model-lab':   content = <ModelLabView />;    break;
     case 'federation':  content = <FederationView />;  break;

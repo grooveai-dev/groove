@@ -324,6 +324,27 @@ function sanitizeFilename(name) {
   return String(name).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
 }
 
+// Apply Claude Code billing mode to a spawn env, in place.
+// The `claude` CLI bills to usage credits when ANTHROPIC_API_KEY is present and
+// to the OAuth subscription otherwise. 'subscription' (default) strips any
+// inherited key so login auth is used; 'usage' injects the stored claude-code key.
+export function applyClaudeAuthMode(spawnEnv, agent, config, credentials, logStream) {
+  if ((agent?.provider || config?.provider) !== 'claude-code') return;
+  const mode = agent?.authMode || config?.authMode || 'subscription';
+  const log = (msg) => { try { logStream?.write?.(`[${new Date().toISOString()}] ${msg}\n`); } catch { /* noop */ } };
+  if (mode === 'usage') {
+    const usageKey = credentials?.getKey('claude-code');
+    if (usageKey) {
+      spawnEnv.ANTHROPIC_API_KEY = usageKey;
+      return;
+    }
+    log('WARN: authMode=usage but no claude-code API key stored — falling back to subscription auth');
+  }
+  // Subscription mode (or usage fallback): ensure no key leaks in from the daemon's env
+  delete spawnEnv.ANTHROPIC_API_KEY;
+  delete spawnEnv.ANTHROPIC_AUTH_TOKEN;
+}
+
 export function wrapWithRoleReminder(role, message) {
   if (role === 'planner' && !message.startsWith('ROLE REMINDER:')) {
     return 'ROLE REMINDER: You are a PLANNING ONLY agent. Do NOT write code, edit source files, or run build commands. Your ONLY file write should be .groove/recommended-team.json.\n\nUser message: ' + message;
@@ -1299,9 +1320,11 @@ For normal file edits within your scope, proceed without review.
 
     // Spawn the process (use pipe for stdin if provider needs to send prompt via stdin)
     const spawnCwd = [providerCwd, agent.workingDir, this.daemon.projectDir].find(d => d && existsSync(d)) || this.daemon.projectDir;
+    const spawnEnv = { ...process.env, ...env, ...integrationEnv, GROOVE_AGENT_ID: agent.id, GROOVE_AGENT_NAME: agent.name, GROOVE_DAEMON_HOST: this.daemon.host || '127.0.0.1', GROOVE_DAEMON_PORT: String(this.daemon.port || 31415) };
+    applyClaudeAuthMode(spawnEnv, agent, config, this.daemon.credentials, logStream);
     const proc = cpSpawn(command, args, {
       cwd: spawnCwd,
-      env: { ...process.env, ...env, ...integrationEnv, GROOVE_AGENT_ID: agent.id, GROOVE_AGENT_NAME: agent.name, GROOVE_DAEMON_HOST: this.daemon.host || '127.0.0.1', GROOVE_DAEMON_PORT: String(this.daemon.port || 31415) },
+      env: spawnEnv,
       stdio: [stdinData ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       detached: false,
     });
@@ -2580,9 +2603,11 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
 
     // Spawn the resumed process
     const resumeCwd = [config.workingDir, this.daemon.projectDir].find(d => d && existsSync(d)) || this.daemon.projectDir;
+    const resumeEnv = { ...process.env, ...env, GROOVE_AGENT_ID: newAgent.id, GROOVE_AGENT_NAME: newAgent.name, GROOVE_DAEMON_HOST: this.daemon.host || '127.0.0.1', GROOVE_DAEMON_PORT: String(this.daemon.port || 31415) };
+    applyClaudeAuthMode(resumeEnv, newAgent, config, this.daemon.credentials, logStream);
     const proc = cpSpawn(command, args, {
       cwd: resumeCwd,
-      env: { ...process.env, ...env, GROOVE_AGENT_ID: newAgent.id, GROOVE_AGENT_NAME: newAgent.name, GROOVE_DAEMON_HOST: this.daemon.host || '127.0.0.1', GROOVE_DAEMON_PORT: String(this.daemon.port || 31415) },
+      env: resumeEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
     });

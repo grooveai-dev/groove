@@ -118,6 +118,11 @@ export function validateAgentConfig(config) {
   const validRouting = ['fixed', 'auto', 'auto-floor'];
   const routingMode = validRouting.includes(config.routingMode) ? config.routingMode : undefined;
 
+  // Claude Code billing mode: 'subscription' (OAuth login) or 'usage' (API credits).
+  // Only meaningful for the claude-code provider; ignored by others.
+  const authMode = (config.authMode === 'usage' || config.authMode === 'subscription')
+    ? config.authMode : undefined;
+
   // Return sanitized config (only known fields)
   return {
     role: config.role,
@@ -139,6 +144,7 @@ export function validateAgentConfig(config) {
     verbosity,
     effort,
     routingMode,
+    authMode,
     fast: config.fast === true ? true : undefined,
     labPresetId: (typeof config.labPresetId === 'string' && config.labPresetId.length <= 64) ? config.labPresetId : undefined,
     keeperTags: Array.isArray(config.keeperTags) ? config.keeperTags.filter(t => typeof t === 'string').slice(0, 20) : undefined,

@@ -14,6 +14,7 @@ import { createNetworkSlice } from './slices/network-slice.js';
 import { createPreviewSlice } from './slices/preview-slice.js';
 import { createMarketplaceSlice } from './slices/marketplace-slice.js';
 import { createAutomationsSlice } from './slices/automations-slice.js';
+import { createAutoAgentsSlice } from './slices/auto-agents-slice.js';
 
 const WS_URL = `ws://${window.location.hostname}:${window.location.port || 31415}`;
 
@@ -39,6 +40,7 @@ export const useGrooveStore = create((set, get) => ({
   ...createPreviewSlice(set, get),
   ...createMarketplaceSlice(set, get),
   ...createAutomationsSlice(set, get),
+  ...createAutoAgentsSlice(set, get),
 
   // ── Connection ────────────────────────────────────────────
   connected: false,
@@ -652,6 +654,18 @@ export const useGrooveStore = create((set, get) => ({
         case 'schedule:updated':
         case 'schedule:deleted':
           get().fetchAutomations();
+          break;
+
+        case 'auto-agent:created':
+        case 'auto-agent:updated':
+        case 'auto-agent:deleted':
+        case 'auto-agent:paused':
+        case 'auto-agent:resumed':
+        case 'auto-agent:cycle-complete':
+        case 'auto-agent:auto-paused':
+        case 'auto-agent:state-updated':
+        case 'auto-agent:iteration-started':
+          get().fetchAutoAgents();
           break;
 
         case 'gateway:status':

@@ -257,6 +257,13 @@ export class ClaudeCodeProvider extends Provider {
             cost: data.total_cost_usd,
             duration: data.duration_ms,
             turns: data.num_turns,
+            // Error/abort signals. Without these an `error_during_execution`
+            // result looks identical to a successful one and the user's
+            // message is silently dropped.
+            subtype: data.subtype,
+            isError: data.is_error === true || data.subtype === 'error_during_execution',
+            apiDurationMs: data.duration_api_ms,
+            terminalReason: data.terminal_reason,
           });
         }
       } catch {

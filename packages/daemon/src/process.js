@@ -363,6 +363,14 @@ export class ProcessManager {
     this._stalledAgents = new Set(); // agentIds already flagged as stalled (avoids duplicate broadcasts)
     this._exitHandled = new Set();
     this._resultReceived = new Set();
+    // In-flight user messages, kept until a turn actually completes so a
+    // dropped turn can be re-issued instead of losing the user's message.
+    // agentId -> { message, attempts }
+    this._pendingUserMessage = new Map();
+    // Retry count carried across the agent-id change that resume() performs.
+    // Kept separate so teardown of the old agent can't reset it to 0 and
+    // turn a bounded retry into an infinite respawn loop. oldAgentId -> attempts
+    this._retryAttemptCarry = new Map();
     this._truncationFlagged = new Set(); // agentIds that have had any truncation in their session
     this._lastAssistantBlocks = new Map(); // agentId -> last assistant content blocks (for abandoned tool_use detection)
     this._previousCacheReadTokens = new Map(); // agentId -> previous turn's cacheReadTokens
@@ -1559,6 +1567,18 @@ For normal file edits within your scope, proceed without review.
 
     // Session result data (cost, duration, turns)
     if (output.type === 'result') {
+      // Phantom-interrupt abort: on --resume with an orphaned background shell
+      // task, the CLI injects a synthetic "[Request interrupted by user]" that
+      // aborts the turn before the model is ever called. Fingerprint is an
+      // error result that never reached the API (apiDurationMs === 0, so zero
+      // cost). Retrying is free and succeeds ~94% of the time — treating it as
+      // a normal result is what made user messages vanish silently.
+      if (output.isError && output.apiDurationMs === 0) {
+        if (this._retryDroppedTurn(agentId, agent, output)) return;
+      }
+      // A turn completed for real — the user's message is safely delivered.
+      this._pendingUserMessage.delete(agentId);
+
       tokens.recordResult(agentId, {
         costUsd: output.cost, durationMs: output.duration, turns: output.turns,
       });
@@ -2510,6 +2530,59 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
    * spawns fresh with the full conversation thread instead of --resume.
    * This avoids degraded context from internal compaction.
    */
+  /**
+   * Re-issue a user message whose turn was aborted before reaching the model.
+   *
+   * Returns true if a retry was scheduled (caller should skip normal result
+   * handling), false if the turn should be treated as a real result.
+   */
+  _retryDroppedTurn(agentId, agent, output) {
+    const pending = this._pendingUserMessage.get(agentId);
+    if (!pending) return false; // nothing to re-issue — let it fall through
+
+    const MAX_RETRIES = 2;
+    if (pending.attempts >= MAX_RETRIES) {
+      this._pendingUserMessage.delete(agentId);
+      this.daemon.broadcast({
+        type: 'agent:output',
+        agentId,
+        data: {
+          type: 'activity',
+          subtype: 'error',
+          data: `Message could not be delivered after ${MAX_RETRIES + 1} attempts `
+            + `(${output.terminalReason || output.subtype || 'turn aborted'}). Please re-send.`,
+        },
+      });
+      return false;
+    }
+
+    pending.attempts += 1;
+    this._retryAttemptCarry.set(agentId, pending.attempts);
+    this.daemon.broadcast({
+      type: 'agent:output',
+      agentId,
+      data: {
+        type: 'activity',
+        subtype: 'info',
+        data: `Turn aborted before reaching the model — retrying (${pending.attempts}/${MAX_RETRIES})…`,
+      },
+    });
+
+    // Let the aborted process finish tearing down before re-spawning; resume()
+    // kills the current handle and re-registers under a new agent id.
+    setTimeout(() => {
+      this.resume(agentId, pending.message).catch((err) => {
+        this.daemon.broadcast({
+          type: 'agent:output',
+          agentId,
+          data: { type: 'activity', subtype: 'error', data: `Retry failed: ${err.message}` },
+        });
+      });
+    }, 500);
+
+    return true;
+  }
+
   async resume(agentId, message) {
     const { registry, locks } = this.daemon;
     const agent = registry.get(agentId);
@@ -2577,7 +2650,18 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
       workingDir: config.workingDir || this.daemon.config?.defaultWorkingDir || undefined,
       name: config.name,
       teamId: config.teamId,
+      authMode: config.authMode,
     });
+
+    // Hold the message until a turn actually completes, so a turn aborted
+    // before reaching the model can be re-issued rather than lost. Carries the
+    // attempt count forward from the agent id we're replacing.
+    if (message) {
+      const carried = this._retryAttemptCarry.get(agentId);
+      this._retryAttemptCarry.delete(agentId);
+      this._pendingUserMessage.delete(agentId);
+      this._pendingUserMessage.set(newAgent.id, { message, attempts: carried || 0 });
+    }
 
     // Carry cumulative tokens
     if (config.tokensUsed > 0) {
@@ -2959,6 +3043,10 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
     if (throttle?.timer) clearTimeout(throttle.timer);
     this._streamThrottle.delete(agentId);
     this.pendingMessages.delete(agentId);
+    // Safe during a retry: resume() re-registers the message under the new
+    // agent id from its own `message` argument, and the attempt count lives in
+    // _retryAttemptCarry (which kill() must not touch).
+    this._pendingUserMessage.delete(agentId);
 
     // Unregister ambassador if this agent was one
     const agent = this.daemon.registry.get(agentId);

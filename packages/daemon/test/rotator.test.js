@@ -452,4 +452,135 @@ describe('Rotator', () => {
     assert.equal(appendArgs.teamId, 'team-alpha');
     assert.equal(appendArgs.role, 'backend');
   });
+
+  it('should rotate idle Claude Code agent above the replay ceiling', async () => {
+    const agent = {
+      id: 'rc1', name: 'claude-chat', role: 'backend', status: 'running',
+      provider: 'claude-code', scope: [], model: null,
+      tokensUsed: 100_000, contextUsage: 0.55, workingDir: '/tmp',
+      lastActivity: new Date(Date.now() - 5 * 60_000).toISOString(), // idle 5 min
+      spawnedAt: new Date(Date.now() - 600_000).toISOString(),
+    };
+    mockDaemon.registry.agents = [agent];
+
+    await rotator.check();
+
+    const history = rotator.getHistory();
+    assert.equal(history.length, 1);
+    assert.equal(history[0].reason, 'replay_ceiling');
+  });
+
+  it('should NOT replay-ceiling rotate below the ceiling or during cooldown', async () => {
+    const agent = {
+      id: 'rc2', name: 'claude-chat-2', role: 'backend', status: 'running',
+      provider: 'claude-code', scope: [], model: null,
+      tokensUsed: 100_000, contextUsage: 0.45, workingDir: '/tmp',
+      lastActivity: new Date(Date.now() - 5 * 60_000).toISOString(),
+      spawnedAt: new Date(Date.now() - 600_000).toISOString(),
+    };
+    mockDaemon.registry.agents = [agent];
+
+    // Below ceiling — no rotation
+    await rotator.check();
+    assert.equal(rotator.getHistory().length, 0);
+
+    // Above ceiling but on cooldown — still no rotation
+    agent.contextUsage = 0.60;
+    rotator.lastRotationTime.set('rc2', Date.now() - 60_000);
+    await rotator.check();
+    assert.equal(rotator.getHistory().length, 0);
+  });
+
+  it('should block auto-rotation of a chat agent when no conversation thread is extractable', async () => {
+    const agent = {
+      id: 'rc3', name: 'claude-chat-3', role: 'backend', status: 'running',
+      provider: 'claude-code', scope: [], model: null,
+      tokensUsed: 100_000, contextUsage: 0.70, workingDir: '/tmp',
+      lastActivity: new Date(Date.now() - 5 * 60_000).toISOString(),
+      spawnedAt: new Date(Date.now() - 600_000).toISOString(),
+    };
+    mockDaemon.registry.agents = [agent];
+
+    // Agent has chat history, but journalist can't extract the thread
+    rotator.recordUserMessage('rc3');
+    mockDaemon.journalist.buildConversationResumePrompt = () => null;
+
+    const result = await rotator.rotate('rc3', { reason: 'replay_ceiling' });
+
+    assert.equal(result, null);
+    assert.equal(rotator.getHistory().length, 0);
+    const blocked = broadcasts.find((b) => b.type === 'rotation:blocked');
+    assert.ok(blocked, 'should broadcast rotation:blocked');
+    assert.equal(blocked.reason, 'no_conversation_thread');
+  });
+
+  it('should not let Instructions boilerplate defeat the low-confidence handoff guard', async () => {
+    const agent = {
+      id: 'rc4', name: 'claude-chat-4', role: 'backend', status: 'running',
+      provider: 'claude-code', scope: [], model: null,
+      tokensUsed: 100_000, contextUsage: 0.70, workingDir: '/tmp',
+      lastActivity: new Date(Date.now() - 5 * 60_000).toISOString(),
+      spawnedAt: new Date(Date.now() - 600_000).toISOString(),
+    };
+    mockDaemon.registry.agents = [agent];
+
+    // A content-free brief padded with the static Instructions block —
+    // this is exactly what generateHandoffBrief emits when logs are empty
+    mockDaemon.journalist.generateHandoffBrief = async () => [
+      '# Handoff Brief',
+      '- role: backend',
+      '## Instructions',
+      '',
+      'Continue and finish the in-progress task — deliver the output. Stay focused on that specific task only.',
+      '- Do NOT explore the codebase looking for other things to fix or improve',
+      '- Do NOT start new work outside the original task scope',
+      '- Do NOT act on TODO comments, code quality issues, or improvements you notice in passing',
+      '- If the task is already complete, report what was accomplished and STOP — await new instructions from the user',
+    ].join('\n');
+
+    const result = await rotator.rotate('rc4', { reason: 'replay_ceiling' });
+
+    assert.equal(result, null);
+    assert.equal(rotator.getHistory().length, 0);
+    const blocked = broadcasts.find((b) => b.type === 'rotation:blocked');
+    assert.ok(blocked, 'should broadcast rotation:blocked');
+    assert.equal(blocked.reason, 'low_confidence_handoff');
+  });
+
+  it('should force-rotate any provider on velocity ceiling', async () => {
+    const agent = {
+      id: 'v1', name: 'claude-runaway', role: 'backend', status: 'running',
+      provider: 'claude-code', scope: [], model: null,
+      tokensUsed: 400_000, contextUsage: 0.30, workingDir: '/tmp',
+      lastActivity: new Date(Date.now() - 5_000).toISOString(), // active
+      spawnedAt: new Date(Date.now() - 600_000).toISOString(),
+    };
+    mockDaemon.registry.agents = [agent];
+    mockDaemon.tokens.getVelocity = () => 300_000; // above 250K/5min default
+
+    // Even on cooldown — velocity is a safety override
+    rotator.lastRotationTime.set('v1', Date.now() - 60_000);
+
+    await rotator.check();
+
+    const history = rotator.getHistory();
+    assert.equal(history.length, 1);
+    assert.equal(history[0].reason, 'velocity_ceiling');
+  });
+
+  it('should not velocity-rotate under the ceiling', async () => {
+    const agent = {
+      id: 'v2', name: 'claude-normal', role: 'backend', status: 'running',
+      provider: 'claude-code', scope: [], model: null,
+      tokensUsed: 50_000, contextUsage: 0.30, workingDir: '/tmp',
+      lastActivity: new Date(Date.now() - 5_000).toISOString(),
+      spawnedAt: new Date(Date.now() - 600_000).toISOString(),
+    };
+    mockDaemon.registry.agents = [agent];
+    mockDaemon.tokens.getVelocity = () => 80_000;
+
+    await rotator.check();
+
+    assert.equal(rotator.getHistory().length, 0);
+  });
 });

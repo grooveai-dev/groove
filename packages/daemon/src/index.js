@@ -836,6 +836,7 @@ export class Daemon {
     // Persist state before shutdown
     this.state.set('agents', this.registry.getAll());
     await this.state.save();
+    try { this.tokens.flush(); } catch { /* best-effort */ }
 
     // Stop background services
     await this.gateways.stop();

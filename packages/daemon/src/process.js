@@ -324,6 +324,15 @@ function sanitizeFilename(name) {
   return String(name).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
 }
 
+// Agent log files are keyed by sanitized agent NAME, not id — a rotated agent
+// keeps its name and appends to the same file, preserving conversation history
+// across rotations. Every reader must resolve paths through this helper: an
+// id-based path silently misses the file and downstream consumers (handoff
+// briefs, conversation resume, synthesis) fall back to empty context.
+export function agentLogPath(grooveDir, agent) {
+  return resolve(grooveDir, 'logs', `${sanitizeFilename(agent.name)}.log`);
+}
+
 // Apply Claude Code billing mode to a spawn env, in place.
 // The `claude` CLI bills to usage credits when ANTHROPIC_API_KEY is present and
 // to the OAuth subscription otherwise. 'subscription' (default) strips any
@@ -1146,7 +1155,7 @@ For normal file edits within your scope, proceed without review.
     // Set up log capture (shared between CLI and agent loop paths)
     const logDir = resolve(this.daemon.grooveDir, 'logs');
     mkdirSync(logDir, { recursive: true });
-    const logPath = resolve(logDir, `${sanitizeFilename(agent.name)}.log`);
+    const logPath = agentLogPath(this.daemon.grooveDir, agent);
     const logStream = createWriteStream(logPath, { flags: 'a', mode: 0o600 });
 
     // Inject API key from credential store for agent-loop providers
@@ -1567,38 +1576,54 @@ For normal file edits within your scope, proceed without review.
 
     // Session result data (cost, duration, turns)
     if (output.type === 'result') {
-      // Phantom-interrupt abort: on --resume with an orphaned background shell
-      // task, the CLI injects a synthetic "[Request interrupted by user]" that
-      // aborts the turn before the model is ever called. Fingerprint is an
-      // error result that never reached the API (apiDurationMs === 0, so zero
-      // cost). Retrying is free and succeeds ~94% of the time — treating it as
-      // a normal result is what made user messages vanish silently.
-      if (output.isError && output.apiDurationMs === 0) {
-        if (this._retryDroppedTurn(agentId, agent, output)) return;
+      // Did this result represent a turn that actually ran? CLI >= 2.1.212
+      // emits a 0-turn no-op `result` during --resume reconciliation, before
+      // the real turn starts. Both it and an aborted turn report
+      // duration_api_ms === 0 — the model was never called. Providers that
+      // don't report an API duration (codex, gemini, ollama) are unaffected.
+      const reachedModel = output.apiDurationMs === undefined || output.apiDurationMs > 0;
+
+      // Turn aborted before the model was called — re-deliver the message.
+      // Deliberately does NOT return: session id persistence and the GUI
+      // broadcast below still need to run, and the retry is scheduled async.
+      if (!reachedModel && output.isError) {
+        this._retryDroppedTurn(agentId, agent, output);
       }
-      // A turn completed for real — the user's message is safely delivered.
-      this._pendingUserMessage.delete(agentId);
 
-      tokens.recordResult(agentId, {
-        costUsd: output.cost, durationMs: output.duration, turns: output.turns,
-      });
-      if (output.cost) updates.costUsd = (agent.costUsd || 0) + output.cost;
-      if (output.duration) updates.durationMs = output.duration;
-      if (output.turns) updates.turns = output.turns;
+      // Everything below is completion bookkeeping and must only run for a
+      // turn that actually executed. Running it for the resume handshake is
+      // what killed the process mid-turn.
+      if (reachedModel) {
+        // The user's message is safely delivered.
+        this._pendingUserMessage.delete(agentId);
 
-      // Claude Code sometimes hangs after emitting the result event — the
-      // process stays alive instead of exiting.  Record that the result
-      // arrived so exit handlers know this was a successful completion even
-      // if we have to SIGTERM the process.  After a 5s grace period, force-
-      // kill any process that hasn't exited on its own.
-      this._resultReceived.add(agentId);
-      const handle = this.handles.get(agentId);
-      if (handle?.proc && typeof handle.proc.kill === 'function') {
-        setTimeout(() => {
-          if (this.handles.has(agentId) && this._resultReceived.has(agentId)) {
-            try { handle.proc.kill('SIGTERM'); } catch {}
-          }
-        }, 5_000);
+        tokens.recordResult(agentId, {
+          costUsd: output.cost, durationMs: output.duration, turns: output.turns,
+        });
+        if (output.cost) updates.costUsd = (agent.costUsd || 0) + output.cost;
+        if (output.duration) updates.durationMs = output.duration;
+        if (output.turns) updates.turns = output.turns;
+
+        // Claude Code sometimes hangs after emitting the result event — the
+        // process stays alive instead of exiting.  Record that the result
+        // arrived so exit handlers know this was a successful completion even
+        // if we have to SIGTERM the process.  After a 5s grace period, force-
+        // kill any process that hasn't exited on its own.
+        //
+        // MUST stay behind the reachedModel guard. CLI >= 2.1.212 emits a
+        // 0-turn no-op result ~180ms into --resume; arming this on that result
+        // SIGTERMs the process ~5.2s later, mid-turn, before a token is
+        // produced (fable TTFT observed at 34s). The CLI records the signal as
+        // "[Request interrupted by user]" and the user's message is destroyed.
+        this._resultReceived.add(agentId);
+        const handle = this.handles.get(agentId);
+        if (handle?.proc && typeof handle.proc.kill === 'function') {
+          setTimeout(() => {
+            if (this.handles.has(agentId) && this._resultReceived.has(agentId)) {
+              try { handle.proc.kill('SIGTERM'); } catch {}
+            }
+          }, 5_000);
+        }
       }
     }
 

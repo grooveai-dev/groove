@@ -174,13 +174,15 @@ describe('Journalist', () => {
       const { daemon, grooveDir } = createMockDaemon();
       const journalist = new Journalist(daemon);
 
-      // Create a mock log — filename must match agent.id ('a1')
+      // Create a mock log — filename must match agent.name ('backend-1'),
+      // mirroring the writer in process.js (logs are keyed by sanitized name
+      // so rotated agents keep appending to the same file)
       const logLines = [
         JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Write', input: { file_path: 'src/api/auth.js' } }] } }),
         JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Edit', input: { file_path: 'src/api/users.js', old_string: 'old', new_string: 'new' } }] } }),
         JSON.stringify({ type: 'user', message: { content: 'Add JWT middleware to the auth route' } }),
       ].join('\n');
-      writeFileSync(join(grooveDir, 'logs', 'a1.log'), logLines);
+      writeFileSync(join(grooveDir, 'logs', 'backend-1.log'), logLines);
 
       const agent = {
         id: 'a1', name: 'backend-1', role: 'backend',

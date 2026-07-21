@@ -1438,7 +1438,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       'port', 'journalistInterval', 'rotationThreshold', 'autoRotation',
       'qcThreshold', 'maxAgents', 'defaultProvider', 'defaultWorkingDir',
       'onboardingDismissed', 'defaultModel', 'defaultChatProvider', 'defaultChatModel',
-      'dataSharingDismissed',
+      'dataSharingDismissed', 'replayCeiling', 'velocityCeiling', 'journalistModelTier',
     ];
     for (const key of Object.keys(req.body)) {
       if (!ALLOWED_KEYS.includes(key)) {

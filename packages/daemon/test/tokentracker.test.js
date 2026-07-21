@@ -61,6 +61,10 @@ describe('TokenTracker', () => {
     tracker.record('agent-1', 100);
     tracker.record('agent-2', 200);
 
+    // record() debounces disk writes (hot path); flush forces the pending save,
+    // mirroring what the daemon does on shutdown.
+    tracker.flush();
+
     const tracker2 = new TokenTracker(tmpDir);
     assert.equal(tracker2.getAgent('agent-1').total, 100);
     assert.equal(tracker2.getAgent('agent-2').total, 200);

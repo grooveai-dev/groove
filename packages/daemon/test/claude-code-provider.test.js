@@ -69,6 +69,58 @@ describe('ClaudeCodeProvider result parsing', () => {
   });
 });
 
+describe('ClaudeCodeProvider resume handshake (CLI >= 2.1.212)', () => {
+  // The 0-turn no-op result the CLI emits ~180ms into --resume reconciliation.
+  const HANDSHAKE = JSON.stringify({
+    type: 'result', subtype: 'success', is_error: false,
+    duration_ms: 186, duration_api_ms: 0, num_turns: 0, total_cost_usd: 0,
+  });
+  const ABORT = JSON.stringify({
+    type: 'result', subtype: 'error_during_execution', is_error: true,
+    duration_ms: 5126, duration_api_ms: 0, num_turns: 2, total_cost_usd: 0,
+    terminal_reason: 'aborted_streaming',
+  });
+
+  // This is the gate the daemon uses to decide whether a result means "the
+  // turn completed". Treating the handshake as a completion arms a 5s
+  // force-kill that SIGTERMs the process mid-turn.
+  const reachedModel = (o) => o.apiDurationMs === undefined || o.apiDurationMs > 0;
+
+  it('does not count the resume handshake as a completed turn', () => {
+    const out = provider.parseOutput(HANDSHAKE);
+    assert.equal(out.isError, false);
+    assert.equal(reachedModel(out), false,
+      'handshake must not arm the force-kill or clear the queued message');
+  });
+
+  it('counts a real turn as completed', () => {
+    const out = provider.parseOutput(JSON.stringify({
+      type: 'result', subtype: 'success', is_error: false,
+      duration_ms: 17850, duration_api_ms: 17672, num_turns: 3, total_cost_usd: 0.42,
+    }));
+    assert.equal(reachedModel(out), true);
+  });
+
+  it('providers without an API duration still count as completed', () => {
+    // codex / gemini / ollama don't report duration_api_ms — they must be
+    // unaffected by the guard.
+    const out = provider.parseOutput(JSON.stringify({
+      type: 'result', subtype: 'success', duration_ms: 1200, num_turns: 1,
+    }));
+    assert.equal(out.apiDurationMs, undefined);
+    assert.equal(reachedModel(out), true);
+  });
+
+  // Regression: taking the first result in a chunk let the handshake mask a
+  // subsequent abort, so the failure looked like a clean completion.
+  it('surfaces the abort when a chunk carries handshake + abort together', () => {
+    const out = provider.parseOutput(`${HANDSHAKE}\n${ABORT}`);
+    assert.equal(out.isError, true, 'abort must win over the no-op success result');
+    assert.equal(out.terminalReason, 'aborted_streaming');
+    assert.equal(reachedModel(out), false);
+  });
+});
+
 describe('ClaudeCodeProvider models', () => {
   it('offers Fable 5', () => {
     assert.ok(ClaudeCodeProvider.models.some((m) => m.id === 'claude-fable-5'));

@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'fs
 import { resolve } from 'path';
 import { execFile, spawn as cpSpawn } from 'child_process';
 import { getProvider, getInstalledProviders, resolveProviderCommand } from './providers/index.js';
+import { agentLogPath } from './process.js';
 
 const DEFAULT_INTERVAL = 300_000; // 5 minutes (safety-net fallback; event-driven triggers handle the normal case)
 const MAX_LOG_CHARS = 100_000; // ~25k tokens budget for synthesis input (captures 80-90% of recent activity)
@@ -168,7 +169,7 @@ export class Journalist {
 
   hasNewActivity(agents) {
     for (const agent of agents) {
-      const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.id}.log`);
+      const logPath = agentLogPath(this.daemon.grooveDir, agent);
       if (!existsSync(logPath)) continue;
       try {
         const size = statSync(logPath).size;
@@ -182,7 +183,7 @@ export class Journalist {
     const result = {};
 
     for (const agent of agents) {
-      const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.id}.log`);
+      const logPath = agentLogPath(this.daemon.grooveDir, agent);
       if (!existsSync(logPath)) {
         result[agent.id] = { agent, entries: [], explorationEntries: [] };
         continue;
@@ -574,9 +575,15 @@ export class Journalist {
       const provider = getProvider(providerId);
       if (!provider) continue;
 
-      const selectedModel = provider.constructor.models?.find((m) => m.tier === 'medium')
-        || provider.constructor.models?.find((m) => m.tier === 'light')
-        || provider.constructor.models?.[0];
+      // Digests are light-tier work (Haiku-shaped): default internal overhead to
+      // the cheapest tier, escalate via config only on evidence of quality issues.
+      // On Claude, medium→light cuts the journalist's marginal cost ~90%.
+      const models = provider.constructor.models || [];
+      const preferredTier = this.daemon.config?.journalistModelTier || 'light';
+      const selectedModel = models.find((m) => m.tier === preferredTier)
+        || models.find((m) => m.tier === 'light')
+        || models.find((m) => m.tier === 'medium')
+        || models[0];
       const modelId = selectedModel?.id || null;
 
       // Try CLI headless command first
@@ -1055,7 +1062,7 @@ export class Journalist {
    * Budget: keeps recent turns verbatim, summarizes oldest if over maxChars.
    */
   extractConversationThread(agent, { maxChars = 60000 } = {}) {
-    const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.id}.log`);
+    const logPath = agentLogPath(this.daemon.grooveDir, agent);
     if (!existsSync(logPath)) return null;
 
     let content;
@@ -1297,7 +1304,7 @@ export class Journalist {
    * Used by the Introducer to tell new agents what their teammates built.
    */
   getAgentFiles(agent) {
-    const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.id}.log`);
+    const logPath = agentLogPath(this.daemon.grooveDir, agent);
     if (!existsSync(logPath)) return [];
 
     try {
@@ -1335,7 +1342,7 @@ export class Journalist {
    * Used to capture planner conclusions, build summaries, etc.
    */
   getAgentResult(agent) {
-    const logPath = resolve(this.daemon.grooveDir, 'logs', `${agent.id}.log`);
+    const logPath = agentLogPath(this.daemon.grooveDir, agent);
     if (!existsSync(logPath)) return '';
 
     try {

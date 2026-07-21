@@ -18,6 +18,9 @@ const SCORE_HISTORY_MAX = 40;   // ~10 min at 15s intervals
 const COOLDOWN_MS = 5 * 60 * 1000;   // 5 minutes between rotations per agent
 const QUALITY_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes for quality degradation rotations
 const TOKEN_CEILING = 5_000_000;     // 5M tokens per agent (non-self-managing only)
+const REPLAY_CEILING = 0.50;         // Self-managing providers: rotate idle agents above this context usage
+const VELOCITY_CEILING = 250_000;    // New (non-cache) tokens per window before force rotation
+const VELOCITY_WINDOW_MS = 5 * 60_000;
 const ROLE_MULTIPLIERS = {
   planner: 2,
   fullstack: 4,
@@ -201,12 +204,33 @@ export class Rotator extends EventEmitter {
       const singleTask = providerInstance?.constructor?.singleTask ?? false;
       if (singleTask) continue;
 
-      // Skip agents idle for over 60s — no point scoring them every 15s
-      const idleMs = this._idleMs(agent);
-      if (idleMs > 60_000 && agent.contextUsage < HARD_CEILING) continue;
-
       // Determine if provider manages its own context (e.g. Claude Code compacts internally)
       const selfManagesContext = providerInstance?.constructor?.managesOwnContext ?? false;
+
+      // Velocity safety — new-token burn rate, all provider types. tokensUsed
+      // excludes cache reads, so this measures real generation. Caps worst-case
+      // runaway burn; bypasses cooldown (a runaway must be stopped, not waited out).
+      const velCeiling = this.daemon.config?.velocityCeiling ?? VELOCITY_CEILING;
+      const velocity = this.daemon.tokens?.getVelocity?.(agent.id, VELOCITY_WINDOW_MS) ?? 0;
+      if (velCeiling > 0 && velocity >= velCeiling) {
+        console.warn(`  Rotator: ${agent.name} burned ${velCeiling.toLocaleString()}+ new tokens in 5min — FORCE rotating (velocity)`);
+        await this.rotate(agent.id, { reason: 'velocity_ceiling' });
+        continue;
+      }
+
+      // Replay ceiling — self-managing providers only. Internal compaction keeps
+      // sessions functional but lets context ride at 60-85% indefinitely, and every
+      // subsequent message replays that much context on EVERY API call in the agent
+      // loop. A handoff-brief rotation costs ~10K tokens once; riding high costs
+      // 150-300K per call. Computed here because the idle-skip guard below must
+      // not hide the exact agents this targets (idle, high-context).
+      const replayCeiling = this.daemon.config?.replayCeiling ?? REPLAY_CEILING;
+      const overReplayCeiling = selfManagesContext && replayCeiling > 0
+        && agent.contextUsage >= replayCeiling;
+
+      // Skip agents idle for over 60s — no point scoring them every 15s
+      const idleMs = this._idleMs(agent);
+      if (idleMs > 60_000 && agent.contextUsage < HARD_CEILING && !overReplayCeiling) continue;
 
       if (!selfManagesContext) {
         // Non-Claude: threshold + ceiling + quality rotation
@@ -260,6 +284,13 @@ export class Rotator extends EventEmitter {
             continue;
           }
         }
+      } else if (overReplayCeiling && !this._isOnCooldown(agent.id) && idleMs > 10_000) {
+        // Rotate while idle only — never mid-task — and respect the cooldown.
+        // Continuity comes from the conversation-thread resume; rotate() blocks
+        // the rotation entirely if the thread can't be extracted for a chat agent.
+        console.log(`  Rotator: ${agent.name} at ${Math.round(agent.contextUsage * 100)}% — rotating (replay ceiling)`);
+        await this.rotate(agent.id, { reason: 'replay_ceiling' });
+        continue;
       }
 
       // --- Change 4: Truncation-triggered rotation ---
@@ -409,6 +440,7 @@ export class Rotator extends EventEmitter {
       // empty or the thread is too short to be useful.
       let brief;
       let usedConversationThread = false;
+      const isAutoRotation = options.reason && options.reason !== 'manual';
       if (typeof journalist.buildConversationResumePrompt === 'function') {
         const conversationPrompt = journalist.buildConversationResumePrompt(
           agent,
@@ -421,6 +453,22 @@ export class Rotator extends EventEmitter {
         }
       }
       if (!usedConversationThread) {
+        // Chat-continuity protection: an agent with a live user conversation must
+        // carry that dialogue into the fresh session. If the thread can't be
+        // extracted, a boilerplate brief would wipe the agent's memory of the
+        // conversation — skip the auto-rotation instead (context stays intact,
+        // worst case is status quo). Manual rotations proceed; the user accepts the risk.
+        if (isAutoRotation && this.userMessageTimes.has(agentId)) {
+          console.warn(`  Rotator: ${agent.name} has chat history but no extractable conversation thread — skipping rotation`);
+          this.rotating.delete(agentId);
+          this.daemon.broadcast({
+            type: 'rotation:blocked',
+            agentId,
+            agentName: agent.name,
+            reason: 'no_conversation_thread',
+          });
+          return null;
+        }
         brief = await journalist.generateHandoffBrief(agent, {
           reason: options.reason,
           qualityScore: options.qualityScore,
@@ -435,11 +483,14 @@ export class Rotator extends EventEmitter {
       // with too little meaningful content, the new agent will arrive blind.
       // Block it rather than spawning an agent that can't continue the work.
       // Manual rotations (user-requested) are never blocked — the user accepts the risk.
-      const isAutoRotation = options.reason && options.reason !== 'manual';
       if (isAutoRotation && !usedConversationThread) {
         const briefContent = brief
           .replace(/^#.*$/gm, '')           // strip markdown headers
           .replace(/^[-*].*role:.*$/gim, '') // strip metadata lines
+          // Strip the static Instructions boilerplate generateHandoffBrief always
+          // appends (~400 chars) — padding must not defeat the content threshold
+          .replace(/^- (Do NOT|If the task).*$/gm, '')
+          .replace(/^Continue and finish the in-progress task.*$/gm, '')
           .replace(/^\s*$/gm, '')           // strip blank lines
           .trim();
         if (briefContent.length < 200) {
@@ -716,6 +767,8 @@ export class Rotator extends EventEmitter {
     const hardCeilingRotations = this.rotationHistory.filter((r) => r.reason === 'hard_ceiling').length;
     const tokenCeilingRotations = this.rotationHistory.filter((r) => r.reason === 'token_ceiling').length;
     const estimatedCeilingRotations = this.rotationHistory.filter((r) => r.reason === 'estimated_context_ceiling').length;
+    const replayCeilingRotations = this.rotationHistory.filter((r) => r.reason === 'replay_ceiling').length;
+    const velocityCeilingRotations = this.rotationHistory.filter((r) => r.reason === 'velocity_ceiling').length;
     return {
       enabled: this.enabled,
       totalRotations,
@@ -726,6 +779,8 @@ export class Rotator extends EventEmitter {
       hardCeilingRotations,
       tokenCeilingRotations,
       estimatedCeilingRotations,
+      replayCeilingRotations,
+      velocityCeilingRotations,
       rotating: Array.from(this.rotating),
       liveScores: this.liveScores,
       scoreHistory: this.scoreHistory,
@@ -734,6 +789,8 @@ export class Rotator extends EventEmitter {
       qualityThreshold: QUALITY_THRESHOLD,
       cooldownMs: COOLDOWN_MS,
       tokenCeiling: TOKEN_CEILING,
+      replayCeiling: this.daemon.config?.replayCeiling ?? REPLAY_CEILING,
+      velocityCeiling: this.daemon.config?.velocityCeiling ?? VELOCITY_CEILING,
       roleMultipliers: ROLE_MULTIPLIERS,
     };
   }

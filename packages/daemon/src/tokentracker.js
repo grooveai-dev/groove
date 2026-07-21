@@ -12,6 +12,14 @@ const COLD_START_PER_FILE = 15;
 const COLD_START_PER_DIR = 40;
 // Estimated tokens wasted per file conflict (agent discovers, backs off, retries)
 const CONFLICT_OVERHEAD = 500;
+// Max per-agent session records kept. Aggregates are cumulative and unaffected;
+// windowed queries (getVelocity/getTokensInWindow) only need the recent tail,
+// which 500 records covers by orders of magnitude. Uncapped, tokens.json grew
+// to 13.8MB and was rewritten on every assistant stream event.
+const SESSION_CAP = 500;
+// Debounce window for persisting to disk. record() fires per assistant event —
+// writing the full ledger each time is a hot-path full-file rewrite.
+const SAVE_DEBOUNCE_MS = 5_000;
 
 export class TokenTracker {
   constructor(grooveDir) {
@@ -23,6 +31,7 @@ export class TokenTracker {
     this.coldStartsSkipped = 0;
     this.projectFiles = 0;   // Set from indexer stats
     this.projectDirs = 0;
+    this._saveTimer = null;
     this.load();
   }
 
@@ -47,6 +56,7 @@ export class TokenTracker {
           if (!entry.totalDurationMs) entry.totalDurationMs = 0;
           if (!entry.totalTurns) entry.totalTurns = 0;
           if (!entry.modelDistribution) entry.modelDistribution = {};
+          this._capSessions(entry);
         }
       } catch {
         this.usage = {};
@@ -55,6 +65,10 @@ export class TokenTracker {
   }
 
   save() {
+    if (this._saveTimer) {
+      clearTimeout(this._saveTimer);
+      this._saveTimer = null;
+    }
     writeFileSync(this.path, JSON.stringify({
       usage: this.usage,
       rotationSavings: this.rotationSavings,
@@ -62,6 +76,30 @@ export class TokenTracker {
       coldStartsSkipped: this.coldStartsSkipped,
       lastSaved: new Date().toISOString(),
     }, null, 2));
+  }
+
+  // Debounced persistence for hot-path recording. In-memory state is always
+  // current; at most SAVE_DEBOUNCE_MS of records are at risk on a crash.
+  _scheduleSave() {
+    if (this._saveTimer) return;
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      try { this.save(); } catch { /* best-effort */ }
+    }, SAVE_DEBOUNCE_MS);
+    this._saveTimer.unref?.();
+  }
+
+  // Write any pending debounced state to disk. Call on daemon shutdown.
+  flush() {
+    if (this._saveTimer) {
+      try { this.save(); } catch { /* best-effort */ }
+    }
+  }
+
+  _capSessions(entry) {
+    if (Array.isArray(entry.sessions) && entry.sessions.length > SESSION_CAP) {
+      entry.sessions.splice(0, entry.sessions.length - SESSION_CAP);
+    }
   }
 
   _initAgent(agentId) {
@@ -89,7 +127,8 @@ export class TokenTracker {
     if (typeof detail === 'number') {
       entry.total += detail;
       entry.sessions.push({ tokens: detail, timestamp: new Date().toISOString() });
-      this.save();
+      this._capSessions(entry);
+      this._scheduleSave();
       return;
     }
 
@@ -121,8 +160,9 @@ export class TokenTracker {
       projectRoot: detail.projectRoot || null,
       timestamp: new Date().toISOString(),
     });
+    this._capSessions(entry);
 
-    this.save();
+    this._scheduleSave();
   }
 
   // Sum tokens recorded for an agent since a given timestamp.
@@ -152,25 +192,25 @@ export class TokenTracker {
     if (costUsd) entry.totalCostUsd += costUsd;
     if (durationMs) entry.totalDurationMs += durationMs;
     if (turns) entry.totalTurns += turns;
-    this.save();
+    this._scheduleSave();
   }
 
   // Record that a rotation saved context tokens
   recordRotation(agentId, tokensBefore) {
     this.rotationSavings += Math.round(tokensBefore * 0.3); // ~30% of context was degraded
-    this.save();
+    this._scheduleSave();
   }
 
   // Record that a conflict was prevented (scope enforcement)
   recordConflictPrevented() {
     this.conflictsPrevented++;
-    this.save();
+    this._scheduleSave();
   }
 
   // Record that a cold-start was skipped (Journalist provided context)
   recordColdStartSkipped() {
     this.coldStartsSkipped++;
-    this.save();
+    this._scheduleSave();
   }
 
   // Set project size from indexer for dynamic cold-start estimation

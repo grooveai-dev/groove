@@ -275,7 +275,15 @@ export class ClaudeCodeProvider extends Provider {
 
     // Merge events: prefer content-bearing events (activity/result) over usage/session.
     // Accumulate token counts across all events in this chunk.
-    let content = events.find((e) => e.type === 'result') || events.find((e) => e.type === 'activity') || events[events.length - 1];
+    // Prefer an error result over a success one when a single chunk carries
+    // both. During --resume the CLI emits a 0-turn no-op success result
+    // immediately before the real turn's result; taking the first would hide a
+    // subsequent abort and the failure would look like a clean completion.
+    const resultEvents = events.filter((e) => e.type === 'result');
+    let content = resultEvents.find((e) => e.isError)
+      || resultEvents[0]
+      || events.find((e) => e.type === 'activity')
+      || events[events.length - 1];
     const merged = { ...content };
 
     let totalTokens = 0;

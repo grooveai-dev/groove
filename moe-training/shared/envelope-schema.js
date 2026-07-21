@@ -1,6 +1,12 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { SUPPORTED_PROVIDERS, MODEL_TIERS, TRAINING_EXCLUSION_REASONS } from './constants.js';
+import {
+  SUPPORTED_PROVIDERS,
+  MODEL_TIERS,
+  TRAINING_EXCLUSION_REASONS,
+  MAX_STEP_CONTENT_CHARS,
+  MAX_TOKEN_COUNT,
+} from './constants.js';
 
 export const STEP_TYPES = ['thought', 'action', 'observation', 'correction', 'resolution', 'error', 'coordination', 'edit', 'instruction', 'clarification', 'approval', 'delegate', 'yield'];
 const VALID_QUALITY_TIERS = ['TIER_A', 'TIER_B', 'TIER_C'];
@@ -10,8 +16,10 @@ const VALID_MODEL_ENGINES = Object.keys(MODEL_TIERS);
 const VALID_COMPLEXITIES = ['light', 'medium', 'heavy'];
 const VALID_OUTCOME_STATUSES = ['SUCCESS', 'CRASH', 'KILLED'];
 const MAX_STEPS_PER_ENVELOPE = 500;
-const MAX_STEP_CONTENT_LENGTH = 10_000;
-const MAX_TOKEN_COUNT = 100_000;
+// Sourced from shared constants — the client trims to the same value before
+// building envelopes. Keeping one definition prevents the drift that silently
+// truncated observations at 10k while the validator allowed more.
+const MAX_STEP_CONTENT_LENGTH = MAX_STEP_CONTENT_CHARS;
 const MAX_STEP_NUMBER = 50_000;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const ONE_HOUR_MS = 60 * 60 * 1000;

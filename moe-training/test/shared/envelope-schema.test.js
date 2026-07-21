@@ -3,7 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateEnvelope, STEP_TYPES } from '../../shared/envelope-schema.js';
-import { TRAINING_EXCLUSION_REASONS } from '../../shared/constants.js';
+import { TRAINING_EXCLUSION_REASONS, MAX_STEP_CONTENT_CHARS } from '../../shared/constants.js';
 
 const VALID_HMAC = 'a'.repeat(64);
 const VALID_APP_HASH = 'b'.repeat(64);
@@ -113,12 +113,19 @@ describe('envelope-schema', () => {
     assert.ok(result.errors.some(e => e.includes('500')));
   });
 
-  it('rejects step with content > 10KB', () => {
+  it('accepts step content up to MAX_STEP_CONTENT_CHARS', () => {
     const env = validEnvelope();
-    env.trajectory_log[0].content = 'x'.repeat(10_001);
+    env.trajectory_log[0].content = 'x'.repeat(MAX_STEP_CONTENT_CHARS);
+    const result = validateEnvelope(env);
+    assert.ok(!result.errors.some(e => e.includes('step.content exceeds')));
+  });
+
+  it('rejects step content over MAX_STEP_CONTENT_CHARS', () => {
+    const env = validEnvelope();
+    env.trajectory_log[0].content = 'x'.repeat(MAX_STEP_CONTENT_CHARS + 1);
     const result = validateEnvelope(env);
     assert.equal(result.valid, false);
-    assert.ok(result.errors.some(e => e.includes('10000')));
+    assert.ok(result.errors.some(e => e.includes(String(MAX_STEP_CONTENT_CHARS))));
   });
 
   it('rejects step with token_count > 100,000', () => {

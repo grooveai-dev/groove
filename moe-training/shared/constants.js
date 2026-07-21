@@ -28,7 +28,17 @@ export const QUALITY_MULTIPLIERS = {
   highQuality: 1.5,
 };
 
-export const OBSERVATION_TOKEN_LIMIT = 4096;
+// Hard ceiling on step.content, shared by the client trimmer (envelope-builder)
+// and the ingest validator (envelope-schema). These MUST stay equal: the
+// validator rejects the whole envelope when exceeded, which drops the entire
+// session — so the client must trim to exactly this before building.
+export const MAX_STEP_CONTENT_CHARS = 100_000;
+export const MAX_TOKEN_COUNT = 100_000;
+
+// Per-observation budget, in estimated tokens (~4 chars/token). Kept safely
+// under MAX_STEP_CONTENT_CHARS so a parser-truncated observation plus its
+// "[TRUNCATED …]" suffix still fits without a second trim downstream.
+export const OBSERVATION_TOKEN_LIMIT = 24_000;
 export const TIER_A_MIN_QUALITY = 70;
 export const TIER_B_MIN_QUALITY = 50;
 export const TRAINING_MIN_STEPS = 5;

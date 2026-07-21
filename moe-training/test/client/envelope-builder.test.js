@@ -3,7 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { EnvelopeBuilder } from '../../client/envelope-builder.js';
-import { CHUNK_SIZE } from '../../shared/constants.js';
+import { CHUNK_SIZE, MAX_STEP_CONTENT_CHARS } from '../../shared/constants.js';
 
 const metadata = {
   model_engine: 'claude-opus-4-6',
@@ -74,12 +74,48 @@ describe('EnvelopeBuilder', () => {
     assert.deepEqual(close.outcome, outcome);
   });
 
-  it('truncates step content at 10000 characters', () => {
+  it('leaves content under the ingest ceiling untouched', () => {
     const builder = new EnvelopeBuilder('sess_1', 'user_1', metadata);
-    const longContent = 'x'.repeat(15_000);
-    builder.addStep({ step: 1, type: 'thought', timestamp: 123, content: longContent });
-    const envelope = builder.flush();
-    assert.equal(envelope.trajectory_log[0].content.length, 10_000);
+    builder.addStep({ step: 1, type: 'thought', timestamp: 123, content: 'x'.repeat(15_000) });
+    const step = builder.flush().trajectory_log[0];
+    assert.equal(step.content.length, 15_000);
+    assert.ok(!step.truncated);
+  });
+
+  it('truncates step content at MAX_STEP_CONTENT_CHARS', () => {
+    const builder = new EnvelopeBuilder('sess_1', 'user_1', metadata);
+    builder.addStep({ step: 1, type: 'thought', timestamp: 123, content: 'x'.repeat(150_000) });
+    const step = builder.flush().trajectory_log[0];
+    assert.equal(step.content.length, MAX_STEP_CONTENT_CHARS);
+  });
+
+  // Regression: a trim that doesn't flag itself looks like complete data to
+  // downstream training and silently corrupts the corpus.
+  it('never truncates silently — always sets truncated + original_token_count', () => {
+    const builder = new EnvelopeBuilder('sess_1', 'user_1', metadata);
+    builder.addStep({ step: 1, type: 'observation', timestamp: 123, content: 'x'.repeat(150_000) });
+    const step = builder.flush().trajectory_log[0];
+    assert.equal(step.truncated, true);
+    assert.equal(step.original_token_count, 37_500); // 150k chars / 4
+  });
+
+  it('preserves a parser-supplied original_token_count when trimming again', () => {
+    const builder = new EnvelopeBuilder('sess_1', 'user_1', metadata);
+    builder.addStep({
+      step: 1, type: 'observation', timestamp: 123,
+      content: 'x'.repeat(150_000), truncated: true, original_token_count: 99_000,
+    });
+    const step = builder.flush().trajectory_log[0];
+    // The parser saw the true original; our count only sees what survived it.
+    assert.equal(step.original_token_count, 99_000);
+  });
+
+  it('output always satisfies the ingest validator', () => {
+    const builder = new EnvelopeBuilder('sess_1', 'user_1', metadata);
+    builder.addStep({ step: 1, type: 'observation', timestamp: 123, content: 'x'.repeat(500_000) });
+    const step = builder.flush().trajectory_log[0];
+    assert.ok(step.content.length <= MAX_STEP_CONTENT_CHARS,
+      'client must trim to the validator ceiling or the whole session is rejected');
   });
 
   it('caps token_count at 100000', () => {

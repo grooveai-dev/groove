@@ -1,7 +1,12 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { randomUUID } from 'node:crypto';
-import { CHUNK_SIZE } from '../shared/constants.js';
+import { CHUNK_SIZE, MAX_STEP_CONTENT_CHARS, MAX_TOKEN_COUNT } from '../shared/constants.js';
+
+function estimateTokens(text) {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
 
 export class EnvelopeBuilder {
   constructor(sessionId, contributorId, metadata) {
@@ -13,11 +18,23 @@ export class EnvelopeBuilder {
   }
 
   addStep(step) {
-    if (step.content && typeof step.content === 'string' && step.content.length > 10_000) {
-      step.content = step.content.slice(0, 10_000);
+    // Last-resort trim so the envelope passes ingest validation (an oversized
+    // step.content is rejected, which drops the whole session). Parsers already
+    // truncate observations to OBSERVATION_TOKEN_LIMIT and flag it; this only
+    // fires for content that slipped past them. When it does fire it MUST record
+    // the loss — a silent trim looks like complete data to downstream training.
+    if (step.content && typeof step.content === 'string' && step.content.length > MAX_STEP_CONTENT_CHARS) {
+      const originalTokens = estimateTokens(step.content);
+      step.content = step.content.slice(0, MAX_STEP_CONTENT_CHARS);
+      step.truncated = true;
+      // Preserve the parser's count if it already trimmed — that one reflects
+      // the true original size, ours only sees what survived the first pass.
+      if (typeof step.original_token_count !== 'number') {
+        step.original_token_count = Math.min(originalTokens, MAX_TOKEN_COUNT);
+      }
     }
-    if (typeof step.token_count === 'number' && step.token_count > 100_000) {
-      step.token_count = 100_000;
+    if (typeof step.token_count === 'number' && step.token_count > MAX_TOKEN_COUNT) {
+      step.token_count = MAX_TOKEN_COUNT;
     }
     this._buffer.push(step);
     if (this._buffer.length >= CHUNK_SIZE) {

@@ -399,7 +399,9 @@ function InnerChatMessage({ msg }) {
     <div className="max-w-[85%]">
       <div className="flex items-center gap-1.5 mb-1">
         <MessageSquare size={11} className="text-warning" />
-        <span className="text-2xs font-sans font-medium text-warning">InnerChat</span>
+        <span className="text-2xs font-sans font-medium text-warning">
+          {msg.innerchat?.kind === 'reply' ? 'InnerChat reply' : 'InnerChat'}
+        </span>
         <span className="text-2xs font-sans text-text-3">from</span>
         <span className="text-2xs font-sans font-medium text-text-1">{senderName}</span>
         {senderRole && <span className="text-2xs font-sans text-text-3">{senderRole}</span>}

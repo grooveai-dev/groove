@@ -26,6 +26,9 @@ export function FleetSidebar({ width }) {
   const openDetail = useGrooveStore((s) => s.openDetail);
   const addToast = useGrooveStore((s) => s.addToast);
 
+  const moveAgentToTeam = useGrooveStore((s) => s.moveAgentToTeam);
+
+  const [dropTeamId, setDropTeamId] = useState(null);
   const [confirmDeleteTeam, setConfirmDeleteTeam] = useState(null);
   const [renamingTeamId, setRenamingTeamId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
@@ -125,6 +128,22 @@ export function FleetSidebar({ width }) {
     setRenamingTeamId(null);
   }
 
+  // Team headers accept agent rows dragged from any other team.
+  function handleDragOver(e, teamId) {
+    if (!e.dataTransfer.types.includes('application/x-fleet-agent')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'link';
+    if (dropTeamId !== teamId) setDropTeamId(teamId);
+  }
+
+  function handleDrop(e, teamId) {
+    const agentId = e.dataTransfer.getData('application/x-fleet-agent');
+    setDropTeamId(null);
+    if (!agentId) return;
+    e.preventDefault();
+    moveAgentToTeam(agentId, teamId);
+  }
+
   function startRename(e, team) {
     e.stopPropagation();
     setRenamingTeamId(team.id);
@@ -167,7 +186,20 @@ export function FleetSidebar({ width }) {
           const isConfirming = confirmDeleteTeam === team.id;
 
           return (
-            <div key={team.id} className="mb-0.5">
+            <div
+              key={team.id}
+              className={cn(
+                'mb-0.5 rounded-md transition-colors',
+                dropTeamId === team.id && 'bg-accent/10 ring-1 ring-accent/40',
+              )}
+              onDragOver={(e) => handleDragOver(e, team.id)}
+              onDragLeave={(e) => {
+                // Ignore moves onto descendants — they still count as "inside".
+                if (e.currentTarget.contains(e.relatedTarget)) return;
+                setDropTeamId((id) => (id === team.id ? null : id));
+              }}
+              onDrop={(e) => handleDrop(e, team.id)}
+            >
               {/* Team header */}
               <div className={cn(
                 'w-full flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-surface-2 transition-colors group',

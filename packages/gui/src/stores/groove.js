@@ -369,54 +369,39 @@ export const useGrooveStore = create((set, get) => ({
           break;
         }
 
-        case 'innerchat:sent': {
-          const ic = msg.data;
-          get().addChatMessage(ic.to.id, 'innerchat', ic.message, false);
-          set((s) => {
-            const icMsgs = { ...s.innerchatMessages };
-            icMsgs[ic.id] = ic;
-            persistJSON('groove:innerchatMessages', icMsgs);
-            return { innerchatMessages: icMsgs };
-          });
-          // Tag the chat message with innerchat metadata
-          set((s) => {
-            const history = { ...s.chatHistory };
-            const arr = history[ic.to.id] || [];
-            if (arr.length > 0) {
-              const last = arr[arr.length - 1];
-              if (last.from === 'innerchat' && last.text === ic.message) {
-                arr[arr.length - 1] = { ...last, innerchat: { messageId: ic.id, fromAgent: ic.from } };
-                history[ic.to.id] = arr;
-                persistJSON('groove:chatHistory', history);
-                return { chatHistory: history };
-              }
-            }
-            return {};
-          });
-          break;
-        }
+        case 'innerchat:turn': {
+          const { thread, turn } = msg.data;
+          if (turn.status === 'failed') {
+            get().addToast('error', `Relay to ${turn.to.name} failed`, turn.error);
+          }
 
-        case 'innerchat:response': {
-          const ic = msg.data;
-          get().addChatMessage(ic.from.id, 'innerchat', ic.response, false);
+          // The turn lands in the recipient's chat, badged with who sent it.
           set((s) => {
-            const icMsgs = { ...s.innerchatMessages };
-            icMsgs[ic.id] = ic;
-            persistJSON('groove:innerchatMessages', icMsgs);
-            // Tag the response chat message with innerchat metadata
             const history = { ...s.chatHistory };
-            const arr = history[ic.from.id] || [];
-            if (arr.length > 0) {
-              const last = arr[arr.length - 1];
-              if (last.from === 'innerchat' && last.text === ic.response) {
-                arr[arr.length - 1] = { ...last, innerchat: { messageId: ic.id, fromAgent: ic.to } };
-                history[ic.from.id] = arr;
-                persistJSON('groove:chatHistory', history);
-              }
-            }
-            return { innerchatMessages: icMsgs, chatHistory: history };
+            const arr = [...(history[turn.to.id] || [])];
+            arr.push({
+              from: 'innerchat',
+              text: turn.text,
+              timestamp: turn.timestamp,
+              isQuery: false,
+              innerchat: {
+                turnId: turn.id,
+                threadId: thread.id,
+                kind: turn.kind,
+                fromAgent: turn.from,
+              },
+            });
+            history[turn.to.id] = arr.slice(-100);
+            persistJSON('groove:chatHistory', history);
+
+            const threads = { ...s.innerchatThreads, [thread.id]: thread };
+            persistJSON('groove:innerchatThreads', threads);
+            return { chatHistory: history, innerchatThreads: threads };
           });
-          get().addToast('info', `${ic.to.name} replied to ${ic.from.name}`, 'InnerChat response received');
+
+          if (turn.kind === 'reply' && turn.status !== 'failed') {
+            get().addToast('info', `${turn.from.name} replied`, `Forwarded to ${turn.to.name}`);
+          }
           break;
         }
 

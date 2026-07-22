@@ -5,6 +5,8 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSy
 import { validateAgentConfig, validateReasoningEffort, validateVerbosity } from '../validate.js';
 import { ROLE_INTEGRATIONS, wrapWithRoleReminder } from '../process.js';
 import { getProvider } from '../providers/index.js';
+import { deliverInstruction } from '../deliver.js';
+import { renameAgent } from '../rename.js';
 
 export function registerAgentRoutes(app, daemon) {
   // List all agents
@@ -56,9 +58,21 @@ export function registerAgentRoutes(app, daemon) {
 
   // Update agent
   app.patch('/api/agents/:id', (req, res) => {
-    const agent = daemon.registry.update(req.params.id, req.body);
-    if (!agent) return res.status(404).json({ error: 'Agent not found' });
-    res.json(agent);
+    try {
+      const { name, ...rest } = req.body || {};
+
+      // Renames migrate name-keyed files, so they can't go through the plain
+      // field update — registry.update ignores `name` without the opt-in.
+      let agent = daemon.registry.get(req.params.id);
+      if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+      if (Object.keys(rest).length) agent = daemon.registry.update(req.params.id, rest);
+      if (typeof name === 'string') agent = renameAgent(daemon, req.params.id, name);
+
+      res.json(agent);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
   });
 
   // Kill an agent (add ?purge=true to also remove from registry)
@@ -426,104 +440,12 @@ export function registerAgentRoutes(app, daemon) {
         }
       }
 
-      // Record user feedback so the journalist can include it in future agent context
-      if (daemon.journalist) daemon.journalist.recordUserFeedback(agent, finalMessage);
-      if (daemon.rotator) daemon.rotator.recordUserMessage(req.params.id);
+      const result = await deliverInstruction(daemon, req.params.id, finalMessage);
 
-      // Agent loop path — send message directly to the running loop
-      const wrappedMessage = wrapWithRoleReminder(agent.role, finalMessage);
-      if (daemon.processes.hasAgentLoop(req.params.id)) {
-        const sent = await daemon.processes.sendMessage(req.params.id, wrappedMessage);
-        if (sent) {
-          daemon.audit.log('agent.chat', { id: req.params.id });
-          return res.json({ id: agent.id, status: 'message_sent' });
-        }
-        // Loop exists but not running — fall through to resume/rotate
-      }
-
-      // One-shot providers (groove-network): kill any running instance and
-      // respawn with the user's message as --prompt. No handoff brief, no
-      // session resume, no message queue — each chat message is a fresh spawn.
-      const provider = getProvider(agent.provider);
-      if (provider?.constructor?.isOneShot) {
-        const oldConfig = { ...agent };
-        if (daemon.processes.isRunning(req.params.id)) {
-          await daemon.processes.kill(req.params.id);
-        }
-        daemon.registry.remove(req.params.id, { silent: true });
-        daemon.locks.release(req.params.id);
-
-        let newAgent;
-        try {
-          newAgent = await daemon.processes.spawn({
-            role: oldConfig.role,
-            scope: oldConfig.scope,
-            provider: oldConfig.provider,
-            model: oldConfig.model,
-            prompt: finalMessage,
-            permission: oldConfig.permission || 'full',
-            workingDir: oldConfig.workingDir,
-            name: oldConfig.name,
-            teamId: oldConfig.teamId,
-          });
-        } catch (spawnErr) {
-          daemon.registry.flushPendingRemovals();
-          throw spawnErr;
-        }
-        daemon.audit.log('agent.instruct', { id: req.params.id, newId: newAgent.id, resumed: false });
-        return res.json(newAgent);
-      }
-
-      // Non-interactive CLI providers (e.g. Gemini): respawn with the new
-      // message as the prompt, preserving original introContext. These providers
-      // run one prompt per spawn and cannot resume sessions.
-      if (provider?.constructor?.nonInteractive && !daemon.processes.isRunning(req.params.id)) {
-        const oldConfig = { ...agent };
-        daemon.registry.remove(req.params.id, { silent: true });
-        daemon.locks.release(req.params.id);
-
-        let newAgent;
-        try {
-          newAgent = await daemon.processes.spawn({
-            role: oldConfig.role,
-            scope: oldConfig.scope,
-            provider: oldConfig.provider,
-            model: oldConfig.model,
-            prompt: finalMessage,
-            introContext: oldConfig.introContext,
-            permission: oldConfig.permission || 'full',
-            workingDir: oldConfig.workingDir,
-            name: oldConfig.name,
-            teamId: oldConfig.teamId,
-          });
-        } catch (spawnErr) {
-          daemon.registry.flushPendingRemovals();
-          throw spawnErr;
-        }
-        daemon.audit.log('agent.instruct', { id: req.params.id, newId: newAgent.id, resumed: false });
-        return res.json(newAgent);
-      }
-
-      // Running CLI agent (no loop) — queue the message for delivery after
-      // the current task completes instead of killing and respawning.
-      if (daemon.processes.isRunning(req.params.id)) {
-        daemon.processes.queueMessage(req.params.id, wrappedMessage);
-        daemon.audit.log('agent.chat.queued', { id: req.params.id });
-        return res.json({ id: agent.id, status: 'message_queued' });
-      }
-
-      // CLI agent path — session resume or rotation.
-      // Force rotation (fresh session + handoff brief) past the resume ceiling:
-      // reviving a >5M-token claude session has crashed the CLI mid-HTTP-parse
-      // (V8 fatal in JsonStringifier) — the rotator's handoff brief sidesteps that.
-      const SESSION_RESUME_CEILING = 5_000_000;
-      const resumed = !!agent.sessionId && (agent.tokensUsed || 0) < SESSION_RESUME_CEILING;
-      const newAgent = resumed
-        ? await daemon.processes.resume(req.params.id, wrappedMessage)
-        : await daemon.rotator.rotate(req.params.id, { additionalPrompt: wrappedMessage });
-
-      daemon.audit.log('agent.instruct', { id: req.params.id, newId: newAgent.id, resumed });
-      res.json(newAgent);
+      // Respawn paths return the fresh agent record; in-place delivery just
+      // acknowledges with a status the GUI uses to show queued vs sent.
+      if (result.agent && result.agentId !== req.params.id) return res.json(result.agent);
+      res.json({ id: agent.id, status: result.status });
     } catch (err) {
       res.status(400).json({ error: err.message });
     }

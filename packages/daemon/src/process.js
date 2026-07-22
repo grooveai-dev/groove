@@ -320,7 +320,7 @@ const PERMISSION_PROMPTS = {
   supervised: null,  // Maps to auto (supervised removed — too expensive)
 };
 
-function sanitizeFilename(name) {
+export function sanitizeFilename(name) {
   return String(name).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
 }
 

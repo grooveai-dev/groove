@@ -104,18 +104,41 @@ export const createAgentsSlice = (set, get) => ({
     }
   },
 
+  // Move an agent to another team. Teams are an organizational grouping —
+  // this re-labels the agent and does NOT relocate its working directory, so a
+  // running process keeps working where it is.
+  async moveAgentToTeam(agentId, teamId) {
+    const agent = get().agents.find((a) => a.id === agentId);
+    if (!agent || agent.teamId === teamId) return;
+    const team = get().teams.find((t) => t.id === teamId);
+    try {
+      await api.patch(`/agents/${encodeURIComponent(agentId)}`, { teamId });
+      get().addToast('success', `Moved ${agent.name} → ${team?.name || 'team'}`);
+    } catch (err) {
+      get().addToast('error', 'Move failed', err.message);
+    }
+  },
+
   // ── InnerChat ─────────────────────────────────────────────
 
-  innerchatMessages: loadJSON('groove:innerchatMessages') || {},
+  innerchatThreads: loadJSON('groove:innerchatThreads') || {},
 
-  async sendInnerChat(fromId, toId, message) {
+  // Relay a message from one agent to another. Pass threadId to continue an
+  // existing exchange rather than opening a new one.
+  async sendInnerChat(fromId, toId, message, threadId = null) {
     try {
-      const msg = await api.post('/innerchat/send', { from: fromId, to: toId, message });
-      return msg;
+      return await api.post('/innerchat/send', { from: fromId, to: toId, message, threadId });
     } catch (err) {
       get().addToast('error', 'InnerChat failed', err.message);
       throw err;
     }
+  },
+
+  // Threads this agent is a participant in, most recent first.
+  innerchatThreadsFor(agentId) {
+    return Object.values(get().innerchatThreads)
+      .filter((t) => t.participants.some((p) => p.id === agentId))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
   },
 
   // ── Chat ──────────────────────────────────────────────────

@@ -79,12 +79,16 @@ export class Registry extends EventEmitter {
     return Array.from(this.agents.values());
   }
 
-  update(id, updates) {
+  update(id, updates, { allowRename = false } = {}) {
     const agent = this.agents.get(id);
     if (!agent) return null;
 
     // Only allow known fields to prevent prototype pollution
     for (const key of Object.keys(updates)) {
+      // Logs, personalities and agent-files are keyed by name — renaming
+      // without migrating them orphans the lot, and the GC then deletes it.
+      // renameAgent() (rename.js) does the migration and opts in here.
+      if (key === 'name' && !allowRename) continue;
       if (SAFE_FIELDS.has(key)) {
         agent[key] = updates[key];
       }

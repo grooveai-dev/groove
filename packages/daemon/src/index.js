@@ -10,7 +10,7 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import { Registry } from './registry.js';
 import { createApi } from './api.js';
-import { ProcessManager } from './process.js';
+import { ProcessManager, sanitizeFilename } from './process.js';
 import { StateManager } from './state.js';
 import { Introducer } from './introducer.js';
 import { LockManager } from './lockmanager.js';
@@ -750,7 +750,11 @@ export class Daemon {
     try {
       // Build set of agent names still in the registry — never remove their logs
       const allAgents = this.registry.getAll();
-      const activeNames = new Set(allAgents.map((a) => a.name));
+      // Raw logs are keyed by sanitized name; GROOVE_AGENT_LOGS/ subdirectories
+      // are keyed by agent id (journalist.js). Comparing either against the
+      // wrong set deletes live agents' history.
+      const activeNames = new Set(allAgents.map((a) => sanitizeFilename(a.name)));
+      const activeIds = new Set(allAgents.map((a) => a.id));
 
       // Safety: if registry is empty but log files exist, state may have been
       // lost (corrupt JSON, partial write). Skip log cleanup to prevent
@@ -778,7 +782,7 @@ export class Daemon {
       if (existsSync(agentLogsDir)) {
         for (const dir of readdirSync(agentLogsDir, { withFileTypes: true })) {
           if (!dir.isDirectory()) continue;
-          if (activeNames.has(dir.name)) continue;
+          if (activeIds.has(dir.name)) continue;
           try { rmSync(resolve(agentLogsDir, dir.name), { recursive: true }); cleaned++; } catch { /* skip */ }
         }
         // Remove GROOVE_AGENT_LOGS/ itself if empty

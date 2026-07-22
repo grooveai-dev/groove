@@ -148,11 +148,17 @@ export class Teams {
           renameSync(oldWorkingDir, newWorkingDir);
           team.workingDir = newWorkingDir;
 
-          // Update all agents in this team with the new working directory
+          // Repoint every agent under the old tree, not just those sitting at
+          // its root — an agent in a subdirectory would otherwise keep a path
+          // that no longer exists.
           const agents = this.daemon.registry.getAll().filter((a) => a.teamId === id);
           for (const agent of agents) {
+            if (!agent.workingDir) continue;
             if (agent.workingDir === oldWorkingDir) {
               this.daemon.registry.update(agent.id, { workingDir: newWorkingDir });
+            } else if (agent.workingDir.startsWith(`${oldWorkingDir}/`)) {
+              const suffix = agent.workingDir.slice(oldWorkingDir.length);
+              this.daemon.registry.update(agent.id, { workingDir: `${newWorkingDir}${suffix}` });
             }
           }
         } catch (err) {

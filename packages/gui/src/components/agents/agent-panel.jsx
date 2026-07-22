@@ -6,7 +6,8 @@ import { AgentFeed } from './agent-feed';
 import { AgentConfig } from './agent-config';
 import { AgentTelemetry } from './agent-telemetry';
 import { AgentMdFiles } from './agent-mdfiles';
-import { MessageSquare, Settings, Activity, FileText, Pencil, Check, X, SendHorizontal, ChevronDown } from 'lucide-react';
+import { InnerChatRelay } from './innerchat-relay';
+import { MessageSquare, Settings, Activity, FileText, Pencil, Check, X } from 'lucide-react';
 import { fmtNum, fmtUptime } from '../../lib/format';
 import { cn } from '../../lib/cn';
 import { roleColor } from '../../lib/status';
@@ -73,72 +74,6 @@ function InlineName({ agent }) {
       >
         <Pencil size={10} />
       </button>
-    </div>
-  );
-}
-
-function InnerChatCompose({ fromAgent, onClose }) {
-  const agents = useGrooveStore((s) => s.agents);
-  const sendInnerChat = useGrooveStore((s) => s.sendInnerChat);
-  const addToast = useGrooveStore((s) => s.addToast);
-  const [toId, setToId] = useState('');
-  const [message, setMessage] = useState('');
-  const [sending, setSending] = useState(false);
-
-  const others = agents.filter((a) => a.id !== fromAgent.id && (a.status === 'running' || a.status === 'starting' || a.status === 'completed'));
-
-  async function handleSend() {
-    if (!toId || !message.trim() || sending) return;
-    setSending(true);
-    try {
-      await sendInnerChat(fromAgent.id, toId, message.trim());
-      const target = agents.find((a) => a.id === toId);
-      addToast('success', `Sent to ${target?.name || toId}`, 'InnerChat message delivered');
-      setMessage('');
-      onClose();
-    } catch (err) {
-      addToast('error', 'InnerChat failed', err.message);
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <div className="flex-shrink-0 border-t border-border-subtle bg-surface-0 px-3 py-2.5 space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-2xs font-semibold text-warning font-sans">InnerChat — relay to agent</span>
-        <button onClick={onClose} className="p-0.5 text-text-4 hover:text-text-1 cursor-pointer"><X size={12} /></button>
-      </div>
-      <div className="relative">
-        <select
-          value={toId}
-          onChange={(e) => setToId(e.target.value)}
-          className="w-full h-7 pl-2 pr-6 text-xs bg-surface-3 border border-border-subtle rounded text-text-0 font-sans focus:outline-none focus:border-accent/40 appearance-none cursor-pointer"
-        >
-          <option value="">Select target agent…</option>
-          {others.map((a) => (
-            <option key={a.id} value={a.id}>{a.name} ({a.role})</option>
-          ))}
-        </select>
-        <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-4 pointer-events-none" />
-      </div>
-      <div className="flex gap-1.5">
-        <textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend(); }}
-          placeholder="Message to relay… (⌘↵ to send)"
-          rows={3}
-          className="flex-1 px-2 py-1.5 text-xs bg-surface-3 border border-border-subtle rounded text-text-0 font-sans placeholder:text-text-4 focus:outline-none focus:border-accent/40 resize-none"
-        />
-        <button
-          onClick={handleSend}
-          disabled={!toId || !message.trim() || sending}
-          className="w-8 flex-shrink-0 flex items-center justify-center rounded bg-accent/15 text-accent hover:bg-accent/25 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
-        >
-          <SendHorizontal size={14} />
-        </button>
-      </div>
     </div>
   );
 }
@@ -251,7 +186,7 @@ export function AgentPanel() {
               <AgentFeed agent={agent} />
             </div>
             {innerChatOpen && (
-              <InnerChatCompose fromAgent={agent} onClose={() => setInnerChatOpen(false)} />
+              <InnerChatRelay fromAgent={agent} onClose={() => setInnerChatOpen(false)} />
             )}
           </>
         )}

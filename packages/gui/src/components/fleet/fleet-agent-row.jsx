@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, Pencil } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { api } from '../../lib/api';
@@ -26,6 +26,7 @@ export function FleetAgentRow({ agent }) {
   const fleetSelectAgent = useGrooveStore((s) => s.fleetSelectAgent);
   const fleetMarkRead = useGrooveStore((s) => s.fleetMarkRead);
   const killAgent = useGrooveStore((s) => s.killAgent);
+  const addToast = useGrooveStore((s) => s.addToast);
   const unreadTs = useGrooveStore((s) => s.fleetUnreadMap[agent.id]);
   const chatHistory = useGrooveStore((s) => s.chatHistory[agent.id]);
 
@@ -69,7 +70,10 @@ export function FleetAgentRow({ agent }) {
     if (!trimmed || trimmed === agent.name) return;
     try {
       await api.patch(`/agents/${agent.id}`, { name: trimmed });
-    } catch { /* toast handles */ }
+    } catch (err) {
+      // Renames can legitimately fail — duplicate name, illegal characters.
+      addToast('error', 'Rename failed', err.message);
+    }
   }
 
   function handleKeyDown(e) {
@@ -156,6 +160,18 @@ export function FleetAgentRow({ agent }) {
       {/* Unread dot (hidden on hover) */}
       {hasUnread && !confirmKill && !editing && (
         <span className="group-hover:hidden w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0" />
+      )}
+
+      {/* Rename — an explicit affordance, since double-click competes with
+          the row's drag handler and click-to-select */}
+      {!editing && !confirmKill && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setEditing(true); setEditName(agent.name); }}
+          className="hidden group-hover:flex items-center justify-center p-0.5 rounded text-text-4 hover:text-accent transition-colors cursor-pointer flex-shrink-0"
+          title="Rename agent"
+        >
+          <Pencil size={11} />
+        </button>
       )}
 
       {/* Remove button (visible on hover) */}

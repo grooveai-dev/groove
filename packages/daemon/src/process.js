@@ -10,6 +10,7 @@ import { LocalProvider } from './providers/local.js';
 import { OllamaProvider } from './providers/ollama.js';
 import { AgentLoop } from './agent-loop.js';
 import { validateAgentConfig } from './validate.js';
+import { innerChatInstructions } from './innerchat-docs.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SLIDES_ENGINE_SRC = resolve(__dirname, '../templates/groove-slides.cjs');
@@ -505,6 +506,13 @@ export class ProcessManager {
     const crashError = finalStatus === 'crashed' ? stderrBuf.join('').trim().slice(-500) : null;
 
     registry.update(agent.id, { status: finalStatus, pid: null });
+
+    // An agent that dies mid-question leaves its asker blocked on an open HTTP
+    // request — fail it now rather than making it wait out the timeout.
+    // 'completed' is normal: the answer arrives as a result before this fires.
+    if (this.daemon.innerchat && finalStatus !== 'completed') {
+      this.daemon.innerchat.onAgentGone(agent.id, finalStatus);
+    }
 
     if (this.daemon.timeline) {
       const agentData = registry.get(agent.id);
@@ -1149,6 +1157,19 @@ For normal file edits within your scope, proceed without review.
         spawnConfig.prompt += '\n\n' + pmPrompt.trim();
       } else {
         spawnConfig.prompt = pmPrompt + spawnConfig.prompt;
+      }
+    }
+
+    // InnerChat — let the agent consult other agents directly.
+    // Same constraint as PM review: the agent calls back over HTTP, so
+    // sandboxed providers (Codex) can't reach it.
+    if (!sandboxedProviders.includes(providerName) && !isOneShotProvider) {
+      const port = this.daemon.port || 31415;
+      const innerChatPrompt = innerChatInstructions(port, agent.name).join('\n') + '\n\n';
+      if (spawnConfig.prompt.startsWith('# Handoff Brief')) {
+        spawnConfig.prompt += '\n\n' + innerChatPrompt.trim();
+      } else {
+        spawnConfig.prompt = innerChatPrompt + spawnConfig.prompt;
       }
     }
 

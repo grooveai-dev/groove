@@ -4,6 +4,7 @@
 import { writeFileSync, readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { resolve, dirname, basename } from 'path';
 import { escapeMd } from './validate.js';
+import { innerChatInstructions } from './innerchat-docs.js';
 
 const GROOVE_SECTION_START = '<!-- GROOVE:START -->';
 const GROOVE_SECTION_END = '<!-- GROOVE:END -->';
@@ -556,6 +557,12 @@ export class Introducer {
     return null;
   }
 
+  // Written into every AGENTS_REGISTRY.md so the capability survives context
+  // compaction — the spawn prompt alone can scroll out of a long session.
+  _innerChatSection() {
+    return innerChatInstructions(this.daemon.port || 31415);
+  }
+
   writeRegistryFile(projectDir) {
     const agents = this.daemon.registry.getAll();
 
@@ -596,6 +603,27 @@ export class Introducer {
         lines.push(`| ${escapeMd(a.id)} | ${escapeMd(a.name)} | ${escapeMd(a.role)} | ${escapeMd(a.provider)} | ${agentDir} | ${scope} | ${escapeMd(a.status)} |`);
       }
 
+      // Agents on other teams are reachable via InnerChat, so they have to be
+      // discoverable here — otherwise cross-team consultation means guessing
+      // names. Kept to a separate, minimal table so the team's own roster
+      // stays the primary listing.
+      const others = agents.filter((a) => (a.teamId || '_default') !== teamId);
+      if (others.length > 0) {
+        lines.push('');
+        lines.push(`## Other Teams`);
+        lines.push('');
+        lines.push(`Reachable via InnerChat (see below). Not in your scope — do not edit their files.`);
+        lines.push('');
+        lines.push(`| Name | Role | Team | Status |`);
+        lines.push(`|------|------|------|--------|`);
+        for (const a of others) {
+          const otherTeam = this.daemon.teams?.get(a.teamId)?.name || '-';
+          lines.push(`| ${escapeMd(a.name)} | ${escapeMd(a.role)} | ${escapeMd(otherTeam)} | ${escapeMd(a.status)} |`);
+        }
+      }
+
+      lines.push('');
+      lines.push(...this._innerChatSection());
       lines.push('');
       lines.push(`*Updated: ${new Date().toISOString()}*`);
 
@@ -632,7 +660,8 @@ export class Introducer {
       running.length > 0 ? '|------|------|-------|' : '',
       ...running.map((a) => `| ${a.name} | ${a.role} | ${a.scope?.join(', ') || '-'} |`),
       '',
-      `See AGENTS_REGISTRY.md for full agent state.`,
+      `See AGENTS_REGISTRY.md for full agent state, the names of agents on other teams,`,
+      `and how to consult them directly (InnerChat).`,
       '',
       `**Memory policy:** GROOVE manages project memory automatically. Do not read or write MEMORY.md or .groove/memory/ files directly.`,
       '',

@@ -1,11 +1,10 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useEffect, useRef, useState } from 'react';
-import { X, PanelRight, MessageSquare } from 'lucide-react';
+import { X, PanelRight } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/badge';
 import { AgentFeed } from '../agents/agent-feed';
-import { InnerChatRelay } from '../agents/innerchat-relay';
 import { fmtNum } from '../../lib/format';
 
 const STATUS_VARIANT = {
@@ -40,7 +39,6 @@ export function FleetPane({ agentId, paneIndex, readOnly = false }) {
   const openDetail = useGrooveStore((s) => s.openDetail);
   const detailPanel = useGrooveStore((s) => s.detailPanel);
   const isPanelOpen = detailPanel?.type === 'agent' && detailPanel?.agentId === resolvedId;
-  const [relayOpen, setRelayOpen] = useState(false);
 
   const lastAgentRef = useRef(liveAgent);
   const [gone, setGone] = useState(false);
@@ -98,16 +96,6 @@ export function FleetPane({ agentId, paneIndex, readOnly = false }) {
           {ctxPct}%
         </span>
         <button
-          onClick={() => setRelayOpen((v) => !v)}
-          className={cn(
-            'p-1 rounded-md transition-colors cursor-pointer',
-            relayOpen ? 'text-warning' : 'text-text-3 hover:text-warning hover:bg-surface-3',
-          )}
-          title="Relay a message to another agent"
-        >
-          <MessageSquare size={14} />
-        </button>
-        <button
           onClick={() => openDetail({ type: 'agent', agentId: resolvedId })}
           className={cn(
             'p-1 rounded-md transition-colors cursor-pointer',
@@ -130,8 +118,6 @@ export function FleetPane({ agentId, paneIndex, readOnly = false }) {
       <div className="flex-1 min-h-0">
         <AgentFeed agent={agent} readOnly={readOnly} />
       </div>
-
-      {relayOpen && <InnerChatRelay fromAgent={agent} onClose={() => setRelayOpen(false)} />}
     </div>
   );
 }

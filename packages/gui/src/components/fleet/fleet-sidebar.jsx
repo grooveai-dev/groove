@@ -5,6 +5,9 @@ import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { FleetAgentRow } from './fleet-agent-row';
 
+const AGENT_DRAG = 'application/x-fleet-agent';
+const TEAM_DRAG = 'application/x-fleet-team';
+
 function teamStatusDot(agents) {
   if (agents.some((a) => a.status === 'crashed')) return 'bg-danger';
   if (agents.some((a) => a.status === 'running' || a.status === 'starting')) return 'bg-accent';
@@ -27,6 +30,7 @@ export function FleetSidebar({ width }) {
   const addToast = useGrooveStore((s) => s.addToast);
 
   const moveAgentToTeam = useGrooveStore((s) => s.moveAgentToTeam);
+  const reorderTeams = useGrooveStore((s) => s.reorderTeams);
 
   const [dropTeamId, setDropTeamId] = useState(null);
   const [confirmDeleteTeam, setConfirmDeleteTeam] = useState(null);
@@ -128,20 +132,27 @@ export function FleetSidebar({ width }) {
     setRenamingTeamId(null);
   }
 
-  // Team headers accept agent rows dragged from any other team.
+  // A team block accepts two kinds of drop: an agent row (reassign its team)
+  // or another team header (reorder the list).
   function handleDragOver(e, teamId) {
-    if (!e.dataTransfer.types.includes('application/x-fleet-agent')) return;
+    const { types } = e.dataTransfer;
+    const isAgent = types.includes(AGENT_DRAG);
+    const isTeam = types.includes(TEAM_DRAG);
+    if (!isAgent && !isTeam) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'link';
+    e.dataTransfer.dropEffect = isAgent ? 'link' : 'move';
     if (dropTeamId !== teamId) setDropTeamId(teamId);
   }
 
   function handleDrop(e, teamId) {
-    const agentId = e.dataTransfer.getData('application/x-fleet-agent');
     setDropTeamId(null);
-    if (!agentId) return;
+    const agentId = e.dataTransfer.getData(AGENT_DRAG);
+    const draggedTeamId = e.dataTransfer.getData(TEAM_DRAG);
+    if (!agentId && !draggedTeamId) return;
     e.preventDefault();
-    moveAgentToTeam(agentId, teamId);
+
+    if (agentId) moveAgentToTeam(agentId, teamId);
+    else if (draggedTeamId !== teamId) reorderTeams(draggedTeamId, teamId);
   }
 
   function startRename(e, team) {
@@ -200,11 +211,18 @@ export function FleetSidebar({ width }) {
               }}
               onDrop={(e) => handleDrop(e, team.id)}
             >
-              {/* Team header */}
-              <div className={cn(
-                'w-full flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-surface-2 transition-colors group',
-                isConfirming && 'bg-danger/10 hover:bg-danger/20',
-              )}>
+              {/* Team header — draggable to reorder the sidebar list */}
+              <div
+                draggable={renamingTeamId !== team.id}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(TEAM_DRAG, team.id);
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
+                className={cn(
+                  'w-full flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-surface-2 transition-colors group',
+                  isConfirming && 'bg-danger/10 hover:bg-danger/20',
+                )}
+              >
                 {renamingTeamId === team.id ? (
                   <div className="flex items-center gap-1.5 flex-1 min-w-0 pl-1">
                     <input

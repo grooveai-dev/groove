@@ -26,6 +26,17 @@ export function registerTeamRoutes(app, daemon) {
     }
   });
 
+  // Reorder the sidebar list. Registered before /api/teams/:id so Express
+  // doesn't capture "reorder" as a team id.
+  app.post('/api/teams/reorder', (req, res) => {
+    try {
+      const teams = daemon.teams.reorder(req.body?.orderedIds);
+      res.json({ teams });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   app.get('/api/teams/archived', (req, res) => {
     res.json({ archived: daemon.teams.listArchived() });
   });

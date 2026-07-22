@@ -605,6 +605,12 @@ export const useGrooveStore = create((set, get) => ({
           get().fetchTeams();
           break;
 
+        // Reordering already applied optimistically on the client that did it;
+        // this keeps every other window in sync.
+        case 'teams:reordered':
+          if (msg.teams) set({ teams: msg.teams });
+          break;
+
         case 'approval:request':
           set((s) => ({ pendingApprovals: [...s.pendingApprovals, msg.data] }));
           break;

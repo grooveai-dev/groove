@@ -185,6 +185,59 @@ describe('Teams', () => {
     assert.ok(teams2.list().some((t) => t.name === 'Persistent'));
   });
 
+  describe('reorder', () => {
+    it('reorders the list and persists it', () => {
+      const a = teams.create('Alpha');
+      const b = teams.create('Bravo');
+      const c = teams.create('Charlie');
+      const def = teams.getDefault();
+
+      teams.reorder([c.id, a.id, b.id, def.id]);
+      assert.deepEqual(teams.list().map((t) => t.name), ['Charlie', 'Alpha', 'Bravo', 'Default']);
+
+      // Order is the persisted array order, so it survives a reload.
+      const reloaded = new Teams(daemon);
+      assert.deepEqual(reloaded.list().map((t) => t.name), ['Charlie', 'Alpha', 'Bravo', 'Default']);
+    });
+
+    it('keeps teams missing from the given order rather than dropping them', () => {
+      const a = teams.create('Alpha');
+      const b = teams.create('Bravo');
+      const before = teams.list().length;
+
+      // A stale client sends only the ids it knew about.
+      teams.reorder([b.id, a.id]);
+
+      assert.equal(teams.list().length, before);
+      assert.deepEqual(teams.list().map((t) => t.name), ['Bravo', 'Alpha', 'Default']);
+    });
+
+    it('ignores unknown and duplicated ids', () => {
+      const a = teams.create('Alpha');
+      const before = teams.list().length;
+
+      teams.reorder([a.id, 'does-not-exist', a.id]);
+
+      assert.equal(teams.list().length, before);
+      assert.equal(teams.list()[0].name, 'Alpha');
+    });
+
+    it('rejects a non-array', () => {
+      assert.throws(() => teams.reorder('nope'), /must be an array/);
+      assert.throws(() => teams.reorder(undefined), /must be an array/);
+    });
+
+    it('broadcasts the new order', () => {
+      const a = teams.create('Alpha');
+      broadcasts.length = 0;
+      teams.reorder([a.id]);
+
+      const evt = broadcasts.find((b) => b.type === 'teams:reordered');
+      assert.ok(evt, 'teams:reordered was broadcast');
+      assert.equal(evt.teams[0].name, 'Alpha');
+    });
+  });
+
   it('should provide backward compat stubs', () => {
     // onAgentChange is a no-op
     teams.onAgentChange();

@@ -113,6 +113,34 @@ export class Teams {
     return team;
   }
 
+  /**
+   * Reorder the team list. Teams persist as a JSON array, so Map insertion
+   * order is the display order — rebuilding the Map is the whole operation.
+   *
+   * Ids missing from `orderedIds` keep their relative order at the end, so a
+   * client working from a stale list can't drop teams.
+   */
+  reorder(orderedIds) {
+    if (!Array.isArray(orderedIds)) throw new Error('orderedIds must be an array');
+
+    const seen = new Set();
+    const next = new Map();
+    for (const id of orderedIds) {
+      const team = this.teams.get(id);
+      if (!team || seen.has(id)) continue;
+      seen.add(id);
+      next.set(id, team);
+    }
+    for (const [id, team] of this.teams) {
+      if (!seen.has(id)) next.set(id, team);
+    }
+
+    this.teams = next;
+    this._save();
+    this.daemon.broadcast({ type: 'teams:reordered', teams: this.list() });
+    return this.list();
+  }
+
   get(id) {
     return this.teams.get(id) || null;
   }

@@ -6,7 +6,6 @@ import { AgentFeed } from './agent-feed';
 import { AgentConfig } from './agent-config';
 import { AgentTelemetry } from './agent-telemetry';
 import { AgentMdFiles } from './agent-mdfiles';
-import { InnerChatRelay } from './innerchat-relay';
 import { MessageSquare, Settings, Activity, FileText, Pencil, Check, X } from 'lucide-react';
 import { fmtNum, fmtUptime } from '../../lib/format';
 import { cn } from '../../lib/cn';
@@ -86,8 +85,6 @@ export function AgentPanel() {
   const [activeTab, setActiveTab] = useState('command');
   const cachedAgentRef = useRef(null);
 
-  const [innerChatOpen, setInnerChatOpen] = useState(false);
-
   const agentId = detailPanel?.type === 'agent' ? detailPanel.agentId : null;
   const liveAgent = agentId ? agents.find((a) => a.id === agentId) : null;
   if (liveAgent) cachedAgentRef.current = liveAgent;
@@ -159,37 +156,12 @@ export function AgentPanel() {
               </button>
             );
           })}
-          <div className="flex-1" />
-          {activeTab === 'command' && (
-            <button
-              onClick={() => setInnerChatOpen((v) => !v)}
-              className={cn(
-                'flex items-center gap-1 px-2 py-1.5 text-2xs font-semibold font-sans rounded transition-colors cursor-pointer border-b-2 -mb-px',
-                innerChatOpen
-                  ? 'text-warning border-warning/60'
-                  : 'text-text-4 border-transparent hover:text-warning',
-              )}
-              title="InnerChat — relay message to another agent"
-            >
-              <MessageSquare size={11} />
-              Relay
-            </button>
-          )}
         </div>
       </div>
 
       {/* ── Tab Content ────────────────────────────────────── */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-        {activeTab === 'command' && (
-          <>
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <AgentFeed agent={agent} />
-            </div>
-            {innerChatOpen && (
-              <InnerChatRelay fromAgent={agent} onClose={() => setInnerChatOpen(false)} />
-            )}
-          </>
-        )}
+        {activeTab === 'command' && <AgentFeed agent={agent} />}
         {activeTab === 'config' && <AgentConfig agent={agent} />}
         {activeTab === 'telemetry' && <AgentTelemetry agent={agent} />}
         {activeTab === 'mdfiles' && <AgentMdFiles agent={agent} />}

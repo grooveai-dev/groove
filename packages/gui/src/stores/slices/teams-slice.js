@@ -173,6 +173,28 @@ export const createTeamsSlice = (set, get) => ({
     }
   },
 
+  // Move a team to a new index in the sidebar. Applied optimistically so the
+  // drop lands instantly, then reconciled with whatever the daemon persisted.
+  async reorderTeams(draggedId, targetId) {
+    const current = get().teams;
+    const from = current.findIndex((t) => t.id === draggedId);
+    const to = current.findIndex((t) => t.id === targetId);
+    if (from === -1 || to === -1 || from === to) return;
+
+    const next = [...current];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    set({ teams: next });
+
+    try {
+      const { teams } = await api.post('/teams/reorder', { orderedIds: next.map((t) => t.id) });
+      if (teams) set({ teams });
+    } catch (err) {
+      set({ teams: current });
+      get().addToast('error', 'Failed to reorder teams', err.message);
+    }
+  },
+
   async promoteTeam(id) {
     try {
       const team = await api.post(`/teams/${encodeURIComponent(id)}/promote`);

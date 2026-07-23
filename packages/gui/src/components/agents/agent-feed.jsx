@@ -385,9 +385,28 @@ function InnerChatMessage({ msg, agent }) {
   );
 }
 
+// Single-quote a value for safe use inside the shell command we inject.
+function shq(s) {
+  return `'${String(s).replace(/'/g, `'\\''`)}'`;
+}
+
+// Build a `tail -f` that actually resolves. Agents usually write a log path
+// relative to wherever they ran it — often a bare filename several directories
+// deep — but the terminal opens in a different cwd, so a naive `tail -f name`
+// fails. Absolute paths are used as-is; anything else is resolved against the
+// agent's working directory, falling back to a `find` by basename when the file
+// sits below that directory.
+function tailCommand(path, workdir) {
+  if (/^[/~]/.test(path) || !workdir) return `tail -f ${shq(path)}`;
+  const base = path.split('/').pop();
+  return `cd ${shq(workdir)} 2>/dev/null; `
+    + `if [ -f ${shq(path)} ]; then tail -f ${shq(path)}; `
+    + `else tail -f "$(find . -name ${shq(base)} -type f 2>/dev/null | head -1)"; fi`;
+}
+
 // One-click "tail" chips for any log paths the agent mentioned — saves asking
 // "what's the log file?" and hand-copying it into a terminal.
-function LogChips({ text }) {
+function LogChips({ text, workdir }) {
   const runInTerminal = useGrooveStore((s) => s.runInTerminal);
   const paths = useMemo(() => extractLogPaths(text), [text]);
   if (paths.length === 0) return null;
@@ -397,7 +416,7 @@ function LogChips({ text }) {
       {paths.map((path) => (
         <button
           key={path}
-          onClick={() => runInTerminal(`tail -f ${path}`)}
+          onClick={() => runInTerminal(tailCommand(path, workdir))}
           title={`tail -f ${path}`}
           className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-accent/10 hover:bg-accent/20 text-accent text-[11px] font-medium font-sans cursor-pointer transition-colors max-w-full"
         >
@@ -430,7 +449,7 @@ function AgentMessage({ msg, agent, answeredTo }) {
       <div className={cn('pl-3.5 py-1 border-l', answeredTo ? 'border-indigo/50' : 'border-accent')}>
         <StructuredMessage text={collapsed ? msg.text.slice(0, 600) + '...' : msg.text} />
       </div>
-      <LogChips text={msg.text} />
+      <LogChips text={msg.text} workdir={agent?.workingDir} />
       {collapsed && (
         <button
           onClick={() => setCollapsed(false)}

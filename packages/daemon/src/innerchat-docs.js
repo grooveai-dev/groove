@@ -94,3 +94,19 @@ export function watchInstructions(port = 31415, agentName = 'YOUR_NAME') {
     '- Do not poll or sleep-loop waiting yourself — set the watch and end the turn. That is the whole point.',
   ];
 }
+
+// Log-path convention. The GUI turns log paths in a message into a one-click
+// "tail" button; a bare or relative filename can't be located reliably (there
+// may be several with the same name in different directories), so agents must
+// give the absolute path.
+export function logFileInstructions() {
+  return [
+    '## Mentioning Log Files',
+    '',
+    'When you start a process that writes to a log the user may want to watch, state the',
+    "log's ABSOLUTE path — e.g. `Logging to /home/you/project/runs/train.log` — not a bare",
+    'or relative filename. The GUI turns that path into a one-click "tail" button for the',
+    'user; a bare name like `train.log` cannot be located reliably (several files may share',
+    'it), so always resolve it to a full path first (`realpath` / `readlink -f` if unsure).',
+  ];
+}

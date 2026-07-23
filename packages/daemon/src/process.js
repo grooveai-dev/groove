@@ -10,7 +10,7 @@ import { LocalProvider } from './providers/local.js';
 import { OllamaProvider } from './providers/ollama.js';
 import { AgentLoop } from './agent-loop.js';
 import { validateAgentConfig } from './validate.js';
-import { innerChatInstructions, watchInstructions } from './innerchat-docs.js';
+import { innerChatInstructions, watchInstructions, logFileInstructions } from './innerchat-docs.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SLIDES_ENGINE_SRC = resolve(__dirname, '../templates/groove-slides.cjs');
@@ -1174,6 +1174,8 @@ For normal file edits within your scope, proceed without review.
         ...innerChatInstructions(port, agent.name),
         '',
         ...watchInstructions(port, agent.name),
+        '',
+        ...logFileInstructions(),
       ].join('\n') + '\n\n';
       if (spawnConfig.prompt.startsWith('# Handoff Brief')) {
         spawnConfig.prompt += '\n\n' + capabilities.trim();

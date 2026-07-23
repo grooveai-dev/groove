@@ -18,7 +18,12 @@ const SCORE_HISTORY_MAX = 40;   // ~10 min at 15s intervals
 const COOLDOWN_MS = 5 * 60 * 1000;   // 5 minutes between rotations per agent
 const QUALITY_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes for quality degradation rotations
 const TOKEN_CEILING = 5_000_000;     // 5M tokens per agent (non-self-managing only)
-const REPLAY_CEILING = 0.50;         // Self-managing providers: rotate idle agents above this context usage
+// Self-managing providers: rotate idle agents above this context usage.
+// 0.80 favors context retention over cache-read cost — the conversation-resume
+// window is a slice of the full session, so every rotation is lossy; for
+// complex long-lived work that loss compounds faster than token savings pay off.
+// Lower via config (replayCeiling) for cost-sensitive fleets; 0 disables.
+const REPLAY_CEILING = 0.80;
 const VELOCITY_CEILING = 250_000;    // New (non-cache) tokens per window before force rotation
 const VELOCITY_WINDOW_MS = 5 * 60_000;
 const ROLE_MULTIPLIERS = {

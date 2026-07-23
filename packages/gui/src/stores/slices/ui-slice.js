@@ -106,6 +106,17 @@ export const createUiSlice = (set, get) => ({
     set(updates);
     localStorage.setItem('groove:terminalVisible', String(v));
   },
+
+  // Cross-component channel for running a command in the terminal panel. The
+  // terminal id lives inside the active TerminalInstance, so components can't
+  // send to it directly — they drop a command here, the visible instance picks
+  // it up (waiting for its PTY to be ready) and clears it.
+  terminalPendingCommand: null,
+  runInTerminal(command) {
+    get().setTerminalVisible(true);
+    set({ terminalPendingCommand: { command, ts: Date.now() } });
+  },
+  clearTerminalPendingCommand() { set({ terminalPendingCommand: null }); },
   setTerminalHeight(h) {
     set({ terminalHeight: h });
     localStorage.setItem('groove:terminalHeight', String(h));

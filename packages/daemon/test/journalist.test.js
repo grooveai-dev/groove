@@ -234,6 +234,65 @@ describe('Journalist', () => {
     });
   });
 
+  describe('conversation resume', () => {
+    // Build a log whose first user message is the task assignment, followed by
+    // enough later dialogue that a small budget truncates the early turns away.
+    function writeLongConversation(grooveDir, agentName, originalTask, fillerTurns = 20) {
+      const lines = [
+        JSON.stringify({ type: 'user', message: { content: originalTask } }),
+        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Understood — starting on the original task now, here is my plan.' }] } }),
+      ];
+      for (let i = 0; i < fillerTurns; i++) {
+        lines.push(JSON.stringify({ type: 'user', message: { content: `Follow-up question number ${i}: ${'detail '.repeat(50)}` } }));
+        lines.push(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: `Answer to follow-up ${i}: ${'context '.repeat(50)}` }] } }));
+      }
+      writeFileSync(join(grooveDir, 'logs', `${agentName}.log`), lines.join('\n'));
+    }
+
+    const agentFixture = {
+      id: 'arch-id-1', name: 'arch-1', role: 'backend',
+      provider: 'claude-code', scope: ['src/**'], workingDir: '/tmp',
+    };
+
+    it('rotation resume prompt forbids mentioning the rotation to the user', () => {
+      const { daemon, grooveDir } = createMockDaemon();
+      const journalist = new Journalist(daemon);
+      writeLongConversation(grooveDir, 'arch-1', 'Build the training pipeline', 2);
+
+      const prompt = journalist.buildConversationResumePrompt(agentFixture, '', { isRotation: true, reason: 'replay_ceiling' });
+
+      assert.ok(prompt, 'should build a resume prompt');
+      assert.ok(prompt.includes('NEVER mention the rotation'), 'must instruct the agent to keep the rotation invisible');
+    });
+
+    it('anchors the original task from the full log even when the thread window truncates it', () => {
+      const { daemon, grooveDir } = createMockDaemon();
+      // Small budget: only recent filler turns survive in the thread window
+      daemon.config = { resumeBudgetChars: 3000 };
+      const journalist = new Journalist(daemon);
+      const originalTask = 'Build a mixture-of-experts LLM training pipeline from scratch';
+      writeLongConversation(grooveDir, 'arch-1', originalTask, 20);
+
+      // Sanity: the truncated window no longer contains the original task
+      const thread = journalist.extractConversationThread(agentFixture);
+      assert.ok(thread, 'should extract a thread');
+      assert.ok(!thread.includes(originalTask), 'test setup: original task must be truncated out of the window');
+
+      const prompt = journalist.buildConversationResumePrompt(agentFixture, '', { isRotation: true, reason: 'replay_ceiling' });
+      assert.ok(prompt.includes(originalTask), 'original task must still anchor the prompt via the full log');
+    });
+
+    it('honors resumeBudgetChars config for the thread window', () => {
+      const { daemon, grooveDir } = createMockDaemon();
+      daemon.config = { resumeBudgetChars: 2000 };
+      const journalist = new Journalist(daemon);
+      writeLongConversation(grooveDir, 'arch-1', 'Build the training pipeline', 20);
+
+      const thread = journalist.extractConversationThread(agentFixture);
+      assert.ok(thread.length <= 2500, `thread should respect the configured budget, got ${thread.length}`);
+    });
+  });
+
   describe('status', () => {
     it('should report status correctly', () => {
       const { daemon } = createMockDaemon();

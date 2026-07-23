@@ -12,6 +12,7 @@ import { useGrooveStore } from '../../stores/groove';
 import { cn } from '../../lib/cn';
 import { timeAgo } from '../../lib/format';
 import { api } from '../../lib/api';
+import { extractLogPaths, logLabel } from '../../lib/logpaths';
 import { ThinkingIndicator } from '../ui/thinking-indicator';
 import { TableTree } from '../ui/table-tree';
 
@@ -346,8 +347,14 @@ function UserMessage({ msg }) {
 function InnerChatMessage({ msg, agent }) {
   const [collapsed, setCollapsed] = useState(msg.text?.length > 400);
   const isLong = msg.text?.length > 400;
-  const { peer, direction, kind } = msg.innerchat || {};
-  const outbound = direction === 'out';
+  const info = msg.innerchat || {};
+  // `peer` is the current field; `fromAgent` is the pre-`tell` schema still
+  // sitting in persisted chatHistory. Fall back so old bubbles never render
+  // "undefined".
+  const peer = info.peer || info.fromAgent;
+  const peerName = peer?.name || 'another agent';
+  const outbound = info.direction === 'out';
+  const isAnswer = info.kind === 'answer' || info.kind === 'reply';
   const me = agent?.name || 'this agent';
 
   return (
@@ -356,10 +363,10 @@ function InnerChatMessage({ msg, agent }) {
         <ArrowLeftRight size={10} className="text-indigo flex-shrink-0" />
         <span className="text-2xs font-semibold text-indigo font-sans">InnerChat</span>
         <span className="text-2xs text-text-3 font-sans truncate">
-          {outbound ? `${me} → ${peer?.name}` : `${peer?.name} → ${me}`}
+          {outbound ? `${me} → ${peerName}` : `${peerName} → ${me}`}
         </span>
         <span className="text-2xs text-text-4 font-sans">
-          {kind === 'answer' ? 'answer' : outbound ? 'asked' : 'asks'}
+          {isAnswer ? 'answer' : outbound ? 'asked' : 'asks'}
         </span>
         <span className="text-[10px] text-text-4 font-sans ml-auto flex-shrink-0">{timeAgo(msg.timestamp)}</span>
       </div>
@@ -374,6 +381,30 @@ function InnerChatMessage({ msg, agent }) {
           {collapsed ? 'Show more' : 'Show less'}
         </button>
       )}
+    </div>
+  );
+}
+
+// One-click "tail" chips for any log paths the agent mentioned — saves asking
+// "what's the log file?" and hand-copying it into a terminal.
+function LogChips({ text }) {
+  const runInTerminal = useGrooveStore((s) => s.runInTerminal);
+  const paths = useMemo(() => extractLogPaths(text), [text]);
+  if (paths.length === 0) return null;
+
+  return (
+    <div className="ml-3.5 mt-1.5 flex flex-wrap gap-1.5">
+      {paths.map((path) => (
+        <button
+          key={path}
+          onClick={() => runInTerminal(`tail -f ${path}`)}
+          title={`tail -f ${path}`}
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-accent/10 hover:bg-accent/20 text-accent text-[11px] font-medium font-sans cursor-pointer transition-colors max-w-full"
+        >
+          <Terminal size={11} className="flex-shrink-0" />
+          <span className="truncate">tail {logLabel(path)}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -399,6 +430,7 @@ function AgentMessage({ msg, agent, answeredTo }) {
       <div className={cn('pl-3.5 py-1 border-l', answeredTo ? 'border-indigo/50' : 'border-accent')}>
         <StructuredMessage text={collapsed ? msg.text.slice(0, 600) + '...' : msg.text} />
       </div>
+      <LogChips text={msg.text} />
       {collapsed && (
         <button
           onClick={() => setCollapsed(false)}

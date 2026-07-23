@@ -1441,6 +1441,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
       'qcThreshold', 'maxAgents', 'defaultProvider', 'defaultWorkingDir',
       'onboardingDismissed', 'defaultModel', 'defaultChatProvider', 'defaultChatModel',
       'dataSharingDismissed', 'replayCeiling', 'velocityCeiling', 'journalistModelTier',
+      'resumeBudgetChars',
     ];
     for (const key of Object.keys(req.body)) {
       if (!ALLOWED_KEYS.includes(key)) {

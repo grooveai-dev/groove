@@ -457,7 +457,7 @@ describe('Rotator', () => {
     const agent = {
       id: 'rc1', name: 'claude-chat', role: 'backend', status: 'running',
       provider: 'claude-code', scope: [], model: null,
-      tokensUsed: 100_000, contextUsage: 0.55, workingDir: '/tmp',
+      tokensUsed: 100_000, contextUsage: 0.85, workingDir: '/tmp',
       lastActivity: new Date(Date.now() - 5 * 60_000).toISOString(), // idle 5 min
       spawnedAt: new Date(Date.now() - 600_000).toISOString(),
     };
@@ -470,22 +470,40 @@ describe('Rotator', () => {
     assert.equal(history[0].reason, 'replay_ceiling');
   });
 
+  it('should honor a configured replayCeiling below the default', async () => {
+    const agent = {
+      id: 'rc5', name: 'claude-cheap', role: 'backend', status: 'running',
+      provider: 'claude-code', scope: [], model: null,
+      tokensUsed: 100_000, contextUsage: 0.55, workingDir: '/tmp',
+      lastActivity: new Date(Date.now() - 5 * 60_000).toISOString(),
+      spawnedAt: new Date(Date.now() - 600_000).toISOString(),
+    };
+    mockDaemon.registry.agents = [agent];
+    mockDaemon.config = { replayCeiling: 0.5 };
+
+    await rotator.check();
+
+    const history = rotator.getHistory();
+    assert.equal(history.length, 1);
+    assert.equal(history[0].reason, 'replay_ceiling');
+  });
+
   it('should NOT replay-ceiling rotate below the ceiling or during cooldown', async () => {
     const agent = {
       id: 'rc2', name: 'claude-chat-2', role: 'backend', status: 'running',
       provider: 'claude-code', scope: [], model: null,
-      tokensUsed: 100_000, contextUsage: 0.45, workingDir: '/tmp',
+      tokensUsed: 100_000, contextUsage: 0.75, workingDir: '/tmp',
       lastActivity: new Date(Date.now() - 5 * 60_000).toISOString(),
       spawnedAt: new Date(Date.now() - 600_000).toISOString(),
     };
     mockDaemon.registry.agents = [agent];
 
-    // Below ceiling — no rotation
+    // Below ceiling (0.75 < 0.80 default) — no rotation
     await rotator.check();
     assert.equal(rotator.getHistory().length, 0);
 
     // Above ceiling but on cooldown — still no rotation
-    agent.contextUsage = 0.60;
+    agent.contextUsage = 0.85;
     rotator.lastRotationTime.set('rc2', Date.now() - 60_000);
     await rotator.check();
     assert.equal(rotator.getHistory().length, 0);

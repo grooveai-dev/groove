@@ -10,6 +10,12 @@ import { agentLogPath } from './process.js';
 const DEFAULT_INTERVAL = 300_000; // 5 minutes (safety-net fallback; event-driven triggers handle the normal case)
 const MAX_LOG_CHARS = 100_000; // ~25k tokens budget for synthesis input (captures 80-90% of recent activity)
 const DEBOUNCE_MS = 10_000; // requestSynthesis debounce window
+// Conversation carried across a rotation (~37K tokens at 150K chars). This is
+// deliberately generous: a rotation is the one lossy step in an infinite
+// session, and re-reading the recent dialogue once per rotation is far cheaper
+// than the degradation from an agent that forgot its own history. Tune via
+// config resumeBudgetChars (lower for cost-sensitive fleets).
+const DEFAULT_RESUME_BUDGET_CHARS = 150_000;
 
 export class Journalist {
   constructor(daemon) {
@@ -1061,7 +1067,51 @@ export class Journalist {
    *
    * Budget: keeps recent turns verbatim, summarizes oldest if over maxChars.
    */
-  extractConversationThread(agent, { maxChars = 60000 } = {}) {
+  extractConversationThread(agent, { maxChars } = {}) {
+    // Budget is configurable (resumeBudgetChars): this is the "how much memory
+    // survives a rotation" dial. Bigger costs more tokens per rotation but
+    // preserves more of the session; a rotation is lossy exactly here.
+    if (!maxChars) maxChars = this.daemon.config?.resumeBudgetChars ?? DEFAULT_RESUME_BUDGET_CHARS;
+    const merged = this._parseConversationTurns(agent);
+    if (!merged || merged.length === 0) return null;
+
+    // Build the thread — keep recent turns verbatim, truncate old ones if over budget
+    let thread = '';
+    const formatted = merged.map((t) => {
+      const label = t.role === 'user' ? 'USER' : 'CLAUDE';
+      return `[${label}]:\n${t.text}`;
+    });
+
+    // Start from the end (most recent) and work backwards to fill budget
+    const recentFirst = [...formatted].reverse();
+    const kept = [];
+    let totalLen = 0;
+
+    for (const entry of recentFirst) {
+      if (totalLen + entry.length > maxChars) {
+        // Truncate this entry to fit remaining budget
+        const remaining = maxChars - totalLen;
+        if (remaining > 200) {
+          kept.push(entry.slice(0, remaining) + '\n[...truncated]');
+        }
+        break;
+      }
+      kept.push(entry);
+      totalLen += entry.length;
+    }
+
+    // Reverse back to chronological order
+    kept.reverse();
+    thread = kept.join('\n\n---\n\n');
+
+    return thread;
+  }
+
+  /**
+   * Parse the full user↔assistant turn list from an agent's stream-json log.
+   * Returns merged turns in chronological order, or null if no log/turns.
+   */
+  _parseConversationTurns(agent) {
     const logPath = agentLogPath(this.daemon.grooveDir, agent);
     if (!existsSync(logPath)) return null;
 
@@ -1121,37 +1171,23 @@ export class Journalist {
         merged.push({ ...turn });
       }
     }
+    return merged;
+  }
 
-    // Build the thread — keep recent turns verbatim, truncate old ones if over budget
-    let thread = '';
-    const formatted = merged.map((t) => {
-      const label = t.role === 'user' ? 'USER' : 'CLAUDE';
-      return `[${label}]:\n${t.text}`;
-    });
-
-    // Start from the end (most recent) and work backwards to fill budget
-    const recentFirst = [...formatted].reverse();
-    const kept = [];
-    let totalLen = 0;
-
-    for (const entry of recentFirst) {
-      if (totalLen + entry.length > maxChars) {
-        // Truncate this entry to fit remaining budget
-        const remaining = maxChars - totalLen;
-        if (remaining > 200) {
-          kept.push(entry.slice(0, remaining) + '\n[...truncated]');
-        }
-        break;
-      }
-      kept.push(entry);
-      totalLen += entry.length;
-    }
-
-    // Reverse back to chronological order
-    kept.reverse();
-    thread = kept.join('\n\n---\n\n');
-
-    return thread;
+  /**
+   * The agent's ORIGINAL task, from the first substantial user message in the
+   * FULL log — never from the truncated resume window. When weeks of dialogue
+   * exceed the resume budget, the window holds only recent work; anchoring the
+   * task there makes the agent's identity drift onto whatever happened last.
+   * The name-keyed log spans all rotations, so the true origin is always here.
+   */
+  extractOriginalTask(agent) {
+    const merged = this._parseConversationTurns(agent);
+    if (!merged) return '';
+    const first = merged.find((t) => t.role === 'user' && t.text.trim().length >= 10);
+    if (!first) return '';
+    const text = first.text.trim();
+    return text.length > 500 ? text.slice(0, 500) + '...' : text;
   }
 
   /**
@@ -1159,15 +1195,17 @@ export class Journalist {
    * thread so a fresh agent picks up where the previous session left off.
    */
   buildConversationResumePrompt(agent, userMessage, { isRotation = false, reason } = {}) {
-    const thread = this.extractConversationThread(agent);
+    const budget = this.daemon.config?.resumeBudgetChars ?? DEFAULT_RESUME_BUDGET_CHARS;
+    const thread = this.extractConversationThread(agent, { maxChars: budget });
     if (!thread) return null;
 
     const constraints = this.daemon.memory?.getConstraintsMarkdown(2000) || '';
     const discoveries = this.daemon.memory?.getDiscoveriesMarkdown(agent.role, 5, 1000, agent.scope, agent.teamId) || '';
 
-    // Extract the user's original task from the conversation — the first substantial
-    // user message is almost always the task assignment. This anchors the new agent.
-    const originalTask = this._extractOriginalTask(thread);
+    // Anchor the agent to its ORIGINAL task from the full log — the truncated
+    // thread's first message may be mid-project (or another agent's task) once
+    // history outgrows the budget. Fall back to the window only if the log parse fails.
+    const originalTask = this.extractOriginalTask(agent) || this._extractOriginalTask(thread);
 
     // Rotation and idle-resume need very different framing. During rotation the agent
     // has no new user message — it must continue the exact in-progress task without
@@ -1181,6 +1219,7 @@ export class Journalist {
       originalTask ? `Your task: ${originalTask}` : '',
       ``,
       `Rules:`,
+      `- NEVER mention the rotation, context refresh, restart, or any session discontinuity to the user — from the user's perspective you are one continuous agent and this refresh must be invisible`,
       `- Continue ONLY the task described in the conversation below`,
       `- Do NOT explore the codebase looking for other things to fix or improve`,
       `- Do NOT start new work that was not part of the original task`,
@@ -1210,14 +1249,16 @@ export class Journalist {
       isIdleResume ? `## New Message From User\n\n${userMessage}` : '',
       ``,
       isRotation
-        ? `Continue the in-progress task from the conversation above. Stay focused on that task only. Do not ask the user to repeat anything. If the task was already completed, state that and wait for new instructions.`
-        : `Continue seamlessly from the conversation above. You have the full context of what was discussed, what was tried, what worked and what didn't. Do not ask the user to repeat anything.`,
+        ? `Continue the in-progress task from the conversation above. Stay focused on that task only. Do not ask the user to repeat anything, and never reference this context refresh — continue as if the conversation above simply never stopped. If the task was already completed, state that and wait for new instructions.`
+        : `Continue seamlessly from the conversation above. You have the full context of what was discussed, what was tried, what worked and what didn't. Do not ask the user to repeat anything, and never mention the interruption or that you are resuming — to the user this is one continuous conversation.`,
     ].filter(Boolean).join('\n');
 
-    // Hard cap at 80K chars (~20K tokens) to leave plenty of room in context window
-    if (prompt.length > 80000) {
+    // Cap scales with the configured budget (framing adds constraints/discoveries
+    // on top of the thread) to leave room in the context window
+    const promptCap = budget + 20_000;
+    if (prompt.length > promptCap) {
       // Re-extract with smaller budget and rebuild
-      const smallerThread = this.extractConversationThread(agent, { maxChars: 40000 });
+      const smallerThread = this.extractConversationThread(agent, { maxChars: Math.floor(budget * 2 / 3) });
       if (smallerThread) {
         prompt = [
           `# Session Context Resume`,
@@ -1238,8 +1279,8 @@ export class Journalist {
           isIdleResume ? `## New Message From User\n\n${userMessage}` : '',
           ``,
           isRotation
-            ? `Continue the in-progress task only. Do not explore or start new work. If done, state that and wait.`
-            : `Continue seamlessly. Do not ask the user to repeat anything.`,
+            ? `Continue the in-progress task only. Do not explore or start new work. Never mention this context refresh to the user. If done, state that and wait.`
+            : `Continue seamlessly. Do not ask the user to repeat anything, and never mention the interruption — to the user this is one continuous conversation.`,
         ].filter(Boolean).join('\n');
       }
     }

@@ -31,6 +31,7 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
   const mountedRef = useRef(false);
   const visibleRef = useRef(visible);
   const lastSizeRef = useRef({ cols: 0, rows: 0 });
+  const outputReadyRef = useRef(false);
 
   useEffect(() => {
     registerKill?.(tabId, () => {
@@ -40,6 +41,28 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
       }
     });
   }, [tabId, registerKill]);
+
+  // Run a command dropped into the store by another component (e.g. a "tail
+  // log" chip in chat). Only the visible tab handles it, and we poll until this
+  // instance's PTY is ready — a freshly opened terminal spawns asynchronously,
+  // and keystrokes sent before it's ready are dropped.
+  const pendingCommand = useGrooveStore((s) => s.terminalPendingCommand);
+  useEffect(() => {
+    if (!pendingCommand || !visible) return;
+    let tries = 0;
+    let timer = null;
+    const send = () => {
+      const ws = useGrooveStore.getState().ws;
+      if (ws?.readyState === WebSocket.OPEN && termIdRef.current && outputReadyRef.current) {
+        ws.send(JSON.stringify({ type: 'terminal:input', id: termIdRef.current, data: pendingCommand.command + '\r' }));
+        useGrooveStore.getState().clearTerminalPendingCommand();
+        return;
+      }
+      if (tries++ < 40) timer = setTimeout(send, 150); // ~6s max, covers spawn
+    };
+    send();
+    return () => clearTimeout(timer);
+  }, [pendingCommand, visible]);
 
   useEffect(() => {
     if (!containerRef.current || mountedRef.current) return;
@@ -111,6 +134,7 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
             // Wipe xterm so garbled output from wrong-sized PTY is never visible
             term.reset();
             outputReady = true;
+            outputReadyRef.current = true;
             // Ask the shell to clear screen and redraw its prompt
             const w2 = useGrooveStore.getState().ws;
             if (w2?.readyState === WebSocket.OPEN && termIdRef.current) {
@@ -121,6 +145,7 @@ function TerminalInstance({ tabId, visible, registerKill, onSelectionChange }) {
           if (outputReady) term.write(msg.data);
         } else if (msg.type === 'terminal:exit' && msg.id === termIdRef.current) {
           outputReady = true;
+          outputReadyRef.current = false; // no live shell to accept commands
           term.write('\r\n\x1b[90m[session ended]\x1b[0m\r\n');
           termIdRef.current = null;
         }

@@ -3,16 +3,20 @@
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, readFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { resolve } from 'path';
 import { Watcher } from '../src/watcher.js';
 
 // Captures what the watcher hands to deliverInstruction — the wake message and
 // which agent it woke — without needing a real process manager.
-function makeDaemon() {
+function makeDaemon(grooveDir) {
   const delivered = [];
   const broadcasts = [];
   return {
     delivered, broadcasts,
     projectDir: process.cwd(),
+    grooveDir,
     registry: {
       _agents: new Map(),
       add(a) { this._agents.set(a.id, a); return a; },
@@ -44,23 +48,26 @@ function wireDelivery(daemon) {
 const settle = (ms = 40) => new Promise((r) => setTimeout(r, ms));
 
 describe('Watcher', () => {
-  let daemon, watcher;
+  let daemon, watcher, grooveDir;
 
   beforeEach(() => {
-    daemon = makeDaemon();
+    grooveDir = mkdtempSync(resolve(tmpdir(), 'groove-watch-'));
+    daemon = makeDaemon(grooveDir);
     wireDelivery(daemon);
     watcher = new Watcher(daemon);
     daemon.watcher = watcher;
     daemon.registry.add({ id: 'a1', name: 'fullstack-1', role: 'fullstack', provider: 'claude-code' });
   });
 
-  // Clear any lingering timers/intervals/children — an active poll watch has a
-  // 30-minute deadline that would otherwise keep the test runner alive.
-  afterEach(() => watcher.stop());
+  // Clear lingering timers so the runner can exit, then remove the temp dir.
+  afterEach(() => {
+    watcher.stop();
+    try { rmSync(grooveDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
 
   it('runs a command and wakes the agent with a success outcome', async () => {
     watcher.create('a1', { command: 'echo hello && exit 0', label: 'greeting' });
-    await settle(200);
+    await settle(800);
 
     assert.equal(daemon.delivered.length, 1);
     const { agentId, message } = daemon.delivered[0];
@@ -72,7 +79,7 @@ describe('Watcher', () => {
 
   it('reports a non-zero exit as a failure with output', async () => {
     watcher.create('a1', { command: 'echo boom >&2 && exit 3', label: 'build' });
-    await settle(200);
+    await settle(800);
 
     const { message } = daemon.delivered[0];
     assert.match(message, /exit code 3/);
@@ -84,7 +91,7 @@ describe('Watcher', () => {
     // Agent rotates: same name, new id, old id gone — exactly what resume does.
     daemon.registry._agents.delete('a1');
     daemon.registry.add({ id: 'a1-r1', name: 'fullstack-1', role: 'fullstack', provider: 'claude-code' });
-    await settle(200);
+    await settle(800);
 
     assert.equal(daemon.delivered.length, 1);
     assert.equal(daemon.delivered[0].agentId, 'a1-r1');
@@ -93,7 +100,7 @@ describe('Watcher', () => {
   it('marks undeliverable when the agent is gone, without throwing', async () => {
     watcher.create('a1', { command: 'exit 0', label: 'x' });
     daemon.registry._agents.delete('a1'); // purged, no replacement
-    await settle(200);
+    await settle(800);
 
     assert.equal(daemon.delivered.length, 0);
     const w = watcher.list()[0];
@@ -154,5 +161,56 @@ describe('Watcher', () => {
     watcher.create('a1', { command: 'sleep 5', label: 'b' });
     watcher.cancelForAgent('a1');
     assert.ok(watcher.list().every((w) => w.status === 'cancelled'));
+  });
+
+  // ── surviving a daemon restart ────────────────────────────────
+
+  it('re-arms an active watch after a simulated restart and still fires', async () => {
+    // A long job is launched and the daemon "restarts" before it finishes.
+    const flag = resolve(grooveDir, 'done.flag');
+    watcher.create('a1', { command: `sleep 1 && touch ${flag} && exit 0`, label: 'training' });
+    watcher.stop(); // simulate daemon going down — detached job keeps running
+
+    // New daemon instance, same grooveDir — restore reconnects to the job.
+    const daemon2 = makeDaemon(grooveDir);
+    wireDelivery(daemon2);
+    const watcher2 = new Watcher(daemon2);
+    daemon2.watcher = watcher2;
+    daemon2.registry.add({ id: 'a1', name: 'fullstack-1', role: 'fullstack', provider: 'claude-code' });
+
+    const rearmed = watcher2.restore();
+    assert.equal(rearmed, 1, 'the active watch was restored');
+
+    await settle(2000); // let the detached job finish and the sentinel appear
+    assert.equal(daemon2.delivered.length, 1, 'the restored watch fired after restart');
+    assert.match(daemon2.delivered[0].message, /training/);
+    assert.match(daemon2.delivered[0].message, /exit code 0/);
+    watcher2.stop();
+  });
+
+  it('fires immediately on restore if the job finished while the daemon was down', async () => {
+    watcher.create('a1', { command: 'exit 0', label: 'quick' });
+    await settle(300);          // let the detached job write its sentinel
+    watcher.stop();             // "restart" AFTER completion, before it was noticed
+    daemon.delivered.length = 0;
+
+    const daemon2 = makeDaemon(grooveDir);
+    wireDelivery(daemon2);
+    const watcher2 = new Watcher(daemon2);
+    daemon2.watcher = watcher2;
+    daemon2.registry.add({ id: 'a1', name: 'fullstack-1', role: 'fullstack', provider: 'claude-code' });
+
+    watcher2.restore();
+    await settle(80);           // immediate tick on re-arm sees the sentinel
+    assert.equal(daemon2.delivered.length, 1, 'completed-during-downtime job still delivered');
+    watcher2.stop();
+  });
+
+  it('persists watches to disk', () => {
+    watcher.create('a1', { command: 'sleep 5', label: 'persisted' });
+    const raw = JSON.parse(readFileSync(resolve(grooveDir, 'watches.json'), 'utf8'));
+    assert.equal(raw.length, 1);
+    assert.equal(raw[0].label, 'persisted');
+    assert.equal(raw[0].status, 'active');
   });
 });

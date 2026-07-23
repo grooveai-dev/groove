@@ -1,7 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { api } from '../../lib/api';
-import { loadJSON, persistJSON } from '../helpers.js';
+import { loadJSON, persistJSON, persistChatHistory } from '../helpers.js';
 
 export const createAgentsSlice = (set, get) => ({
   // ── Agent data ────────────────────────────────────────────
@@ -85,7 +85,7 @@ export const createAgentsSlice = (set, get) => ({
           delete chatHistory[id];
           delete activityLog[id];
           delete tokenTimeline[id];
-          persistJSON('groove:chatHistory', chatHistory);
+          persistChatHistory(chatHistory);
           persistJSON('groove:activityLog', activityLog);
           return { chatHistory, activityLog, tokenTimeline };
         });
@@ -93,6 +93,22 @@ export const createAgentsSlice = (set, get) => ({
     } catch (err) {
       get().addToast('error', 'Kill failed', err.message);
     }
+  },
+
+  // Switch the detail panel to another agent without disturbing the rest of
+  // the layout (terminal stays open). Aligns activeTeamId to the target so the
+  // panel's team guard passes even when switching across teams.
+  switchAgentPanel(agentId) {
+    const agent = get().agents.find((a) => a.id === agentId);
+    if (!agent) return;
+    const tid = agent.teamId || get().activeTeamId;
+    const panel = { type: 'agent', agentId };
+    set((s) => ({
+      activeTeamId: tid,
+      detailPanel: panel,
+      teamDetailPanels: { ...s.teamDetailPanels, [tid]: panel },
+    }));
+    if (tid) localStorage.setItem('groove:activeTeamId', tid);
   },
 
   async rotateAgent(id) {
@@ -156,12 +172,7 @@ export const createAgentsSlice = (set, get) => ({
       const msg = { from, text, timestamp: Date.now(), isQuery };
       if (attachments?.length) msg.attachments = attachments;
       history[agentId] = [...history[agentId].slice(-100), msg];
-      const forStorage = { ...history };
-      forStorage[agentId] = forStorage[agentId].map((m) => {
-        if (!m.attachments?.length) return m;
-        return { ...m, attachments: m.attachments.map(({ dataUrl, ...rest }) => rest) };
-      });
-      persistJSON('groove:chatHistory', forStorage);
+      persistChatHistory(history);
       return { chatHistory: history };
     });
   },
@@ -237,7 +248,7 @@ export const createAgentsSlice = (set, get) => ({
         next.add(newAgent.id);
         return { thinkingAgents: next };
       });
-      if (get().chatHistory[newAgent.id]?.length) persistJSON('groove:chatHistory', get().chatHistory);
+      if (get().chatHistory[newAgent.id]?.length) persistChatHistory(get().chatHistory);
       if (get().activityLog[newAgent.id]?.length) persistJSON('groove:activityLog', get().activityLog);
       if (get().labAssistantAgentId === id) {
         localStorage.setItem('groove:labAssistantAgentId', newAgent.id);

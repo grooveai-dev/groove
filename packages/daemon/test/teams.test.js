@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { Teams } from '../src/teams.js';
 import { Registry } from '../src/registry.js';
 import { StateManager } from '../src/state.js';
-import { mkdtempSync, mkdirSync } from 'fs';
+import { mkdtempSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -244,5 +244,52 @@ describe('Teams', () => {
 
     // getActiveTeam returns default team name
     assert.equal(teams.getActiveTeam(), 'Default');
+  });
+
+  // A moved agent keeps the working directory of its old team. Deleting that
+  // team must not pull the directory out from under it.
+  describe('deleting a team an agent was moved out of', () => {
+    function movedAgentSetup() {
+      const teamA = teams.create('Alpha');
+      const teamB = teams.create('Bravo');
+      // Agent lives in team A's directory, then is moved to team B (teamId
+      // changes, workingDir does not — this is what the drag-drop move does).
+      const agent = daemon.registry.add({ role: 'backend', teamId: teamA.id, workingDir: teamA.workingDir });
+      daemon.registry.update(agent.id, { teamId: teamB.id });
+      return { teamA, teamB, agent };
+    }
+
+    it('keeps the directory on permanent delete when a moved agent still uses it', () => {
+      const { teamA, agent } = movedAgentSetup();
+      assert.ok(existsSync(teamA.workingDir));
+
+      teams.delete(teamA.id, { permanent: true });
+
+      assert.equal(teams.get(teamA.id), null, 'team record removed');
+      assert.ok(existsSync(teamA.workingDir), 'directory retained for the moved agent');
+      assert.ok(daemon.registry.get(agent.id), 'moved agent still exists');
+      assert.ok(existsSync(daemon.registry.get(agent.id).workingDir), 'agent working dir still valid');
+    });
+
+    it('keeps the directory on archive when a moved agent still uses it', () => {
+      const { teamA, agent } = movedAgentSetup();
+
+      teams.delete(teamA.id); // default = archive
+
+      assert.equal(teams.get(teamA.id), null);
+      assert.ok(existsSync(teamA.workingDir), 'directory left in place');
+      assert.ok(daemon.registry.get(agent.id));
+    });
+
+    it('still removes the directory when no external agent depends on it', () => {
+      const teamA = teams.create('Alpha');
+      const dir = teamA.workingDir;
+      daemon.registry.add({ role: 'backend', teamId: teamA.id, workingDir: dir });
+      assert.ok(existsSync(dir));
+
+      teams.delete(teamA.id, { permanent: true });
+
+      assert.ok(!existsSync(dir), 'directory removed — its only agent belonged to this team');
+    });
   });
 });

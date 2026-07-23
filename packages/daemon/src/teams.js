@@ -233,6 +233,21 @@ export class Teams {
       } else if (
         team.workingDir &&
         team.workingDir !== this.daemon.projectDir &&
+        existsSync(team.workingDir) &&
+        this._dirHasExternalOccupants(team.workingDir)
+      ) {
+        // A moved agent still lives here — archive metadata only, leave the
+        // directory in place so that agent keeps working.
+        console.log(`[Groove:Teams] Archiving ${team.name} metadata only: agents from other teams still use its directory`);
+        mkdirSync(archivePath, { recursive: true });
+        writeFileSync(resolve(archivePath, 'metadata.json'), JSON.stringify({
+          originalName: team.name, originalId: team.id, mode: team.mode || 'sandbox',
+          deletedAt: new Date().toISOString(), agentCount: agents.length,
+          originalWorkingDir: team.workingDir, directoryRetained: true,
+        }, null, 2));
+      } else if (
+        team.workingDir &&
+        team.workingDir !== this.daemon.projectDir &&
         existsSync(team.workingDir)
       ) {
         try {
@@ -281,15 +296,32 @@ export class Teams {
       team.workingDir !== this.daemon.projectDir &&
       existsSync(team.workingDir)
     ) {
-      try {
-        rmSync(team.workingDir, { recursive: true, force: true });
-      } catch (err) {
-        console.log(`[Groove:Teams] Failed to delete directory: ${err.message}`);
+      if (this._dirHasExternalOccupants(team.workingDir)) {
+        // An agent moved to another team still lives here — keep the directory
+        // so it doesn't lose its working dir. The team record is still removed.
+        console.log(`[Groove:Teams] Keeping ${team.workingDir}: agents from other teams still use it`);
+      } else {
+        try {
+          rmSync(team.workingDir, { recursive: true, force: true });
+        } catch (err) {
+          console.log(`[Groove:Teams] Failed to delete directory: ${err.message}`);
+        }
       }
     }
 
     this._removeTeamAndCleanup(team, id);
     return true;
+  }
+
+  // True if an agent OUTSIDE this team still lives in the given directory —
+  // i.e. an agent that was moved to another team but kept its working dir here.
+  // Destroying the directory would break it, so callers skip the removal.
+  // Call after _killAndRemoveAgents so this team's own agents are already gone.
+  _dirHasExternalOccupants(dir) {
+    if (!dir) return false;
+    const prefix = `${dir}/`;
+    return this.daemon.registry.getAll().some((a) =>
+      a.workingDir && (a.workingDir === dir || a.workingDir.startsWith(prefix)));
   }
 
   _killAndRemoveAgents(teamId) {

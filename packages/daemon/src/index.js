@@ -638,6 +638,12 @@ export class Daemon {
           }
         }
 
+        // Reconnect to watches whose detached jobs survived this restart, so a
+        // "notify me when the training finishes" watch still fires afterward.
+        try { this.watcher.restore(); } catch (err) {
+          console.error('[startup] Failed to restore watches:', err.message);
+        }
+
         // Restore auth token from stored config so subscription polling works after restart
         const storedToken = this.skills.getToken();
         if (storedToken) {

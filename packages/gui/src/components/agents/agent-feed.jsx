@@ -390,6 +390,15 @@ function shq(s) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
 }
 
+// Quote a path but keep a leading ~/ OUTSIDE the quotes so the shell still
+// expands it — a single-quoted ~ is a literal directory that doesn't exist,
+// which is why `tail -f '~/x.log'` fails.
+function shqPath(p) {
+  if (p === '~') return '~';
+  if (p.startsWith('~/')) return `~/${shq(p.slice(2))}`;
+  return shq(p);
+}
+
 // Build a `tail -f` that actually resolves. Agents usually write a log path
 // relative to wherever they ran it — often a bare filename several directories
 // deep — but the terminal opens in a different cwd, so a naive `tail -f name`
@@ -397,9 +406,9 @@ function shq(s) {
 // agent's working directory, falling back to a `find` by basename when the file
 // sits below that directory.
 function tailCommand(path, workdir) {
-  if (/^[/~]/.test(path) || !workdir) return `tail -f ${shq(path)}`;
+  if (/^[/~]/.test(path) || !workdir) return `tail -f ${shqPath(path)}`;
   const base = path.split('/').pop();
-  return `cd ${shq(workdir)} 2>/dev/null; `
+  return `cd ${shqPath(workdir)} 2>/dev/null; `
     + `if [ -f ${shq(path)} ]; then tail -f ${shq(path)}; `
     + `else tail -f "$(find . -name ${shq(base)} -type f 2>/dev/null | head -1)"; fi`;
 }

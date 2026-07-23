@@ -2628,6 +2628,9 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
     // Let the aborted process finish tearing down before re-spawning; resume()
     // kills the current handle and re-registers under a new agent id.
     setTimeout(() => {
+      // The user may have paused/killed during this 500ms window — stop()/kill()
+      // clear the pending message to cancel exactly this in-flight retry.
+      if (!this._pendingUserMessage.has(agentId)) return;
       this.resume(agentId, pending.message).catch((err) => {
         this.daemon.broadcast({
           type: 'agent:output',
@@ -3059,6 +3062,13 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
   async stop(agentId) {
     const handle = this.handles.get(agentId);
     if (!handle) return;
+
+    // A user pause aborts the current turn, which the CLI reports as a dropped
+    // turn (isError, apiDurationMs === 0). Clear the pending message FIRST so
+    // _retryDroppedTurn no-ops — otherwise the stop is auto-retried and the
+    // agent resumes, forcing the user to click Pause twice.
+    this._pendingUserMessage.delete(agentId);
+    this._retryAttemptCarry.delete(agentId);
 
     const { proc, loop } = handle;
 

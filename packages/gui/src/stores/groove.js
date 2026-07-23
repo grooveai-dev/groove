@@ -3,7 +3,7 @@
 
 import { create } from 'zustand';
 import { api } from '../lib/api';
-import { persistJSON } from './helpers.js';
+import { persistJSON, persistChatHistory } from './helpers.js';
 import { createUiSlice } from './slices/ui-slice.js';
 import { createAgentsSlice } from './slices/agents-slice.js';
 import { createTeamsSlice } from './slices/teams-slice.js';
@@ -20,11 +20,11 @@ const WS_URL = `ws://${window.location.hostname}:${window.location.port || 31415
 
 let plannerPollInterval = null;
 
-// Clear stale persisted data on version change
+// Record the store version for potential future migrations. Chat history and
+// activity log are USER DATA and must survive version changes — never wipe them
+// here. If a schema ever needs migrating, transform in place, don't delete.
 const STORE_VERSION = '0.22.28';
 if (localStorage.getItem('groove:storeVersion') !== JSON.stringify(STORE_VERSION)) {
-  localStorage.removeItem('groove:chatHistory');
-  localStorage.removeItem('groove:activityLog');
   persistJSON('groove:storeVersion', STORE_VERSION);
 }
 
@@ -264,7 +264,7 @@ export const useGrooveStore = create((set, get) => ({
 
               history[agentId] = arr.slice(-100);
               set({ chatHistory: history });
-              persistJSON('groove:chatHistory', history);
+              persistChatHistory(history);
             }
 
             const conv = get().conversations.find((c) => c.agentId === agentId);
@@ -402,7 +402,7 @@ export const useGrooveStore = create((set, get) => ({
               push(turn.to.id, entry(turn.from, 'in'));
             }
 
-            persistJSON('groove:chatHistory', history);
+            persistChatHistory(history);
 
             const answers = { ...s.innerchatAnswers };
             if (turn.kind === 'answer') {

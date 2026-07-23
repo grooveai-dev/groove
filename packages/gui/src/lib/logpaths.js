@@ -10,7 +10,7 @@
 // match, and results are de-duped by full path.
 
 const TAIL_RE = /tail\s+(?:-[a-zA-Z]+\s+)*([~/]?[\w./-]+)/g;
-const DOTLOG_RE = /(?:^|[\s'"`(=])([~/]?(?:[\w.-]+\/)*[\w.-]+\.log)\b/g;
+const DOTLOG_RE = /(?:^|[\s'"`(=])((?:~\/|\/)?(?:[\w.-]+\/)*[\w.-]+\.log)\b/g;
 
 function clean(p) {
   return p.replace(/^['"`]+/, '').replace(/['"`.,;:)]+$/, '');

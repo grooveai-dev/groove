@@ -6,16 +6,19 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { Dialog, DialogContent } from '../components/ui/dialog';
 import { BookOpen, Plus, Search, Trash2, Pencil, ChevronRight, Hash, FolderOpen, Clock, Save, Link2, FileText, Sparkles, HelpCircle, GripVertical, CornerLeftUp } from 'lucide-react';
 
+// `cmd` is the bare word; the UI always renders it bracketed so the real
+// syntax — [cmd] #tag — is never ambiguous. `example` shows a full, copyable
+// line so a new user can see exactly what to type.
 const COMMANDS = [
-  { cmd: 'save',     args: '#tag',                desc: 'Save the message and send it to the agent' },
-  { cmd: 'append',   args: '#tag',                desc: 'Add to an existing memory and send to agent' },
-  { cmd: 'update',   args: '#tag',                desc: 'Open the editor to modify a memory in place' },
-  { cmd: 'delete',   args: '#tag',                desc: 'Remove a memory permanently' },
-  { cmd: 'view',     args: '#tag',                desc: 'Read a memory in the viewer' },
-  { cmd: 'read',     args: '#tag1 #tag2 ...',     desc: 'Send memory content to the agent — chat stays clean' },
-  { cmd: 'doc',      args: '#tag',                desc: 'AI synthesizes the full conversation into a document' },
-  { cmd: 'link',     args: '#tag path/to/doc',    desc: 'Link a memory to a NORTHSTAR or external document' },
-  { cmd: '[instruct]', args: '',                  desc: 'Show this command reference' },
+  { cmd: 'save',     example: '[save] #api-auth',           desc: 'Save the current message as a new memory under #api-auth' },
+  { cmd: 'append',   example: '[append] #api-auth',         desc: 'Add the current message to the existing #api-auth memory' },
+  { cmd: 'update',   example: '[update] #api-auth',         desc: 'Open the editor to change the #api-auth memory' },
+  { cmd: 'view',     example: '[view] #api-auth',           desc: 'Open a memory to read it, without sending it to the agent' },
+  { cmd: 'read',     example: '[read] #api-auth #db-schema', desc: 'Send one or more memories to the agent as context (chat stays clean)' },
+  { cmd: 'doc',      example: '[doc] #api-auth',            desc: 'Let the AI synthesize the conversation into a memory' },
+  { cmd: 'link',     example: '[link] #api-auth docs/spec.md', desc: 'Link a memory to a NORTHSTAR or external document' },
+  { cmd: 'delete',   example: '[delete] #api-auth',         desc: 'Delete a memory permanently' },
+  { cmd: 'instruct', example: '[instruct]',                 desc: 'Show this command reference' },
 ];
 
 function formatRelative(iso) {
@@ -219,36 +222,58 @@ function EditorModal({ open, onOpenChange, editing, onSave, onRename }) {
 function InstructModal({ open, onOpenChange }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent title="Keeper Commands" description="Memory system command reference" className="max-w-lg">
+      <DialogContent title="Memory Commands" description="How to save and recall tagged memories" className="max-w-lg">
         <div className="p-5 space-y-4">
-          <p className="text-xs text-text-2 leading-relaxed">
-            Type these commands in any agent chat to manage your tagged memories. Commands are intercepted by the Keeper sidecar — the agent never sees them.
-          </p>
-          <div className="space-y-1.5">
+          {/* Format primer — the part new users miss */}
+          <div className="rounded-lg bg-surface-2 border border-border-subtle p-3 space-y-2">
+            <p className="text-xs text-text-2 leading-relaxed">
+              Type a command in any agent chat. The format is always the command in
+              <span className="font-mono text-accent"> [square brackets]</span>, then a
+              <span className="font-mono text-accent"> #tag</span>:
+            </p>
+            <div className="flex items-center gap-2 font-mono text-sm">
+              <span className="px-1.5 py-0.5 rounded bg-accent/15 text-accent font-semibold">[save]</span>
+              <span className="px-1.5 py-0.5 rounded bg-info/10 text-info font-semibold">#api-auth</span>
+              <span className="text-text-3 text-xs font-sans">your message here</span>
+            </div>
+            <p className="text-xs text-text-4 leading-relaxed">
+              These commands are handled by GROOVE — the agent never sees them.
+            </p>
+          </div>
+
+          <div className="space-y-1">
             {COMMANDS.map((c) => (
               <div key={c.cmd} className="flex items-start gap-3 py-1.5 border-b border-border-subtle last:border-0">
-                <div className="flex-shrink-0 flex items-center gap-1">
-                  <span className="px-1.5 py-0.5 rounded bg-accent/15 text-accent font-mono text-xs font-semibold">{c.cmd}</span>
-                  {c.args && <span className="text-xs text-text-3 font-mono">{c.args}</span>}
-                </div>
+                <code className="flex-shrink-0 w-44 text-xs font-mono text-text-1 pt-0.5">
+                  {c.example.split(/(\[[^\]]+\]|#[\w/-]+)/).map((part, i) => {
+                    if (/^\[.+\]$/.test(part)) return <span key={i} className="text-accent font-semibold">{part}</span>;
+                    if (/^#/.test(part)) return <span key={i} className="text-info">{part}</span>;
+                    return <span key={i} className="text-text-4">{part}</span>;
+                  })}
+                </code>
                 <span className="text-xs text-text-3 pt-0.5">{c.desc}</span>
               </div>
             ))}
           </div>
-          <div className="pt-2 space-y-2">
-            <h3 className="text-xs font-semibold text-text-1">Tag Hierarchy</h3>
-            <p className="text-xs text-text-3 leading-relaxed">
-              Use <span className="font-mono text-accent">/</span> to create nested tags: <span className="font-mono text-accent">#groove/memory-system</span> lives under <span className="font-mono text-accent">#groove</span>. Pull a parent tag to get all children.
-            </p>
-            <h3 className="text-xs font-semibold text-text-1">Memory Types</h3>
-            <p className="text-xs text-text-3 leading-relaxed">
-              <span className="font-semibold">Manual</span> — you write it via [save], [append], [update]. <span className="font-semibold">Doc</span> — AI writes it via [doc], synthesizing your conversation. Both are fully editable.
-            </p>
-            <h3 className="text-xs font-semibold text-text-1">Spawning with Context</h3>
-            <p className="text-xs text-text-3 leading-relaxed">
-              When spawning a new agent, use [pull] #tag to inject memories into their context. You can also link memories to NORTHSTAR docs with [link] for cross-referencing.
-            </p>
+
+          <div className="pt-1 space-y-2.5">
+            <div>
+              <h3 className="text-xs font-semibold text-text-1 mb-1">Nested tags</h3>
+              <p className="text-xs text-text-3 leading-relaxed">
+                Use <span className="font-mono text-accent">/</span> to nest:
+                <span className="font-mono text-info"> #groove/memory</span> lives under
+                <span className="font-mono text-info"> #groove</span>. Reading the parent tag pulls every memory beneath it.
+              </p>
+            </div>
+            <div>
+              <h3 className="text-xs font-semibold text-text-1 mb-1">Give a new agent context</h3>
+              <p className="text-xs text-text-3 leading-relaxed">
+                Use <span className="font-mono"><span className="text-accent">[read]</span> <span className="text-info">#tag</span></span> to
+                drop saved memories into an agent's chat as background — useful right after spawning one.
+              </p>
+            </div>
           </div>
+
           <div className="flex justify-end pt-1">
             <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>Close</Button>
           </div>

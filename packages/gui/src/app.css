@@ -40,6 +40,7 @@
   --color-info: #7ab0df;
   --color-purple: #b07fd5;
   --color-orange: #c4956a;
+  --color-indigo: #7c86e0;  /* InnerChat — agent-to-agent traffic */
 
   /* Fonts */
   --font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;

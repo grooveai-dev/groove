@@ -10,7 +10,7 @@ import { LocalProvider } from './providers/local.js';
 import { OllamaProvider } from './providers/ollama.js';
 import { AgentLoop } from './agent-loop.js';
 import { validateAgentConfig } from './validate.js';
-import { innerChatInstructions } from './innerchat-docs.js';
+import { innerChatInstructions, watchInstructions } from './innerchat-docs.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SLIDES_ENGINE_SRC = resolve(__dirname, '../templates/groove-slides.cjs');
@@ -562,12 +562,17 @@ export class ProcessManager {
       const pending = this.consumePendingMessage(agent.id);
       if (pending) {
         const agentData = registry.get(agent.id);
-        if (agentData?.sessionId) {
-          this.resume(agent.id, pending.message).catch((err) => {
-            console.error(`[Groove] Auto-resume with queued message failed for ${agent.name}: ${err.message}`);
-          });
-          return;
-        }
+        // Deliver the queued message: resume if there's a session, otherwise
+        // rotate (fresh session + handoff brief). Previously a missing sessionId
+        // meant the already-consumed message was silently dropped — an
+        // InnerChat message to a busy agent would vanish and never fire it.
+        const deliver = agentData?.sessionId
+          ? this.resume(agent.id, pending.message)
+          : this.daemon.rotator.rotate(agent.id, { additionalPrompt: pending.message });
+        deliver.catch((err) => {
+          console.error(`[Groove] Delivering queued message to ${agent.name} failed: ${err.message}`);
+        });
+        return;
       }
     }
 
@@ -1165,11 +1170,15 @@ For normal file edits within your scope, proceed without review.
     // sandboxed providers (Codex) can't reach it.
     if (!sandboxedProviders.includes(providerName) && !isOneShotProvider) {
       const port = this.daemon.port || 31415;
-      const innerChatPrompt = innerChatInstructions(port, agent.name).join('\n') + '\n\n';
+      const capabilities = [
+        ...innerChatInstructions(port, agent.name),
+        '',
+        ...watchInstructions(port, agent.name),
+      ].join('\n') + '\n\n';
       if (spawnConfig.prompt.startsWith('# Handoff Brief')) {
-        spawnConfig.prompt += '\n\n' + innerChatPrompt.trim();
+        spawnConfig.prompt += '\n\n' + capabilities.trim();
       } else {
-        spawnConfig.prompt = innerChatPrompt + spawnConfig.prompt;
+        spawnConfig.prompt = capabilities + spawnConfig.prompt;
       }
     }
 

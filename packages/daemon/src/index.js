@@ -47,6 +47,7 @@ import { RepoImporter } from './repo-import.js';
 import { ConversationManager } from './conversations.js';
 import { Toys } from './toys.js';
 import { InnerChat } from './innerchat.js';
+import { Watcher } from './watcher.js';
 import { AutoState } from './autostate.js';
 import { Orchestrator } from './orchestrator.js';
 import { TrajectoryCapture, ConsentManager } from '../../../moe-training/client/index.js';
@@ -162,6 +163,7 @@ export class Daemon {
     this.modelLab = new ModelLab(this);
     this.toys = new Toys(this);
     this.innerchat = new InnerChat(this);
+    this.watcher = new Watcher(this);
     this.autoState = new AutoState(this.grooveDir);
     this.orchestrator = new Orchestrator(this);
     this.trajectoryCapture = null;
@@ -623,6 +625,19 @@ export class Daemon {
         this.federation.initialize();
         this._startGarbageCollector();
 
+        // Regenerate the on-disk registry files once on boot. They otherwise
+        // only refresh on a registry change, so a daemon upgraded with new
+        // agent-facing docs (InnerChat, Watch) would serve stale AGENTS_REGISTRY.md
+        // to already-running agents until something happened to change state.
+        if (this.registry.getAll().length > 0) {
+          try {
+            this.introducer.writeRegistryFile(this.projectDir);
+            this.introducer.injectGrooveSection(this.projectDir);
+          } catch (err) {
+            console.error('[startup] Failed to refresh registry files:', err.message);
+          }
+        }
+
         // Restore auth token from stored config so subscription polling works after restart
         const storedToken = this.skills.getToken();
         if (storedToken) {
@@ -847,6 +862,8 @@ export class Daemon {
     this.journalist.stop();
     this.rotator.stop();
     this.scheduler.stop();
+    this.watcher.stop();
+    this.innerchat.stop();
     this.orchestrator.stop();
     this.timeline.stop();
     if (this._gcInterval) clearInterval(this._gcInterval);

@@ -4,7 +4,7 @@ import {
   Loader2, MessageSquare, SendHorizontal, Pause,
   FileEdit, Search, Terminal, CheckCircle2, AlertCircle,
   RotateCw, Zap, Wrench, Eye, Code2, Bug,
-  ChevronDown, Paperclip, GripHorizontal,
+  ChevronDown, Paperclip, GripHorizontal, ArrowLeftRight,
   FileCode, X, File, Image as ImageIcon, Film, Upload,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -16,6 +16,7 @@ import { ThinkingIndicator } from '../ui/thinking-indicator';
 import { TableTree } from '../ui/table-tree';
 
 const EMPTY = [];
+const EMPTY_MAP = {};
 const KEEPER_RE = /(\[(?:save|append|update|delete|view|doc|link|read|instruct)\]|#[\w/.-]+)/gi;
 const KEEPER_CMD_RE = /^\[(?:save|append|update|delete|view|doc|link|read|instruct)\]$/i;
 const KEEPER_TAG_RE = /^#[\w/.-]+$/;
@@ -339,7 +340,45 @@ function UserMessage({ msg }) {
   );
 }
 
-function AgentMessage({ msg, agent }) {
+// An agent-to-agent turn. Deliberately styled apart from the normal feed —
+// amber rail and an explicit "X → Y" header — so it reads as traffic between
+// agents rather than something addressed to the user.
+function InnerChatMessage({ msg, agent }) {
+  const [collapsed, setCollapsed] = useState(msg.text?.length > 400);
+  const isLong = msg.text?.length > 400;
+  const { peer, direction, kind } = msg.innerchat || {};
+  const outbound = direction === 'out';
+  const me = agent?.name || 'this agent';
+
+  return (
+    <div className="rounded-md bg-indigo/[0.04] border border-indigo/15 px-2.5 py-2">
+      <div className="flex items-center gap-1.5 mb-1">
+        <ArrowLeftRight size={10} className="text-indigo flex-shrink-0" />
+        <span className="text-2xs font-semibold text-indigo font-sans">InnerChat</span>
+        <span className="text-2xs text-text-3 font-sans truncate">
+          {outbound ? `${me} → ${peer?.name}` : `${peer?.name} → ${me}`}
+        </span>
+        <span className="text-2xs text-text-4 font-sans">
+          {kind === 'answer' ? 'answer' : outbound ? 'asked' : 'asks'}
+        </span>
+        <span className="text-[10px] text-text-4 font-sans ml-auto flex-shrink-0">{timeAgo(msg.timestamp)}</span>
+      </div>
+      <div className="border-l-2 border-indigo/40 pl-3">
+        <StructuredMessage text={collapsed ? msg.text.slice(0, 400) + '...' : msg.text} />
+      </div>
+      {isLong && (
+        <button
+          onClick={() => setCollapsed((c) => !c)}
+          className="mt-1 text-2xs text-text-4 hover:text-indigo font-sans cursor-pointer"
+        >
+          {collapsed ? 'Show more' : 'Show less'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function AgentMessage({ msg, agent, answeredTo }) {
   const [collapsed, setCollapsed] = useState(msg.text?.length > 600);
   const isLong = msg.text?.length > 600;
 
@@ -348,9 +387,16 @@ function AgentMessage({ msg, agent }) {
       <div className="flex items-center gap-2 mb-1">
         <span className="text-2xs font-semibold text-text-1 font-sans">{agent?.name || 'Agent'}</span>
         <span className="text-2xs text-text-4 font-sans">{agent?.role}</span>
+        {/* This reply went to another agent, not to the user */}
+        {answeredTo && (
+          <span className="flex items-center gap-1 px-1.5 py-px rounded bg-indigo/10 text-2xs font-medium text-indigo font-sans">
+            <ArrowLeftRight size={9} />
+            to {answeredTo.name}
+          </span>
+        )}
         <span className="text-[10px] text-text-4 font-sans ml-auto">{timeAgo(msg.timestamp)}</span>
       </div>
-      <div className="border-l border-accent pl-3.5 py-1">
+      <div className={cn('pl-3.5 py-1 border-l', answeredTo ? 'border-indigo/50' : 'border-accent')}>
         <StructuredMessage text={collapsed ? msg.text.slice(0, 600) + '...' : msg.text} />
       </div>
       {collapsed && (
@@ -606,6 +652,8 @@ export function AgentFeed({ agent, readOnly = false }) {
   const rawActivityLog = useGrooveStore((s) => s.activityLog[agent.id]) || EMPTY;
   const instructAgent = useGrooveStore((s) => s.instructAgent);
   const isThinking = useGrooveStore((s) => s.thinkingAgents?.has(agent.id));
+  // Replies this agent sent to other agents, keyed by text — see innerchatAnswers.
+  const answerPeers = useGrooveStore((s) => s.innerchatAnswers?.[agent.id]) || EMPTY_MAP;
   const cachedChatRef = useRef(EMPTY);
   const cachedActivityRef = useRef(EMPTY);
   const cachedAgentIdRef = useRef(agent.id);
@@ -886,7 +934,15 @@ export function AgentFeed({ agent, readOnly = false }) {
           }
           if (item.from === 'user') return <UserMessage key={`user-${item._chatIdx}`} msg={item} />;
           if (item.from === 'system') return <SystemMessage key={`sys-${item._chatIdx}`} msg={item} />;
-          return <AgentMessage key={`agent-${item._chatIdx}`} msg={item} agent={agent} />;
+          if (item.from === 'innerchat') return <InnerChatMessage key={`ic-${item._chatIdx}`} msg={item} agent={agent} />;
+          return (
+            <AgentMessage
+              key={`agent-${item._chatIdx}`}
+              msg={item}
+              agent={agent}
+              answeredTo={answerPeers[item.text?.trim()]?.peer}
+            />
+          );
         })}
         <AnimatePresence>
           {(sending || isThinking) && (

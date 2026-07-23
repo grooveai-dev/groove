@@ -771,10 +771,10 @@ body {
         <span class="whats-new-ver" id="version-whats-new"></span>
       </div>
       <ul class="whats-new-list">
-        <li>Local model engine — run agents on GGUF, Ollama, llama-server</li>
-        <li>HuggingFace model browser with one-click download</li>
-        <li>MCP integrations — Slack, Gmail, Stripe, 15+ services</li>
-        <li>Agent scheduling with cron expressions</li>
+        <li>InnerChat — agents consult each other directly, no human relay</li>
+        <li>Fleet view — drag agents between teams, reorder, inline rename</li>
+        <li>Cross-team roster so agents can find and reach each other</li>
+        <li>Leaner context handling for lower token burn per session</li>
       </ul>
     </div>
 

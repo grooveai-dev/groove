@@ -65,81 +65,127 @@ export class InnerChat {
       throw new Error(`${toAgent.name} is already answering another agent — try again shortly`);
     }
 
-    const thread = opts.threadId ? this.threads.get(opts.threadId) : this._findThread(fromAgentId, toAgentId);
-    const t = thread || this._createThread(fromAgent, toAgent);
+    const t = this._openThread(fromAgent, toAgent, opts.threadId);
+    this._checkExchangeCap(t, toAgent);
 
-    const exchanges = t.turns.filter((x) => x.kind === 'ask').length;
-    if (exchanges >= MAX_EXCHANGES) {
+    const timeoutMs = Math.min(Number(opts.timeoutMs) || DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
+
+    const { turn, targetId, skipResults } = await this._deliver(t, fromAgent, toAgent, message.trim(), 'ask');
+    this.daemon.audit.log('innerchat.ask', { thread: t.id, from: fromAgentId, to: targetId });
+
+    const reply = await this._awaitReply(t, fromAgentId, targetId, { skipResults, timeoutMs });
+    const exchanges = t.turns.filter((x) => x.kind === 'ask' || x.kind === 'tell').length;
+
+    return { reply, threadId: t.id, exchanges, remaining: MAX_EXCHANGES - exchanges };
+  }
+
+  /**
+   * Send a message to another agent WITHOUT blocking. Returns as soon as it's
+   * delivered. If the target later replies, the reply is routed back to the
+   * sender asynchronously — resuming the sender if its turn has ended.
+   *
+   * This is the fire-and-forget counterpart to ask(): use it to hand off to an
+   * agent that's heads-down, where waiting out a timeout would waste the turn.
+   */
+  async tell(fromAgentId, toAgentId, message, opts = {}) {
+    const fromAgent = this.daemon.registry.get(fromAgentId);
+    const toAgent = this.daemon.registry.get(toAgentId);
+    if (!fromAgent) throw new Error(`Calling agent ${fromAgentId} not found`);
+    if (!toAgent) throw new Error(`Target agent ${toAgentId} not found`);
+    if (fromAgentId === toAgentId) throw new Error('An agent cannot message itself');
+    if (!message || !message.trim()) throw new Error('message is required');
+    if (this.awaiting.has(toAgentId)) {
+      throw new Error(`${toAgent.name} already has an unanswered message — wait for its reply before sending another`);
+    }
+
+    const t = this._openThread(fromAgent, toAgent, opts.threadId);
+    this._checkExchangeCap(t, toAgent);
+
+    const { turn, targetId, skipResults } = await this._deliver(t, fromAgent, toAgent, message.trim(), 'tell');
+    this.daemon.audit.log('innerchat.tell', { thread: t.id, from: fromAgentId, to: targetId });
+
+    // Register async capture: the reply (if any) is forwarded, not awaited.
+    this.awaiting.set(targetId, {
+      mode: 'async',
+      threadId: t.id,
+      senderId: fromAgentId,
+      skipResults,
+      timer: setTimeout(() => this._clearAwait(targetId), MAX_TIMEOUT_MS),
+    });
+
+    const exchanges = t.turns.filter((x) => x.kind === 'ask' || x.kind === 'tell').length;
+    return { delivered: true, threadId: t.id, exchanges, remaining: MAX_EXCHANGES - exchanges };
+  }
+
+  // Shared send: push a turn, deliver it, and remap the target id if delivery
+  // resumed/rotated the agent. Returns the queued-skip count for reply capture.
+  async _deliver(thread, fromAgent, toAgent, message, kind) {
+    const turn = {
+      id: randomUUID().slice(0, 12),
+      from: peer(fromAgent),
+      to: peer(toAgent),
+      text: message,
+      kind,
+      status: 'sending',
+      timestamp: Date.now(),
+    };
+    thread.turns.push(turn);
+
+    const wrapped = this._wrap(thread, fromAgent, toAgent, message, kind);
+
+    let result;
+    try {
+      result = await deliverInstruction(this.daemon, toAgent.id, wrapped, { recordFeedback: false });
+    } catch (err) {
+      turn.status = 'failed';
+      turn.error = err.message;
+      thread.status = 'failed';
+      this._broadcast(thread, turn);
+      throw new Error(`Could not reach ${toAgent.name}: ${err.message}`);
+    }
+
+    // A stopped target gets resumed or rotated, minting a new agent id.
+    const targetId = result.agentId;
+    if (targetId !== toAgent.id) {
+      this._remapParticipant(thread, toAgent.id, targetId);
+      turn.to.id = targetId;
+    }
+
+    turn.status = result.status;
+    thread.status = 'awaiting_reply';
+    thread.updatedAt = Date.now();
+    this._broadcast(thread, turn);
+
+    // A queued message sits behind the target's current work, so the next
+    // result belongs to that prior task, not to us — skip it.
+    return { turn, targetId, skipResults: result.status === 'message_queued' ? 1 : 0 };
+  }
+
+  _openThread(fromAgent, toAgent, threadId) {
+    const thread = threadId ? this.threads.get(threadId) : this._findThread(fromAgent.id, toAgent.id);
+    return thread || this._createThread(fromAgent, toAgent);
+  }
+
+  _checkExchangeCap(thread, toAgent) {
+    const used = thread.turns.filter((x) => x.kind === 'ask' || x.kind === 'tell').length;
+    if (used >= MAX_EXCHANGES) {
       throw new Error(
         `This conversation has reached its ${MAX_EXCHANGES}-exchange limit. Stop consulting `
         + `${toAgent.name} and report your conclusion to the user.`,
       );
     }
-
-    const timeoutMs = Math.min(Number(opts.timeoutMs) || DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
-
-    const turn = {
-      id: randomUUID().slice(0, 12),
-      from: peer(fromAgent),
-      to: peer(toAgent),
-      text: message.trim(),
-      kind: 'ask',
-      status: 'sending',
-      timestamp: Date.now(),
-    };
-    t.turns.push(turn);
-
-    const wrapped = this._wrap(t, fromAgent, toAgent, message.trim());
-
-    let result;
-    try {
-      result = await deliverInstruction(this.daemon, toAgentId, wrapped, { recordFeedback: false });
-    } catch (err) {
-      turn.status = 'failed';
-      turn.error = err.message;
-      t.status = 'failed';
-      this._broadcast(t, turn);
-      throw new Error(`Could not reach ${toAgent.name}: ${err.message}`);
-    }
-
-    // A stopped target gets resumed or rotated, which mints a new agent id.
-    // Re-key onto it or the answer will never be matched.
-    const targetId = result.agentId;
-    if (targetId !== toAgentId) {
-      this._remapParticipant(t, toAgentId, targetId);
-      turn.to.id = targetId;
-    }
-
-    turn.status = result.status;
-    t.status = 'awaiting_reply';
-    t.updatedAt = Date.now();
-    this._broadcast(t, turn);
-    this.daemon.audit.log('innerchat.ask', { thread: t.id, from: fromAgentId, to: targetId });
-
-    // A queued question sits behind whatever the target is already doing, so
-    // the next result belongs to that prior task, not to us — skip it.
-    const skipResults = result.status === 'message_queued' ? 1 : 0;
-
-    const reply = await this._awaitReply(t, fromAgentId, targetId, { skipResults, timeoutMs });
-
-    return {
-      reply,
-      threadId: t.id,
-      exchanges: exchanges + 1,
-      remaining: MAX_EXCHANGES - (exchanges + 1),
-    };
   }
 
   _awaitReply(thread, askerId, targetId, { skipResults, timeoutMs }) {
     return new Promise((resolve, reject) => {
       const settle = (fn, value) => {
-        clearTimeout(record.timer);
-        this.awaiting.delete(targetId);
+        this._clearAwait(targetId);
         this.blockedOn.delete(askerId);
         fn(value);
       };
 
       const record = {
+        mode: 'block',
         threadId: thread.id,
         askerId,
         skipResults,
@@ -150,7 +196,7 @@ export class InnerChat {
           thread.updatedAt = Date.now();
           record.reject(new Error(
             `No answer within ${Math.round(timeoutMs / 1000)}s. The agent may still be working — `
-            + 'proceed on your own judgement or try again.',
+            + 'proceed on your own judgement, or use a non-blocking send (tell) next time.',
           ));
         }, timeoutMs),
       };
@@ -161,7 +207,7 @@ export class InnerChat {
   }
 
   /**
-   * Watch agent output for the answer to an outstanding question.
+   * Watch agent output for the reply to an outstanding message.
    * Called from the process manager's output handler.
    */
   onAgentOutput(agentId, output) {
@@ -170,7 +216,7 @@ export class InnerChat {
     if (output.type !== 'result') return;
 
     const thread = this.threads.get(pending.threadId);
-    if (!thread) { pending.reject(new Error('Conversation was lost')); return; }
+    if (!thread) { this._settlePending(agentId, pending, null, new Error('Conversation was lost')); return; }
 
     const text = extractText(output.data);
     if (!text) return;
@@ -182,7 +228,7 @@ export class InnerChat {
     }
 
     const responder = this.daemon.registry.get(agentId);
-    thread.turns.push({
+    const answerTurn = {
       id: randomUUID().slice(0, 12),
       from: responder ? peer(responder) : { id: agentId, name: agentId, role: 'agent' },
       to: this._otherParticipant(thread, agentId),
@@ -190,25 +236,65 @@ export class InnerChat {
       kind: 'answer',
       status: 'delivered',
       timestamp: Date.now(),
-    });
+    };
+    thread.turns.push(answerTurn);
     thread.status = 'idle';
     thread.updatedAt = Date.now();
-
-    this._broadcast(thread, thread.turns.at(-1));
+    this._broadcast(thread, answerTurn);
     this.daemon.audit.log('innerchat.answer', { thread: thread.id, from: agentId });
 
-    pending.resolve(text);
+    if (pending.mode === 'async') {
+      this._clearAwait(agentId);
+      this._forwardAsyncReply(pending, answerTurn, text);
+    } else {
+      pending.resolve(text);
+    }
+  }
+
+  // Deliver an async (tell) reply back to the original sender, resuming it if
+  // its turn has ended. The sender is not blocked, so this just wakes them.
+  async _forwardAsyncReply(pending, answerTurn, text) {
+    const sender = this.daemon.registry.get(pending.senderId)
+      || this.daemon.registry.getAll().find((a) => a.name === answerTurn.to.name);
+    if (!sender) return; // sender is gone — nothing to route back to
+
+    const msg = [
+      `[InnerChat reply from ${answerTurn.from.name} (${answerTurn.from.role})]`,
+      '',
+      text,
+      '',
+      'This is a reply to a message you sent earlier (you were not blocking on it). '
+      + 'Fold it into your work, or reply again to continue.',
+    ].join('\n');
+
+    try {
+      await deliverInstruction(this.daemon, sender.id, msg, { recordFeedback: false });
+    } catch (err) {
+      this.daemon.audit.log('innerchat.forward_failed', { to: sender.id, error: err.message });
+    }
   }
 
   /**
-   * An agent that dies mid-question would otherwise leave its asker blocked
-   * until the timeout. Called when an agent crashes or is killed.
+   * An agent that dies mid-question would otherwise leave a blocking asker
+   * stuck until timeout. Async senders aren't waiting, so just clear those.
    */
   onAgentGone(agentId, reason = 'stopped') {
     const pending = this.awaiting.get(agentId);
     if (!pending) return;
+    if (pending.mode === 'async') { this._clearAwait(agentId); return; }
     const agent = this.daemon.registry.get(agentId);
     pending.reject(new Error(`${agent?.name || agentId} ${reason} before answering`));
+  }
+
+  _clearAwait(targetId) {
+    const pending = this.awaiting.get(targetId);
+    if (pending?.timer) clearTimeout(pending.timer);
+    this.awaiting.delete(targetId);
+  }
+
+  _settlePending(agentId, pending, value, err) {
+    if (pending.mode === 'async') { this._clearAwait(agentId); return; }
+    if (err) pending.reject(err); else pending.resolve(value);
   }
 
   // ── Threads ─────────────────────────────────────────────────
@@ -233,10 +319,15 @@ export class InnerChat {
   }
 
   // The target sees a direct message from the other agent, with enough prior
-  // turns to follow a continuing conversation.
-  _wrap(thread, fromAgent, toAgent, message) {
+  // turns to follow a continuing conversation. The closing instruction differs
+  // by kind: an ask blocks the sender (answer now), a tell does not (answer
+  // when you reach a good stopping point).
+  _wrap(thread, fromAgent, toAgent, message, kind = 'ask') {
+    const header = kind === 'tell'
+      ? `[InnerChat — ${fromAgent.name} (${fromAgent.role}) sent you a message]`
+      : `[InnerChat — ${fromAgent.name} (${fromAgent.role}) is asking you a question]`;
     const prior = thread.turns.slice(0, -1).slice(-CONTEXT_TURNS);
-    const lines = [`[InnerChat — ${fromAgent.name} (${fromAgent.role}) is asking you a question]`, ''];
+    const lines = [header, ''];
 
     if (prior.length) {
       lines.push('Earlier in this conversation:');
@@ -245,11 +336,19 @@ export class InnerChat {
     }
 
     lines.push(message, '');
-    lines.push(
-      `${fromAgent.name} is BLOCKED waiting on your answer — it cannot continue until you `
-      + 'respond. Answer directly and concisely in your next message; that message is sent '
-      + 'back to it verbatim. Do not address the user, and do not start unrelated work first.',
-    );
+    if (kind === 'tell') {
+      lines.push(
+        `${fromAgent.name} is NOT blocked on this — finish what you're doing first if you're `
+        + 'mid-task. When you reach a good stopping point, answer directly in a message; your '
+        + `reply is relayed back to ${fromAgent.name}. If no reply is needed, just carry on.`,
+      );
+    } else {
+      lines.push(
+        `${fromAgent.name} is BLOCKED waiting on your answer — it cannot continue until you `
+        + 'respond. Answer directly and concisely in your next message; that message is sent '
+        + 'back to it verbatim. Do not address the user, and do not start unrelated work first.',
+      );
+    }
     return lines.join('\n');
   }
 
@@ -285,6 +384,20 @@ export class InnerChat {
   getPending(agentId) {
     const pending = this.awaiting.get(agentId);
     return pending ? this.threads.get(pending.threadId) : null;
+  }
+
+  // Clear all outstanding timers so a shutdown (or a test) doesn't hang on
+  // pending ask/tell timeouts. Blocking asks are rejected so their HTTP
+  // requests don't hang either.
+  stop() {
+    for (const [targetId, pending] of this.awaiting) {
+      if (pending.timer) clearTimeout(pending.timer);
+      if (pending.mode === 'block') {
+        try { pending.reject(new Error('Daemon shutting down')); } catch { /* already settled */ }
+      }
+      this.awaiting.delete(targetId);
+    }
+    this.blockedOn.clear();
   }
 }
 

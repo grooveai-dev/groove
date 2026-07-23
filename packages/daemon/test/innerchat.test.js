@@ -1,7 +1,7 @@
 // GROOVE — InnerChat Tests
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { InnerChat, MAX_EXCHANGES } from '../src/innerchat.js';
 
@@ -71,6 +71,9 @@ describe('InnerChat', () => {
       daemon.processes._running.add(id);
     }
   });
+
+  // Clear any un-awaited ask/tell timers so the runner can exit.
+  afterEach(() => innerchat.stop());
 
   // ── The blocking round trip ───────────────────────────────
 
@@ -258,5 +261,72 @@ describe('InnerChat', () => {
     assert.equal(turns[1].data.turn.kind, 'answer');
     assert.ok(daemon.audits.some((a) => a.type === 'innerchat.ask'));
     assert.ok(daemon.audits.some((a) => a.type === 'innerchat.answer'));
+  });
+
+  // ── tell: non-blocking send ───────────────────────────────
+
+  it('tell returns immediately without waiting for a reply', async () => {
+    const res = await innerchat.tell('a1', 'a2', 'heads up, spec is on disk');
+    assert.equal(res.delivered, true);
+    assert.ok(res.threadId);
+
+    // Delivered, framed as non-blocking.
+    const msg = daemon.sent.at(-1);
+    assert.equal(msg.id, 'a2');
+    assert.match(msg.msg, /sent you a message/);
+    assert.match(msg.msg, /NOT blocked/);
+  });
+
+  it('routes an async reply back to the sender, resuming it if needed', async () => {
+    await innerchat.tell('a1', 'a2', 'when you get a sec, confirm the error shape');
+    // a1 ended its turn: stopped, no loop.
+    daemon.processes._loops.delete('a1');
+    daemon.processes._running.delete('a1');
+
+    innerchat.onAgentOutput('a2', result('confirmed: {code, message}'));
+    await tick();
+
+    // Reply delivered to a1 — via resume, since it had ended.
+    const resume = daemon.resumes.at(-1);
+    assert.equal(resume.id, 'a1');
+    assert.match(resume.msg, /InnerChat reply from fullstack-14/);
+    assert.match(resume.msg, /confirmed: \{code, message\}/);
+    assert.match(resume.msg, /you were not blocking/);
+  });
+
+  it('does not block the sender or set blockedOn for a tell', async () => {
+    await innerchat.tell('a1', 'a2', 'fyi');
+    assert.equal(innerchat.blockedOn.get('a1'), undefined);
+    assert.ok(innerchat.getPending('a2'), 'still capturing the eventual reply');
+  });
+
+  it('a tell to a target already awaited is refused', async () => {
+    // Left blocking; afterEach stop() rejects it — swallow so it isn't unhandled.
+    innerchat.ask('a1', 'a2', 'blocking q').catch(() => {});
+    await tick();
+    await assert.rejects(() => innerchat.tell('a1', 'a2', 'second'), /unanswered message/);
+  });
+
+  it('ask and tell share the exchange budget', async () => {
+    const r1 = await innerchat.tell('a1', 'a2', 'one');
+    assert.equal(r1.exchanges, 1);
+    // a2 replies to the tell, freeing the slot.
+    innerchat.onAgentOutput('a2', result('ok'));
+    await tick();
+
+    const p = innerchat.ask('a1', 'a2', 'two');
+    await tick();
+    innerchat.onAgentOutput('a2', result('answer'));
+    const r2 = await p;
+    assert.equal(r2.exchanges, 2, 'tell + ask both count');
+  });
+
+  it('an async sender that vanishes is dropped quietly', async () => {
+    await innerchat.tell('a1', 'a2', 'x');
+    daemon.registry._agents.delete('a1'); // sender gone entirely
+    // Reply arrives with nobody to route to — must not throw.
+    innerchat.onAgentOutput('a2', result('late answer'));
+    await tick();
+    assert.equal(innerchat.getPending('a2'), null);
   });
 });

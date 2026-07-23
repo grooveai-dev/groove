@@ -123,6 +123,12 @@ export const createAgentsSlice = (set, get) => ({
 
   innerchatThreads: loadJSON('groove:innerchatThreads') || {},
 
+  // agentId -> { <answer text>: { peer, threadId } }. An agent's answer to
+  // another agent arrives as an ordinary result, indistinguishable in its own
+  // feed from a message meant for the user — this is what lets the feed badge
+  // it. Keyed by text so it works regardless of which event lands first.
+  innerchatAnswers: {},
+
   // Relay a message from one agent to another. Pass threadId to continue an
   // existing exchange rather than opening a new one.
   async sendInnerChat(fromId, toId, message, threadId = null) {

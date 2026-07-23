@@ -4,7 +4,7 @@
 import { writeFileSync, readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { resolve, dirname, basename } from 'path';
 import { escapeMd } from './validate.js';
-import { innerChatInstructions } from './innerchat-docs.js';
+import { innerChatInstructions, watchInstructions } from './innerchat-docs.js';
 
 const GROOVE_SECTION_START = '<!-- GROOVE:START -->';
 const GROOVE_SECTION_END = '<!-- GROOVE:END -->';
@@ -560,7 +560,8 @@ export class Introducer {
   // Written into every AGENTS_REGISTRY.md so the capability survives context
   // compaction — the spawn prompt alone can scroll out of a long session.
   _innerChatSection() {
-    return innerChatInstructions(this.daemon.port || 31415);
+    const port = this.daemon.port || 31415;
+    return [...innerChatInstructions(port), '', ...watchInstructions(port)];
   }
 
   writeRegistryFile(projectDir) {

@@ -372,36 +372,50 @@ export const useGrooveStore = create((set, get) => ({
         case 'innerchat:turn': {
           const { thread, turn } = msg.data;
           if (turn.status === 'failed') {
-            get().addToast('error', `Relay to ${turn.to.name} failed`, turn.error);
+            get().addToast('error', `InnerChat to ${turn.to.name} failed`, turn.error);
+            break;
           }
 
-          // The turn lands in the recipient's chat, badged with who sent it.
           set((s) => {
             const history = { ...s.chatHistory };
-            const arr = [...(history[turn.to.id] || [])];
-            arr.push({
+            const entry = (peer, direction) => ({
               from: 'innerchat',
               text: turn.text,
               timestamp: turn.timestamp,
               isQuery: false,
-              innerchat: {
-                turnId: turn.id,
-                threadId: thread.id,
-                kind: turn.kind,
-                fromAgent: turn.from,
-              },
+              innerchat: { turnId: turn.id, threadId: thread.id, kind: turn.kind, peer, direction },
             });
-            history[turn.to.id] = arr.slice(-100);
+            const push = (agentId, item) => {
+              history[agentId] = [...(history[agentId] || []), item].slice(-100);
+            };
+
+            if (turn.kind === 'ask') {
+              // Both sides see the question — the asker as outgoing, the
+              // target as incoming — so neither feed has an unexplained gap.
+              push(turn.from.id, entry(turn.to, 'out'));
+              push(turn.to.id, entry(turn.from, 'in'));
+            } else {
+              // The answer reaches the asker over HTTP, so only it needs a
+              // feed entry. The responder already shows this text as its own
+              // agent message; that one gets badged via innerchatAnswers
+              // rather than duplicated here.
+              push(turn.to.id, entry(turn.from, 'in'));
+            }
+
             persistJSON('groove:chatHistory', history);
+
+            const answers = { ...s.innerchatAnswers };
+            if (turn.kind === 'answer') {
+              answers[turn.from.id] = {
+                ...(answers[turn.from.id] || {}),
+                [turn.text.trim()]: { peer: turn.to, threadId: thread.id },
+              };
+            }
 
             const threads = { ...s.innerchatThreads, [thread.id]: thread };
             persistJSON('groove:innerchatThreads', threads);
-            return { chatHistory: history, innerchatThreads: threads };
+            return { chatHistory: history, innerchatThreads: threads, innerchatAnswers: answers };
           });
-
-          if (turn.kind === 'reply' && turn.status !== 'failed') {
-            get().addToast('info', `${turn.from.name} replied`, `Forwarded to ${turn.to.name}`);
-          }
           break;
         }
 

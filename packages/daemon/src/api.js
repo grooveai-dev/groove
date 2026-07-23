@@ -28,6 +28,7 @@ import { registerFileRoutes, resetEditorRoot } from './routes/files.js';
 import { registerNetworkRoutes } from './routes/network.js';
 import { registerScheduleRoutes } from './routes/schedules.js';
 import { registerInnerChatRoutes } from './routes/innerchat.js';
+import { registerWatchRoutes } from './routes/watch.js';
 import { registerAutoAgentRoutes } from './routes/auto-agents.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -178,6 +179,7 @@ export function createApi(app, daemon) {
   registerNetworkRoutes(app, daemon);
   registerScheduleRoutes(app, daemon);
   registerInnerChatRoutes(app, daemon);
+  registerWatchRoutes(app, daemon);
   registerAutoAgentRoutes(app, daemon);
 
 

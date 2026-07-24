@@ -232,7 +232,9 @@ describe('InnerChat', () => {
 
   // ── Conversation context ──────────────────────────────────
 
-  it('replays prior turns so neither side re-explains', async () => {
+  it('does NOT replay prior turns to a running agent (it already has them)', async () => {
+    // a2 stays running throughout — re-injecting history it already holds would
+    // balloon its context.
     const p1 = innerchat.ask('a1', 'a2', 'What shape?');
     await tick(); innerchat.onAgentOutput('a2', result('REST'));
     await p1;
@@ -240,12 +242,32 @@ describe('InnerChat', () => {
     const p2 = innerchat.ask('a1', 'a2', 'Versioned?');
     await tick();
     const msg = daemon.sent.at(-1).msg;
-    assert.match(msg, /Earlier in this conversation/);
-    assert.match(msg, /fullstack-1: What shape\?/);
-    assert.match(msg, /fullstack-14: REST/);
+    assert.doesNotMatch(msg, /Earlier in this conversation/, 'no redundant recap to a live agent');
     assert.match(msg, /Versioned\?/);
 
     innerchat.onAgentOutput('a2', result('v2'));
+    await p2;
+  });
+
+  it('DOES replay prior turns when the recipient was stopped (lost its context)', async () => {
+    const p1 = innerchat.ask('a1', 'a2', 'What shape?');
+    await tick(); innerchat.onAgentOutput('a2', result('REST'));
+    await p1;
+
+    // a2 ends its turn — a resume/rotate gives it a fresh context, so it needs
+    // the recap to follow the thread.
+    daemon.processes._loops.delete('a2');
+    daemon.processes._running.delete('a2');
+
+    const p2 = innerchat.ask('a1', 'a2', 'Versioned?');
+    await tick();
+    const newId = daemon.resumes.at(-1).newId;
+    const msg = daemon.resumes.at(-1).msg;
+    assert.match(msg, /Earlier in this conversation/);
+    assert.match(msg, /fullstack-1: What shape\?/);
+    assert.match(msg, /fullstack-14: REST/);
+
+    innerchat.onAgentOutput(newId, result('v2'));
     await p2;
   });
 

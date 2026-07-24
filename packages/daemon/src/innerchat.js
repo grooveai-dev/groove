@@ -131,7 +131,13 @@ export class InnerChat {
     };
     thread.turns.push(turn);
 
-    const wrapped = this._wrap(thread, fromAgent, toAgent, message, kind);
+    // Only replay earlier turns when the recipient has LOST them. A running
+    // agent already has this thread's history in its live session — re-injecting
+    // it every exchange duplicates content and balloons context. A stopped agent
+    // will be resumed/rotated (fresh context), so it needs the recap.
+    const recipientHasContext =
+      this.daemon.processes.isRunning(toAgent.id) || this.daemon.processes.hasAgentLoop(toAgent.id);
+    const wrapped = this._wrap(thread, fromAgent, toAgent, message, kind, !recipientHasContext);
 
     let result;
     try {
@@ -322,11 +328,11 @@ export class InnerChat {
   // turns to follow a continuing conversation. The closing instruction differs
   // by kind: an ask blocks the sender (answer now), a tell does not (answer
   // when you reach a good stopping point).
-  _wrap(thread, fromAgent, toAgent, message, kind = 'ask') {
+  _wrap(thread, fromAgent, toAgent, message, kind = 'ask', includePrior = true) {
     const header = kind === 'tell'
       ? `[InnerChat — ${fromAgent.name} (${fromAgent.role}) sent you a message]`
       : `[InnerChat — ${fromAgent.name} (${fromAgent.role}) is asking you a question]`;
-    const prior = thread.turns.slice(0, -1).slice(-CONTEXT_TURNS);
+    const prior = includePrior ? thread.turns.slice(0, -1).slice(-CONTEXT_TURNS) : [];
     const lines = [header, ''];
 
     if (prior.length) {

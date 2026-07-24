@@ -111,16 +111,19 @@ export class ClaudeCodeProvider extends Provider {
       args.push('--fast');
     }
 
-    // Pass the initial prompt as positional arg (includes GROOVE context)
+    // Pass the initial prompt via STDIN, not as a positional argument. A
+    // long-running agent's handoff brief accumulates over days and easily
+    // exceeds the OS argv limit — on Linux a single arg is capped at 128KB
+    // (MAX_ARG_STRLEN) regardless of ARG_MAX — which surfaced as `spawn E2BIG`
+    // on rotation. stdin has no such limit. (interactive stream-json mode reads
+    // its prompt from stdin, same as headless -p.)
     const fullPrompt = this.buildFullPrompt(agent);
-    if (fullPrompt) {
-      args.push(fullPrompt);
-    }
 
     return {
       command: 'claude',
       args,
       env: {},
+      stdin: fullPrompt || undefined,
     };
   }
 
@@ -132,8 +135,8 @@ export class ClaudeCodeProvider extends Provider {
     if (knockSettings) args.push('--settings', knockSettings);
     if (model) args.push('--model', model);
     if (options.fast) args.push('--fast');
-    if (prompt) args.push(prompt);
-    return { command: 'claude', args, env: {} };
+    // Via stdin, not argv — the resume message can be large (see buildSpawnCommand).
+    return { command: 'claude', args, env: {}, stdin: prompt || undefined };
   }
 
   /**

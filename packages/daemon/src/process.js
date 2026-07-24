@@ -2687,7 +2687,7 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
     locks.release(agentId);
 
     // Build resume command
-    const { command: rawCommand, args, env } = provider.buildResumeCommand(sessionId, message, config.model, { fast: config.fast });
+    const { command: rawCommand, args, env, stdin: stdinData } = provider.buildResumeCommand(sessionId, message, config.model, { fast: config.fast });
     const command = resolveProviderCommand(config.provider || 'claude-code') || rawCommand;
 
     // Set up log capture
@@ -2752,9 +2752,16 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
     const proc = cpSpawn(command, args, {
       cwd: resumeCwd,
       env: resumeEnv,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [stdinData ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       detached: false,
     });
+
+    // The resume message goes via stdin (not argv) to avoid ARG_MAX/E2BIG on
+    // large messages — mirror the spawn path.
+    if (stdinData && proc.stdin) {
+      proc.stdin.write(stdinData);
+      proc.stdin.end();
+    }
 
     proc.on('error', (err) => {
       if (!logStream.destroyed) logStream.write(`[${new Date().toISOString()}] Resume spawn error: ${err.message}\n`);

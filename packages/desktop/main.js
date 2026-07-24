@@ -143,6 +143,29 @@ function getAvailablePort() {
   });
 }
 
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const srv = createServer();
+    srv.once('error', () => resolve(false));
+    srv.listen(port, '127.0.0.1', () => srv.close(() => resolve(true)));
+  });
+}
+
+// Reuse a connection's previous local port when possible so the remote GUI's
+// origin (http://localhost:<port>) stays stable across reconnects. A changed
+// port is a changed origin, and the browser scopes localStorage — including
+// chat history — per origin, so a new port silently wipes the chats. Retries
+// briefly to cover the gap between killing a stale tunnel and its port being
+// released by the OS.
+async function preferredLocalPort(port) {
+  if (!port) return getAvailablePort();
+  for (let i = 0; i < 6; i++) {
+    if (await isPortFree(port)) return port;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return getAvailablePort();
+}
+
 // macOS Electron apps launched from Finder inherit a minimal PATH missing user
 // shell additions. Resolve the real PATH and API key env vars once at startup
 // so forked daemons can find CLI tools and use API keys as fallback.
@@ -610,7 +633,10 @@ class WorkspaceManager {
     const conn = this.sshConnections.find(c => c.id === id);
     if (!conn) throw new Error('Connection not found');
 
-    const localPort = await getAvailablePort();
+    // Keep the same local port across reconnects so the GUI origin — and its
+    // per-origin localStorage (chat history) — stays stable.
+    const localPort = await preferredLocalPort(conn.localPort);
+    if (conn.localPort !== localPort) { conn.localPort = localPort; this._saveSSH(); }
     const knownHostsPath = join(app.getPath('userData'), 'ssh-known-hosts');
     const rawKey = conn.sshKeyPath || conn.keyPath;
     let sshKey = rawKey || null;

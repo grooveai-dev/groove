@@ -771,10 +771,10 @@ body {
         <span class="whats-new-ver" id="version-whats-new"></span>
       </div>
       <ul class="whats-new-list">
+        <li>Claude Opus 5 — now in the model lineup</li>
+        <li>Watch — hand a long job to the daemon, get woken when it finishes</li>
+        <li>Sturdier remote: SSH tunnels auto-recover on wake, chats persist</li>
         <li>InnerChat — agents consult each other directly, no human relay</li>
-        <li>Fleet view — drag agents between teams, reorder, inline rename</li>
-        <li>Cross-team roster so agents can find and reach each other</li>
-        <li>Leaner context handling for lower token burn per session</li>
       </ul>
     </div>
 

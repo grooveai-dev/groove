@@ -39,6 +39,7 @@ export class ClaudeCodeProvider extends Provider {
   static authType = 'subscription';
   static managesOwnContext = true; // Claude Code compacts context internally (~25-37% → 2-8%)
   static models = [
+    { id: 'claude-opus-5', name: 'Claude Opus 5', tier: 'heavy', contextWindow: 1_000_000 },
     { id: 'claude-fable-5', name: 'Claude Fable 5', tier: 'heavy', contextWindow: 1_000_000 },
     { id: 'claude-opus-4-8', name: 'Claude Opus 4.8', tier: 'heavy', contextWindow: 1_000_000 },
     { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', tier: 'heavy', contextWindow: 1_000_000 },

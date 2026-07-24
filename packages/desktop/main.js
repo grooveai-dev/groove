@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { app, BrowserWindow, Tray, Menu, shell, nativeImage, dialog, ipcMain, safeStorage } from 'electron';
+import { app, BrowserWindow, Tray, Menu, shell, nativeImage, dialog, ipcMain, safeStorage, powerMonitor } from 'electron';
 import pkg from 'electron-updater';
 const { autoUpdater } = pkg;
 import { createHash, randomBytes } from 'crypto';
@@ -427,12 +427,62 @@ class WorkspaceManager {
       this._updateTrayMenu();
     });
 
-    const inst = { id, port: localPort, projectDir: null, name, daemon: null, window: win, remote: true };
+    const inst = { id, port: localPort, projectDir: null, name, daemon: null, window: win, remote: true, connId: this._connIdForName(name) };
     this.instances.set(id, inst);
     this._closeHomeWindow();
     this._updateTrayMenu();
 
     return inst;
+  }
+
+  _connIdForName(name) {
+    return this.sshConnections.find((c) => c.name === name)?.id || null;
+  }
+
+  // When the Mac wakes from sleep the SSH tunnel is dead: its TCP connection
+  // was severed and ssh's ServerAlive check will (or already did) exit the
+  // process. Re-establish each open remote's tunnel and reload its window so the
+  // user doesn't come back to a broken, blank screen that a refresh can't fix
+  // (a plain refresh re-requests the GUI over the same dead tunnel).
+  async _onSystemResume() {
+    if (this._reviving) return;
+    this._reviving = true;
+    try {
+      // Give the network a moment to come back before probing the tunnel.
+      await new Promise((r) => setTimeout(r, 1500));
+
+      const remotes = [...this.instances.values()]
+        .filter((i) => i.remote && i.connId && i.window && !i.window.isDestroyed());
+
+      for (const inst of remotes) {
+        try { await this._reviveInstance(inst); }
+        catch (err) { console.warn(`[resume] Failed to revive remote "${inst.name}": ${err.message}`); }
+      }
+    } finally {
+      this._reviving = false;
+    }
+  }
+
+  // Tear down a remote's stale tunnel, bring up a fresh one, and reload its
+  // window at the new local port. Shared by the wake handler and the manual
+  // Reconnect the renderer triggers.
+  async _reviveInstance(inst) {
+    if (!inst?.connId || !inst.window || inst.window.isDestroyed()) return;
+    const old = this._sshTunnels?.get(inst.connId);
+    if (old?.pid) { try { process.kill(-old.pid); } catch { try { process.kill(old.pid); } catch { /* gone */ } } }
+    else if (old) { try { old.kill?.(); } catch { /* gone */ } }
+
+    const { localPort } = await this.connectSSH(inst.connId);
+    inst.port = localPort;
+    const remoteUrl = `http://localhost:${localPort}?instance=${encodeURIComponent(inst.name)}`;
+    if (!inst.window.isDestroyed()) inst.window.loadURL(remoteUrl);
+  }
+
+  _instanceForWindow(win) {
+    for (const inst of this.instances.values()) {
+      if (inst.window === win) return inst;
+    }
+    return null;
   }
 
   async close(id) {
@@ -941,9 +991,14 @@ class WorkspaceManager {
         click: () => this.open(r.dir),
       }));
 
+    const hasRemotes = instances.some((i) => i.remote && i.connId);
     const template = [
       ...instanceItems,
       ...(instanceItems.length > 0 ? [{ type: 'separator' }] : []),
+      ...(hasRemotes ? [{
+        label: 'Reconnect Remote Tunnels',
+        click: () => { this._onSystemResume(); },
+      }] : []),
       { label: 'New Window', click: () => this._openFolderDialog(), accelerator: 'CommandOrControl+N' },
       ...(recentItems.length > 0 ? [
         { type: 'separator' },
@@ -1422,6 +1477,21 @@ ipcMain.handle('home-connect-ssh', async (_event, id) => {
   return { ok: true, localPort, name };
 });
 
+// Renderer-triggered reconnect for the window that sent it — re-establishes the
+// SSH tunnel and reloads, so a blank/stalled remote window can recover itself.
+ipcMain.handle('groove-reconnect', async (event) => {
+  if (!workspaces) return { ok: false, error: 'not ready' };
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const inst = win && workspaces._instanceForWindow(win);
+  if (!inst) return { ok: false, error: 'no instance' };
+  try {
+    await workspaces._reviveInstance(inst);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 ipcMain.handle('home-pick-key', async () => {
   const parentWin = workspaces?._homeWindow && !workspaces._homeWindow.isDestroyed()
     ? workspaces._homeWindow : null;
@@ -1748,6 +1818,9 @@ app.on('second-instance', () => {
 app.whenReady().then(async () => {
   workspaces = new WorkspaceManager();
   createTray();
+
+  // Revive remote tunnels + windows when the machine wakes from sleep.
+  try { powerMonitor.on('resume', () => { workspaces?._onSystemResume(); }); } catch { /* not supported */ }
   const stored = loadStoredToken();
   if (stored) {
     storeToken(stored);

@@ -1146,3 +1146,16 @@ export const useGrooveStore = create((set, get) => ({
     ws.onerror = () => ws.close();
   },
 }));
+
+// Reconnect promptly when connectivity returns — laptop wake, network back, or
+// the window regaining focus — instead of waiting out the periodic 2s retry.
+// connect() no-ops if a socket already exists, so these are safe to fire often.
+if (typeof window !== 'undefined') {
+  const kick = () => {
+    const s = useGrooveStore.getState();
+    if (!s.ws) s.connect();
+  };
+  window.addEventListener('online', kick);
+  window.addEventListener('focus', kick);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) kick(); });
+}

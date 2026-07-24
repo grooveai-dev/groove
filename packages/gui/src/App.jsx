@@ -1,7 +1,7 @@
 // GROOVE GUI v2 — App Root
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useGrooveStore } from './stores/groove';
 import { AppShell } from './components/layout/app-shell';
 import { SetupWizard } from './components/onboarding/setup-wizard';
@@ -133,10 +133,59 @@ function TunneledFolderPicker() {
 }
 
 function LoadingScreen() {
+  const connected = useGrooveStore((s) => s.connected);
+  const [slow, setSlow] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const triedRef = useRef(false);
+
+  // If we haven't come up within a few seconds, the connection (or the SSH
+  // tunnel behind it) is likely stalled — surface a reload rather than an
+  // endless pulse the user can't act on.
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), 6000);
+    return () => clearTimeout(t);
+  }, []);
+
+  // If the socket can't even open (not just un-hydrated), the tunnel behind it
+  // is probably dead — ask the desktop shell to re-establish it. Once only, and
+  // only when disconnected, so a merely-slow load isn't disturbed.
+  useEffect(() => {
+    if (!slow || connected || triedRef.current) return;
+    if (!window.groove?.reconnect) return;
+    triedRef.current = true;
+    setReconnecting(true);
+    window.groove.reconnect().catch(() => {}).finally(() => setReconnecting(false));
+  }, [slow, connected]);
+
+  async function manualReconnect() {
+    if (window.groove?.reconnect) {
+      setReconnecting(true);
+      try { await window.groove.reconnect(); } catch { /* falls through to reload */ }
+      setReconnecting(false);
+    }
+    window.location.reload();
+  }
+
   return (
     <div className="h-screen bg-surface-0 flex flex-col items-center justify-center gap-4">
       <img src="/favicon.png" alt="" className="w-10 h-10 opacity-60 animate-pulse" />
-      <p className="text-sm text-text-3 font-sans">Connecting...</p>
+      <p className="text-sm text-text-3 font-sans">
+        {reconnecting ? 'Re-establishing connection…' : connected ? 'Loading…' : 'Connecting to daemon…'}
+      </p>
+      {slow && (
+        <div className="flex flex-col items-center gap-2 mt-1">
+          <p className="text-xs text-text-4 font-sans max-w-xs text-center">
+            Still trying to reach the daemon. If you just woke your machine, the connection is re-establishing.
+          </p>
+          <button
+            onClick={manualReconnect}
+            disabled={reconnecting}
+            className="px-3 py-1.5 rounded-md text-xs font-medium font-sans border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 transition-colors cursor-pointer"
+          >
+            {reconnecting ? 'Reconnecting…' : 'Reconnect'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

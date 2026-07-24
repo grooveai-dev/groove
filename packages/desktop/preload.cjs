@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld('groove', {
   openFolder: () => ipcRenderer.invoke('open-folder'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   quit: () => ipcRenderer.send('app-quit'),
+  // Ask the main process to re-establish this remote window's SSH tunnel and
+  // reload it — the renderer calls this when the daemon has been unreachable
+  // for a while (e.g. after the laptop wakes and the tunnel is dead).
+  reconnect: () => ipcRenderer.invoke('groove-reconnect'),
   folders: {
     select: (options) => ipcRenderer.invoke('select-folder', options),
     setProjectDir: (dir) => ipcRenderer.invoke('set-project-dir', dir),

@@ -776,8 +776,9 @@ export const useGrooveStore = create((set, get) => ({
         }
 
         case 'auth:expired':
+          // Marketplace/subscription token lapsed — reset to the community state
+          // silently. There is no sign-in flow to nag the user toward.
           set({ marketplaceAuthenticated: false, marketplaceUser: null });
-          get().addToast('warning', 'Session expired', 'Please sign in again');
           break;
 
         case 'network:node:status': {

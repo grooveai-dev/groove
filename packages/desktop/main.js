@@ -463,19 +463,39 @@ class WorkspaceManager {
     }
   }
 
-  // Tear down a remote's stale tunnel, bring up a fresh one, and reload its
-  // window at the new local port. Shared by the wake handler and the manual
-  // Reconnect the renderer triggers.
+  // Recover a remote window. If its tunnel is still healthy (a slow SSH link,
+  // or the renderer just got wedged) we only RELOAD — tearing down a working
+  // tunnel is how a live-but-slow connection gets killed. Only when the port is
+  // genuinely dead do we re-establish the tunnel.
   async _reviveInstance(inst) {
-    if (!inst?.connId || !inst.window || inst.window.isDestroyed()) return;
+    if (!inst?.window || inst.window.isDestroyed()) return;
+
+    const reload = (port) => {
+      if (!inst.window.isDestroyed()) {
+        inst.window.loadURL(`http://localhost:${port}?instance=${encodeURIComponent(inst.name)}`);
+      }
+    };
+
+    if (inst.port && await this._portHealthy(inst.port)) {
+      reload(inst.port); // tunnel is fine — just refresh the renderer
+      return;
+    }
+    if (!inst.connId) return; // local window or unknown connection — nothing to re-tunnel
+
     const old = this._sshTunnels?.get(inst.connId);
     if (old?.pid) { try { process.kill(-old.pid); } catch { try { process.kill(old.pid); } catch { /* gone */ } } }
     else if (old) { try { old.kill?.(); } catch { /* gone */ } }
 
     const { localPort } = await this.connectSSH(inst.connId);
     inst.port = localPort;
-    const remoteUrl = `http://localhost:${localPort}?instance=${encodeURIComponent(inst.name)}`;
-    if (!inst.window.isDestroyed()) inst.window.loadURL(remoteUrl);
+    reload(localPort);
+  }
+
+  async _portHealthy(port) {
+    try {
+      const r = await fetch(`http://localhost:${port}/api/status`, { signal: AbortSignal.timeout(3000) });
+      return r.ok;
+    } catch { return false; }
   }
 
   _instanceForWindow(win) {

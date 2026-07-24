@@ -491,7 +491,11 @@ export class Daemon {
           signal: AbortSignal.timeout(10000),
         });
         if (resp.status === 401) {
+          // The stored marketplace token is invalid. Clear it and stop here so
+          // we don't re-poll a dead token every cycle and re-fire this forever.
           this.subscriptionCache = { plan: 'community', status: 'none', features: [], active: false, validatedAt: Date.now() };
+          this.authToken = null;
+          try { await this.skills.clearAuth(); } catch { /* best effort */ }
           this.broadcast({ type: 'subscription:updated', data: this.subscriptionCache });
           this.broadcast({ type: 'auth:expired' });
           return;

@@ -1,7 +1,7 @@
 // GROOVE GUI v2 — App Root
 // FSL-1.1-Apache-2.0 — see LICENSE
 
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useGrooveStore } from './stores/groove';
 import { AppShell } from './components/layout/app-shell';
 import { SetupWizard } from './components/onboarding/setup-wizard';
@@ -136,26 +136,16 @@ function LoadingScreen() {
   const connected = useGrooveStore((s) => s.connected);
   const [slow, setSlow] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
-  const triedRef = useRef(false);
 
-  // If we haven't come up within a few seconds, the connection (or the SSH
-  // tunnel behind it) is likely stalled — surface a reload rather than an
-  // endless pulse the user can't act on.
+  // Reveal a manual reconnect after a while rather than pulsing forever. We do
+  // NOT auto-reconnect here: over a slow SSH tunnel the socket can take longer
+  // than this to open, and reloading mid-connect would restart the load in a
+  // loop that never finishes. Wake recovery is handled by the desktop shell's
+  // power-resume handler; this is just a user-triggered escape hatch.
   useEffect(() => {
-    const t = setTimeout(() => setSlow(true), 6000);
+    const t = setTimeout(() => setSlow(true), 12000);
     return () => clearTimeout(t);
   }, []);
-
-  // If the socket can't even open (not just un-hydrated), the tunnel behind it
-  // is probably dead — ask the desktop shell to re-establish it. Once only, and
-  // only when disconnected, so a merely-slow load isn't disturbed.
-  useEffect(() => {
-    if (!slow || connected || triedRef.current) return;
-    if (!window.groove?.reconnect) return;
-    triedRef.current = true;
-    setReconnecting(true);
-    window.groove.reconnect().catch(() => {}).finally(() => setReconnecting(false));
-  }, [slow, connected]);
 
   async function manualReconnect() {
     if (window.groove?.reconnect) {

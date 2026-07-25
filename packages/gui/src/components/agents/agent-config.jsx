@@ -704,7 +704,7 @@ export function AgentConfig({ agent }) {
             </div>
           )}
           {(agent.integrations || []).length === 0 && installedIntegrations.length === 0 && (
-            <span className="text-2xs text-text-4 font-sans">No integrations installed — browse the Marketplace</span>
+            <span className="text-2xs text-text-4 font-sans">No integrations installed — browse the Integrations tab</span>
           )}
         </div>
         {(agent.integrations || []).length > 0 && (
@@ -775,7 +775,7 @@ export function AgentConfig({ agent }) {
               </div>
             )}
             {(agent.repos || []).length === 0 && (
-              <span className="text-2xs text-text-4 font-sans">No repos attached — import one from the Marketplace</span>
+              <span className="text-2xs text-text-4 font-sans">No repos attached — import one from the Integrations tab</span>
             )}
           </div>
         </ConfigSection>

@@ -115,7 +115,7 @@ const VIEW_LABELS = {
   agents: 'Agents',
   editor: 'Editor',
   dashboard: 'Dashboard',
-  marketplace: 'Marketplace',
+  marketplace: 'Integrations',
   teams: 'Teams',
 };
 

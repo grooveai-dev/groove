@@ -7,7 +7,6 @@ import { persistJSON, persistChatHistory } from './helpers.js';
 import { createUiSlice } from './slices/ui-slice.js';
 import { createAgentsSlice } from './slices/agents-slice.js';
 import { createTeamsSlice } from './slices/teams-slice.js';
-import { createChatSlice } from './slices/chat-slice.js';
 import { createEditorSlice } from './slices/editor-slice.js';
 import { createProvidersSlice } from './slices/providers-slice.js';
 import { createNetworkSlice } from './slices/network-slice.js';
@@ -33,7 +32,6 @@ export const useGrooveStore = create((set, get) => ({
   ...createUiSlice(set, get),
   ...createAgentsSlice(set, get),
   ...createTeamsSlice(set, get),
-  ...createChatSlice(set, get),
   ...createEditorSlice(set, get),
   ...createProvidersSlice(set, get),
   ...createNetworkSlice(set, get),
@@ -69,7 +67,7 @@ export const useGrooveStore = create((set, get) => ({
         if (isTunneled) get().fetchProjectDir();
       }).catch(() => {});
       get().fetchTeams();
-      get().fetchConversations();
+      get().fetchChatHistory();
       get().fetchApprovals();
       get().checkMarketplaceAuth();
       get().fetchTunnels();
@@ -266,27 +264,6 @@ export const useGrooveStore = create((set, get) => ({
               set({ chatHistory: history });
               persistChatHistory(history);
             }
-
-            const conv = get().conversations.find((c) => c.agentId === agentId);
-            if (conv) {
-              const convMsgs = { ...get().conversationMessages };
-              if (!convMsgs[conv.id]) convMsgs[conv.id] = [];
-              const convArr = [...convMsgs[conv.id]];
-              const lastConv = convArr[convArr.length - 1];
-              const isRecentConv = lastConv && lastConv.from === 'assistant' && (Date.now() - lastConv.timestamp) < 8000;
-              const isConvDupe = isRecentConv && (lastConv.text === trimmed || lastConv.text.endsWith(trimmed));
-              if (!isConvDupe) {
-                if (isRecentConv) {
-                  const sep = data.subtype === 'assistant' ? '\n\n' : ' ';
-                  convArr[convArr.length - 1] = { ...lastConv, text: lastConv.text + sep + trimmed, timestamp: Date.now() };
-                } else {
-                  convArr.push({ from: 'assistant', text: trimmed, timestamp: Date.now() });
-                }
-                convMsgs[conv.id] = convArr.slice(-200);
-                set({ conversationMessages: convMsgs, streamingConversationId: conv.id });
-                persistJSON('groove:conversationMessages', convMsgs);
-              }
-            }
           }
 
           if (activityText && activityText.trim()) {
@@ -347,11 +324,6 @@ export const useGrooveStore = create((set, get) => ({
             });
           }
 
-          const exitConv = get().conversations.find((c) => c.agentId === msg.agentId);
-          if (exitConv && get().streamingConversationId === exitConv.id) {
-            set({ sendingMessage: false, streamingConversationId: null });
-          }
-
           if (msg.error && msg.agentId) {
             get().addChatMessage(msg.agentId, 'system', `Crashed: ${msg.error}`);
           }
@@ -385,8 +357,10 @@ export const useGrooveStore = create((set, get) => ({
               isQuery: false,
               innerchat: { turnId: turn.id, threadId: thread.id, kind: turn.kind, peer, direction },
             });
+            const pushed = [];
             const push = (agentId, item) => {
               history[agentId] = [...(history[agentId] || []), item].slice(-100);
+              pushed.push([agentId, item]);
             };
 
             if (turn.kind === 'ask') {
@@ -403,6 +377,8 @@ export const useGrooveStore = create((set, get) => ({
             }
 
             persistChatHistory(history);
+            // Mirror to the daemon so these survive an origin/port change too.
+            for (const [agentId, item] of pushed) get().persistMessageRemote(agentId, item);
 
             const answers = { ...s.innerchatAnswers };
             if (turn.kind === 'answer') {
@@ -966,140 +942,6 @@ export const useGrooveStore = create((set, get) => ({
           get().fetchBetaStatus();
           get().fetchNetworkInstallStatus();
           break;
-
-        case 'conversation:created': {
-          const conv = msg.data;
-          if (conv) set((s) => ({ conversations: [conv, ...s.conversations.filter((c) => c.id !== conv.id)] }));
-          break;
-        }
-
-        case 'conversation:updated': {
-          const conv = msg.data;
-          if (conv) set((s) => ({ conversations: s.conversations.map((c) => c.id === conv.id ? { ...c, ...conv } : c) }));
-          break;
-        }
-
-        case 'conversation:deleted': {
-          const id = msg.data?.id || msg.id;
-          if (id) {
-            set((s) => {
-              const conversations = s.conversations.filter((c) => c.id !== id);
-              const conversationMessages = { ...s.conversationMessages };
-              delete conversationMessages[id];
-              const activeConversationId = s.activeConversationId === id ? null : s.activeConversationId;
-              if (activeConversationId !== s.activeConversationId) localStorage.setItem('groove:activeConversationId', '');
-              return { conversations, conversationMessages, activeConversationId };
-            });
-          }
-          break;
-        }
-
-        case 'conversation:tool': {
-          const { conversationId, name, summary } = msg.data || msg;
-          if (!conversationId) break;
-          set((s) => {
-            const tools = { ...s.conversationActiveTools };
-            tools[conversationId] = { name: name || 'Tool', summary: summary || null, timestamp: Date.now() };
-            return { conversationActiveTools: tools };
-          });
-          break;
-        }
-
-        case 'conversation:chunk': {
-          const { conversationId, text } = msg.data || msg;
-          if (!conversationId || !text) break;
-          set((s) => {
-            const msgs = { ...s.conversationMessages };
-            if (!msgs[conversationId]) msgs[conversationId] = [];
-            const arr = [...msgs[conversationId]];
-            const last = arr[arr.length - 1];
-            if (last && last.from === 'assistant' && (Date.now() - last.timestamp) < 30000) {
-              arr[arr.length - 1] = { ...last, text: last.text + text, timestamp: Date.now() };
-            } else {
-              arr.push({ from: 'assistant', text, timestamp: Date.now() });
-            }
-            msgs[conversationId] = arr.slice(-200);
-            const tools = { ...s.conversationActiveTools };
-            delete tools[conversationId];
-            return { conversationMessages: msgs, streamingConversationId: conversationId, conversationActiveTools: tools };
-          });
-          break;
-        }
-
-        case 'conversation:complete': {
-          const { conversationId } = msg.data || msg;
-          if (conversationId && get().streamingConversationId === conversationId) {
-            const tools = { ...get().conversationActiveTools };
-            delete tools[conversationId];
-            set({ sendingMessage: false, streamingConversationId: null, conversationActiveTools: tools });
-          }
-          if (conversationId) persistJSON('groove:conversationMessages', get().conversationMessages);
-          break;
-        }
-
-        case 'conversation:image': {
-          const { conversationId, prompt, url, b64_json, mimeType, model: imgModel, provider: imgProvider } = msg.data || msg;
-          if (!conversationId) break;
-          const imageUrl = url || (b64_json ? `data:${mimeType || 'image/png'};base64,${b64_json}` : null);
-          set((s) => {
-            const msgs = { ...s.conversationMessages };
-            if (!msgs[conversationId]) msgs[conversationId] = [];
-            const arr = [...msgs[conversationId]];
-            const loadingIdx = arr.findLastIndex((m) => m.type === 'image-loading' && m.prompt === prompt);
-            if (loadingIdx >= 0) {
-              arr[loadingIdx] = { from: 'assistant', type: 'image', imageUrl, prompt, model: imgModel, provider: imgProvider, timestamp: Date.now() };
-            } else {
-              arr.push({ from: 'assistant', type: 'image', imageUrl, prompt, model: imgModel, provider: imgProvider, timestamp: Date.now() });
-            }
-            msgs[conversationId] = arr.slice(-200);
-            persistJSON('groove:conversationMessages', msgs);
-            const isActive = s.streamingConversationId === conversationId;
-            return { conversationMessages: msgs, sendingMessage: isActive ? false : s.sendingMessage, streamingConversationId: isActive ? null : s.streamingConversationId };
-          });
-          break;
-        }
-
-        case 'conversation:image-progress': {
-          const { conversationId, status, prompt: imgPrompt, error: imgError } = msg.data || msg;
-          if (!conversationId) break;
-          if (status === 'generating') {
-            set((s) => {
-              const msgs = { ...s.conversationMessages };
-              if (!msgs[conversationId]) msgs[conversationId] = [];
-              msgs[conversationId] = [...msgs[conversationId], { from: 'assistant', type: 'image-loading', prompt: imgPrompt, timestamp: Date.now() }];
-              return { conversationMessages: msgs, streamingConversationId: conversationId };
-            });
-          } else if (status === 'error') {
-            set((s) => {
-              const msgs = { ...s.conversationMessages };
-              if (!msgs[conversationId]) msgs[conversationId] = [];
-              const arr = [...msgs[conversationId]];
-              const loadingIdx = arr.findLastIndex((m) => m.type === 'image-loading');
-              if (loadingIdx >= 0) arr.splice(loadingIdx, 1);
-              arr.push({ from: 'system', text: `Image generation failed: ${imgError || 'Unknown error'}`, timestamp: Date.now() });
-              msgs[conversationId] = arr;
-              persistJSON('groove:conversationMessages', msgs);
-              const isActive = s.streamingConversationId === conversationId;
-              return { conversationMessages: msgs, sendingMessage: isActive ? false : s.sendingMessage, streamingConversationId: isActive ? null : s.streamingConversationId };
-            });
-          }
-          break;
-        }
-
-        case 'conversation:error': {
-          const { conversationId, error } = msg.data || msg;
-          if (conversationId) {
-            set((s) => {
-              const msgs = { ...s.conversationMessages };
-              if (!msgs[conversationId]) msgs[conversationId] = [];
-              msgs[conversationId] = [...msgs[conversationId], { from: 'system', text: `Error: ${error || 'Unknown error'}`, timestamp: Date.now() }];
-              persistJSON('groove:conversationMessages', msgs);
-              const isActive = s.streamingConversationId === conversationId;
-              return { conversationMessages: msgs, sendingMessage: isActive ? false : s.sendingMessage, streamingConversationId: isActive ? null : s.streamingConversationId };
-            });
-          }
-          break;
-        }
 
         case 'network:token:timing': {
           const { __proto__: _a, constructor: _b, prototype: _c, ...td } = msg.data || {};

@@ -1787,67 +1787,6 @@ export default function SettingsView() {
                   </div>
                 </ConfigCard>
 
-                <ConfigCard icon={MessageSquare} label="Default Chat Model" description="Provider and model for new chat conversations.">
-                  <div className="space-y-2">
-                    <select
-                      value={config.defaultChatProvider || config.defaultProvider || 'claude-code'}
-                      onChange={(e) => {
-                        updateConfig('defaultChatProvider', e.target.value);
-                        const prov = providers.find((p) => p.id === e.target.value);
-                        const chatModels = (prov?.models || []).filter((m) => {
-                          const id = (typeof m === 'string' ? m : m.id || '').toLowerCase();
-                          return !id.includes('dall-e') && !id.includes('imagen') && !id.includes('image');
-                        });
-                        if (chatModels.length > 0) {
-                          const first = typeof chatModels[0] === 'string' ? chatModels[0] : chatModels[0].id;
-                          updateConfig('defaultChatModel', first);
-                        }
-                      }}
-                      className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
-                    >
-                      {visibleProviders.filter((p) => p.installed && (p.authType === 'local' || (p.authType === 'subscription' && p.authStatus?.authenticated) || p.hasKey)).map((p) => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
-                    {(() => {
-                      const chatProv = providers.find((p) => p.id === (config.defaultChatProvider || config.defaultProvider || 'claude-code'));
-                      const chatModels = (chatProv?.models || []).filter((m) => {
-                        const id = (typeof m === 'string' ? m : m.id || '').toLowerCase();
-                        return !id.includes('dall-e') && !id.includes('imagen') && !id.includes('image');
-                      });
-                      const isChatLocal = (config.defaultChatProvider || config.defaultProvider || 'claude-code') === 'local';
-                      return (
-                        <select
-                          value={config.defaultChatModel || ''}
-                          onChange={(e) => updateConfig('defaultChatModel', e.target.value || null)}
-                          className="w-full h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
-                        >
-                          <option value="">Auto (Sonnet)</option>
-                          {isChatLocal ? (
-                            <>
-                              {chatModels.filter(m => m.source === 'ollama').length > 0 && (
-                                <optgroup label="Ollama">{chatModels.filter(m => m.source === 'ollama').map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</optgroup>
-                              )}
-                              {chatModels.filter(m => m.source === 'gguf').length > 0 && (
-                                <optgroup label="Downloaded GGUFs">{chatModels.filter(m => m.source === 'gguf').map(m => <option key={m.id} value={m.id}>{m.name}{m.hasRuntime ? '' : ' (no runtime)'}</option>)}</optgroup>
-                              )}
-                              {chatModels.filter(m => m.source === 'runtime').length > 0 && (
-                                <optgroup label="Runtime Models">{chatModels.filter(m => m.source === 'runtime').map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</optgroup>
-                              )}
-                            </>
-                          ) : (
-                            chatModels.map((m) => {
-                              const id = typeof m === 'string' ? m : m.id;
-                              const name = typeof m === 'string' ? m : m.name || m.id;
-                              return <option key={id} value={id}>{name}</option>;
-                            })
-                          )}
-                        </select>
-                      );
-                    })()}
-                  </div>
-                </ConfigCard>
-
               </div>
             </div>
           )}

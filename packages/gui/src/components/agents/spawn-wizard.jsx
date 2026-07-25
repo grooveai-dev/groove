@@ -368,7 +368,7 @@ export function SpawnWizard() {
                           }}
                           className="ml-auto text-2xs text-accent hover:underline font-sans cursor-pointer"
                         >
-                          Install in Marketplace
+                          Install in Integrations
                         </button>
                       </div>
                     );
@@ -778,7 +778,7 @@ export function SpawnWizard() {
                                     <div className="text-2xs text-text-3 font-sans truncate">{integration.description}</div>
                                   )}
                                   {!configured && (
-                                    <div className="text-2xs text-text-4 font-sans">Configure in Marketplace</div>
+                                    <div className="text-2xs text-text-4 font-sans">Configure in Integrations</div>
                                   )}
                                 </div>
                                 {active && <CheckMark />}
@@ -787,7 +787,7 @@ export function SpawnWizard() {
                           })}
                         {installedIntegrations.length === 0 && (
                           <div className="text-center py-6 text-xs text-text-3 font-sans">
-                            No integrations installed. Visit the Marketplace to install integrations.
+                            No integrations installed. Visit the Integrations tab to install some.
                           </div>
                         )}
                       </div>

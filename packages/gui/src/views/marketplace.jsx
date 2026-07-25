@@ -581,7 +581,7 @@ function MyLibrary() {
   ];
 
   const emptyMessages = {
-    all: 'No skills or integrations installed yet. Visit the Marketplace to get started.',
+    all: 'No skills or integrations installed yet. Browse the Integrations tab to get started.',
     skills: 'No skills installed.',
     integrations: 'No integrations installed.',
   };

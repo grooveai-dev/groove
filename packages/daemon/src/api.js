@@ -28,6 +28,7 @@ import { registerFileRoutes, resetEditorRoot } from './routes/files.js';
 import { registerNetworkRoutes } from './routes/network.js';
 import { registerScheduleRoutes } from './routes/schedules.js';
 import { registerInnerChatRoutes } from './routes/innerchat.js';
+import { registerChatHistoryRoutes } from './routes/chat-history.js';
 import { registerWatchRoutes } from './routes/watch.js';
 import { registerAutoAgentRoutes } from './routes/auto-agents.js';
 
@@ -179,6 +180,7 @@ export function createApi(app, daemon) {
   registerNetworkRoutes(app, daemon);
   registerScheduleRoutes(app, daemon);
   registerInnerChatRoutes(app, daemon);
+  registerChatHistoryRoutes(app, daemon);
   registerWatchRoutes(app, daemon);
   registerAutoAgentRoutes(app, daemon);
 
@@ -249,8 +251,6 @@ export function createApi(app, daemon) {
       res.status(400).json({ error: err.message });
     }
   });
-
-  // --- Conversations ---
 
   // --- Approvals ---
 
@@ -1348,10 +1348,8 @@ Keep responses concise. Help them think, don't lecture them about the system the
     }
 
     daemon.config.defaultProvider = provider;
-    daemon.config.defaultChatProvider = provider;
     if (model && typeof model === 'string' && model.length <= 100) {
       daemon.config.defaultModel = model.trim();
-      daemon.config.defaultChatModel = model.trim();
     }
     const { saveConfig } = await import('./firstrun.js');
     saveConfig(daemon.grooveDir, daemon.config);
@@ -1439,7 +1437,7 @@ Keep responses concise. Help them think, don't lecture them about the system the
     const ALLOWED_KEYS = [
       'port', 'journalistInterval', 'rotationThreshold', 'autoRotation',
       'qcThreshold', 'maxAgents', 'defaultProvider', 'defaultWorkingDir',
-      'onboardingDismissed', 'defaultModel', 'defaultChatProvider', 'defaultChatModel',
+      'onboardingDismissed', 'defaultModel',
       'dataSharingDismissed', 'replayCeiling', 'velocityCeiling', 'journalistModelTier',
       'resumeBudgetChars',
     ];

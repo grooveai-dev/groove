@@ -22,7 +22,6 @@ import ModelsView from './views/models';
 import FederationView from './views/federation';
 import ModelLabView from './views/model-lab';
 import NetworkView from './views/network';
-import ChatView from './views/chat';
 import MemoryView from './views/memory';
 import FleetView from './views/fleet';
 import AutoAgentsView from './views/auto-agents';
@@ -79,7 +78,6 @@ function ViewRouter() {
     case 'model-lab':   content = <ModelLabView />;    break;
     case 'federation':  content = <FederationView />;  break;
     case 'settings':    content = <SettingsView />;    break;
-    case 'chat':        content = <ChatView />;        break;
     case 'fleet':       content = <FleetView />;       break;
     case 'memory':      content = <MemoryView />;      break;
     case 'network':     content = networkUnlocked ? <NetworkView /> : <AgentsView />; break;

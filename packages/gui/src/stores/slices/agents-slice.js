@@ -89,6 +89,7 @@ export const createAgentsSlice = (set, get) => ({
           persistJSON('groove:activityLog', activityLog);
           return { chatHistory, activityLog, tokenTimeline };
         });
+        api.delete(`/chat-history/${encodeURIComponent(id)}`).catch(() => {});
       }
     } catch (err) {
       get().addToast('error', 'Kill failed', err.message);
@@ -166,15 +167,64 @@ export const createAgentsSlice = (set, get) => ({
   // ── Chat ──────────────────────────────────────────────────
 
   addChatMessage(agentId, from, text, isQuery = false, attachments = undefined) {
+    const msg = { from, text, timestamp: Date.now(), isQuery };
+    if (attachments?.length) msg.attachments = attachments;
     set((s) => {
       const history = { ...s.chatHistory };
       if (!history[agentId]) history[agentId] = [];
-      const msg = { from, text, timestamp: Date.now(), isQuery };
-      if (attachments?.length) msg.attachments = attachments;
       history[agentId] = [...history[agentId].slice(-100), msg];
       persistChatHistory(history);
       return { chatHistory: history };
     });
+    get().persistMessageRemote(agentId, msg);
+  },
+
+  // Persist one message to the daemon so history survives on the server, not
+  // just in this browser's per-origin localStorage. Attachment payloads are
+  // stripped; the daemon keeps metadata only.
+  persistMessageRemote(agentId, msg) {
+    if (!agentId || !msg) return;
+    const clean = msg.attachments?.length
+      ? { ...msg, attachments: msg.attachments.map(({ dataUrl, ...rest }) => rest) }
+      : msg;
+    api.post(`/chat-history/${encodeURIComponent(agentId)}`, { message: clean }).catch(() => {});
+  },
+
+  // Load server-side history on (re)connect and merge it in — the daemon is the
+  // source of truth, so this restores chats regardless of which tunnel port
+  // (and thus browser origin) we came up on.
+  //
+  // Also runs a ONE-TIME, per-origin seed: whatever chat history is stranded in
+  // THIS origin's localStorage gets pushed to the daemon for any agent the
+  // daemon doesn't yet know. Visiting each old origin once migrates its history
+  // server-side without clobbering anything already there.
+  async fetchChatHistory() {
+    try {
+      const { history } = await api.get('/chat-history');
+      const remote = (history && typeof history === 'object') ? history : {};
+
+      if (localStorage.getItem('groove:chatImported') !== '1') {
+        const local = get().chatHistory;
+        for (const [agentId, msgs] of Object.entries(local)) {
+          // Only seed agents the daemon has nothing for — never overwrite
+          // server history with an older local copy.
+          if (Array.isArray(msgs) && msgs.length && !(remote[agentId]?.length)) {
+            api.put(`/chat-history/${encodeURIComponent(agentId)}`, { messages: msgs }).catch(() => {});
+            remote[agentId] = msgs; // reflect so the merge below keeps it
+          }
+        }
+        localStorage.setItem('groove:chatImported', '1');
+      }
+
+      set((s) => {
+        const merged = { ...s.chatHistory };
+        for (const [agentId, msgs] of Object.entries(remote)) {
+          if (Array.isArray(msgs) && msgs.length) merged[agentId] = msgs;
+        }
+        persistChatHistory(merged);
+        return { chatHistory: merged };
+      });
+    } catch { /* offline or old daemon without the endpoint — keep local */ }
   },
 
   async stopAgent(id) {

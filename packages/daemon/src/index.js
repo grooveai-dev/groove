@@ -44,9 +44,9 @@ import { ModelLab } from './model-lab.js';
 import { LlamaServerManager } from './llama-server.js';
 import { MLXServerManager } from './mlx-server.js';
 import { RepoImporter } from './repo-import.js';
-import { ConversationManager } from './conversations.js';
 import { Toys } from './toys.js';
 import { InnerChat } from './innerchat.js';
+import { ChatStore } from './chatstore.js';
 import { Watcher } from './watcher.js';
 import { AutoState } from './autostate.js';
 import { Orchestrator } from './orchestrator.js';
@@ -139,7 +139,6 @@ export class Daemon {
     this.rotator = new Rotator(this);
     this.adaptive = new AdaptiveThresholds(this.grooveDir);
     this.teams = new Teams(this);
-    this.conversations = new ConversationManager(this);
     this.credentials = new CredentialStore(this.grooveDir);
     this.classifier = new TaskClassifier();
     this.router = new ModelRouter(this);
@@ -163,6 +162,7 @@ export class Daemon {
     this.modelLab = new ModelLab(this);
     this.toys = new Toys(this);
     this.innerchat = new InnerChat(this);
+    this.chatStore = new ChatStore(this);
     this.watcher = new Watcher(this);
     this.autoState = new AutoState(this.grooveDir);
     this.orchestrator = new Orchestrator(this);
@@ -874,6 +874,7 @@ export class Daemon {
     this.scheduler.stop();
     this.watcher.stop();
     this.innerchat.stop();
+    this.chatStore.stop();
     this.orchestrator.stop();
     this.timeline.stop();
     if (this._gcInterval) clearInterval(this._gcInterval);

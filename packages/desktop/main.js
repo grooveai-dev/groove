@@ -151,18 +151,42 @@ function isPortFree(port) {
   });
 }
 
-// Reuse a connection's previous local port when possible so the remote GUI's
-// origin (http://localhost:<port>) stays stable across reconnects. A changed
-// port is a changed origin, and the browser scopes localStorage — including
-// chat history — per origin, so a new port silently wipes the chats. Retries
-// briefly to cover the gap between killing a stale tunnel and its port being
-// released by the OS.
+// Kill any *stale ssh tunnel* still listening on a port so we can reclaim it.
+// Leaked tunnels from prior sessions block the persisted port; without this we
+// fall back to a new port, and a new port = a new origin = a fresh (empty)
+// localStorage, which is why chat history kept vanishing. Only ssh processes
+// are touched — never an unrelated app that happens to hold the port.
+function reclaimPortFromStaleTunnels(port) {
+  if (IS_MAC || process.platform === 'linux') {
+    try {
+      const out = execFileSync('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' });
+      for (const pid of out.trim().split('\n').filter(Boolean)) {
+        let comm = '';
+        try { comm = execFileSync('ps', ['-o', 'comm=', '-p', pid], { encoding: 'utf8' }).trim(); } catch { /* gone */ }
+        if (/ssh$/.test(comm) || comm.includes('ssh')) {
+          try { process.kill(Number(pid), 'SIGTERM'); } catch { /* already gone */ }
+        }
+      }
+    } catch { /* lsof found nothing / unavailable */ }
+  }
+}
+
+// Reuse a connection's previous local port so the remote GUI's origin
+// (http://localhost:<port>) stays STABLE across reconnects. A changed port is a
+// changed origin, and the browser scopes localStorage — including chat history —
+// per origin, so a new port silently strands the chats under the old one. We
+// reclaim the persisted port from leaked tunnels rather than surrendering it.
 async function preferredLocalPort(port) {
   if (!port) return getAvailablePort();
-  for (let i = 0; i < 6; i++) {
+  if (await isPortFree(port)) return port;
+
+  reclaimPortFromStaleTunnels(port);
+  for (let i = 0; i < 10; i++) {
+    await new Promise((r) => setTimeout(r, 300));
     if (await isPortFree(port)) return port;
-    await new Promise((r) => setTimeout(r, 400));
   }
+  // Genuinely held by something we won't kill — fall back, but this now only
+  // happens when a non-ssh process owns the port.
   return getAvailablePort();
 }
 

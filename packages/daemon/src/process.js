@@ -367,7 +367,7 @@ export class ProcessManager {
     this.daemon = daemon;
     this.handles = new Map(); // agentId -> { proc, logStream }
     this.peakContextUsage = new Map(); // agentId -> highest contextUsage seen
-    this.pendingMessages = new Map(); // agentId -> { message, timestamp }
+    this.pendingMessages = new Map(); // agentId -> [{ message, timestamp }, …] FIFO queue
     this._streamThrottle = new Map(); // agentId -> { timer, pending }
     this._rotatingAgents = new Set(); // agentIds currently being rotated (rotator wrote handoff)
     this._stalledAgents = new Set(); // agentIds already flagged as stalled (avoids duplicate broadcasts)
@@ -3222,7 +3222,13 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
   queueMessage(agentId, message) {
     const agent = this.daemon.registry.get(agentId);
     const wrapped = agent ? wrapWithRoleReminder(agent.role, message) : message;
-    this.pendingMessages.set(agentId, { message: wrapped, timestamp: Date.now() });
+    // Append to a FIFO queue rather than overwriting the slot. Two messages
+    // arriving while an agent is busy — a user chat and an InnerChat message,
+    // or two different agents reaching out — must BOTH survive. The old
+    // single-slot version silently dropped whichever arrived first.
+    const queue = this.pendingMessages.get(agentId) || [];
+    queue.push({ message: wrapped, timestamp: Date.now() });
+    this.pendingMessages.set(agentId, queue);
     if (this.daemon.rotator) {
       this.daemon.rotator.recordUserMessage(agentId);
     }
@@ -3230,9 +3236,13 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
   }
 
   consumePendingMessage(agentId) {
-    const pending = this.pendingMessages.get(agentId);
-    if (pending) this.pendingMessages.delete(agentId);
-    return pending || null;
+    const queue = this.pendingMessages.get(agentId);
+    if (!queue || queue.length === 0) return null;
+    this.pendingMessages.delete(agentId);
+    // Deliver everything queued in one turn, in arrival order, clearly
+    // separated so the agent can tell the messages apart.
+    const message = queue.map((q) => q.message).join('\n\n---\n\n');
+    return { message, timestamp: queue[0].timestamp, count: queue.length };
   }
 
   async killAll() {

@@ -38,7 +38,11 @@ export async function deliverInstruction(daemon, agentId, message, opts = {}) {
     if (daemon.rotator) daemon.rotator.recordUserMessage(agentId);
   }
 
-  const wrappedMessage = wrapWithRoleReminder(agent.role, finalMessage);
+  // Prepend a fresh wall-clock anchor so the agent gauges progress by real time
+  // and the user's direction, not by how much context has piled up.
+  const clock = daemon.processes.sessionClock?.(agent);
+  const timedMessage = clock ? `${clock}\n\n${finalMessage}` : finalMessage;
+  const wrappedMessage = wrapWithRoleReminder(agent.role, timedMessage);
 
   // Agent loop path — send straight to the running loop.
   if (daemon.processes.hasAgentLoop(agentId)) {

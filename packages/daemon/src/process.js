@@ -362,12 +362,37 @@ export function wrapWithRoleReminder(role, message) {
   return message;
 }
 
+// A fresh wall-clock anchor, regenerated for every message an agent receives.
+// Agents have no innate sense of elapsed time — they infer "how far along are
+// we" from how much context has piled up, so 15 minutes of dense work (and the
+// session-feel that rotations add) reads as a long day and they start winding
+// down. This gives them the real time and duration each turn, plus an explicit
+// frame that the session is live and open-ended.
+export function sessionClockLine(startISO) {
+  const now = new Date();
+  const when = now.toLocaleString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  });
+  let dur = '';
+  if (startISO) {
+    const mins = Math.max(0, Math.round((now - new Date(startISO)) / 60000));
+    const human = mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+    dur = ` You've been in this work session about ${human}.`;
+  }
+  return `[Clock — ${when}.${dur} This is a live session with the user present and engaged. `
+    + 'Judge how far along you are by the task and the user\'s direction, not by how much has '
+    + 'been built or a felt sense of time. Do not wind down, "call it a day," or trim scope on '
+    + 'your own — keep working until the user says to stop.]';
+}
+
 export class ProcessManager {
   constructor(daemon) {
     this.daemon = daemon;
     this.handles = new Map(); // agentId -> { proc, logStream }
     this.peakContextUsage = new Map(); // agentId -> highest contextUsage seen
     this.pendingMessages = new Map(); // agentId -> [{ message, timestamp }, …] FIFO queue
+    this.sessionStarts = new Map();   // agentName -> ISO start; keyed by name so it survives rotation
     this._streamThrottle = new Map(); // agentId -> { timer, pending }
     this._rotatingAgents = new Set(); // agentIds currently being rotated (rotator wrote handoff)
     this._stalledAgents = new Set(); // agentIds already flagged as stalled (avoids duplicate broadcasts)
@@ -1182,6 +1207,12 @@ For normal file edits within your scope, proceed without review.
       } else {
         spawnConfig.prompt = capabilities + spawnConfig.prompt;
       }
+    }
+
+    // Give the agent a wall-clock anchor on its very first turn. sessionClock
+    // records the session start (by name, so a later rotation keeps it).
+    if (!isOneShotProvider) {
+      spawnConfig.prompt = `${this.sessionClock(agent)}\n\n${spawnConfig.prompt}`;
     }
 
     // Set up log capture (shared between CLI and agent loop paths)
@@ -3217,6 +3248,20 @@ After fixing all issues, run tests (npm test) and build (npm run build) to verif
   hasAgentLoop(agentId) {
     const handle = this.handles.get(agentId);
     return !!(handle?.loop);
+  }
+
+  // The fresh clock line for an agent, anchored to when its work session first
+  // began. Keyed by name, so a rotation (new agent id, same name) keeps the
+  // original start rather than resetting the clock to "just now".
+  sessionClock(agent) {
+    if (!agent) return sessionClockLine(null);
+    const key = agent.name || agent.id;
+    let start = this.sessionStarts.get(key);
+    if (!start) {
+      start = agent.metadata?.sessionStartedAt || agent.spawnedAt || agent.createdAt || new Date().toISOString();
+      this.sessionStarts.set(key, start);
+    }
+    return sessionClockLine(start);
   }
 
   queueMessage(agentId, message) {

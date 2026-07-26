@@ -56,6 +56,7 @@ export class AxomServerManager {
     this.daemon = daemon;
     this.command = opts.command || null; // resolved lazily from config
     this.totalRamGbOverride = opts.totalRamGb; // tests inject; prod reads os
+    this.portBase = opts.portBase || AXOM_DEFAULT_PORT;
     this.instances = new Map(); // id -> {id, proc, port, dataDir, status, startedAt, error}
   }
 
@@ -73,7 +74,7 @@ export class AxomServerManager {
     for (const ep of this.daemon.axom?.endpoints?.values?.() || []) {
       try { used.add(Number(new URL(ep.url).port)); } catch { /* non-numeric */ }
     }
-    let port = AXOM_DEFAULT_PORT;
+    let port = this.portBase;
     while (used.has(port)) port += 1;
     return port;
   }
@@ -191,7 +192,26 @@ export class AxomServerManager {
       if (instance.status === 'error') return;
       try {
         const res = await fetch(`http://127.0.0.1:${port}/about`, { signal: AbortSignal.timeout(2000) });
-        if (res.ok) return;
+        if (res.ok) {
+          // Verify the answer is OURS. Another process (or an SSH tunnel to a
+          // remote runtime) can already own this port; adopting it would let
+          // GROOVE claim — and offer to shut down — a runtime it never
+          // launched. §11 gives /about an instance block; when it names a
+          // different pid or data-dir, this port is not ours.
+          const about = await res.json().catch(() => null);
+          const claimed = about?.instance;
+          const foreign = claimed
+            && ((claimed.pid && instance.proc?.pid && claimed.pid !== instance.proc.pid)
+              || (claimed.data_dir && claimed.data_dir !== instance.dataDir));
+          if (foreign) {
+            instance.status = 'error';
+            instance.error = `port ${port} is already served by another Axom runtime `
+              + `(${claimed.data_dir || `pid ${claimed.pid}`}) — refusing to adopt it`;
+            instance.proc?.kill('SIGKILL');
+            return;
+          }
+          return;
+        }
       } catch { /* not up yet */ }
       await new Promise((r) => setTimeout(r, 500));
     }

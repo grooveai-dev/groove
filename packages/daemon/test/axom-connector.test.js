@@ -31,6 +31,8 @@ class MockBridge {
     this.sessions = sessions || { 's-test0001': { started: 1753000000, live: true, events: [] } };
     this.interrupts = [];
     this.stops = [];
+    this.shutdowns = [];
+    this.messages = [];
     this.sinceSeen = []; // ?since values observed on WS connects
     this.sockets = new Set();
   }
@@ -95,6 +97,18 @@ class MockBridge {
     const interrupt = url.pathname.match(/^\/session\/([^/]+)\/interrupt$/);
     const stop = url.pathname.match(/^\/session\/([^/]+)\/stop$/);
     const message = url.pathname.match(/^\/session\/([^/]+)\/message$/);
+    if (req.method === 'POST' && url.pathname === '/shutdown') {
+      let body = '';
+      req.on('data', (c) => { body += c; });
+      req.on('end', () => {
+        const { force } = JSON.parse(body || '{}');
+        const busy = Object.values(this.sessions).some((s) => s.live);
+        if (busy && !force) return json(409, { error: 'turn in flight' });
+        this.shutdowns.push({ force: !!force });
+        return json(202, { stopping: true });
+      });
+      return;
+    }
     if (req.method === 'POST' && (interrupt || stop || message)) {
       let body = '';
       req.on('data', (c) => { body += c; });
@@ -108,7 +122,11 @@ class MockBridge {
           // §12 semantics: caller-chosen id, first message creates; one turn
           // at a time; hard max with 413, never truncation.
           const id = decodeURIComponent(message[1]);
-          const { text } = JSON.parse(body || '{}');
+          const parsed = JSON.parse(body || '{}');
+          const { text } = parsed;
+          // Store the parsed body verbatim so tests can assert on key
+          // PRESENCE (a destructured undefined would fabricate the key).
+          this.messages.push({ session: id, body: parsed });
           if (text.length > 32768) return json(413, { error: 'too_long', max: 32768 });
           let session = this.sessions[id];
           if (!session) { session = this.sessions[id] = { started: Date.now() / 1000, live: false, events: [] }; }
@@ -378,6 +396,31 @@ describe('AxomConnector', () => {
     const s = connector.status().endpoints[0].sessions.find((x) => x.session === 's-test0001');
     assert.equal(s.live, false);
     assert.equal(s.watching, true);
+  });
+
+  it('sends client_ref only when given, and omits it otherwise (§15)', async () => {
+    connect();
+    await waitFor(() => connector.status().endpoints[0]?.status === 'connected');
+    await connector.message('local', 's-ref', 'with a ref', 'g-abc123');
+    await connector.message('local', 's-noref', 'without one');
+    assert.equal(bridge.messages[0].body.client_ref, 'g-abc123');
+    // Pre-§15 runtimes must see exactly today's payload — no null key.
+    assert.equal('client_ref' in bridge.messages[1].body, false);
+  });
+
+  it('shuts the runtime down, refusing mid-turn unless forced (§14)', async () => {
+    connect();
+    await waitFor(() => connector.status().endpoints[0]?.status === 'connected');
+    // s-test0001 starts live: a turn is in flight.
+    const refused = await connector.shutdown('local');
+    assert.equal(refused.status, 409);
+    assert.equal(refused.body.error, 'turn in flight');
+    assert.equal(bridge.shutdowns.length, 0);
+
+    const forced = await connector.shutdown('local', { force: true });
+    assert.equal(forced.status, 202);
+    assert.deepEqual(forced.body, { stopping: true });
+    assert.deepEqual(bridge.shutdowns, [{ force: true }]);
   });
 
   it('reports an unreachable endpoint honestly and recovers by retry', async () => {

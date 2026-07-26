@@ -245,18 +245,35 @@ export class AxomConnector {
   // §12 message verb: starts a turn (interrupt steers, stop halts). Status is
   // part of the contract (202 accepted / 409 busy / 413 too_long) so this
   // returns {status, body} verbatim instead of throwing on non-2xx.
-  async message(endpointName, sessionId, text) {
+  async message(endpointName, sessionId, text, clientRef) {
     const ep = this._requireEndpoint(endpointName);
     const res = await fetch(`${ep.url}/session/${encodeURIComponent(sessionId)}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      // §15: opaque, echoed back in pipeline_start. Omitted when absent so
+      // pre-§15 runtimes see exactly today's payload.
+      body: JSON.stringify(clientRef ? { text, client_ref: clientRef } : { text }),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     const body = await res.json().catch(() => ({}));
     // First message creates the session (caller-chosen id) — poll now so the
     // WS attaches before the turn's first events age out of nothing.
     if (res.status === 202) this._pollSessions(ep).catch(() => {});
+    return { status: res.status, body };
+  }
+
+  // §14: ends the RUNTIME (distinct from stop, which halts a turn). 409 when
+  // a turn is in flight unless forced; statuses pass through so the GUI can
+  // say what happened rather than guess.
+  async shutdown(endpointName, { force = false } = {}) {
+    const ep = this._requireEndpoint(endpointName);
+    const res = await fetch(`${ep.url}/shutdown`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    const body = await res.json().catch(() => ({}));
     return { status: res.status, body };
   }
 
@@ -295,6 +312,14 @@ export class AxomConnector {
   }
 
   status() {
+    // A runtime we spawned can be shut down; one we merely connected to
+    // cannot (no signal reaches another machine's process). The GUI needs
+    // this to avoid offering a kill switch it can't honor.
+    const managed = new Set(
+      (this.daemon.axomServer?.list?.() || [])
+        .filter((i) => i.status === 'running')
+        .map((i) => `http://127.0.0.1:${i.port}`),
+    );
     return {
       endpoints: [...this.endpoints.values()].map((ep) => ({
         name: ep.name,
@@ -303,6 +328,9 @@ export class AxomConnector {
         error: ep.error,
         about: ep.about,
         drift: ep.drift,
+        managed: managed.has(ep.url),
+        instanceId: (this.daemon.axomServer?.list?.() || [])
+          .find((i) => i.status === 'running' && `http://127.0.0.1:${i.port}` === ep.url)?.id || null,
         sessions: [...ep.sessions.values()].map((s) => ({
           session: s.id,
           started: s.started,

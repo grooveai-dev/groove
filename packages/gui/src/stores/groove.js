@@ -669,7 +669,10 @@ export const useGrooveStore = create((set, get) => ({
           break;
 
         case 'axom:install:progress':
-          set({ axomInstall: msg.data });
+          // Merge, never replace: progress payloads carry phase/bytes but not
+          // availability, and dropping `available` would flip a working build
+          // back to the "Coming soon" gate mid-install.
+          set((s) => ({ axomInstall: { ...s.axomInstall, ...msg.data } }));
           break;
 
         case 'provider:status-changed':

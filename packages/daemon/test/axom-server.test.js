@@ -58,7 +58,7 @@ describe('AxomServerManager', () => {
     daemon = fakeDaemon(dir);
     // Lifecycle tests inject ample RAM — the floor guard has its own test
     // (and CI boxes/the 8GB dev Mac must not trip it on unrelated tests).
-    manager = new AxomServerManager(daemon, { command: stubPath, totalRamGb: 32 });
+    manager = new AxomServerManager(daemon, { command: stubPath, totalRamGb: 32, portBase: 18737 });
   });
 
   afterEach(async () => {
@@ -68,7 +68,7 @@ describe('AxomServerManager', () => {
   it('starts an instance with its own port and sovereign data-dir, and registers the endpoint', async () => {
     const instance = await manager.start('proj-a');
     assert.equal(instance.status, 'running');
-    assert.equal(instance.port, 8737);
+    assert.equal(instance.port, 18737);
     assert.ok(instance.dataDir.endsWith(join('axom', 'instances', 'proj-a')));
     assert.ok(existsSync(instance.dataDir));
 
@@ -76,15 +76,15 @@ describe('AxomServerManager', () => {
     assert.equal(about.instance.data_dir, instance.dataDir);
 
     const ep = daemon.config.axom.endpoints.find((e) => e.name === 'local-proj-a');
-    assert.equal(ep.url, 'http://127.0.0.1:8737');
+    assert.equal(ep.url, 'http://127.0.0.1:18737');
     assert.deepEqual(daemon.axom.lastConfigured, daemon.config.axom.endpoints);
   });
 
   it('allocates distinct ports for concurrent instances', async () => {
     const a = await manager.start('a');
     const b = await manager.start('b');
-    assert.equal(a.port, 8737);
-    assert.equal(b.port, 8738);
+    assert.equal(a.port, 18737);
+    assert.equal(b.port, 18738);
     assert.notEqual(a.dataDir, b.dataDir); // ledgers never shared
   });
 
@@ -97,7 +97,7 @@ describe('AxomServerManager', () => {
   });
 
   it('refuses non-mock start below the RAM floor — the host stays up', async () => {
-    manager = new AxomServerManager(daemon, { command: stubPath, totalRamGb: 8 });
+    manager = new AxomServerManager(daemon, { command: stubPath, totalRamGb: 8, portBase: 18737 });
     await assert.rejects(() => manager.start('x'), /below Axom's 12GB floor/);
     // Mock mode is weightless and exempt.
     daemon.config.axom.mock = true;
@@ -105,8 +105,29 @@ describe('AxomServerManager', () => {
     assert.equal(instance.status, 'running');
   });
 
+  it('refuses to adopt a foreign runtime already holding the port', async () => {
+    // A tunnel to a remote Axom (or any other runtime) can already own the
+    // port. Claiming it would let GROOVE offer to shut down a process it
+    // never launched — found live when an SSH tunnel occupied 8737.
+    const foreign = createServer((req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({
+        name: 'axom', version: 'someone-elses',
+        instance: { port: 18737, data_dir: '/somewhere/else', pid: 999999 },
+      }));
+    });
+    await new Promise((r) => foreign.listen(18737, '127.0.0.1', r));
+    try {
+      await assert.rejects(() => manager.start('hijack'), /already served by another Axom runtime/);
+      assert.equal(manager.list().find((i) => i.id === 'hijack').status, 'error');
+    } finally {
+      foreign.closeAllConnections?.();
+      await new Promise((r) => foreign.close(r));
+    }
+  });
+
   it('reports a missing runtime binary honestly', async () => {
-    manager = new AxomServerManager(daemon, { command: '/nonexistent/axom', totalRamGb: 32 });
+    manager = new AxomServerManager(daemon, { command: '/nonexistent/axom', totalRamGb: 32, portBase: 18737 });
     await assert.rejects(() => manager.start('x'), /not found — install the Axom runtime/);
     assert.equal(manager.list().find((i) => i.id === 'x').status, 'error');
   });
@@ -176,8 +197,28 @@ describe('AxomInstaller', () => {
     }
   });
 
-  it('errors without a configured manifest url — no hardcoded source exists', async () => {
-    await assert.rejects(() => installer.install(undefined), /no install manifest configured/);
+  it('reports unavailable (not an error) when no distribution is configured', async () => {
+    // A public GROOVE build ships with no manifest: the UI must render
+    // "Coming soon" rather than offering an action that fails on click.
+    const status = installer.getStatus();
+    assert.equal(status.available, false);
+    assert.equal(status.unavailableReason, 'Coming soon');
+    assert.equal(status.manifestUrl, null);
+  });
+
+  it('gates install server-side too — a hand-crafted POST cannot bypass it', async () => {
+    await assert.rejects(() => installer.install(undefined), /Coming soon/);
+  });
+
+  it('explains a gated private distribution instead of leaking HTTP codes', async () => {
+    const gated = createServer((req, res) => { res.statusCode = 403; res.end('{}'); });
+    await new Promise((r) => gated.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${gated.address().port}/manifest.json`;
+    try {
+      await assert.rejects(() => installer.install(url), /private — your account does not have access/);
+    } finally {
+      await new Promise((r) => gated.close(r));
+    }
   });
 
   it('refuses to download weights below the RAM floor', async () => {

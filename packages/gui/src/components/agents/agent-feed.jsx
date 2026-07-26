@@ -71,7 +71,9 @@ function InlineFormat({ text }) {
 
 // ── Structured message renderer ──────────────────────────────
 // Parses agent output into sections: headers, bullets, code blocks, paragraphs
-function StructuredMessage({ text }) {
+// Exported so other conversation surfaces (the Axom workspace) render agent
+// prose exactly the way the fleet chat does — one renderer, one look.
+export function StructuredMessage({ text }) {
   if (!text) return null;
 
   const blocks = [];

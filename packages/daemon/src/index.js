@@ -57,6 +57,7 @@ import { bindDaemon as bindAxomDaemon } from './providers/axom.js';
 import { AxomConnector } from './axom-connector.js';
 import { AxomServerManager } from './axom-server.js';
 import { AxomInstaller } from './axom-install.js';
+import { AxomRemote } from './axom-remote.js';
 import { setProviderPaths } from './providers/index.js';
 
 const DEFAULT_PORT = 31415;
@@ -173,6 +174,7 @@ export class Daemon {
     this.axom = new AxomConnector(this);
     this.axomServer = new AxomServerManager(this);
     this.axomInstaller = new AxomInstaller(this);
+    this.axomRemote = new AxomRemote(this);
     this.trajectoryCapture = null;
 
     // Hook teams.delete to clean up agent-loop session files
@@ -886,6 +888,7 @@ export class Daemon {
     this.chatStore.stop();
     this.orchestrator.stop();
     this.timeline.stop();
+    this.axomRemote.closeTunnel();
     await this.axomServer.destroy();
     this.axom.destroy();
     if (this._gcInterval) clearInterval(this._gcInterval);

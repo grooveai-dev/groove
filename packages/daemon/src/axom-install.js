@@ -29,8 +29,17 @@ export class AxomInstaller {
     this._running = false;
   }
 
+  // Availability is a first-class answer, not an error string. A GROOVE build
+  // with no manifest configured cannot install Axom at all — the UI must say
+  // so up front rather than offering a button that fails on click.
   getStatus() {
-    return { ...this.status };
+    const manifestUrl = this.daemon.config?.axom?.manifestUrl || null;
+    return {
+      ...this.status,
+      available: !!manifestUrl,
+      manifestUrl,
+      unavailableReason: manifestUrl ? null : 'Coming soon',
+    };
   }
 
   _update(patch) {
@@ -39,8 +48,12 @@ export class AxomInstaller {
   }
 
   async install(manifestUrl) {
+    // Gate, don't explain: a build with no configured distribution simply
+    // cannot install. The UI shows "Coming soon" and never offers the action;
+    // this is the server-side half of the same gate (a hand-crafted POST
+    // can't bypass it either).
     const url = manifestUrl || this.daemon.config?.axom?.manifestUrl;
-    if (!url) throw new Error('no install manifest configured (axom.manifestUrl)');
+    if (!url) throw new Error('Coming soon — Axom is not yet available for local install.');
     if (this._running) throw new Error('an install is already running');
     // Same hardware floor as the instance manager — never download 4GB of
     // weights onto a machine that can't safely run them. Manifest min_ram_gb
@@ -58,6 +71,12 @@ export class AxomInstaller {
     try {
       this._update({ phase: 'manifest', file: null, receivedBytes: 0, totalBytes: 0, error: null });
       const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      if (res.status === 401 || res.status === 403) {
+        throw new Error('This Axom build is private — your account does not have access to the distribution. Connect to an Axom running elsewhere instead.');
+      }
+      if (res.status === 404) {
+        throw new Error(`No Axom distribution found at ${url} — the configured manifest URL is wrong or the release was removed.`);
+      }
       if (!res.ok) throw new Error(`manifest fetch failed: HTTP ${res.status}`);
       const manifest = await res.json();
       if (!Array.isArray(manifest.models)) throw new Error('manifest has no models list');
@@ -106,6 +125,9 @@ export class AxomInstaller {
     this._update({ phase: 'models', file, receivedBytes: 0, totalBytes: bytes || 0 });
 
     const res = await fetch(url);
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(`${file} is in a private repository your account can't read — the model weights are gated. Nothing was installed.`);
+    }
     if (!res.ok || !res.body) throw new Error(`download failed for ${file}: HTTP ${res.status}`);
 
     const hash = createHash('sha256');

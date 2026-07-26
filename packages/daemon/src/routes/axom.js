@@ -4,6 +4,7 @@ import os from 'os';
 import { saveConfig } from '../firstrun.js';
 import { validateEndpoint, AXOM_DEFAULT_PORT } from '../axom-connector.js';
 import { hardwareReport } from '../axom-server.js';
+import { validateRemote } from '../axom-remote.js';
 
 // Interrupt text is capped runtime-side at 2000 chars (contract §2, with a
 // `truncated` flag in the response); we allow headroom and let the runtime be
@@ -37,11 +38,14 @@ export function registerAxomRoutes(app, daemon) {
   // through verbatim — the GUI reads them, we don't reinterpret.
   app.post('/api/axom/sessions/:id/message', async (req, res) => {
     try {
-      const { text, endpoint } = req.body || {};
+      const { text, endpoint, clientRef } = req.body || {};
       if (!text || typeof text !== 'string' || !text.trim()) {
         return res.status(400).json({ error: 'text is required' });
       }
-      const result = await daemon.axom.message(endpoint, req.params.id, text);
+      if (clientRef !== undefined && (typeof clientRef !== 'string' || clientRef.length > 64)) {
+        return res.status(400).json({ error: 'clientRef must be a string of at most 64 chars' });
+      }
+      const result = await daemon.axom.message(endpoint, req.params.id, text, clientRef);
       daemon.audit.log('axom.message', { session: req.params.id, chars: text.length, status: result.status });
       res.status(result.status).json(result.body);
     } catch (err) {
@@ -99,6 +103,73 @@ export function registerAxomRoutes(app, daemon) {
       instanceId: running?.id || null,
       tunnelCommand: `ssh -N -L ${port}:localhost:${port} ${user}@${host}`,
     });
+  });
+
+  // §14: shut down the runtime itself. Works for any endpoint that supports
+  // the verb — including remote ones, which GROOVE could never reach with a
+  // signal. A 404 means the runtime predates §14; the GUI must say so rather
+  // than claim the runtime is gone.
+  app.post('/api/axom/shutdown', async (req, res) => {
+    try {
+      const result = await daemon.axom.shutdown(req.body?.endpoint, { force: !!req.body?.force });
+      daemon.audit.log('axom.shutdown', { endpoint: req.body?.endpoint || null, status: result.status });
+      res.status(result.status === 404 ? 501 : result.status)
+        .json(result.status === 404
+          ? { error: 'this runtime does not support remote shutdown (predates contract §14)' }
+          : result.body);
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
+  });
+
+  // ── Remote runtime control over SSH (manual only, never automatic) ──────
+
+  app.get('/api/axom/remote', async (req, res) => {
+    res.json(await daemon.axomRemote.status());
+  });
+
+  app.patch('/api/axom/remote', (req, res) => {
+    const remote = req.body || {};
+    if (remote.clear === true) {
+      delete daemon.config.axom?.remote;
+      saveConfig(daemon.grooveDir, daemon.config);
+      return res.json({ configured: false });
+    }
+    const problem = validateRemote(remote);
+    if (problem) return res.status(400).json({ error: problem });
+    const { host, user, sshPort, port, command, logPath } = remote;
+    daemon.config.axom = {
+      ...(daemon.config.axom || {}),
+      remote: { host, user, sshPort, port, command, logPath },
+    };
+    saveConfig(daemon.grooveDir, daemon.config);
+    daemon.audit.log('axom.remote.config', { host, user });
+    res.json(daemon.config.axom.remote);
+  });
+
+  // Reachability only — opens/heals the port-forward. Never starts a runtime.
+  app.post('/api/axom/remote/tunnel', async (req, res) => {
+    try {
+      res.json(await daemon.axomRemote.ensureTunnel());
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/axom/remote/start', async (req, res) => {
+    try {
+      res.json(await daemon.axomRemote.start());
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/axom/remote/stop', async (req, res) => {
+    try {
+      res.json(await daemon.axomRemote.stop({ force: !!req.body?.force }));
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
   });
 
   // ── Managed local instances (contract §11) ──────────────────────────────

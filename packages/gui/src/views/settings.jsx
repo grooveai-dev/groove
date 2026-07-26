@@ -21,7 +21,7 @@ import {
   ShieldCheck, Settings, Lock, Database, Shield,
   Newspaper, Radio, Send, MessageSquare, MessageCircle,
   Plus, Trash2, Plug, PlugZap, TestTube, X, HelpCircle, ExternalLink,
-  Sparkles, Share2, Gift,
+  Sparkles, Share2, Gift, AlertCircle,
 } from 'lucide-react';
 
 /* ── Toggle ────────────────────────────────────────────────── */
@@ -1502,49 +1502,58 @@ function TrainingDataSection() {
 
 /* ── InnerChat Peers Section ──────────────────────────────── */
 
-// Cross-daemon InnerChat: agents on this daemon can reach agents on a peer
-// daemon as `name@alias`. A peer is another Groove daemon you can already
-// reach (a tunnel-forwarded localhost port, a Tailscale address). Trust is
-// mutual — both machines must list each other, and signatures ride the
-// federation keypair — so this panel also surfaces THIS daemon's id to hand
-// to the other side.
+// Cross-daemon InnerChat: agents here reach a peer's agents as `name@alias`.
+// A peer is another Groove daemon at any URL you can already reach (a
+// tunnel-forwarded local port, a Tailscale address). Adding one discovers its
+// id and trades public keys automatically, so the user supplies only a name
+// and a URL — everything else this panel shows rather than asks for.
 function InnerChatPeersSection() {
   const addToast = useGrooveStore((s) => s.addToast);
   const [peers, setPeers] = useState([]);
-  const [ownId, setOwnId] = useState(null);
+  const [identity, setIdentity] = useState(null);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ alias: '', url: '', daemonId: '' });
+  const [form, setForm] = useState({ alias: '', url: '' });
   const [busy, setBusy] = useState(false);
+  const [tests, setTests] = useState({});
 
-  const load = () => {
-    api.get('/innerchat/peers')
-      .then((d) => setPeers(Array.isArray(d?.peers) ? d.peers : []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-    api.get('/federation').then((d) => setOwnId(d?.id || null)).catch(() => {});
-  };
-  useEffect(() => { load(); }, []);
+  const loadPeers = () => api.get('/innerchat/peers')
+    .then((d) => setPeers(Array.isArray(d?.peers) ? d.peers : []))
+    .catch(() => {});
 
-  const canSubmit = form.alias.trim() && form.url.trim() && form.daemonId.trim();
+  useEffect(() => {
+    Promise.all([
+      loadPeers(),
+      api.get('/innerchat/identity').then(setIdentity).catch(() => {}),
+    ]).finally(() => setLoading(false));
+  }, []);
+
+  const canSubmit = form.alias.trim() && form.url.trim();
 
   async function addPeer() {
     if (!canSubmit) return;
     setBusy(true);
     try {
-      const d = await api.post('/innerchat/peers', {
-        alias: form.alias.trim(),
-        url: form.url.trim(),
-        daemonId: form.daemonId.trim().toLowerCase(),
-      });
+      const d = await api.post('/innerchat/peers', { alias: form.alias.trim(), url: form.url.trim() });
       setPeers(Array.isArray(d?.peers) ? d.peers : []);
-      setForm({ alias: '', url: '', daemonId: '' });
+      setForm({ alias: '', url: '' });
       setAdding(false);
-      addToast('success', `Peer "${form.alias.trim()}" added`);
+      addToast(d.keyPushed ? 'success' : 'warning', `Connected to ${form.alias.trim()}`, d.note);
+      testPeer(form.alias.trim());
     } catch (err) {
-      addToast('error', 'Could not add peer', err.message);
+      addToast('error', 'Could not connect', err.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function testPeer(alias) {
+    setTests((t) => ({ ...t, [alias]: { testing: true } }));
+    try {
+      const r = await api.get(`/innerchat/peers/${encodeURIComponent(alias)}/test`);
+      setTests((t) => ({ ...t, [alias]: r }));
+    } catch (err) {
+      setTests((t) => ({ ...t, [alias]: { ok: false, error: err.message } }));
     }
   }
 
@@ -1564,32 +1573,47 @@ function InnerChatPeersSection() {
         <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">InnerChat Peers</span>
         <div className="flex-1 h-px bg-border-subtle" />
         <span className="text-2xs text-text-4 font-sans">
-          {peers.length} peer{peers.length !== 1 ? 's' : ''} · address as <code className="text-text-3">name@alias</code>
+          {peers.length} peer{peers.length !== 1 ? 's' : ''} · agents address them as <code className="text-text-3">name@peer</code>
         </span>
       </div>
 
       <div className="rounded-lg border border-border-subtle bg-surface-1 px-4 py-3.5 flex flex-col gap-3">
-        {/* This daemon's identity — to hand to the peer machine */}
         <div className="flex items-start gap-2.5">
           <div className="w-6 h-6 rounded bg-indigo/10 flex items-center justify-center flex-shrink-0 mt-0.5">
             <Share2 size={12} className="text-indigo" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-[13px] font-medium text-text-0 font-sans leading-tight">Cross-daemon agent chat</div>
+            <div className="text-[13px] font-medium text-text-0 font-sans leading-tight">Let agents talk across machines</div>
             <div className="text-2xs text-text-4 font-sans leading-relaxed mt-0.5">
-              Agents reach a peer's agents as <code className="text-text-3">name@alias</code>. Add the peer on both
-              machines — each lists the other's URL and daemon id. This daemon's id:
+              Add another Groove machine below and your agents can consult its agents directly as{' '}
+              <code className="text-text-3">name@peer</code>. Keys are exchanged for you — nothing else to set up.
             </div>
-            <div className="flex items-center gap-1.5 mt-1.5">
-              <code className="h-7 px-2 flex items-center bg-surface-0 border border-border-subtle rounded-md text-2xs font-mono text-text-2 truncate min-w-0">
-                {ownId || '—'}
-              </code>
-              {ownId && (
-                <Button variant="secondary" size="sm" onClick={() => { navigator.clipboard.writeText(ownId); addToast('success', 'Copied daemon id'); }} className="h-7 px-2 flex-shrink-0">
-                  <Copy size={11} />
-                </Button>
-              )}
-            </div>
+          </div>
+        </div>
+
+        {/* This machine — what the OTHER side needs */}
+        <div className="rounded-md bg-surface-0 border border-border-subtle px-3 py-2.5 flex flex-col gap-2">
+          <div className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">This machine</div>
+          <div className="flex items-center gap-2">
+            <span className="text-2xs text-text-4 font-sans w-16 flex-shrink-0">Daemon ID</span>
+            <code className="flex-1 text-2xs font-mono text-text-2 truncate min-w-0">{identity?.daemonId || '—'}</code>
+            {identity?.daemonId && (
+              <button
+                onClick={() => { navigator.clipboard.writeText(identity.daemonId); addToast('success', 'Copied'); }}
+                className="text-text-4 hover:text-accent transition-colors flex-shrink-0 cursor-pointer"
+                title="Copy daemon id"
+              >
+                <Copy size={11} />
+              </button>
+            )}
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="text-2xs text-text-4 font-sans w-16 flex-shrink-0 pt-px">Reach me</span>
+            <span className="flex-1 text-2xs text-text-3 font-sans leading-relaxed min-w-0">
+              On this machine: <code className="text-text-2">http://127.0.0.1:{identity?.port || 31415}</code>.
+              From another machine, use whatever address forwards here — an SSH tunnel&apos;s local port on that side,
+              or this host&apos;s Tailscale address.
+            </span>
           </div>
         </div>
 
@@ -1598,54 +1622,84 @@ function InnerChatPeersSection() {
           <Skeleton className="h-10 rounded-md" />
         ) : peers.length > 0 ? (
           <div className="flex flex-col gap-1.5">
-            {peers.map((p) => (
-              <div key={p.alias} className="flex items-center gap-2.5 px-2.5 py-2 rounded-md bg-surface-0 border border-border-subtle">
-                <MessageCircle size={12} className="text-indigo flex-shrink-0" />
-                <Badge variant="secondary" className="font-mono flex-shrink-0">@{p.alias}</Badge>
-                <code className="text-2xs font-mono text-text-2 truncate min-w-0 flex-1">{p.url}</code>
-                <code className="text-2xs font-mono text-text-4 flex-shrink-0 hidden sm:inline" title={p.daemonId}>{String(p.daemonId).slice(0, 8)}…</code>
-                <button
-                  onClick={() => removePeer(p.alias)}
-                  className="text-text-4 hover:text-danger transition-colors flex-shrink-0 cursor-pointer"
-                  title={`Remove ${p.alias}`}
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            ))}
+            {peers.map((p) => {
+              const t = tests[p.alias];
+              return (
+                <div key={p.alias} className="rounded-md bg-surface-0 border border-border-subtle px-2.5 py-2 flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2.5">
+                    <MessageCircle size={12} className="text-indigo flex-shrink-0" />
+                    <Badge variant="default" className="font-mono flex-shrink-0 normal-case">@{p.alias}</Badge>
+                    <code className="text-2xs font-mono text-text-2 truncate min-w-0 flex-1">{p.url}</code>
+                    {t?.testing ? (
+                      <Loader2 size={11} className="animate-spin text-text-3 flex-shrink-0" />
+                    ) : t ? (
+                      <Badge variant={t.ok ? 'success' : 'danger'} className="flex-shrink-0">
+                        {t.ok ? <Check size={9} /> : <AlertCircle size={9} />}
+                        {t.ok ? 'Connected' : 'Problem'}
+                      </Badge>
+                    ) : null}
+                    <button
+                      onClick={() => testPeer(p.alias)}
+                      className="text-text-4 hover:text-accent transition-colors flex-shrink-0 cursor-pointer"
+                      title="Test connection"
+                    >
+                      <TestTube size={12} />
+                    </button>
+                    <button
+                      onClick={() => removePeer(p.alias)}
+                      className="text-text-4 hover:text-danger transition-colors flex-shrink-0 cursor-pointer"
+                      title={`Remove ${p.alias}`}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                  {t && !t.testing && (
+                    <div className="text-2xs font-sans pl-6 leading-relaxed">
+                      {t.ok ? (
+                        <span className="text-text-4">
+                          v{t.peerVersion} · {t.agents?.length || 0} agent{t.agents?.length !== 1 ? 's' : ''}
+                          {t.agents?.length ? <> — try <code className="text-text-3">{t.agents[0]}@{p.alias}</code></> : null}
+                        </span>
+                      ) : (
+                        <span className="text-danger">{t.error}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : (
-          <div className="text-2xs text-text-4 font-sans px-1 py-1">No peers configured — add one to let agents talk across machines.</div>
+          <div className="text-2xs text-text-4 font-sans px-1 py-1">No peers yet — add one to let agents talk across machines.</div>
         )}
 
-        {/* Add form */}
+        {/* Add form — name + URL only; id and keys are handled for you */}
         {adding ? (
           <div className="flex flex-col gap-2 pt-1 border-t border-border-subtle">
             <div className="grid grid-cols-[1fr_2fr] gap-2">
               <input
                 value={form.alias}
                 onChange={(e) => setForm((f) => ({ ...f, alias: e.target.value }))}
-                placeholder="alias (e.g. spark)"
+                placeholder="name (e.g. spark)"
                 className="h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
               />
               <input
                 value={form.url}
                 onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
-                placeholder="http://localhost:62686 (tunnel / Tailscale URL)"
+                onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit && !busy) addPeer(); }}
+                placeholder="http://127.0.0.1:31416"
                 className="h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
               />
             </div>
-            <input
-              value={form.daemonId}
-              onChange={(e) => setForm((f) => ({ ...f, daemonId: e.target.value }))}
-              placeholder="peer daemon id (from the other machine's Settings)"
-              className="h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
-            />
+            <div className="text-2xs text-text-4 font-sans px-0.5 leading-relaxed">
+              The URL is where that machine is reachable <em>from here</em> — if you connect over an SSH tunnel that is
+              the forwarded local port (not 31415, which is this machine).
+            </div>
             <div className="flex items-center justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => { setAdding(false); setForm({ alias: '', url: '', daemonId: '' }); }} disabled={busy}>Cancel</Button>
+              <Button variant="ghost" size="sm" onClick={() => { setAdding(false); setForm({ alias: '', url: '' }); }} disabled={busy}>Cancel</Button>
               <Button variant="primary" size="sm" onClick={addPeer} disabled={!canSubmit || busy}>
                 {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                Add Peer
+                Connect
               </Button>
             </div>
           </div>
@@ -1655,14 +1709,13 @@ function InnerChatPeersSection() {
             className="flex items-center justify-center gap-1.5 h-8 rounded-md border border-dashed border-border-subtle text-2xs font-sans text-text-3 hover:text-accent hover:border-accent/40 transition-colors cursor-pointer"
           >
             <Plus size={12} />
-            Add Peer
+            Add Peer Machine
           </button>
         )}
       </div>
     </div>
   );
 }
-
 /* ── Early Access Section ─────────────────────────────────── */
 
 function EarlyAccessSection() {

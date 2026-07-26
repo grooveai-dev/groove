@@ -8,6 +8,9 @@
 import { api } from '../../lib/api';
 
 const EVENT_BUFFER = 2000;
+// How long a sent prompt stays eligible to claim the next turn. Past this,
+// it is more likely orphaned than starting, and claiming would misattribute.
+const PROMPT_CORRELATION_WINDOW_S = 120;
 
 const sessionKey = (endpoint, session) => `${endpoint}/${session}`;
 
@@ -27,6 +30,13 @@ export const createAxomSlice = (set, get) => ({
   // Contract-violation log (§8): e.g. an interrupt_ack without interrupt_id.
   // A fallback that fires must announce itself — never degrade silently.
   axomAnomalies: {}, // sessionKey -> [{eventId, message}]
+  // Prompts WE sent, per session — GROOVE's own record of its own action,
+  // not telemetry (the runtime's pipeline_start carries no prompt text). Each
+  // entry attaches to the next pipeline_start envelope so a turn can show
+  // what was asked. Prompts sent by another client (the REPL, a second
+  // GROOVE) are not ours to know: those turns render without a user bubble
+  // rather than with a guessed one.
+  axomPrompts: {}, // sessionKey -> [{ text, ts, attachedTo: evId|null }]
   axomInstances: [], // managed local instances (contract §11)
   axomInstall: { phase: 'idle', file: null, receivedBytes: 0, totalBytes: 0, error: null },
   axomHardware: null, // machine readiness report for local inference
@@ -50,10 +60,31 @@ export const createAxomSlice = (set, get) => ({
       const me = await api.get('/axom/my-endpoint');
       set({ axomMyEndpoint: me });
     } catch { /* daemon predates the route */ }
+    try {
+      // Availability ("Coming soon" on builds with no distribution) must be
+      // known before the welcome page offers an install action.
+      const install = await api.get('/axom/install');
+      set((s) => ({ axomInstall: { ...s.axomInstall, ...install } }));
+    } catch { /* daemon predates the route */ }
   },
 
   async startAxomInstall(manifestUrl) {
     await api.post('/axom/install', manifestUrl ? { manifestUrl } : {});
+  },
+
+  // §14: end the RUNTIME (not a turn). Contract statuses are returned rather
+  // than thrown — 409 (turn in flight) and 501 (runtime predates the verb)
+  // are things the UI must SAY, not failures to swallow.
+  async shutdownAxomRuntime(endpoint, { force = false } = {}) {
+    try {
+      await api.post('/axom/shutdown', { endpoint, force });
+      await get().fetchAxomStatus();
+      return { stopping: true };
+    } catch (err) {
+      if (err.status === 409) return { turnInFlight: true };
+      if (err.status === 501) return { unsupported: true };
+      throw err;
+    }
   },
 
   async startAxomInstance(id = 'default') {
@@ -98,6 +129,45 @@ export const createAxomSlice = (set, get) => ({
       const updates = {
         axomEvents: { ...s.axomEvents, [key]: [...buf, envelope].slice(-EVENT_BUFFER) },
       };
+
+      // Correlate our sent prompt with the turn it started.
+      //
+      // The runtime's pipeline_start carries no client reference (§12 has no
+      // echo field yet), so correlation is inference, and inference here can
+      // LIE: another client (the REPL, a second GROOVE) opening a turn on this
+      // session would otherwise adopt our text as its prompt — displaying our
+      // words above someone else's turn. Confidently wrong is worse than
+      // silent, so we only attach when the inference is unambiguous:
+      //   - exactly one prompt of ours is pending (two in flight = we cannot
+      //     tell which turn is which), and
+      //   - it was sent recently (a stale pending prompt is more likely
+      //     orphaned than finally starting).
+      // Anything else stays unattached and renders as "started elsewhere" —
+      // honest silence. A client_ref echo in pipeline_start would make this
+      // exact; requested from the Axom side.
+      if (envelope.kind === 'pipeline_start') {
+        const prompts = s.axomPrompts[key] || [];
+        const pending = prompts.filter((p) => p.attachedTo === null);
+        const ref = envelope.payload?.client_ref;
+        // §15: when the runtime echoes our ref, correlation is EXACT — match
+        // on it and never guess. A ref that is present but not ours means the
+        // turn belongs to another client: attach nothing.
+        let claim = null;
+        if (typeof ref === 'string' && ref) {
+          claim = pending.find((p) => p.ref === ref) || null;
+        } else if (ref === undefined) {
+          // Pre-§15 runtime: fall back to the bounded inference above.
+          claim = (pending.length === 1
+            && (Date.now() / 1000) - pending[0].ts < PROMPT_CORRELATION_WINDOW_S)
+            ? pending[0] : null;
+        }
+        if (claim) {
+          const idx = prompts.indexOf(claim);
+          const next = prompts.slice();
+          next[idx] = { ...next[idx], attachedTo: envelope.id };
+          updates.axomPrompts = { ...s.axomPrompts, [key]: next };
+        }
+      }
 
       // Interrupt lifecycle — driven only by what the runtime says happened.
       // §8 pins interrupt_ack.payload.interrupt_id as ALWAYS present; the
@@ -146,10 +216,22 @@ export const createAxomSlice = (set, get) => ({
   async sendAxomMessage(text) {
     const sel = get().axomSelected;
     if (!sel) throw new Error('No Axom session selected');
+    // §15: an opaque per-message ref the runtime echoes in pipeline_start,
+    // making prompt→turn correlation exact instead of inferred.
+    const ref = `g-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
     try {
       await api.post(`/axom/sessions/${encodeURIComponent(sel.session)}/message`, {
-        endpoint: sel.endpoint, text,
+        endpoint: sel.endpoint, text, clientRef: ref,
       });
+      // Record only after the runtime ACCEPTED it (202) — a rejected prompt
+      // never ran, so it must not appear in the transcript.
+      const key = sessionKey(sel.endpoint, sel.session);
+      set((s) => ({
+        axomPrompts: {
+          ...s.axomPrompts,
+          [key]: [...(s.axomPrompts[key] || []), { text, ref, ts: Date.now() / 1000, attachedTo: null }].slice(-200),
+        },
+      }));
       await get().fetchAxomStatus();
       return { ok: true };
     } catch (err) {

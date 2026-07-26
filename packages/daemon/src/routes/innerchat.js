@@ -1,8 +1,11 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { MAX_EXCHANGES } from '../innerchat.js';
+import { readFileSync } from 'fs';
 import { validatePeer, parsePeerRef } from '../innerchat-relay.js';
 import { saveConfig } from '../firstrun.js';
+
+const pkgVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version;
 
 // Agents know each other by name, not id. Exact matches win first so
 // `fullstack-1` never resolves to `fullstack-14`; only if nothing matches
@@ -73,7 +76,101 @@ function verifyRelayCaller(daemon, body, res) {
   return peer;
 }
 
+// A peer relay is accepted only when the sender is BOTH a configured peer
+// (in innerchatPeers — the human's decision) AND signature-verifies against a
+// stored federation public key. Those are independent gates, which is what
+// makes automatic key exchange safe: holding someone's public key grants
+// nothing on its own. So adding a peer can fetch and store its key without a
+// separate manual pairing step.
+async function exchangeKeys(daemon, url, alias) {
+  const base = url.replace(/\/+$/, '');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`${base}/api/innerchat/identity`, { signal: controller.signal });
+    if (!res.ok) throw new Error(`peer returned HTTP ${res.status}`);
+    const id = await res.json();
+    if (!id?.daemonId || !id?.publicKey) throw new Error('peer did not return an identity');
+
+    // Store their key so we can verify what they send us.
+    daemon.federation._savePeer({
+      id: id.daemonId,
+      name: alias,
+      host: new URL(base).hostname,
+      port: Number(new URL(base).port) || 80,
+      publicKey: id.publicKey,
+      pairedAt: new Date().toISOString(),
+    });
+
+    // Push ours so they can verify what WE send — this is the half that
+    // otherwise required a manual step on the other machine.
+    let pushed = false;
+    try {
+      const push = await fetch(`${base}/api/innerchat/identity`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          daemonId: daemon.federation.getDaemonId(),
+          publicKey: daemon.federation.getPublicKeyPem(),
+          name: daemon.config?.daemonName || 'groove',
+        }),
+        signal: controller.signal,
+      });
+      pushed = push.ok;
+    } catch { /* reachable for GET but not POST — report partial */ }
+
+    return { ok: true, peerDaemonId: id.daemonId, peerVersion: id.version, pushed };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function registerInnerChatRoutes(app, daemon) {
+  /**
+   * This daemon's federation identity. Read-only and non-secret (a public key
+   * plus an id); the peer needs it to verify signed relays from us.
+   */
+  app.get('/api/innerchat/identity', (req, res) => {
+    res.json({
+      daemonId: daemon.federation.getDaemonId(),
+      publicKey: daemon.federation.getPublicKeyPem(),
+      version: pkgVersion,
+      port: daemon.port,
+      agents: daemon.registry.getAll().map((a) => a.name),
+    });
+  });
+
+  /**
+   * Accept a peer's public key so we can verify its signed relays. Storing a
+   * key authorizes nothing by itself — a relay ALSO requires that daemon to be
+   * listed in innerchatPeers, which only the user can do. That second gate is
+   * what keeps this endpoint safe to accept without a pairing dance.
+   */
+  app.post('/api/innerchat/identity', (req, res) => {
+    const { daemonId, publicKey, name } = req.body || {};
+    if (!daemonId || !/^[a-f0-9]{6,64}$/.test(String(daemonId))) {
+      return res.status(400).json({ error: 'valid daemonId required' });
+    }
+    if (!publicKey || typeof publicKey !== 'string' || !publicKey.includes('PUBLIC KEY')) {
+      return res.status(400).json({ error: 'publicKey (PEM) required' });
+    }
+    daemon.federation._savePeer({
+      id: daemonId,
+      name: typeof name === 'string' && name.trim() ? name.trim().slice(0, 40) : daemonId,
+      host: (req.ip || '').replace('::ffff:', '') || '127.0.0.1',
+      port: 0,
+      publicKey,
+      pairedAt: new Date().toISOString(),
+    });
+    daemon.audit.log('innerchat.key.received', { daemonId });
+    res.json({
+      ok: true,
+      // Hand back ours so a single call completes the exchange either way.
+      daemonId: daemon.federation.getDaemonId(),
+      publicKey: daemon.federation.getPublicKeyPem(),
+    });
+  });
+
   /**
    * Ask another agent a question and BLOCK until it answers.
    *
@@ -223,19 +320,104 @@ export function registerInnerChatRoutes(app, daemon) {
     res.json({ peers: daemon.innerchat._peers() });
   });
 
-  app.post('/api/innerchat/peers', (req, res) => {
-    const entry = { alias: req.body?.alias, url: req.body?.url, daemonId: req.body?.daemonId };
-    const err = validatePeer(entry);
-    if (err) return res.status(400).json({ error: err });
-    entry.url = entry.url.replace(/\/+$/, '');
+  /**
+   * Add a peer. The daemonId is discovered from the peer itself rather than
+   * typed, and public keys are exchanged automatically, so the user only has
+   * to supply a name and a reachable URL.
+   */
+  app.post('/api/innerchat/peers', async (req, res) => {
+    const alias = req.body?.alias;
+    const rawUrl = req.body?.url;
+    if (!alias || typeof alias !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(alias)) {
+      return res.status(400).json({ error: 'peer name must be 1-40 chars (letters, digits, dash, underscore)' });
+    }
+    if (!rawUrl || typeof rawUrl !== 'string') return res.status(400).json({ error: 'peer url is required' });
+
+    let url;
+    try {
+      const parsed = new URL(rawUrl.trim());
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return res.status(400).json({ error: 'peer url must be http(s)' });
+      }
+      if (parsed.username || parsed.password) return res.status(400).json({ error: 'credentials in the url are not allowed' });
+      url = rawUrl.trim().replace(/\/+$/, '');
+    } catch { return res.status(400).json({ error: `invalid url: ${rawUrl}` }); }
+
+    // Reach the peer, learn its id, and trade keys. This is the step that used
+    // to be a manual federation pairing.
+    let exchange;
+    try {
+      exchange = await exchangeKeys(daemon, url, alias);
+    } catch (err) {
+      return res.status(502).json({
+        error: `Could not reach a Groove daemon at ${url} — ${err.message}. `
+          + 'Check the URL (for a tunnelled peer this is the forwarded local port, not 31415) and that the peer daemon is running the current version.',
+      });
+    }
+
+    if (exchange.peerDaemonId === daemon.federation.getDaemonId()) {
+      return res.status(400).json({
+        error: `That URL points at THIS daemon, not a peer. For a tunnelled machine use the forwarded local port (e.g. http://127.0.0.1:31416), not ${url}.`,
+      });
+    }
+
+    const entry = { alias, url, daemonId: exchange.peerDaemonId };
+    const check = validatePeer(entry);
+    if (check) return res.status(400).json({ error: check });
 
     const peers = Array.isArray(daemon.config.innerchatPeers) ? daemon.config.innerchatPeers : [];
-    const next = peers.filter((p) => p.alias !== entry.alias);
+    const next = peers.filter((p) => p.alias !== alias);
     next.push(entry);
     daemon.config.innerchatPeers = next;
     saveConfig(daemon.grooveDir, daemon.config);
-    daemon.audit.log('innerchat.peer.set', { alias: entry.alias, url: entry.url });
-    res.json({ peers: next });
+    daemon.audit.log('innerchat.peer.set', { alias, url, daemonId: entry.daemonId });
+    // Registry files carry the @peer instructions + alias list — refresh now so
+    // running agents see the new peer without waiting for a spawn or restart.
+    try { daemon.introducer?.writeRegistryFile?.(daemon.projectDir); } catch { /* best effort */ }
+
+    res.json({
+      peers: next,
+      exchanged: true,
+      keyPushed: exchange.pushed,
+      peerDaemonId: exchange.peerDaemonId,
+      note: exchange.pushed
+        ? `Keys exchanged with ${alias}. Add this machine as a peer there too if you want its agents to start conversations.`
+        : `Stored ${alias}'s key, but could not send ours — ${alias} may be running an older version. Update it, then re-add.`,
+    });
+  });
+
+  /**
+   * Verify a configured peer end to end: reachable, identity matches what we
+   * stored, and keys are present on both sides.
+   */
+  app.get('/api/innerchat/peers/:alias/test', async (req, res) => {
+    const peer = daemon.innerchat._peerByAlias(req.params.alias);
+    if (!peer) return res.status(404).json({ error: `No peer named "${req.params.alias}"` });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const r = await fetch(`${peer.url}/api/innerchat/identity`, { signal: controller.signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const id = await r.json();
+      const idMatches = id.daemonId === peer.daemonId;
+      const weHaveTheirKey = daemon.federation.peers.has(peer.daemonId);
+      res.json({
+        ok: idMatches && weHaveTheirKey,
+        reachable: true,
+        idMatches,
+        weHaveTheirKey,
+        peerDaemonId: id.daemonId,
+        peerVersion: id.version,
+        agents: Array.isArray(id.agents) ? id.agents : [],
+        error: !idMatches
+          ? `The daemon at ${peer.url} reports id ${id.daemonId}, but this peer is configured as ${peer.daemonId}. Re-add the peer.`
+          : !weHaveTheirKey ? 'Missing this peer\'s public key — re-add the peer to exchange keys.' : null,
+      });
+    } catch (err) {
+      res.json({ ok: false, reachable: false, error: `Could not reach ${peer.url} — ${err.message}` });
+    } finally {
+      clearTimeout(timer);
+    }
   });
 
   app.delete('/api/innerchat/peers/:alias', (req, res) => {

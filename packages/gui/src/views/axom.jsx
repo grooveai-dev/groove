@@ -2099,7 +2099,20 @@ export default function AxomView() {
 
   const selectedSession = axomSelected
     && endpoint.sessions.find((s) => s.session === axomSelected.session);
-  const sessionLive = !!selectedSession?.live;
+  // Liveness comes from the EVENT STREAM, not the polled flag. Ruling with
+  // the Axom side: `pipeline_done` is the sole turn-liveness terminal — a
+  // turn is in flight iff a pipeline_start has arrived with no pipeline_done
+  // after it. Narration legally trails pipeline_done ("Answer ready.",
+  // "Done in 1 step.") and must NEVER re-light activity; nothing but these
+  // two kinds may move liveness. The /sessions poll is a lagging indicator
+  // (up to 15s stale) and is only a fallback before any events arrive.
+  const sessionLive = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      if (events[i].kind === 'pipeline_done') return false;
+      if (events[i].kind === 'pipeline_start') return true;
+    }
+    return !!selectedSession?.live;
+  }, [events, selectedSession]);
   const endpointName = endpoint.remoteHost || endpoint.name;
 
   return (

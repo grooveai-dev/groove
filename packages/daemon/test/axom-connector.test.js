@@ -423,6 +423,18 @@ describe('AxomConnector', () => {
     assert.deepEqual(bridge.shutdowns, [{ force: true }]);
   });
 
+  it('broadcasts when a session stops being live — a spinner must not outlive its turn', async () => {
+    connect();
+    await waitFor(() => connector.status().endpoints[0]?.sessions[0]?.watching);
+    const before = daemon.broadcasts.filter((b) => b.type === 'axom:status').length;
+
+    // Turn ends runtime-side; the next poll must tell the GUI, not sit on it.
+    bridge.sessions['s-test0001'].live = false;
+    await waitFor(() => daemon.broadcasts.filter((b) => b.type === 'axom:status').length > before, 3000);
+    const latest = daemon.broadcasts.filter((b) => b.type === 'axom:status').pop();
+    assert.equal(latest.data.endpoints[0].sessions[0].live, false);
+  });
+
   it('reports an unreachable endpoint honestly and recovers by retry', async () => {
     const deadUrl = bridge.url;
     const port = Number(new URL(deadUrl).port);

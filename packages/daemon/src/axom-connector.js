@@ -174,6 +174,7 @@ export class AxomConnector {
   async _pollSessions(ep) {
     const list = await this._fetch(ep, '/sessions');
     if (!Array.isArray(list)) return;
+    let changed = false;
     for (const info of list) {
       const id = info.session;
       if (!id || typeof id !== 'string') continue;
@@ -191,12 +192,19 @@ export class AxomConnector {
           reconnectTimer: null,
         };
         ep.sessions.set(id, s);
+        changed = true;
       }
       // §12: `live` means a turn is in flight; sessions persist between turns
       // and events can start at any moment — stay attached regardless.
+      const wasLive = s.live;
       s.live = !!info.live;
+      // A liveness change is news. Without this, the GUI's copy of `live`
+      // stays true after a turn ends until something else happens to refetch
+      // status — which is how a spinner outlives its turn.
+      if (wasLive !== s.live) changed = true;
       if (!s.ws) this._watchSession(ep, s);
     }
+    if (changed) this._broadcastStatus();
   }
 
   _watchSession(ep, s) {

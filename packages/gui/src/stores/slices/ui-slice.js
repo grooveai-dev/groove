@@ -48,10 +48,19 @@ export const createUiSlice = (set, get) => ({
       const sel = get().fleetSelectedAgents;
       const primaryId = sel[0] || sel[1];
       if (primaryId) {
-        const tid = get().activeTeamId;
+        // Fleet is cross-team: the agent we were chatting with may belong to a
+        // different team than the active one. Outside fleet the agent panel is
+        // team-guarded, so carrying the panel without also switching the active
+        // team renders an empty shell. Follow the agent to its team.
+        const agent = get().agents.find((a) => a.id === primaryId);
+        const tid = agent?.teamId || get().activeTeamId;
         const panel = { type: 'agent', agentId: primaryId };
         updates.detailPanel = panel;
         updates.teamDetailPanels = { ...get().teamDetailPanels, [tid]: panel };
+        if (tid && tid !== get().activeTeamId) {
+          updates.activeTeamId = tid;
+          localStorage.setItem('groove:activeTeamId', tid);
+        }
       }
     }
     if (view === 'fleet' && prev !== 'fleet') {

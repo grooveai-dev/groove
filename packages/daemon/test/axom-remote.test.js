@@ -61,6 +61,41 @@ describe('AxomRemote', () => {
     assert.equal(/while|until|restart|systemctl/.test(startCmd), false); // never supervised
   });
 
+  it('runs commands containing shell constructs through bash -lc', async () => {
+    // `nohup cd /path && prog` applies nohup to `cd`, which fails and
+    // short-circuits — starting nothing while reporting success. Found live.
+    let probes = 0;
+    const h = harness({
+      remote: {
+        host: 'spark.local', user: 'axom',
+        command: "cd /opt/axom && PYTHONPATH=model python3 -m axom.cli serve --cpu --port 8737",
+      },
+      responses: {
+        get '/about'() { probes += 1; return probes === 1 ? 'DOWN\n' : 'UP\n'; },
+        'nohup': 'STARTED\n',
+      },
+    });
+    await h.remote.start();
+    const startCmd = h.calls.find((c) => c.command.includes('nohup')).command;
+    assert.match(startCmd, /nohup bash -lc '/);
+    assert.match(startCmd, /cd \/opt\/axom && PYTHONPATH=model/);
+  });
+
+  it('escapes single quotes in a configured command', async () => {
+    let probes = 0;
+    const h = harness({
+      remote: { host: 'spark.local', user: 'axom', command: `echo 'hi there' && axom serve` },
+      responses: {
+        get '/about'() { probes += 1; return probes === 1 ? 'DOWN\n' : 'UP\n'; },
+        'nohup': 'STARTED\n',
+      },
+    });
+    await h.remote.start();
+    const startCmd = h.calls.find((c) => c.command.includes('nohup')).command;
+    // The inner quotes must be neutralized, never closing our wrapper early.
+    assert.match(startCmd, /'\\''hi there'\\''/);
+  });
+
   it('does not start a second runtime when one is already up', async () => {
     const h = harness({ responses: { '/about': 'UP\n' } });
     assert.deepEqual(await h.remote.start(), { started: false, alreadyRunning: true, port: 8737 });

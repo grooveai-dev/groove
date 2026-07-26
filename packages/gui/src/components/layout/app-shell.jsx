@@ -57,7 +57,7 @@ export function AppShell({ children, detailContent, terminalContent }) {
 
   useKeyboard(shortcuts);
 
-  const showDetail = detailPanel && detailPanel.type !== 'spawn';
+  const showDetail = detailPanel && detailPanel.type !== 'spawn' && !!detailContent;
 
   return (
     <TooltipProvider>

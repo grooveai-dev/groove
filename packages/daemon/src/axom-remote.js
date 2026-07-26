@@ -105,8 +105,14 @@ export class AxomRemote {
       || `axom serve --port ${port} --data-dir ~/axom-serve/data --model-dir ~/axom-serve/models`;
     // Detached from this SSH session so it survives the connection closing.
     // No supervisor, no restart-on-exit: manual control means manual.
+    //
+    // The command runs through `bash -lc` because real launch commands carry
+    // shell constructs (cd, &&, env prefixes). `nohup cd /path && prog` would
+    // apply nohup to `cd` — which fails, short-circuits the &&, and starts
+    // NOTHING while reporting success. Found by running it.
     const log = cfg.logPath || '~/axom-serve/serve.log';
-    await this._ssh(`nohup ${command} >> ${log} 2>&1 < /dev/null & disown; echo STARTED`, 30000);
+    const quoted = `'${command.replace(/'/g, `'\\''`)}'`;
+    await this._ssh(`nohup bash -lc ${quoted} >> ${log} 2>&1 < /dev/null & disown; echo STARTED`, 30000);
 
     // Confirm it actually came up rather than reporting optimism.
     for (let i = 0; i < 30; i++) {

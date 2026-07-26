@@ -320,7 +320,17 @@ export class AxomConnector {
         .filter((i) => i.status === 'running')
         .map((i) => `http://127.0.0.1:${i.port}`),
     );
+    // The remote host this GROOVE can start/stop over SSH, if configured.
+    // Lets the GUI name who it is talking to ("Spark") instead of showing a
+    // loopback URL that says nothing about where the runtime actually lives.
+    const remoteCfg = this.daemon.config?.axom?.remote || null;
+    const remotePort = remoteCfg?.port || AXOM_DEFAULT_PORT;
+    const isLoopback = (u) => /^https?:\/\/(127\.0\.0\.1|localhost)\b/.test(u);
+
     return {
+      remote: remoteCfg
+        ? { configured: true, host: remoteCfg.host, user: remoteCfg.user, port: remotePort }
+        : { configured: false },
       endpoints: [...this.endpoints.values()].map((ep) => ({
         name: ep.name,
         url: ep.url,
@@ -329,6 +339,12 @@ export class AxomConnector {
         about: ep.about,
         drift: ep.drift,
         managed: managed.has(ep.url),
+        // Reached through the SSH forward to the configured remote host —
+        // so the GUI can say "Spark" rather than "127.0.0.1".
+        viaRemote: !!remoteCfg && isLoopback(ep.url) && ep.url.endsWith(`:${remotePort}`)
+          && !managed.has(ep.url),
+        remoteHost: (!!remoteCfg && isLoopback(ep.url) && ep.url.endsWith(`:${remotePort}`)
+          && !managed.has(ep.url)) ? remoteCfg.host : null,
         instanceId: (this.daemon.axomServer?.list?.() || [])
           .find((i) => i.status === 'running' && `http://127.0.0.1:${i.port}` === ep.url)?.id || null,
         sessions: [...ep.sessions.values()].map((s) => ({

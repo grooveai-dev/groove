@@ -10,8 +10,8 @@
 // fail-deceptive).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Atom, Zap, OctagonX, Plug, Radio, MessageSquareQuote, Shirt, TriangleAlert, Trophy, Download, Square, Play, Plus, MemoryStick, HardDrive, Cpu, Gauge, CheckCircle2, Globe, Copy, Settings2, ArrowLeft, Loader2, ChevronDown, SendHorizontal, X, Wrench, Brain, Power, Unplug } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Atom, Zap, OctagonX, Plug, Radio, MessageSquareQuote, Shirt, TriangleAlert, Trophy, Download, Square, Play, Plus, MemoryStick, HardDrive, Cpu, Gauge, CheckCircle2, Globe, Copy, Settings2, ArrowLeft, Loader2, ChevronDown, SendHorizontal, Wrench, Brain, Power, Unplug, ChevronRight, Type, Code2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useGrooveStore } from '../stores/groove';
 import { axomSessionKey } from '../stores/slices/axom-slice';
 import { Button } from '../components/ui/button';
@@ -585,176 +585,195 @@ function Onboarding({ onBack }) {
   );
 }
 
-// ── Header — the runtime wears its receipts ────────────────────────────────
+// ── Runtime control — connection and runtime state, legible at a glance ────
 //
-// Monochrome discipline: identity and capability facts are mono ink on the
-// surface, not filled badges. Hue is reserved for things that are genuinely
-// STATE — an unreachable endpoint, schema drift, a contract anomaly.
+// This is a workshop surface, not a spec sheet: it says who we're connected
+// to, whether the runtime is up, and gives the one control that matters. A
+// benchmark score is a marketing fact and has no place here.
 
-// Runtime lifecycle — scoped to the runtime, deliberately far from the input
-// row so it never competes with turn-stop. What's offered depends on what we
-// can actually honor: a runtime GROOVE spawned can be shut down; one on
-// another machine can only be let go of. When Axom ships a /shutdown verb the
-// remote branch gains a real control — a swap, not a redesign.
-const LIFECYCLE_LABEL = { idle: 'Shut down', confirm: 'Confirm', force: 'Force stop', busy: 'Stopping…' };
+const RUNTIME_ACTION_LABEL = { idle: null, confirm: 'Confirm', force: 'Force stop', busy: 'Working…' };
 
-function RuntimeLifecycle({ endpoint }) {
+function RuntimeControl({ endpoint, remote }) {
+  const startAxomRuntime = useGrooveStore((s) => s.startAxomRuntime);
+  const stopAxomRuntime = useGrooveStore((s) => s.stopAxomRuntime);
+  const healAxomTunnel = useGrooveStore((s) => s.healAxomTunnel);
+  const fetchAxomRemote = useGrooveStore((s) => s.fetchAxomRemote);
   const stopAxomInstance = useGrooveStore((s) => s.stopAxomInstance);
-  const shutdownAxomRuntime = useGrooveStore((s) => s.shutdownAxomRuntime);
   const saveAxomEndpoints = useGrooveStore((s) => s.saveAxomEndpoints);
   const addToast = useGrooveStore((s) => s.addToast);
   const [phase, setPhase] = useState('idle'); // idle | confirm | force | busy
   const [note, setNote] = useState(null);
 
-  // A runtime GROOVE spawned is stopped through the instance API — a real
-  // process kill that also cleans up our own bookkeeping. Anything else goes
-  // through §14, which reaches runtimes no signal of ours ever could.
-  const managed = !!endpoint.managed && !!endpoint.instanceId;
-
+  useEffect(() => { fetchAxomRemote?.(); }, [fetchAxomRemote]);
   useEffect(() => {
     if (phase !== 'confirm' && phase !== 'force') return;
     const t = setTimeout(() => setPhase('idle'), 5000);
     return () => clearTimeout(t);
   }, [phase]);
 
-  async function shutdown(force) {
+  const managed = !!endpoint?.managed && !!endpoint?.instanceId;
+  // `running: null` means the HOST didn't answer — we do not know whether the
+  // runtime is up, and an unknown must never be drawn as "stopped".
+  const unknownHost = remote?.configured && remote.running == null;
+
+  async function run(fn, okTitle, okBody) {
     setPhase('busy');
     try {
-      if (managed) {
-        await stopAxomInstance(endpoint.instanceId);
-      } else {
-        // §14 outcomes come back as data, not exceptions — they are things
-        // this UI must SAY, so they never travel through the catch.
-        const result = await shutdownAxomRuntime(endpoint.name, { force });
-
-        // A turn is in flight. The contract allows forcing, but forcing
-        // silently would kill work the user never agreed to lose, so the
-        // escalation is offered rather than taken.
-        if (result.turnInFlight) {
-          setNote('turn in flight');
-          setPhase('force');
-          addToast('warning', 'A turn is in flight', 'Force stop to end it anyway — that turn will not finish.');
-          return;
-        }
-
-        // Too old for §14. Never claim the runtime is gone; it is very much
-        // still running, and pretending otherwise is the fake kill switch we
-        // agreed never to ship.
-        if (result.unsupported) {
-          setNote('no remote shutdown');
-          setPhase('idle');
-          addToast('error', 'This runtime is still running',
-            "It predates remote shutdown, so GROOVE can't stop it from here — stop it on the machine it runs on.");
-          return;
-        }
+      const result = await fn();
+      if (result?.turnInFlight) {
+        setNote('turn in flight');
+        setPhase('force');
+        addToast('warning', 'A turn is in flight', 'Force stop to end it anyway — that turn will not finish.');
+        return;
       }
-      addToast('success', force ? 'Runtime force-stopped' : 'Runtime shutting down');
+      if (result?.unsupported) {
+        setNote('no remote shutdown');
+        setPhase('idle');
+        addToast('error', 'This runtime is still running',
+          "It predates remote shutdown, so GROOVE can't stop it from here — stop it on the machine it runs on.");
+        return;
+      }
       setNote(null);
       setPhase('idle');
+      addToast('success', okTitle, okBody);
     } catch (err) {
       setPhase('idle');
-      addToast('error', 'Shut down failed', err.message);
+      addToast('error', 'That did not work', err.message);
     }
   }
 
-  async function disconnect() {
-    try {
-      await saveAxomEndpoints([]);
-      addToast('success', 'Disconnected', 'The runtime keeps running — GROOVE just stopped pointing at it.');
-    } catch (err) {
-      addToast('error', 'Disconnect failed', err.message);
-    }
-  }
-
+  const busy = phase === 'busy';
   const armed = phase === 'confirm' || phase === 'force';
 
+  // What we can honestly say about the runtime, and the one control that
+  // follows from it. A verb whose slice action isn't wired yet is withheld
+  // rather than rendered dead: a button that reports success it never
+  // achieved is the fake kill switch in another costume.
+  let state;
+  if (remote?.configured) {
+    if (unknownHost) {
+      state = {
+        dot: 'starting', word: 'host unreachable',
+        detail: remote.error || `${remote.host} did not answer — we can't tell whether the runtime is up`,
+        action: healAxomTunnel && { label: 'Heal tunnel', icon: Plug, confirm: false, run: () => healAxomTunnel() },
+      };
+    } else if (remote.running) {
+      state = {
+        dot: 'running', word: 'runtime active',
+        detail: `${remote.host} is answering`,
+        action: stopAxomRuntime && { label: 'Stop runtime', icon: Power, confirm: true, run: (force) => stopAxomRuntime({ force }) },
+      };
+    } else {
+      state = {
+        dot: 'completed', word: 'runtime inactive',
+        detail: `${remote.host} is reachable, the runtime is not running`,
+        action: startAxomRuntime && { label: 'Start runtime', icon: Play, confirm: false, run: () => startAxomRuntime() },
+      };
+    }
+  } else if (managed) {
+    state = {
+      dot: endpoint.status === 'connected' ? 'running' : 'completed',
+      word: endpoint.status === 'connected' ? 'runtime active' : 'runtime idle',
+      action: { label: 'Stop runtime', icon: Power, confirm: true, danger: true, run: () => stopAxomInstance(endpoint.instanceId) },
+    };
+  } else {
+    state = { dot: null, word: null, action: null };
+  }
+
+  function press() {
+    const a = state.action;
+    if (!a) return;
+    if (a.confirm && phase === 'idle') { setPhase('confirm'); return; }
+    if (phase === 'force') return run(() => a.run(true), 'Runtime force-stopped');
+    return run(() => a.run(false), a.label === 'Start runtime' ? 'Runtime started'
+      : a.label === 'Heal tunnel' ? 'Tunnel re-established' : 'Runtime stopping');
+  }
+
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-2 flex-shrink-0">
+      {state.word && (
+        <span className="flex items-center gap-1.5" title={state.detail}>
+          <StatusDot status={state.dot} size="sm" />
+          <span className="text-2xs text-text-3 font-medium whitespace-nowrap">{state.word}</span>
+        </span>
+      )}
       {note && (
-        <span className={cn('font-mono text-2xs', phase === 'force' ? 'text-warning' : 'text-text-4')}>
+        <span className={cn('font-mono text-2xs whitespace-nowrap', phase === 'force' ? 'text-warning' : 'text-text-4')}>
           {note}
         </span>
       )}
+      {state.action && (
+        <button
+          onClick={press}
+          disabled={busy}
+          className={cn(
+            'flex items-center gap-1.5 h-7 px-2 rounded-md text-2xs font-medium transition-colors cursor-pointer whitespace-nowrap',
+            'disabled:opacity-40 disabled:pointer-events-none',
+            armed ? 'bg-danger/10 text-danger' : 'text-text-3 hover:text-text-0 hover:bg-surface-2',
+          )}
+          title={state.detail || state.action.label}
+        >
+          <state.action.icon size={12} />
+          {(armed || busy) ? RUNTIME_ACTION_LABEL[phase] : state.action.label}
+        </button>
+      )}
       {!managed && (
         <button
-          onClick={disconnect}
+          onClick={() => saveAxomEndpoints([]).then(
+            () => addToast('success', 'Disconnected', 'The runtime keeps running — GROOVE just stopped pointing at it.'),
+            (err) => addToast('error', 'Disconnect failed', err.message),
+          )}
           className="flex items-center gap-1.5 h-7 px-2 rounded-md text-2xs font-medium text-text-4 hover:text-text-1 hover:bg-surface-2 transition-colors cursor-pointer"
           title="Stop pointing at this endpoint. The runtime keeps running."
         >
-          <Unplug size={12} /> Disconnect
+          <Unplug size={12} />
         </button>
       )}
-      <button
-        onClick={() => {
-          if (phase === 'idle') { setPhase('confirm'); return; }
-          if (phase === 'confirm') shutdown(false);
-          if (phase === 'force') shutdown(true);
-        }}
-        disabled={phase === 'busy'}
-        className={cn(
-          'flex items-center gap-1.5 h-7 px-2 rounded-md text-2xs font-medium transition-colors cursor-pointer',
-          'disabled:opacity-40 disabled:pointer-events-none',
-          armed ? 'bg-danger/10 text-danger' : 'text-text-4 hover:text-text-1 hover:bg-surface-2',
-        )}
-        title={managed
-          ? 'Stop the local runtime GROOVE started — its port is released and sessions end'
-          : 'Ask this runtime to shut itself down (§14). It may refuse while a turn is in flight.'}
-      >
-        <Power size={12} /> {LIFECYCLE_LABEL[phase]}
-      </button>
     </div>
   );
 }
 
-function RuntimeHeader({ endpoint, anomalies, onSetup, tickerOpen, onToggleTicker, eventCount }) {
+// ── Header — who we're connected to, and what state it's in ────────────────
+
+function RuntimeHeader({ endpoint, remote, anomalies, onSetup }) {
   const addToast = useGrooveStore((s) => s.addToast);
   const about = endpoint.about;
   const dotStatus = endpoint.status === 'connected' ? 'running'
     : endpoint.status === 'connecting' ? 'starting' : 'crashed';
-  const facts = [
-    about?.family,
-    about?.record?.benchmark && `${about.record['pass@1']} ${about.record.benchmark}`,
-    about?.narrator && `narrator ${about.narrator}`,
-  ].filter(Boolean);
+  // The endpoint is a loopback port when it's really a tunnel to another
+  // machine — name the machine, not the forward.
+  const displayName = endpoint.remoteHost || endpoint.name;
+  const statusWord = endpoint.status === 'connected' ? 'connected'
+    : endpoint.status === 'connecting' ? 'connecting' : 'not connected';
 
   return (
     <div className="flex-shrink-0 h-10 border-b border-border-subtle bg-surface-1 px-3 flex items-center gap-3">
       <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
         <StatusDot status={dotStatus} size="sm" />
-        <span className="text-xs font-semibold text-text-0 truncate">{endpoint.name}</span>
+        <span className="text-xs font-semibold text-text-0 truncate">{displayName}</span>
+        <span className="text-2xs text-text-3 whitespace-nowrap">{statusWord}</span>
         <button
           onClick={() => { navigator.clipboard.writeText(endpoint.url); addToast('success', 'Endpoint copied'); }}
-          className="font-mono text-2xs text-text-4 hover:text-accent truncate max-w-[15rem] cursor-pointer transition-colors"
-          title="Copy endpoint URL"
+          className="font-mono text-2xs text-text-4 hover:text-accent truncate max-w-[13rem] cursor-pointer transition-colors"
+          title={endpoint.viaRemote ? `Tunnelled to ${endpoint.remoteHost} — click to copy` : 'Copy endpoint URL'}
         >
-          {endpoint.url}
+          {endpoint.viaRemote ? `via tunnel · ${endpoint.url}` : endpoint.url}
         </button>
       </div>
-
-      {facts.length > 0 && (
-        <span className="hidden lg:flex items-center gap-2 font-mono text-2xs text-text-4 min-w-0 truncate">
-          <span aria-hidden className="h-3 w-px bg-border" />
-          {facts.map((f, i) => (
-            <span key={f} className="flex items-center gap-2 truncate">
-              {i > 0 && <span aria-hidden className="text-text-4/40">·</span>}
-              {f}
-            </span>
-          ))}
-        </span>
-      )}
 
       {/* An idle-unloaded chassis is a healthy runtime resting, not a fault —
           it reloads on the next message, so it reads as state, not error. */}
       {about?.chassis?.loaded === false && (
-        <span className="font-mono text-2xs text-text-4 flex-shrink-0" title="The chassis unloaded after an idle timeout — the session and its ledger are intact">
+        <span className="font-mono text-2xs text-text-4 flex-shrink-0 hidden lg:inline" title="The chassis unloaded after an idle timeout — the session and its ledger are intact">
           chassis idle · reloads on next message
         </span>
       )}
 
       {/* State — the only place hue is allowed up here */}
       {endpoint.status === 'error' && (
-        <span className="flex items-center gap-1.5 text-2xs text-danger flex-shrink-0">
-          <TriangleAlert size={11} /> {endpoint.error || 'unreachable'}
+        <span className="flex items-center gap-1.5 text-2xs text-danger min-w-0" title={endpoint.error}>
+          <TriangleAlert size={11} className="flex-shrink-0" />
+          <span className="truncate">{endpoint.error || 'unreachable'}</span>
         </span>
       )}
       {(endpoint.drift?.novel?.length > 0 || endpoint.drift?.missing?.length > 0) && (
@@ -774,19 +793,9 @@ function RuntimeHeader({ endpoint, anomalies, onSetup, tickerOpen, onToggleTicke
         </span>
       )}
 
-      <div className="ml-auto flex items-center gap-1 flex-shrink-0">
-        <button
-          onClick={onToggleTicker}
-          className={cn(
-            'flex items-center gap-1.5 h-7 px-2 rounded-md text-2xs font-medium transition-colors cursor-pointer',
-            tickerOpen ? 'bg-surface-3 text-text-1' : 'text-text-4 hover:text-text-1 hover:bg-surface-2',
-          )}
-          title="Raw event stream — the ground truth behind every line above"
-        >
-          <Radio size={12} />
-          Ground truth
-          <span className="font-mono text-text-4">{eventCount}</span>
-        </button>
+      <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+        <RuntimeControl endpoint={endpoint} remote={remote} />
+        <span aria-hidden className="h-4 w-px bg-border" />
         {onSetup && (
           <button
             onClick={onSetup}
@@ -802,7 +811,6 @@ function RuntimeHeader({ endpoint, anomalies, onSetup, tickerOpen, onToggleTicke
             {endpoint.status === 'error' ? 'Fix connection' : 'Setup'}
           </button>
         )}
-        <RuntimeLifecycle endpoint={endpoint} />
       </div>
     </div>
   );
@@ -846,7 +854,7 @@ function SessionTabs({ endpoint }) {
   );
 }
 
-// ── Local instance controls (drawer footer) ────────────────────────────────
+// ── Local instance controls (rail footer) ──────────────────────────────────
 
 function InstanceControls() {
   const instances = useGrooveStore((s) => s.axomInstances);
@@ -877,21 +885,7 @@ function InstanceControls() {
   );
 }
 
-// ── Raw ticker — every envelope, verbatim, nothing dropped ─────────────────
-//
-// Demoted from a permanent pane to a drawer: ground truth on demand. Kinds
-// are scannable by WEIGHT and CASE, not by hue — only genuine state kinds
-// (stop, anomaly-adjacent) carry color.
-
-const KIND_EMPHASIS = {
-  narration: 'text-text-1 font-medium',
-  resolution: 'text-text-0 font-medium',
-  text: 'text-text-1',
-  thought: 'text-text-2',
-  interrupt: 'text-text-0 font-medium', interrupt_ack: 'text-text-2',
-  stop_requested: 'text-danger', stop_effected: 'text-danger',
-  leaf_swap: 'text-text-1',
-};
+// ── Event vocabulary ───────────────────────────────────────────────────────
 
 function payloadPreview(payload) {
   if (payload == null) return '';
@@ -901,14 +895,148 @@ function payloadPreview(payload) {
   try { return JSON.stringify(payload); } catch { return String(payload); }
 }
 
-function RawTicker({ events, highlight, onClose }) {
+// §9: narration.payload = {text, cites: [ev-ids]} — `cites` is the field,
+// no variant exists.
+function narrationCites(payload) {
+  const cites = payload?.cites;
+  return Array.isArray(cites) ? cites.filter((c) => typeof c === 'string') : [];
+}
+
+// §9: leaf_swap.payload = {from: str|null, to: str, firing_id} — the worn
+// leaf is `to` (`from` is null on a firing's first swap).
+function leafOf(payload) {
+  return typeof payload?.to === 'string' ? payload.to : null;
+}
+
+function promptOf(payload) {
+  for (const k of ['text', 'prompt', 'message', 'query', 'input']) {
+    if (typeof payload?.[k] === 'string' && payload[k].trim()) return payload[k];
+  }
+  return null;
+}
+
+// tool_start/tool_end payloads name a tool; the argument is whatever string
+// the runtime put there. No shape is invented — an unnamed tool stays "tool".
+// Returns null when the payload names no tool — the caller decides whether
+// that means the verbatim envelope (rail) or a generic line (transcript).
+// Never JSON dressed as a tool name.
+function toolLabel(payload, kind) {
+  const name = payload?.tool || payload?.name || payload?.tool_name;
+  let arg = payload?.arg ?? payload?.args ?? payload?.input ?? payload?.query;
+  if (arg && typeof arg === 'object') {
+    arg = Object.values(arg).find((v) => typeof v === 'string' && v.length < 120);
+  }
+  if (typeof name !== 'string' || !name.trim()) return null;
+  const verb = kind === 'tool_end' ? 'finished' : 'running';
+  return [`${verb} ${name.trim()}`, typeof arg === 'string' ? arg : null].filter(Boolean).join(' · ');
+}
+
+// One readable line per event kind for the activity rail.
+//
+// Two rules hold this together, because this vocabulary is now the primary
+// way a user perceives the machinery:
+//   1. A summary renders ONLY the payload fields that are actually there. No
+//      "?" placeholders standing in for absent data — a line that says
+//      "wearing ?" or "champion → ?" reads as knowledge we don't have.
+//   2. A renderer that cannot say something true returns null, and the row
+//      falls back to the verbatim envelope in mono. Raw is not a failure
+//      state here; it's the honest floor, and it's what the whole rail
+//      degrades to when Axom grows kinds this build has never seen.
+const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+const join = (...parts) => parts.filter(Boolean).join(' · ');
+
+// Prose the runtime actually wrote. Deliberately NOT payloadPreview, which
+// falls back to JSON.stringify: a serialized payload rendered in sans type
+// on a curated line passes for a sentence the runtime never said. When there
+// is no prose, this returns null and the row degrades to the verbatim floor.
+const prose = (p) => (typeof p === 'string' ? str(p) : str(p?.text) || str(p?.thought) || str(p?.content));
+
+const EVENT_LINE = {
+  pipeline_start: { icon: Play, text: (p) => join('turn started', str(p.mode)) },
+  firing_start: { icon: Zap, text: (p) => join('firing', str(p.leaf_id), str(p.agent_type)) },
+  step_start: {
+    icon: ChevronRight,
+    text: (p, e) => {
+      const n = p.step ?? e.step;
+      return n == null ? 'step' : `step ${n}`;
+    },
+  },
+  leaf_swap: {
+    icon: Shirt,
+    // The wardrobe law: only a named leaf may be claimed as worn.
+    text: (p) => (leafOf(p) ? `wearing ${leafOf(p)}` : 'leaf swap · leaf not named'),
+  },
+  thought: { icon: Brain, text: (p) => prose(p) },
+  tool_start: { icon: Wrench, text: (p) => str(toolLabel(p, 'tool_start')) },
+  tool_end: { icon: Wrench, text: (p) => str(toolLabel(p, 'tool_end')) },
+  narration: { icon: MessageSquareQuote, text: (p) => prose(p) },
+  text: { icon: Type, text: (p) => prose(p) },
+  resolution: { icon: CheckCircle2, text: (p) => prose(p) },
+  candidate_arrived: {
+    icon: Trophy,
+    text: (p) => join('candidate', str(p.leaf_id), p.banked ? 'banked' : null),
+  },
+  champion_changed: {
+    icon: Trophy,
+    text: (p) => (str(p.to)
+      ? join(`champion → ${str(p.to)}`, str(p.rule) && `rule ${str(p.rule)}`)
+      : 'champion changed · winner not named'),
+  },
+  candidate_banked: { icon: Trophy, text: () => 'candidate banked' },
+  confidence_updated: {
+    icon: Gauge,
+    text: (p) => join(
+      'confidence',
+      p.candidates != null && `${p.candidates} candidates`,
+      p.n_fused != null && p.n_agents != null && `${p.n_fused}/${p.n_agents} fused`,
+      p.n_facts != null && `${p.n_facts} facts`,
+    ),
+  },
+  evidence_scored: { icon: Gauge, text: (p) => join('evidence', str(p.source)) },
+  firing_end: {
+    icon: CheckCircle2,
+    text: (p) => join('firing done', p.tokens_generated != null && `${p.tokens_generated} tok`),
+  },
+  // §8 pins stopped_early; its absence on a done pipeline means it ran to
+  // completion, so "turn complete" is a reading of the contract, not a guess.
+  pipeline_done: { icon: CheckCircle2, text: (p) => (p.stopped_early === true ? 'turn stopped early' : 'turn complete') },
+  interrupt: { icon: Zap, text: (p) => (prose(p) ? `steer · ${prose(p)}` : 'steer') },
+  interrupt_ack: { icon: Zap, text: () => 'steer acknowledged' },
+  stop_requested: { icon: OctagonX, text: () => 'stop requested', tone: 'text-danger' },
+  stop_effected: { icon: OctagonX, text: () => 'stopped', tone: 'text-danger' },
+};
+
+// What a row shows when no vocabulary applies — an unmapped kind, or a
+// mapped one whose payload couldn't support a truthful summary. Mono type
+// marks it as verbatim so it never passes for a curated line.
+function eventLine(e) {
+  const spec = EVENT_LINE[e.kind];
+  const text = spec ? spec.text(e.payload || {}, e) : null;
+  if (text) return { icon: spec.icon, text, tone: spec.tone, raw: false };
+  return {
+    icon: spec?.icon || Code2,
+    text: join(e.kind, str(payloadPreview(e.payload))) || e.kind,
+    tone: spec?.tone,
+    raw: true,
+  };
+}
+
+// ── Activity rail — the machinery, always visible ──────────────────────────
+//
+// Ryan works with this open: it is the realtime log of everything happening
+// behind the scenes. Readable by default, verbatim on demand — the raw
+// envelopes never stop being one click away, because they are the ground
+// truth every line above is derived from.
+
+function ActivityRail({ events, highlight, onHighlight, live }) {
   const scrollRef = useRef(null);
   const pinnedRef = useRef(true);
+  const [raw, setRaw] = useState(false);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el && pinnedRef.current && !highlight) el.scrollTop = el.scrollHeight;
-  }, [events.length, highlight]);
+  }, [events.length, highlight, raw]);
 
   // Provenance interaction: when a narration is selected, bring its first
   // cited event into view — trust becomes tactile.
@@ -934,38 +1062,84 @@ function RawTicker({ events, highlight, onClose }) {
   const cited = new Set(highlight?.ids || []);
 
   return (
-    <div className="w-[24rem] xl:w-[28rem] flex-shrink-0 border-l border-border-subtle bg-surface-1 flex flex-col min-h-0">
-      <div className="flex-shrink-0 h-8 px-3 flex items-center gap-2 border-b border-border-subtle">
-        <Radio size={11} className="text-text-4" />
-        <span className="text-2xs uppercase tracking-[0.12em] text-text-4 font-semibold">Ground truth</span>
-        <span className="font-mono text-2xs text-text-4">{events.length} buffered</span>
+    <div className="w-64 xl:w-72 flex-shrink-0 border-r border-border-subtle bg-surface-1 flex flex-col min-h-0">
+      <div className="flex-shrink-0 h-10 px-3 flex items-center gap-2 border-b border-border-subtle">
+        {live ? (
+          <span className="relative flex items-center justify-center w-3 h-3 flex-shrink-0">
+            <span className="absolute inset-0 rounded-full bg-accent/25 animate-ping [animation-duration:2s]" />
+            <span className="relative w-1.5 h-1.5 rounded-full bg-accent" />
+          </span>
+        ) : (
+          <Radio size={11} className="text-text-4 flex-shrink-0" />
+        )}
+        <span className="text-2xs uppercase tracking-[0.12em] text-text-4 font-semibold">Activity</span>
+        <span className="font-mono text-2xs text-text-4">{events.length}</span>
         <button
-          onClick={onClose}
-          className="ml-auto h-6 w-6 flex items-center justify-center rounded text-text-4 hover:text-text-1 hover:bg-surface-2 transition-colors cursor-pointer"
-          title="Close"
+          onClick={() => setRaw((v) => !v)}
+          className={cn(
+            'ml-auto h-6 px-1.5 rounded font-mono text-2xs transition-colors cursor-pointer',
+            raw ? 'bg-surface-3 text-text-1' : 'text-text-4 hover:text-text-1 hover:bg-surface-2',
+          )}
+          title={raw ? 'Show readable lines' : 'Show the raw envelopes'}
         >
-          <X size={12} />
+          raw
         </button>
       </div>
-      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-2 py-1.5 font-mono text-2xs leading-5">
+
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-2 py-2">
         {events.length === 0 && (
-          <p className="px-1 text-text-4 font-sans text-xs">Waiting for events…</p>
+          <p className="px-1 text-xs text-text-4 leading-relaxed">
+            Nothing yet. Every step the runtime takes shows up here as it happens.
+          </p>
         )}
-        {events.map((e) => (
-          <div
-            key={e.id}
-            data-ev={e.id}
-            className={cn(
-              'flex gap-2 items-baseline rounded px-1 transition-colors',
-              cited.has(e.id) ? 'bg-accent/10 text-text-1 ring-1 ring-accent/30' : 'hover:bg-surface-2',
-            )}
-          >
-            <span className="text-text-4/70 flex-shrink-0">{e.id}</span>
-            <span className={cn('flex-shrink-0', KIND_EMPHASIS[e.kind] || 'text-text-3')}>{e.kind}</span>
-            {e.step != null && <span className="text-text-4/70 flex-shrink-0">s{e.step}</span>}
-            <span className="text-text-4 truncate">{payloadPreview(e.payload)}</span>
+
+        {raw ? (
+          <div className="font-mono text-2xs leading-5">
+            {events.map((e) => (
+              <div
+                key={e.id}
+                data-ev={e.id}
+                className={cn(
+                  'flex gap-1.5 items-baseline rounded px-1 transition-colors',
+                  cited.has(e.id) ? 'bg-accent/10 ring-1 ring-accent/30' : 'hover:bg-surface-2',
+                )}
+              >
+                <span className="text-text-4/70 flex-shrink-0">{e.id.replace(/^ev-0*/, '')}</span>
+                <span className="text-text-2 flex-shrink-0">{e.kind}</span>
+                <span className="text-text-4 truncate">{payloadPreview(e.payload)}</span>
+              </div>
+            ))}
           </div>
-        ))}
+        ) : (
+          <div className="flex flex-col">
+            {events.map((e) => {
+              const line = eventLine(e);
+              const Icon = line.icon;
+              const isCited = cited.has(e.id);
+              return (
+                <button
+                  key={e.id}
+                  data-ev={e.id}
+                  onClick={() => onHighlight(isCited ? null : { narrationId: `ev:${e.id}`, ids: [e.id] })}
+                  className={cn(
+                    'group flex items-start gap-2 py-1 px-1 rounded text-left transition-colors cursor-pointer',
+                    isCited ? 'bg-accent/10' : 'hover:bg-surface-2',
+                  )}
+                  title={`${e.id} · ${e.kind}${line.raw ? ' — shown verbatim: no summary this build can vouch for' : ''}`}
+                >
+                  <Icon size={10} className={cn('mt-[3px] flex-shrink-0', line.tone || (isCited ? 'text-accent' : 'text-text-4'))} />
+                  <span className={cn(
+                    'text-[11px] leading-snug line-clamp-2 min-w-0 flex-1',
+                    line.raw ? 'font-mono text-text-4' : 'font-sans',
+                    line.tone || (line.raw ? '' : 'text-text-3'),
+                  )}>
+                    {line.text}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
       <InstanceControls />
     </div>
@@ -976,41 +1150,8 @@ function RawTicker({ events, highlight, onClose }) {
 //
 // The stream is a transcript, not a log dump. Lifecycle kinds
 // (pipeline/firing/step boundaries) are structure: they open and close turns
-// rather than earning rows of their own. Everything rendered still traces to
-// an event id — nothing here is synthesized.
-
-// §9: narration.payload = {text, cites: [ev-ids]} — `cites` is the field,
-// no variant exists.
-function narrationCites(payload) {
-  const cites = payload?.cites;
-  return Array.isArray(cites) ? cites.filter((c) => typeof c === 'string') : [];
-}
-
-// §9: leaf_swap.payload = {from: str|null, to: str, firing_id} — the worn
-// leaf is `to` (`from` is null on a firing's first swap).
-function leafOf(payload) {
-  return typeof payload?.to === 'string' ? payload.to : null;
-}
-
-function promptOf(payload) {
-  for (const k of ['text', 'prompt', 'message', 'query', 'input']) {
-    if (typeof payload?.[k] === 'string' && payload[k].trim()) return payload[k];
-  }
-  return null;
-}
-
-// tool_start/tool_end payloads name a tool; the argument is whatever string
-// the runtime put there. No shape is invented — an unnamed tool stays "tool".
-function toolLabel(payload, kind) {
-  const name = payload?.tool || payload?.name || payload?.tool_name;
-  let arg = payload?.arg ?? payload?.args ?? payload?.input ?? payload?.query;
-  if (arg && typeof arg === 'object') {
-    arg = Object.values(arg).find((v) => typeof v === 'string' && v.length < 120);
-  }
-  const verb = kind === 'tool_end' ? 'finished' : 'running';
-  if (!name) return payloadPreview(payload) || verb;
-  return [`${verb} ${name}`, typeof arg === 'string' ? arg : null].filter(Boolean).join(' · ');
-}
+// rather than earning rows of their own — the rail carries them instead.
+// Everything rendered still traces to an event id; nothing is synthesized.
 
 const LIFECYCLE = new Set(['firing_start', 'firing_end', 'step_start', 'step_end']);
 
@@ -1054,7 +1195,7 @@ function buildTurns(events) {
 
       case 'tool_start':
       case 'tool_end': {
-        const entry = { id: e.id, text: toolLabel(p, e.kind), done: e.kind === 'tool_end' };
+        const entry = { id: e.id, text: toolLabel(p, e.kind) || `${e.kind} ${payloadPreview(p)}`.trim(), done: e.kind === 'tool_end' };
         const prev = last('activity');
         if (prev) prev.items.push(entry);
         else push({ type: 'activity', id: e.id, items: [entry] });
@@ -1111,8 +1252,6 @@ function buildTurns(events) {
 
       case 'interrupt_ack': {
         // The ack lands on the steer it names; §8 pins interrupt_id present.
-        // With no id, the oldest unacked steer is the only honest guess — and
-        // the slice already logs that shape violation as an anomaly.
         const target = p.interrupt_id ?? p.id ?? null;
         for (let i = turns.length - 1; i >= 0; i--) {
           const hit = turns[i].blocks.find((b) => b.type === 'steer' && !b.acked
@@ -1147,16 +1286,16 @@ function buildTurns(events) {
 function UserTurn({ text, status }) {
   return (
     <div className="flex justify-end pl-8">
-      <div className="max-w-[85%] flex flex-col items-end gap-1">
-        <div className="px-3.5 py-2.5 rounded-lg border border-accent/20 bg-accent/[0.07]">
+      <div className="max-w-[90%]">
+        <div className="px-3.5 py-2.5 rounded-lg border border-accent/25 bg-accent/10">
           <div className="text-[12px] font-sans whitespace-pre-wrap break-words leading-relaxed text-text-0">
             {text}
           </div>
         </div>
         {status && (
-          <span className={cn('font-mono text-2xs', status.stale ? 'text-warning' : 'text-text-4')}>
+          <div className={cn('text-[10px] font-mono mt-1 text-right', status.stale ? 'text-warning' : 'text-text-4')}>
             {status.label}
-          </span>
+          </div>
         )}
       </div>
     </div>
@@ -1168,16 +1307,16 @@ function UserTurn({ text, status }) {
 function SteerLine({ block }) {
   return (
     <div className="flex justify-end pl-8">
-      <div className="max-w-[85%] flex flex-col items-end gap-1">
+      <div className="max-w-[90%]">
         <div className="px-3 py-1.5 rounded-lg border border-border bg-surface-2">
           <span className="flex items-center gap-1.5 text-[12px] font-sans text-text-1 leading-relaxed">
             <Zap size={11} className="text-accent flex-shrink-0" />
             {block.text}
           </span>
         </div>
-        <span className="font-mono text-2xs text-text-4">
-          {block.acked ? 'acked' : 'heard'} · {block.id}
-        </span>
+        <div className="text-[10px] font-mono text-text-4 mt-1 text-right">
+          {block.acked ? 'acked' : 'heard'}
+        </div>
       </div>
     </div>
   );
@@ -1187,10 +1326,10 @@ function ThoughtBlock({ block }) {
   const [open, setOpen] = useState(false);
   const shown = open ? block.items : block.items.slice(-1);
   return (
-    <div className="flex flex-col gap-1">
+    <div>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 text-2xs text-text-4 hover:text-text-2 font-sans transition-colors cursor-pointer w-fit"
+        className="flex items-center gap-1.5 mb-1 text-2xs text-text-4 hover:text-text-2 font-sans transition-colors cursor-pointer"
       >
         <Brain size={11} />
         {block.items.length === 1 ? 'thought' : `${block.items.length} thoughts`}
@@ -1222,31 +1361,35 @@ function ActivityBlock({ block, live }) {
   if (isLive) {
     const cur = items[Math.min(cycle, items.length - 1)];
     return (
-      <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-surface-2 border border-border-subtle">
+      <div className="flex items-center gap-2 px-3 py-2 w-full rounded-md bg-surface-3/50 border border-border-subtle/30">
         <Loader2 size={11} className="text-accent animate-spin flex-shrink-0" />
-        <span className="text-[11px] text-text-2 font-mono truncate min-w-0 flex-1">{cur.text}</span>
-        {items.length > 1 && <span className="text-2xs text-text-4 font-mono flex-shrink-0">{items.length}</span>}
+        <span className="text-[11px] text-text-2 font-mono truncate min-w-0 flex-1 transition-opacity duration-300">
+          {cur.text}
+        </span>
+        {items.length > 1 && <span className="text-[10px] text-text-4 font-mono flex-shrink-0">{items.length}</span>}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 text-2xs text-text-4 hover:text-text-2 font-mono transition-colors cursor-pointer w-fit"
+        className="inline-flex items-center gap-2 px-3 py-1 text-[10px] text-text-4 hover:text-text-2 font-mono transition-colors cursor-pointer"
       >
-        <Wrench size={10} />
-        {items.length} tool call{items.length === 1 ? '' : 's'}
+        <Wrench size={10} className="opacity-50" />
+        {items.length} tool call{items.length !== 1 ? 's' : ''}
         <ChevronDown size={10} className={cn('transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="pl-3.5 border-l border-border flex flex-col">
+        <div className="ml-3.5 pl-3.5 border-l border-border flex flex-col">
           {items.map((it) => (
-            <div key={it.id} className="flex items-center gap-2 py-0.5">
-              <Wrench size={9} className="text-text-4 flex-shrink-0" />
-              <span className="text-[11px] text-text-3 font-mono truncate flex-1 min-w-0">{it.text}</span>
-              <span className="text-2xs text-text-4 font-mono flex-shrink-0">{it.id}</span>
+            <div key={it.id} className="flex items-center gap-2 py-0.5 group">
+              <Wrench size={10} className="text-text-4 opacity-70 flex-shrink-0" />
+              <p className="text-[11px] text-text-3 font-sans truncate flex-1 min-w-0">{it.text}</p>
+              <span className="text-[10px] text-text-4 font-mono opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                {it.id}
+              </span>
             </div>
           ))}
         </div>
@@ -1255,17 +1398,16 @@ function ActivityBlock({ block, live }) {
   );
 }
 
-// Narration keeps its provenance interaction — but as an inline expansion,
-// not a second column. Clicking reveals the cited envelopes right here and
-// mirrors the selection into the ground-truth drawer if it's open.
+// Narration keeps its provenance interaction — clicking reveals the cited
+// envelopes inline and mirrors the selection into the activity rail.
 function NarrationBlock({ block, eventsById, highlight, onHighlight }) {
   const active = highlight?.narrationId === block.id;
   return (
-    <div className="flex flex-col gap-1">
+    <div>
       <button
         onClick={() => onHighlight(active ? null : { narrationId: block.id, ids: block.cites })}
         className={cn(
-          'group flex items-start gap-2 text-left rounded-md px-2 py-1 -mx-2 transition-colors cursor-pointer',
+          'group w-full flex items-start gap-2 text-left rounded-md px-2 py-1 -mx-2 transition-colors cursor-pointer',
           active ? 'bg-surface-2' : 'hover:bg-surface-2/60',
         )}
         title="Show the events behind this line"
@@ -1273,20 +1415,20 @@ function NarrationBlock({ block, eventsById, highlight, onHighlight }) {
         <MessageSquareQuote size={12} className={cn('mt-0.5 flex-shrink-0', active ? 'text-accent' : 'text-text-4')} />
         <span className="text-[12px] font-sans text-text-2 leading-relaxed">{block.text}</span>
         <span className={cn(
-          'ml-auto flex-shrink-0 font-mono text-2xs transition-colors',
+          'ml-auto flex-shrink-0 font-mono text-[10px] transition-colors',
           active ? 'text-accent' : 'text-text-4 opacity-0 group-hover:opacity-100',
         )}>
           {block.cites.length} cited
         </span>
       </button>
       {active && (
-        <div className="ml-5 rounded-md border border-border-subtle bg-surface-0 px-2 py-1.5 font-mono text-2xs leading-5">
+        <div className="ml-5 mt-1 rounded-md border border-border-subtle bg-surface-0 px-2 py-1.5 font-mono text-[10px] leading-5">
           {block.cites.map((id) => {
             const ev = eventsById[id];
             return (
               <div key={id} className="flex gap-2 items-baseline">
                 <span className="text-text-4/70 flex-shrink-0">{id}</span>
-                <span className={cn('flex-shrink-0', ev ? KIND_EMPHASIS[ev.kind] || 'text-text-3' : 'text-warning')}>
+                <span className={cn('flex-shrink-0', ev ? 'text-text-2' : 'text-warning')}>
                   {ev ? ev.kind : 'evicted from buffer'}
                 </span>
                 <span className="text-text-4 truncate">{ev ? payloadPreview(ev.payload) : ''}</span>
@@ -1299,27 +1441,37 @@ function NarrationBlock({ block, eventsById, highlight, onHighlight }) {
   );
 }
 
-function AnswerBlock({ block, family }) {
+function AnswerBlock({ block, endpointName }) {
+  const [collapsed, setCollapsed] = useState(block.text.length > 600);
+  const isLong = block.text.length > 600;
   return (
     <div>
       <div className="flex items-center gap-2 mb-1">
         <span className="text-2xs font-semibold text-text-1 font-sans">Axom</span>
-        {family && <span className="text-2xs text-text-4 font-mono">{family}</span>}
-        <span className="text-2xs text-text-4 font-mono">{block.final ? 'resolution' : 'text'}</span>
-        <span className="ml-auto font-mono text-2xs text-text-4">{block.ids[0]}</span>
+        <span className="text-2xs text-text-4 font-sans">{endpointName}</span>
+        <span className="text-[10px] text-text-4 font-mono ml-auto">{block.final ? 'resolution' : 'text'}</span>
       </div>
-      <div className="pl-3.5 border-l border-accent">
-        <StructuredMessage text={block.text} />
+      <div className="pl-3.5 py-1 border-l border-accent">
+        <StructuredMessage text={collapsed ? `${block.text.slice(0, 600)}...` : block.text} />
       </div>
+      {isLong && (
+        <button
+          onClick={() => setCollapsed((v) => !v)}
+          className="ml-3.5 mt-1.5 flex items-center gap-1.5 text-[11px] text-accent/70 hover:text-accent font-sans font-medium cursor-pointer transition-colors"
+        >
+          <ChevronDown size={11} className={cn(!collapsed && 'rotate-180')} />
+          {collapsed ? 'Show full response' : 'Collapse'}
+        </button>
+      )}
     </div>
   );
 }
 
 function Divider({ icon: Icon, text, tone }) {
   return (
-    <div className="flex items-center gap-3 py-1">
+    <div className="flex items-center gap-3 py-2">
       <div className="flex-1 h-px bg-border-subtle" />
-      <span className={cn('flex items-center gap-1.5 text-2xs font-sans uppercase tracking-[0.1em] flex-shrink-0', tone || 'text-text-4')}>
+      <span className={cn('flex items-center gap-1.5 text-[10px] font-sans flex-shrink-0 uppercase tracking-wide', tone || 'text-text-4')}>
         {Icon && <Icon size={10} />} {text}
       </span>
       <div className="flex-1 h-px bg-border-subtle" />
@@ -1327,7 +1479,7 @@ function Divider({ icon: Icon, text, tone }) {
   );
 }
 
-function TurnView({ turn, live, family, eventsById, highlight, onHighlight, prompt, ambiguous }) {
+function TurnView({ turn, live, endpointName, eventsById, highlight, onHighlight, prompt, ambiguous }) {
   // A turn with no prompt of ours shows NO bubble — a one-sided transcript
   // that's honest beats a complete one that's invented. But the two reasons
   // it can happen are different claims, and the label must not overreach:
@@ -1337,7 +1489,7 @@ function TurnView({ turn, live, family, eventsById, highlight, onHighlight, prom
   //     "started elsewhere" there would assert something we can't back.
   const unclaimed = !prompt && !!turn.promptId;
   return (
-    <div className="flex flex-col gap-3">
+    <>
       {prompt && <UserTurn text={prompt} />}
       {unclaimed && <Divider text={ambiguous ? 'prompt not identified' : 'started elsewhere'} />}
       {turn.blocks.map((b) => {
@@ -1347,7 +1499,7 @@ function TurnView({ turn, live, family, eventsById, highlight, onHighlight, prom
           case 'narration': return (
             <NarrationBlock key={b.id} block={b} eventsById={eventsById} highlight={highlight} onHighlight={onHighlight} />
           );
-          case 'answer': return <AnswerBlock key={b.id} block={b} family={family} />;
+          case 'answer': return <AnswerBlock key={b.id} block={b} endpointName={endpointName} />;
           case 'steer': return <SteerLine key={b.id} block={b} />;
           case 'leaf': return <Divider key={b.id} icon={Shirt} text={`wearing ${b.leaf}`} />;
           case 'note': return <Divider key={b.id} icon={OctagonX} text={b.text} tone="text-danger" />;
@@ -1355,11 +1507,11 @@ function TurnView({ turn, live, family, eventsById, highlight, onHighlight, prom
         }
       })}
       {turn.stopped && <Divider icon={OctagonX} text="stopped early" tone="text-danger" />}
-    </div>
+    </>
   );
 }
 
-function Conversation({ events, prompts, sessionLive, family, highlight, onHighlight }) {
+function Conversation({ events, prompts, sessionLive, endpointName, highlight, onHighlight }) {
   const scrollRef = useRef(null);
   const pinnedRef = useRef(true);
   const turns = useMemo(() => buildTurns(events), [events]);
@@ -1367,7 +1519,7 @@ function Conversation({ events, prompts, sessionLive, family, highlight, onHighl
 
   useEffect(() => {
     const el = scrollRef.current;
-    // Scoped to this pane only — never scrollIntoView (see RawTicker).
+    // Scoped to this pane only — never scrollIntoView (see ActivityRail).
     if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
   }, [events.length]);
 
@@ -1392,49 +1544,63 @@ function Conversation({ events, prompts, sessionLive, family, highlight, onHighl
     && (!lastBlock || (lastBlock.type !== 'activity' && lastBlock.type !== 'answer'));
 
   return (
-    <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto min-h-0">
-      <div className="max-w-3xl mx-auto w-full px-5 py-5 flex flex-col gap-6">
-        {turns.length === 0 && (
-          <div className="flex flex-col items-center gap-2 py-16 text-center">
-            <Atom size={28} strokeWidth={1} className="text-text-4" />
-            <p className="text-xs text-text-3 max-w-sm leading-relaxed">
-              Nothing has happened in this session yet. Send a message below — every
-              step Axom takes will appear here, and every line will cite the events
-              behind it.
-            </p>
+    <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0">
+      {turns.length === 0 && pending.length === 0 && (
+        <div className="flex flex-col items-center justify-center h-full text-center py-8">
+          <div className="w-10 h-10 rounded-xl bg-surface-3 flex items-center justify-center mb-3">
+            <Atom size={18} className="text-text-4" />
           </div>
+          <p className="text-sm font-semibold text-text-0 font-sans">{endpointName}</p>
+          <p className="text-xs text-text-3 font-sans mt-1">
+            Send a message — every step it takes appears here, and every line cites the events behind it
+          </p>
+        </div>
+      )}
+
+      {turns.map((t, i) => (
+        <TurnView
+          key={t.id}
+          turn={t}
+          // §15: a turn's prompt is the entry the slice attached to that
+          // turn's pipeline_start envelope — exact when client_ref round
+          // trips, and never a guess when it doesn't.
+          prompt={t.prompt || prompts.find((p) => p.attachedTo && p.attachedTo === t.promptId)?.text || null}
+          ambiguous={pending.length > 0}
+          live={sessionLive && i === turns.length - 1 && !t.done}
+          endpointName={endpointName}
+          eventsById={eventsById}
+          highlight={highlight}
+          onHighlight={onHighlight}
+        />
+      ))}
+
+      {/* Accepted (202) but no pipeline_start yet — the runtime took it and
+          hasn't opened the turn. Shown so a sent message never vanishes,
+          and aged: a bubble that sits here forever quietly implies "still
+          working" when the truth is that no turn ever opened for it. */}
+      {pending.map((p) => (
+        <UserTurn
+          key={p.ts}
+          text={p.text}
+          status={now - p.ts > PROMPT_STALE_S
+            ? { label: 'sent · no turn opened for it', stale: true }
+            : { label: 'sent · awaiting turn' }}
+        />
+      ))}
+
+      <AnimatePresence>
+        {awaiting && (
+          <motion.div
+            key="thinking"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+          >
+            <ThinkingIndicator agent={{ name: 'Axom' }} />
+          </motion.div>
         )}
-        {turns.map((t, i) => (
-          <TurnView
-            key={t.id}
-            turn={t}
-            // §prompt ledger: a turn's prompt is the entry the slice attached
-            // to that turn's pipeline_start envelope — a stable key, never a
-            // timestamp guess. Rejected prompts (409/413) never got an entry.
-            prompt={t.prompt || prompts.find((p) => p.attachedTo && p.attachedTo === t.promptId)?.text || null}
-            ambiguous={pending.length > 0}
-            live={sessionLive && i === turns.length - 1 && !t.done}
-            family={family}
-            eventsById={eventsById}
-            highlight={highlight}
-            onHighlight={onHighlight}
-          />
-        ))}
-        {/* Accepted (202) but no pipeline_start yet — the runtime took it and
-            hasn't opened the turn. Shown so a sent message never vanishes,
-            and aged: a bubble that sits here forever quietly implies "still
-            working" when the truth is that no turn ever opened for it. */}
-        {pending.map((p) => (
-          <UserTurn
-            key={p.ts}
-            text={p.text}
-            status={now - p.ts > PROMPT_STALE_S
-              ? { label: 'sent · no turn opened for it', stale: true }
-              : { label: 'sent · awaiting turn' }}
-          />
-        ))}
-        {awaiting && <ThinkingIndicator agent={{ name: 'Axom' }} />}
-      </div>
+      </AnimatePresence>
     </div>
   );
 }
@@ -1452,7 +1618,7 @@ function WardrobeStrip({ about, events }) {
   const current = swaps.length ? (swaps[swaps.length - 1].leaf ?? 'UNKNOWN') : 'UNKNOWN';
 
   return (
-    <div className="flex-shrink-0 h-7 border-b border-border-subtle px-3 flex items-center gap-2 overflow-x-auto">
+    <div className="flex-shrink-0 h-7 border-b border-border-subtle px-4 flex items-center gap-2 overflow-x-auto">
       <Shirt size={11} className="text-text-4 flex-shrink-0" />
       <span className="font-mono text-2xs flex-shrink-0">
         <span className={current === 'UNKNOWN' ? 'text-text-4' : 'text-text-1'}>{current}</span>
@@ -1548,99 +1714,97 @@ function LivingAnswerPanel({ answer, onStop, stopState, highlight, onHighlight }
   const live = answer.watermark === 'PROVISIONAL';
 
   return (
-    <div className="flex-shrink-0 border-t border-border-subtle bg-surface-1">
-      <div className="max-w-3xl mx-auto w-full px-5">
-        <div className="h-8 flex items-center gap-2.5">
-          <Trophy size={11} className="text-text-4 flex-shrink-0" />
-          <span className="text-2xs uppercase tracking-[0.12em] text-text-4 font-semibold flex-shrink-0">Living answer</span>
-          <span className={cn('font-mono text-2xs font-semibold flex-shrink-0', WATERMARK_TONE[answer.watermark])}>
-            {answer.watermark}
-          </span>
-          <span className="font-mono text-2xs text-text-4 truncate">
-            {answer.candidates.length} candidate{answer.candidates.length === 1 ? '' : 's'}
-            {answer.banked > 0 && ` · ${answer.banked} banked`}
-          </span>
-          {live && (
-            <button
-              onClick={onStop}
-              disabled={stopState === 'pending'}
-              className="flex items-center gap-1.5 h-6 px-2 rounded text-2xs font-medium text-text-3 hover:text-danger hover:bg-danger/10 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer flex-shrink-0"
-              title="Settle the tournament on the current champion"
-            >
-              <OctagonX size={11} /> Good enough
-            </button>
-          )}
+    <div className="flex-shrink-0 border-t border-border-subtle bg-surface-1 px-4">
+      <div className="h-8 flex items-center gap-2.5">
+        <Trophy size={11} className="text-text-4 flex-shrink-0" />
+        <span className="text-2xs uppercase tracking-[0.12em] text-text-4 font-semibold flex-shrink-0">Living answer</span>
+        <span className={cn('font-mono text-2xs font-semibold flex-shrink-0', WATERMARK_TONE[answer.watermark])}>
+          {answer.watermark}
+        </span>
+        <span className="font-mono text-2xs text-text-4 truncate">
+          {answer.candidates.length} candidate{answer.candidates.length === 1 ? '' : 's'}
+          {answer.banked > 0 && ` · ${answer.banked} banked`}
+        </span>
+        {live && (
           <button
-            onClick={() => setOpen((v) => !v)}
-            className="ml-auto h-6 w-6 flex items-center justify-center rounded text-text-4 hover:text-text-1 hover:bg-surface-2 transition-colors cursor-pointer flex-shrink-0"
-            title={open ? 'Collapse' : 'Show champion and confidence'}
+            onClick={onStop}
+            disabled={stopState === 'pending'}
+            className="flex items-center gap-1.5 h-6 px-2 rounded text-2xs font-medium text-text-3 hover:text-danger hover:bg-danger/10 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer flex-shrink-0"
+            title="Settle the tournament on the current champion"
           >
-            <ChevronDown size={12} className={cn('transition-transform', open && 'rotate-180')} />
+            <OctagonX size={11} /> Good enough
           </button>
-        </div>
-
-        {open && (
-          <div className="pb-2 flex flex-col gap-1.5 max-h-48 overflow-y-auto">
-            {answer.champion && (
-              <BasisButton
-                basis={answer.champion.basis}
-                highlightKey="champion"
-                highlight={highlight}
-                onHighlight={onHighlight}
-                className="px-2 py-1.5 border border-border-subtle"
-                title={answer.champion.basis.length ? 'Click to highlight the events behind this champion' : undefined}
-              >
-                <span className="flex items-center gap-2 mb-0.5 font-mono text-2xs text-text-4">
-                  {champion?.leafId && <span className="text-text-2">{champion.leafId}</span>}
-                  {answer.champion.rule && <span>rule {answer.champion.rule}</span>}
-                </span>
-                {typeof champion?.text === 'string' && (
-                  <span className="block text-[12px] text-text-2 leading-relaxed whitespace-pre-wrap">
-                    {champion.text.length > 400 ? `${champion.text.slice(0, 400)}…` : champion.text}
-                  </span>
-                )}
-              </BasisButton>
-            )}
-
-            {conf && (
-              <BasisButton
-                basis={Array.isArray(conf.basis) ? conf.basis : []}
-                highlightKey="confidence"
-                highlight={highlight}
-                onHighlight={onHighlight}
-                className="px-2 py-1 font-mono text-2xs text-text-4"
-              >
-                {[
-                  conf.candidates != null && `${conf.candidates} candidates`,
-                  conf.n_fused != null && conf.n_agents != null && `${conf.n_fused}/${conf.n_agents} fused`,
-                  conf.n_facts != null && `${conf.n_facts} facts`,
-                  conf.tools_grounded != null && `tools ${String(conf.tools_grounded)}`,
-                ].filter(Boolean).join(' · ')}
-                {/* §10: the U3 meter waiting for its organ — dimmed, never invented */}
-                <span className="opacity-60"> · verifier: {conf.verifier == null ? 'awaiting integration' : String(conf.verifier)}</span>
-              </BasisButton>
-            )}
-
-            {answer.evidence.length > 0 && (
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {answer.evidence.slice(-3).map((ev, i) => (
-                  <BasisButton
-                    key={`${ev.source}-${i}`}
-                    basis={ev.basis}
-                    highlightKey={`evidence-${answer.evidence.length - 3 + i}`}
-                    highlight={highlight}
-                    onHighlight={onHighlight}
-                    className="px-1.5 py-0.5 border border-border-subtle font-mono text-2xs text-text-4"
-                    title={ev.values ? JSON.stringify(ev.values) : undefined}
-                  >
-                    {ev.source ?? 'evidence'}
-                  </BasisButton>
-                ))}
-              </div>
-            )}
-          </div>
         )}
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="ml-auto h-6 w-6 flex items-center justify-center rounded text-text-4 hover:text-text-1 hover:bg-surface-2 transition-colors cursor-pointer flex-shrink-0"
+          title={open ? 'Collapse' : 'Show champion and confidence'}
+        >
+          <ChevronDown size={12} className={cn('transition-transform', open && 'rotate-180')} />
+        </button>
       </div>
+
+      {open && (
+        <div className="pb-2 flex flex-col gap-1.5 max-h-48 overflow-y-auto">
+          {answer.champion && (
+            <BasisButton
+              basis={answer.champion.basis}
+              highlightKey="champion"
+              highlight={highlight}
+              onHighlight={onHighlight}
+              className="px-2 py-1.5 border border-border-subtle"
+              title={answer.champion.basis.length ? 'Click to highlight the events behind this champion' : undefined}
+            >
+              <span className="flex items-center gap-2 mb-0.5 font-mono text-2xs text-text-4">
+                {champion?.leafId && <span className="text-text-2">{champion.leafId}</span>}
+                {answer.champion.rule && <span>rule {answer.champion.rule}</span>}
+              </span>
+              {typeof champion?.text === 'string' && (
+                <span className="block text-[12px] text-text-2 leading-relaxed whitespace-pre-wrap">
+                  {champion.text.length > 400 ? `${champion.text.slice(0, 400)}…` : champion.text}
+                </span>
+              )}
+            </BasisButton>
+          )}
+
+          {conf && (
+            <BasisButton
+              basis={Array.isArray(conf.basis) ? conf.basis : []}
+              highlightKey="confidence"
+              highlight={highlight}
+              onHighlight={onHighlight}
+              className="px-2 py-1 font-mono text-2xs text-text-4"
+            >
+              {[
+                conf.candidates != null && `${conf.candidates} candidates`,
+                conf.n_fused != null && conf.n_agents != null && `${conf.n_fused}/${conf.n_agents} fused`,
+                conf.n_facts != null && `${conf.n_facts} facts`,
+                conf.tools_grounded != null && `tools ${String(conf.tools_grounded)}`,
+              ].filter(Boolean).join(' · ')}
+              {/* §10: the U3 meter waiting for its organ — dimmed, never invented */}
+              <span className="opacity-60"> · verifier: {conf.verifier == null ? 'awaiting integration' : String(conf.verifier)}</span>
+            </BasisButton>
+          )}
+
+          {answer.evidence.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {answer.evidence.slice(-3).map((ev, i) => (
+                <BasisButton
+                  key={`${ev.source}-${i}`}
+                  basis={ev.basis}
+                  highlightKey={`evidence-${answer.evidence.length - 3 + i}`}
+                  highlight={highlight}
+                  onHighlight={onHighlight}
+                  className="px-1.5 py-0.5 border border-border-subtle font-mono text-2xs text-text-4"
+                  title={ev.values ? JSON.stringify(ev.values) : undefined}
+                >
+                  {ev.source ?? 'evidence'}
+                </BasisButton>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1678,6 +1842,8 @@ function HotInput({ sessionLive, rollup }) {
   const sendAxomStop = useGrooveStore((s) => s.sendAxomStop);
   const addToast = useGrooveStore((s) => s.addToast);
   const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const inputRef = useRef(null);
 
   const key = axomSelected ? axomSessionKey(axomSelected.endpoint, axomSelected.session) : null;
   const ledger = (key && interrupts[key]) || {};
@@ -1690,6 +1856,7 @@ function HotInput({ sessionLive, rollup }) {
     const message = text.trim();
     if (!message) return;
     setText(''); // input never locks — clear immediately, chips carry the truth
+    setSending(true);
     try {
       if (sessionLive) {
         const result = await sendAxomInterrupt(message);
@@ -1713,6 +1880,9 @@ function HotInput({ sessionLive, rollup }) {
         addToast('error', sessionLive ? 'Interrupt failed' : 'Message failed', err.message);
       }
       setText(message);
+    } finally {
+      setSending(false);
+      inputRef.current?.focus();
     }
   }
 
@@ -1726,15 +1896,12 @@ function HotInput({ sessionLive, rollup }) {
   const pending = Object.entries(ledger).filter(([, v]) => v.state === 'sent').slice(-3);
 
   return (
-    <div className="flex-shrink-0 border-t border-border-subtle bg-surface-1 px-5 py-2.5">
-      <div className="max-w-3xl mx-auto w-full flex flex-col gap-1.5">
-
+    <div className="bg-surface-1/50 flex-shrink-0 border-t border-border">
+      <div className="px-4 py-3 flex flex-col gap-1.5">
         {(pending.length > 0 || stopState || rollup) && (
-          <div className="flex items-center gap-2 flex-wrap font-mono text-2xs text-text-4">
+          <div className="flex items-center gap-2 flex-wrap font-mono text-[10px] text-text-4">
             {pending.map(([id, entry]) => (
-              <span key={id} title={entry.text} className="max-w-56 truncate">
-                sent · {entry.text}
-              </span>
+              <span key={id} title={entry.text} className="max-w-56 truncate">sent · {entry.text}</span>
             ))}
             {stopState && (
               <span className={cn(stopState === 'effected' || stopState === 'pending' ? 'text-danger' : 'text-text-3')}>
@@ -1754,23 +1921,24 @@ function HotInput({ sessionLive, rollup }) {
           </div>
         )}
 
-        <div className="flex flex-col rounded-lg border border-border-subtle bg-surface-0 transition-colors focus-within:border-text-4/40">
+        <div className="flex flex-col rounded-lg border border-border-subtle bg-surface-0 transition-colors overflow-hidden focus-within:border-text-4/40">
           <textarea
+            ref={inputRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-            placeholder={sessionLive ? 'Steer Axom mid-flight…' : 'Message your Axom — starts a turn'}
-            rows={1}
-            className="w-full resize-none field-sizing-content max-h-40 px-3 py-2.5 text-[13px] leading-[20px] bg-transparent font-sans text-text-0 placeholder:text-text-4 focus:outline-none"
+            placeholder={sessionLive ? 'Steer Axom mid-flight...' : 'Message your Axom — starts a turn'}
+            rows={2}
+            className="w-full resize-none field-sizing-content min-h-[72px] max-h-60 px-3 py-2.5 text-[13px] leading-[20px] bg-transparent font-sans text-text-0 placeholder:text-text-4 focus:outline-none"
           />
-          <div className="flex items-center gap-1.5 px-1.5 pb-1.5">
+          <div className="flex items-center gap-1 px-1.5 pb-1.5 pt-0.5">
             {sessionLive && (
-              <span className="flex items-center gap-2 pl-1.5">
+              <span className="flex items-center gap-2 pl-1.5 mr-auto">
                 <span className="relative flex items-center justify-center w-3 h-3">
                   <span className="absolute inset-0 rounded-full bg-accent/30 animate-ping [animation-duration:2s]" />
-                  <span className="relative w-1.5 h-1.5 rounded-full bg-accent" />
+                  <span className="relative w-2 h-2 rounded-full bg-accent" />
                 </span>
-                <span className="text-2xs text-text-4 font-sans">turn in flight</span>
+                <span className="text-[10px] text-text-4 font-sans">turn in flight</span>
               </span>
             )}
             <div className="flex-1" />
@@ -1778,23 +1946,24 @@ function HotInput({ sessionLive, rollup }) {
               <button
                 onClick={stop}
                 disabled={!axomSelected || stopState === 'pending'}
-                className="flex items-center gap-1.5 h-7 px-2 rounded-md text-2xs font-medium text-text-3 hover:text-danger hover:bg-danger/10 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 h-7 px-2 rounded-md text-[11px] font-medium text-text-3 hover:text-danger hover:bg-danger/10 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
                 title="Stop this turn"
               >
-                <OctagonX size={12} /> Stop
+                <OctagonX size={13} /> Stop
               </button>
             )}
             <button
               onClick={send}
-              disabled={!axomSelected || !text.trim()}
+              disabled={!axomSelected || !text.trim() || sending}
               className={cn(
                 'w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer',
                 'disabled:opacity-15 disabled:cursor-not-allowed',
-                text.trim() ? 'text-text-0 hover:text-text-1 hover:bg-surface-3' : 'text-text-4',
+                text.trim() ? 'text-text-0 hover:text-text-1' : 'text-text-4',
               )}
               title={sessionLive ? 'Steer (Enter)' : 'Send (Enter)'}
             >
-              {sessionLive ? <Zap size={14} /> : <SendHorizontal size={15} />}
+              {sending ? <Loader2 size={15} className="animate-spin" />
+                : sessionLive ? <Zap size={15} /> : <SendHorizontal size={15} />}
             </button>
           </div>
         </div>
@@ -1812,10 +1981,10 @@ export default function AxomView() {
   const axomPrompts = useGrooveStore((s) => s.axomPrompts);
   const axomAnomalies = useGrooveStore((s) => s.axomAnomalies);
   const axomStops = useGrooveStore((s) => s.axomStops);
+  const axomRemote = useGrooveStore((s) => s.axomRemote);
   const selectAxomSession = useGrooveStore((s) => s.selectAxomSession);
   const sendAxomStop = useGrooveStore((s) => s.sendAxomStop);
   const [highlight, setHighlight] = useState(null);
-  const [tickerOpen, setTickerOpen] = useState(false);
   // Escape hatch: a configured-but-wrong endpoint must never trap the user in
   // a dead workspace with no way back to setup.
   const [showSetup, setShowSetup] = useState(false);
@@ -1823,6 +1992,8 @@ export default function AxomView() {
   const endpoints = axomStatus?.endpoints || [];
   // v0 renders the first endpoint; the config supports several (mesh later).
   const endpoint = endpoints[0];
+  // Live probe when we have it; the status payload's copy otherwise.
+  const remote = axomRemote || axomStatus?.remote || null;
 
   // Auto-select the only session so the tab is alive without a click.
   useEffect(() => {
@@ -1836,7 +2007,6 @@ export default function AxomView() {
     () => (sessionKeyStr ? axomEvents[sessionKeyStr] || [] : []),
     [sessionKeyStr, axomEvents],
   );
-
   const prompts = useMemo(
     () => (sessionKeyStr ? axomPrompts[sessionKeyStr] || [] : []),
     [sessionKeyStr, axomPrompts],
@@ -1854,28 +2024,33 @@ export default function AxomView() {
   const selectedSession = axomSelected
     && endpoint.sessions.find((s) => s.session === axomSelected.session);
   const sessionLive = !!selectedSession?.live;
+  const endpointName = endpoint.remoteHost || endpoint.name;
 
   return (
     <div className="h-full flex flex-col bg-surface-1">
       <RuntimeHeader
         endpoint={endpoint}
+        remote={remote}
         anomalies={(sessionKeyStr && axomAnomalies[sessionKeyStr]) || []}
         onSetup={() => setShowSetup(true)}
-        tickerOpen={tickerOpen}
-        onToggleTicker={() => setTickerOpen((v) => !v)}
-        eventCount={events.length}
       />
-      <SessionTabs endpoint={endpoint} />
       <div className="flex-1 flex min-h-0">
+        <ActivityRail
+          events={events}
+          live={sessionLive}
+          highlight={highlight}
+          onHighlight={setHighlight}
+        />
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          <SessionTabs endpoint={endpoint} />
           <WardrobeStrip about={endpoint.about} events={events} />
           <Conversation
             events={events}
             prompts={prompts}
             sessionLive={sessionLive}
-            family={endpoint.about?.family}
+            endpointName={endpointName}
             highlight={highlight}
-            onHighlight={(h) => { setHighlight(h); if (h) setTickerOpen(true); }}
+            onHighlight={setHighlight}
           />
           {answer && (
             <LivingAnswerPanel
@@ -1883,14 +2058,11 @@ export default function AxomView() {
               onStop={() => sendAxomStop().catch(() => {})}
               stopState={(sessionKeyStr && axomStops[sessionKeyStr]) || null}
               highlight={highlight}
-              onHighlight={(h) => { setHighlight(h); if (h) setTickerOpen(true); }}
+              onHighlight={setHighlight}
             />
           )}
           <HotInput sessionLive={sessionLive} rollup={interruptRollup(events)} />
         </div>
-        {tickerOpen && (
-          <RawTicker events={events} highlight={highlight} onClose={() => setTickerOpen(false)} />
-        )}
       </div>
     </div>
   );

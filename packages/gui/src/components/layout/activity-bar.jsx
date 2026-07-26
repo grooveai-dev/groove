@@ -6,10 +6,10 @@ import { useGrooveStore } from '../../stores/groove';
 import { isElectron, getPlatform } from '../../lib/electron';
 
 const BASE_NAV_ITEMS = [
-  { id: 'agents',      icon: Network,       label: 'Agents' },
-  { id: 'axom',        icon: Atom,          label: 'Axom' },
   { id: 'fleet',       icon: LayoutList,    label: 'Fleet' },
   { id: 'editor',      icon: Code2,         label: 'Editor' },
+  { id: 'agents',      icon: Network,       label: 'Agents' },
+  { id: 'axom',        icon: Atom,          label: 'Axom' },
   { id: 'dashboard',   icon: ChartSpline,   label: 'Dashboard' },
   { id: 'memory',      icon: BookOpen,      label: 'Memory' },
   { id: 'auto-agents', icon: Bot,           label: 'Auto Agents' },

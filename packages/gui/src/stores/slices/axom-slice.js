@@ -46,9 +46,60 @@ export const createAxomSlice = (set, get) => ({
     try {
       const data = await api.get('/axom/status');
       set({ axomStatus: data || { endpoints: [] } });
+      if (data?.remote?.configured) get().fetchAxomRemote();
       const instances = await api.get('/axom/instances');
       set({ axomInstances: instances || [] });
     } catch { /* daemon predates the axom routes */ }
+  },
+
+  // ── Remote runtime (the machine GROOVE can start/stop over SSH) ─────────
+  // `running: null` means the host is UNREACHABLE — we do not know the
+  // runtime's state and must never render it as stopped.
+  axomRemote: { configured: false, running: null },
+  axomRemoteBusy: null, // 'starting' | 'stopping' | 'tunneling' | null
+
+  async fetchAxomRemote() {
+    try {
+      const data = await api.get('/axom/remote');
+      set({ axomRemote: data });
+      return data;
+    } catch { /* daemon predates the route */ return null; }
+  },
+
+  async startAxomRuntime() {
+    set({ axomRemoteBusy: 'starting' });
+    try {
+      const result = await api.post('/axom/remote/start', {});
+      await get().fetchAxomRemote();
+      await get().fetchAxomStatus();
+      return result;
+    } finally {
+      set({ axomRemoteBusy: null });
+    }
+  },
+
+  async stopAxomRuntime({ force = false } = {}) {
+    set({ axomRemoteBusy: 'stopping' });
+    try {
+      const result = await api.post('/axom/remote/stop', { force });
+      await get().fetchAxomRemote();
+      await get().fetchAxomStatus();
+      return result; // { stopped } | { stopped:false, turnInFlight:true }
+    } finally {
+      set({ axomRemoteBusy: null });
+    }
+  },
+
+  // Reachability only — heals the SSH forward, never touches the runtime.
+  async healAxomTunnel() {
+    set({ axomRemoteBusy: 'tunneling' });
+    try {
+      const result = await api.post('/axom/remote/tunnel', {});
+      await get().fetchAxomStatus();
+      return result;
+    } finally {
+      set({ axomRemoteBusy: null });
+    }
   },
 
   async fetchAxomHardware() {

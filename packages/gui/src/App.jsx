@@ -91,7 +91,9 @@ function ViewRouter() {
   if (detailPanel) {
     switch (detailPanel.type) {
       case 'agent': {
-        detailContent = <AgentPanel />;
+        // Only mount the panel for an agent we can actually resolve — otherwise
+        // AppShell would render an empty detail shell the user has to close.
+        if (agents.some((a) => a.id === detailPanel.agentId)) detailContent = <AgentPanel />;
         break;
       }
       case 'journalist':

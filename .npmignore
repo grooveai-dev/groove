@@ -21,6 +21,15 @@ AGENTS_REGISTRY.md
 # Desktop app (distributed separately via GitHub Releases, not npm)
 packages/desktop/
 
+# Marketing site — never needed by the installed CLI
+packages/launch-page/
+
+# GUI source — the daemon serves the built bundle (packages/gui/dist) only.
+# Keep dist; drop the 1.8MB of JSX that only matters at build time.
+packages/gui/src/
+packages/gui/index.html
+packages/gui/vite.config.js
+
 # Internal planning docs (not in git, but npm sees them)
 integrations/
 onboarding-flow/

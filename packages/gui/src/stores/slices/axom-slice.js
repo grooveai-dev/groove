@@ -61,7 +61,120 @@ export const createAxomSlice = (set, get) => ({
     }
   },
 
+  // ── Runtimes — the one entity (plans/axom-runtime-flow-redesign.md) ─────
+  //
+  // Everything the workspace reasons about comes from here: what runtimes
+  // exist, which is active, what state each is in, and which single verb that
+  // state permits. `canStart`/`canStop`/`canHeal` are the daemon's answer and
+  // are never re-derived in the GUI — a client-side guess about what a verb
+  // would do is how you get a button that lies.
+  //
+  // null (not []) until the first answer lands: "no runtimes configured" and
+  // "we haven't asked yet" are different states, and only one of them may
+  // render the first-run splash.
+  axomRuntimes: null,
+  axomActiveRuntimeId: null,
+  axomRuntimeBusy: {}, // runtime id -> 'starting' | 'stopping' | 'healing'
+  // Flips true on the first `axom:runtimes` broadcast. The GUI polls only
+  // until it hears one — a daemon that predates the broadcast keeps the
+  // fallback, and a daemon that sends them retires it without a redeploy.
+  axomRuntimesLive: false,
+
+  async fetchAxomRuntimes() {
+    try {
+      const data = await api.get('/axom/runtimes');
+      set({
+        axomRuntimes: data?.runtimes || [],
+        axomActiveRuntimeId: data?.activeRuntimeId || null,
+      });
+      return data;
+    } catch {
+      // A daemon predating the runtimes model has none — an empty list is the
+      // honest answer, and the splash is the correct render for it.
+      set({ axomRuntimes: [], axomActiveRuntimeId: null });
+      return null;
+    }
+  },
+
+  async addAxomRuntime(spec) {
+    const rt = await api.post('/axom/runtimes', spec);
+    await get().fetchAxomRuntimes();
+    await get().fetchAxomStatus();
+    return rt;
+  },
+
+  async updateAxomRuntime(id, patch) {
+    const rt = await api.patch(`/axom/runtimes/${encodeURIComponent(id)}`, patch);
+    await get().fetchAxomRuntimes();
+    return rt;
+  },
+
+  async removeAxomRuntime(id) {
+    await api.delete(`/axom/runtimes/${encodeURIComponent(id)}`);
+    await get().fetchAxomRuntimes();
+    await get().fetchAxomStatus();
+  },
+
+  async activateAxomRuntime(id) {
+    await api.post(`/axom/runtimes/${encodeURIComponent(id)}/activate`, {});
+    // The active runtime scopes the whole workspace — drop the old selection
+    // so nothing from the previous runtime's session bleeds across.
+    set({ axomSelected: null });
+    await get().fetchAxomRuntimes();
+    await get().fetchAxomStatus();
+  },
+
+  // ── Verbs — one per state, dispatched daemon-side on `control` ──────────
+
+  async _runtimeVerb(id, verb, body) {
+    set((s) => ({ axomRuntimeBusy: { ...s.axomRuntimeBusy, [id]: verb } }));
+    try {
+      const result = await api.post(`/axom/runtimes/${encodeURIComponent(id)}/${verb}`, body || {});
+      await get().fetchAxomRuntimes();
+      await get().fetchAxomStatus();
+      return result;
+    } finally {
+      set((s) => {
+        const next = { ...s.axomRuntimeBusy };
+        delete next[id];
+        return { axomRuntimeBusy: next };
+      });
+    }
+  },
+
+  startAxomRuntimeById(id) { return get()._runtimeVerb(id, 'start'); },
+  // Returns the contract outcome ({turnInFlight}/{unsupported}) rather than
+  // throwing it — those are things the UI must SAY, not failures to swallow.
+  stopAxomRuntimeById(id, { force = false } = {}) { return get()._runtimeVerb(id, 'stop', { force }); },
+  healAxomRuntimeById(id) { return get()._runtimeVerb(id, 'heal'); },
+
+  // §16.4 epoch protocol: the runtime restarted and its event ids reset. The
+  // transcript we hold describes a previous life of that process — keeping it
+  // would splice two runs into one frankenstein history, and the monotonic
+  // dedup would swallow the replay that should rebuild it. Drop everything
+  // keyed to this session and let the replay refill it.
+  resetAxomSession(endpoint, session) {
+    const key = sessionKey(endpoint, session);
+    set((s) => {
+      const drop = (map) => {
+        if (!(key in map)) return map;
+        const next = { ...map };
+        delete next[key];
+        return next;
+      };
+      return {
+        axomEvents: drop(s.axomEvents),
+        axomInterrupts: drop(s.axomInterrupts),
+        axomStops: drop(s.axomStops),
+        axomPrompts: drop(s.axomPrompts),
+        axomAnomalies: drop(s.axomAnomalies),
+      };
+    });
+  },
+
   // ── Remote runtime (the machine GROOVE can start/stop over SSH) ─────────
+  // DEPRECATED for the GUI: use the runtimes model above. Retained only
+  // until the last call site migrates.
   // `running: null` means the host is UNREACHABLE — we do not know the
   // runtime's state and must never render it as stopped.
   axomRemote: { configured: false, running: null },

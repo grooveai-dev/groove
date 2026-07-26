@@ -55,8 +55,8 @@ export class AxomRemote {
     return this.daemon.config?.axom?.remote || null;
   }
 
-  _ssh(command, timeoutMs = 30000) {
-    const cfg = this._config();
+  _ssh(command, timeoutMs = 30000, cfgOverride = null) {
+    const cfg = cfgOverride || this._config();
     if (!cfg) return Promise.reject(new Error('no remote Axom host configured'));
     const problem = validateRemote(cfg);
     if (problem) return Promise.reject(new Error(`remote config invalid: ${problem}`));
@@ -71,14 +71,15 @@ export class AxomRemote {
   }
 
   // Is a runtime listening on the remote port right now?
-  async status() {
-    const cfg = this._config();
+  async status(cfgOverride = null) {
+    const cfg = cfgOverride || this._config();
     if (!cfg) return { configured: false, running: null };
     const port = cfg.port || AXOM_DEFAULT_PORT;
     try {
       const { stdout } = await this._ssh(
         `curl -sf --max-time 4 http://127.0.0.1:${port}/about >/dev/null 2>&1 && echo UP || echo DOWN`,
         15000,
+        cfg,
       );
       return {
         configured: true,
@@ -94,11 +95,11 @@ export class AxomRemote {
     }
   }
 
-  async start() {
-    const cfg = this._config();
+  async start(cfgOverride = null) {
+    const cfg = cfgOverride || this._config();
     if (!cfg) throw new Error('no remote Axom host configured');
     const port = cfg.port || AXOM_DEFAULT_PORT;
-    const already = await this.status();
+    const already = await this.status(cfg);
     if (already.running) return { started: false, alreadyRunning: true, port };
 
     const command = cfg.command
@@ -112,12 +113,12 @@ export class AxomRemote {
     // NOTHING while reporting success. Found by running it.
     const log = cfg.logPath || '~/axom-serve/serve.log';
     const quoted = `'${command.replace(/'/g, `'\\''`)}'`;
-    await this._ssh(`nohup bash -lc ${quoted} >> ${log} 2>&1 < /dev/null & disown; echo STARTED`, 30000);
+    await this._ssh(`nohup bash -lc ${quoted} >> ${log} 2>&1 < /dev/null & disown; echo STARTED`, 30000, cfg);
 
     // Confirm it actually came up rather than reporting optimism.
     for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, 2000));
-      const s = await this.status();
+      const s = await this.status(cfg);
       if (s.running) {
         this.daemon.audit.log('axom.remote.start', { host: cfg.host, port });
         this._broadcast();
@@ -127,8 +128,8 @@ export class AxomRemote {
     throw new Error(`started the command but nothing answered on port ${port} within 60s — check ${log} on ${cfg.host}`);
   }
 
-  async stop({ force = false } = {}) {
-    const cfg = this._config();
+  async stop({ force = false } = {}, cfgOverride = null) {
+    const cfg = cfgOverride || this._config();
     if (!cfg) throw new Error('no remote Axom host configured');
     const port = cfg.port || AXOM_DEFAULT_PORT;
 
@@ -141,6 +142,7 @@ export class AxomRemote {
         + `-H 'Content-Type: application/json' -d '{"force":${force ? 'true' : 'false'}}' `
         + `http://127.0.0.1:${port}/shutdown`,
         20000,
+        cfg,
       );
       const code = parseInt(stdout.trim().slice(-3), 10);
       if (code === 202) {
@@ -156,7 +158,7 @@ export class AxomRemote {
 
     // Pre-§14 runtime: signal the process that owns the port. Still the
     // user's own machine, still an explicit action they asked for.
-    await this._ssh(`PID=$(lsof -t -i:${port} 2>/dev/null | head -1); [ -n "$PID" ] && kill $PID && echo KILLED || echo NOTFOUND`, 20000);
+    await this._ssh(`PID=$(lsof -t -i:${port} 2>/dev/null | head -1); [ -n "$PID" ] && kill $PID && echo KILLED || echo NOTFOUND`, 20000, cfg);
     this.daemon.audit.log('axom.remote.stop', { host: cfg.host, port, via: 'signal' });
     this._broadcast();
     return { stopped: true, via: 'signal' };
@@ -181,8 +183,8 @@ export class AxomRemote {
     }
   }
 
-  async ensureTunnel() {
-    const cfg = this._config();
+  async ensureTunnel(cfgOverride = null) {
+    const cfg = cfgOverride || this._config();
     if (!cfg) return { tunneled: false, reason: 'no remote configured' };
     const problem = validateRemote(cfg);
     if (problem) return { tunneled: false, reason: problem };

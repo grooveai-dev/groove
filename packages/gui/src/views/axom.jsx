@@ -10,7 +10,7 @@
 // fail-deceptive).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Atom, Zap, OctagonX, Plug, Radio, MessageSquareQuote, Shirt, TriangleAlert, Trophy, Download, Square, Play, Plus, MemoryStick, HardDrive, Cpu, Gauge, CheckCircle2, Globe, Copy, Settings2, ArrowLeft, Loader2, ChevronDown, SendHorizontal, Wrench, Brain, Power, Unplug, ChevronRight, Type, Code2 } from 'lucide-react';
+import { Atom, Zap, OctagonX, Plug, Radio, MessageSquareQuote, Shirt, TriangleAlert, Trophy, Download, Square, Play, Plus, MemoryStick, HardDrive, Cpu, Gauge, CheckCircle2, Globe, Copy, Settings2, Loader2, ChevronDown, SendHorizontal, Wrench, Brain, Power, X, Check, ChevronRight, Type, Code2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGrooveStore } from '../stores/groove';
 import { axomSessionKey } from '../stores/slices/axom-slice';
@@ -166,16 +166,14 @@ function TunnelHint({ parsed, onCopy }) {
   );
 }
 
-function Onboarding({ onBack }) {
-  const axomStatus = useGrooveStore((s) => s.axomStatus);
-  const saveAxomEndpoints = useGrooveStore((s) => s.saveAxomEndpoints);
+function Onboarding() {
+  const addAxomRuntime = useGrooveStore((s) => s.addAxomRuntime);
+  const startAxomRuntimeById = useGrooveStore((s) => s.startAxomRuntimeById);
   const startAxomInstall = useGrooveStore((s) => s.startAxomInstall);
-  const startAxomInstance = useGrooveStore((s) => s.startAxomInstance);
   const fetchAxomHardware = useGrooveStore((s) => s.fetchAxomHardware);
   const hw = useGrooveStore((s) => s.axomHardware);
   const myEndpoint = useGrooveStore((s) => s.axomMyEndpoint);
   const install = useGrooveStore((s) => s.axomInstall);
-  const instances = useGrooveStore((s) => s.axomInstances);
   const addToast = useGrooveStore((s) => s.addToast);
   const [url, setUrl] = useState('');
   const [saving, setSaving] = useState(false);
@@ -195,42 +193,39 @@ function Onboarding({ onBack }) {
     }
   }
 
-  async function startInstance() {
+  // The Spark case: this machine HAS the runtime, so the first-run action is
+  // to use it — not to paste a URL pointing at itself. Creates the runtime,
+  // activates it, starts it; the workspace takes over from there.
+  async function useThisMachine() {
+    setSaving(true);
     try {
-      await startAxomInstance('default');
+      const rt = await addAxomRuntime({ name: 'This machine', control: 'local', activate: true });
+      await startAxomRuntimeById(rt.id);
     } catch (err) {
-      addToast('error', 'Instance failed to start', err.message);
+      addToast('error', 'Could not start the local runtime', err.message);
+    } finally {
+      setSaving(false);
     }
   }
 
+  // Connect-only: GROOVE reads this runtime's events and has no lifecycle
+  // verbs for it, which is exactly what control:'none' means.
   async function connect() {
     setSaving(true);
     try {
-      // Replace rather than append — one configured endpoint at a time in v0,
-      // so re-pointing a wrong URL is a single action.
-      await saveAxomEndpoints([{ name: 'local', url: url.trim() }]);
-      onBack?.();
+      const parsed = parseEndpoint(url);
+      await addAxomRuntime({
+        name: parsed?.host || 'Axom',
+        control: 'none',
+        url: url.trim(),
+        activate: true,
+      });
     } catch (err) {
-      addToast('error', 'Could not save endpoint', err.message);
+      addToast('error', 'Could not add that runtime', err.message);
     } finally {
       setSaving(false);
     }
   }
-
-  // Remove the configured endpoint entirely — the way out of a dead one.
-  async function disconnect() {
-    setSaving(true);
-    try {
-      await saveAxomEndpoints([]);
-      addToast('success', 'Endpoint removed');
-    } catch (err) {
-      addToast('error', 'Could not remove endpoint', err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const configured = axomStatus?.endpoints?.[0] || null;
 
   function copyText(value) {
     navigator.clipboard.writeText(value);
@@ -239,8 +234,6 @@ function Onboarding({ onBack }) {
 
   // What the user is typing, read for the bind trap before they commit to it.
   const typed = useMemo(() => parseEndpoint(url), [url]);
-  const configuredParsed = useMemo(() => parseEndpoint(configured?.url), [configured?.url]);
-  const failure = configured?.status === 'error' ? diagnose(configured.error, configuredParsed) : null;
 
   const insufficient = hw?.verdict === 'insufficient';
   // Two unrelated questions, kept apart:
@@ -250,7 +243,6 @@ function Onboarding({ onBack }) {
   // from starting it — that's how the machine serving turns all night gets
   // told the software is "coming soon".
   const runtimeInstalled = install.runtimeInstalled === true;
-  const runtimeRunning = instances.find((i) => i.status === 'running') || null;
   // Distribution availability is data, not an error. `available === false`
   // means this build has no local-install path yet — the card says so quietly
   // and says nothing else. Undefined means we haven't heard back, so the
@@ -265,31 +257,8 @@ function Onboarding({ onBack }) {
 
   return (
     <div className="h-full axom-hero-bg overflow-y-auto lg:overflow-hidden relative">
-      {/* Currently-configured endpoint: state + the way back / the way out */}
-      {(onBack || configured) && (
-        <div className="absolute top-0 inset-x-0 z-10 flex items-center gap-3 px-6 xl:px-12 py-2.5 border-b border-border-subtle bg-surface-1/70 backdrop-blur">
-          {onBack && (
-            <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-text-3 hover:text-accent cursor-pointer transition-colors">
-              <ArrowLeft size={13} /> Back to workspace
-            </button>
-          )}
-          {configured && (
-            <div className="ml-auto flex items-center gap-2 min-w-0">
-              <StatusDot status={configured.status === 'connected' ? 'running' : configured.status === 'error' ? 'crashed' : 'starting'} size="sm" />
-              <span className="text-xs text-text-3 font-mono truncate max-w-[22rem]" title={configured.error || configured.url}>
-                {configured.url}
-              </span>
-              {configured.status === 'error' && (
-                <span className="text-xs text-danger truncate">{configured.error || 'unreachable'}</span>
-              )}
-              <Button size="sm" variant="ghost" onClick={disconnect} disabled={saving}>Disconnect</Button>
-            </div>
-          )}
-        </div>
-      )}
       <div className={cn(
         'min-h-full lg:h-full w-full max-w-[1600px] mx-auto px-6 xl:px-12 py-6 grid grid-cols-1 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] gap-8 xl:gap-14 items-center',
-        (onBack || configured) && 'pt-16',
       )}>
 
         {/* ── Identity pane — who Axom is, stated once ────────────────── */}
@@ -441,26 +410,10 @@ function Onboarding({ onBack }) {
 
             {runtimeInstalled ? (
               <div className="flex flex-col gap-2">
-                {runtimeRunning ? (
-                  <>
-                    <div className="flex items-center gap-2 text-xs text-text-2">
-                      <StatusDot status="running" size="sm" />
-                      Running on this machine
-                      <span className="font-mono text-2xs text-text-4 ml-auto">
-                        {runtimeRunning.id}:{runtimeRunning.port}
-                      </span>
-                    </div>
-                    {onBack && (
-                      <Button variant="primary" size="lg" onClick={onBack} className="w-full">
-                        <Atom size={15} className="mr-1.5" /> Open workspace
-                      </Button>
-                    )}
-                  </>
-                ) : (
-                  <Button variant="primary" size="lg" onClick={startInstance} disabled={saving} className="w-full">
-                    <Play size={15} className="mr-1.5" /> Start runtime
-                  </Button>
-                )}
+                <Button variant="primary" size="lg" onClick={useThisMachine} disabled={saving} className="w-full">
+                  {saving ? <Loader2 size={15} className="mr-1.5 animate-spin" /> : <Atom size={15} className="mr-1.5" />}
+                  Use this machine
+                </Button>
                 {install.runtimeCommand && (
                   <span className="font-mono text-2xs text-text-4 truncate" title={install.runtimeCommand}>
                     {install.runtimeCommand}
@@ -482,8 +435,9 @@ function Onboarding({ onBack }) {
                 Locked below the {req?.minRamGb} GB memory floor — this machine stays comfortable.
               </div>
             ) : install.phase === 'done' ? (
-              <Button variant="primary" size="lg" onClick={startInstance} className="w-full">
-                <Atom size={15} className="mr-1.5" /> Start your Axom
+              <Button variant="primary" size="lg" onClick={useThisMachine} disabled={saving} className="w-full">
+                {saving ? <Loader2 size={15} className="mr-1.5 animate-spin" /> : <Atom size={15} className="mr-1.5" />}
+                Start your Axom
               </Button>
             ) : installing ? (
               <div className="rounded-md bg-surface-1 border border-border-subtle px-3 py-2.5 flex flex-col gap-2">
@@ -567,22 +521,6 @@ function Onboarding({ onBack }) {
                 </div>
               )}
 
-              {/* Post-flight: why the configured endpoint is dead */}
-              {failure && (
-                <div className="rounded-md border border-danger/25 bg-danger/[0.06] px-3 py-2.5 flex flex-col gap-1.5">
-                  <span className="flex items-center gap-1.5 text-xs font-semibold text-danger">
-                    <TriangleAlert size={12} /> Can't reach {configured.url}
-                  </span>
-                  <p className="text-xs text-text-2 leading-relaxed">{failure.cause}</p>
-                  {configured.error && (
-                    <code className="font-mono text-2xs text-text-4 break-all">{configured.error}</code>
-                  )}
-                  {failure.tunnel && configuredParsed && (
-                    <TunnelHint parsed={configuredParsed} onCopy={copyText} />
-                  )}
-                </div>
-              )}
-
               <p className="text-xs text-text-4 leading-relaxed">
                 Copied from another GROOVE's "My endpoint", over your own secure channel.
               </p>
@@ -632,181 +570,443 @@ function Onboarding({ onBack }) {
   );
 }
 
-// ── Runtime control — connection and runtime state, legible at a glance ────
+// ── Runtime control — one state, one verb, rendered in place ───────────────
 //
-// This is a workshop surface, not a spec sheet: it says who we're connected
-// to, whether the runtime is up, and gives the one control that matters. A
-// benchmark score is a marketing fact and has no place here.
+// Every field here comes from GET /api/axom/runtimes. `canStart`/`canStop`/
+// `canHeal` are the daemon's answer about what this control mode permits in
+// this state; the GUI never re-derives them. A verb the daemon didn't offer
+// is a verb we can't honour, and a button that can't honour itself is a lie.
 
-const RUNTIME_ACTION_LABEL = { idle: null, confirm: 'Confirm', force: 'Force stop', busy: 'Working…' };
+const RUNTIME_STATE = {
+  connected:   { dot: 'running',   word: 'connected',   hint: 'events are flowing' },
+  running:     { dot: 'starting',  word: 'running',     hint: 'answering, attaching to the event stream' },
+  stopped:     { dot: 'completed', word: 'stopped',     hint: 'the machine is fine, the process is down' },
+  unreachable: { dot: 'crashed',   word: 'unreachable', hint: "can't reach it from here" },
+  unknown:     { dot: 'starting',  word: 'unknown',     hint: "we couldn't determine its state" },
+};
 
-function RuntimeControl({ endpoint, remote }) {
-  const startAxomRuntime = useGrooveStore((s) => s.startAxomRuntime);
-  const stopAxomRuntime = useGrooveStore((s) => s.stopAxomRuntime);
-  const healAxomTunnel = useGrooveStore((s) => s.healAxomTunnel);
-  const fetchAxomRemote = useGrooveStore((s) => s.fetchAxomRemote);
-  const stopAxomInstance = useGrooveStore((s) => s.stopAxomInstance);
-  const saveAxomEndpoints = useGrooveStore((s) => s.saveAxomEndpoints);
+const CONTROL_WORD = { local: 'this machine', ssh: 'over SSH', none: 'connect-only' };
+
+// The single verb a state permits, or null. Order matters only in that a
+// runtime is never both startable and stoppable.
+function runtimeVerb(rt) {
+  if (!rt) return null;
+  if (rt.canStop) return { key: 'stop', label: 'Stop runtime', icon: Power, confirm: true };
+  if (rt.canStart) return { key: 'start', label: 'Start runtime', icon: Play, confirm: false };
+  if (rt.canHeal) return { key: 'heal', label: 'Heal tunnel', icon: Plug, confirm: false };
+  return null;
+}
+
+function useRuntimeAction(rt) {
+  const startAxomRuntimeById = useGrooveStore((s) => s.startAxomRuntimeById);
+  const stopAxomRuntimeById = useGrooveStore((s) => s.stopAxomRuntimeById);
+  const healAxomRuntimeById = useGrooveStore((s) => s.healAxomRuntimeById);
+  const busy = useGrooveStore((s) => s.axomRuntimeBusy[rt?.id]) || null;
   const addToast = useGrooveStore((s) => s.addToast);
-  const [phase, setPhase] = useState('idle'); // idle | confirm | force | busy
-  const [note, setNote] = useState(null);
+  const [confirming, setConfirming] = useState(false);
+  const [forceNext, setForceNext] = useState(false);
 
-  useEffect(() => { fetchAxomRemote?.(); }, [fetchAxomRemote]);
   useEffect(() => {
-    if (phase !== 'confirm' && phase !== 'force') return;
-    const t = setTimeout(() => setPhase('idle'), 5000);
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(false), 5000);
     return () => clearTimeout(t);
-  }, [phase]);
+  }, [confirming]);
 
-  const managed = !!endpoint?.managed && !!endpoint?.instanceId;
-  // `running: null` means the HOST didn't answer — we do not know whether the
-  // runtime is up, and an unknown must never be drawn as "stopped".
-  const unknownHost = remote?.configured && remote.running == null;
+  const verb = runtimeVerb(rt);
 
-  async function run(fn, okTitle, okBody) {
-    setPhase('busy');
+  async function run() {
+    if (!verb || !rt) return;
+    if (verb.confirm && !confirming) { setConfirming(true); return; }
+    setConfirming(false);
     try {
-      const result = await fn();
+      let result;
+      if (verb.key === 'start') result = await startAxomRuntimeById(rt.id);
+      else if (verb.key === 'stop') result = await stopAxomRuntimeById(rt.id, { force: forceNext });
+      else result = await healAxomRuntimeById(rt.id);
+
+      // A turn is in flight. Forcing is allowed by the contract but never
+      // inherited from the first press — the escalation is offered.
       if (result?.turnInFlight) {
-        setNote('turn in flight');
-        setPhase('force');
-        addToast('warning', 'A turn is in flight', 'Force stop to end it anyway — that turn will not finish.');
+        setForceNext(true);
+        setConfirming(true);
+        addToast('warning', 'A turn is in flight', 'Press again to force it — that turn will not finish.');
         return;
       }
       if (result?.unsupported) {
-        setNote('no remote shutdown');
-        setPhase('idle');
         addToast('error', 'This runtime is still running',
           "It predates remote shutdown, so GROOVE can't stop it from here — stop it on the machine it runs on.");
         return;
       }
-      setNote(null);
-      setPhase('idle');
-      addToast('success', okTitle, okBody);
+      setForceNext(false);
+      addToast('success', verb.key === 'start' ? 'Runtime starting'
+        : verb.key === 'stop' ? 'Runtime stopping' : 'Tunnel re-established');
     } catch (err) {
-      setPhase('idle');
-      addToast('error', 'That did not work', err.message);
+      setForceNext(false);
+      addToast('error', `${verb.label} failed`, err.message);
     }
   }
 
-  const busy = phase === 'busy';
-  const armed = phase === 'confirm' || phase === 'force';
+  const label = busy ? 'Working…'
+    : confirming ? (forceNext ? 'Force stop' : 'Confirm')
+    : verb?.label;
 
-  // What we can honestly say about the runtime, and the one control that
-  // follows from it. A verb whose slice action isn't wired yet is withheld
-  // rather than rendered dead: a button that reports success it never
-  // achieved is the fake kill switch in another costume.
-  let state;
-  if (remote?.configured) {
-    if (unknownHost) {
-      state = {
-        dot: 'starting', word: 'host unreachable',
-        detail: remote.error || `${remote.host} did not answer — we can't tell whether the runtime is up`,
-        action: healAxomTunnel && { label: 'Heal tunnel', icon: Plug, confirm: false, run: () => healAxomTunnel() },
-      };
-    } else if (remote.running) {
-      state = {
-        dot: 'running', word: 'runtime active',
-        detail: `${remote.host} is answering`,
-        action: stopAxomRuntime && { label: 'Stop runtime', icon: Power, confirm: true, run: (force) => stopAxomRuntime({ force }) },
-      };
-    } else {
-      state = {
-        dot: 'completed', word: 'runtime inactive',
-        detail: `${remote.host} is reachable, the runtime is not running`,
-        action: startAxomRuntime && { label: 'Start runtime', icon: Play, confirm: false, run: () => startAxomRuntime() },
-      };
-    }
-  } else if (managed) {
-    state = {
-      dot: endpoint.status === 'connected' ? 'running' : 'completed',
-      word: endpoint.status === 'connected' ? 'runtime active' : 'runtime idle',
-      action: { label: 'Stop runtime', icon: Power, confirm: true, danger: true, run: () => stopAxomInstance(endpoint.instanceId) },
-    };
-  } else {
-    state = { dot: null, word: null, action: null };
-  }
+  return { verb, run, busy, confirming, label };
+}
 
-  function press() {
-    const a = state.action;
-    if (!a) return;
-    if (a.confirm && phase === 'idle') { setPhase('confirm'); return; }
-    if (phase === 'force') return run(() => a.run(true), 'Runtime force-stopped');
-    return run(() => a.run(false), a.label === 'Start runtime' ? 'Runtime started'
-      : a.label === 'Heal tunnel' ? 'Tunnel re-established' : 'Runtime stopping');
-  }
+// Header-sized control: state word + the one verb.
+function RuntimeControl({ runtime }) {
+  const { verb, run, busy, confirming, label } = useRuntimeAction(runtime);
+  if (!runtime) return null;
+  const meta = RUNTIME_STATE[runtime.state] || RUNTIME_STATE.unknown;
 
   return (
     <div className="flex items-center gap-2 flex-shrink-0">
-      {state.word && (
-        <span className="flex items-center gap-1.5" title={state.detail}>
-          <StatusDot status={state.dot} size="sm" />
-          <span className="text-2xs text-text-3 font-medium whitespace-nowrap">{state.word}</span>
-        </span>
-      )}
-      {note && (
-        <span className={cn('font-mono text-2xs whitespace-nowrap', phase === 'force' ? 'text-warning' : 'text-text-4')}>
-          {note}
-        </span>
-      )}
-      {state.action && (
+      <span className="flex items-center gap-1.5" title={runtime.detail || meta.hint}>
+        <StatusDot status={meta.dot} size="sm" />
+        <span className="text-2xs text-text-3 font-medium whitespace-nowrap">{meta.word}</span>
+      </span>
+      {verb && (
         <button
-          onClick={press}
+          onClick={run}
           disabled={busy}
           className={cn(
             'flex items-center gap-1.5 h-7 px-2 rounded-md text-2xs font-medium transition-colors cursor-pointer whitespace-nowrap',
             'disabled:opacity-40 disabled:pointer-events-none',
-            armed ? 'bg-danger/10 text-danger' : 'text-text-3 hover:text-text-0 hover:bg-surface-2',
+            confirming ? 'bg-danger/10 text-danger' : 'text-text-3 hover:text-text-0 hover:bg-surface-2',
           )}
-          title={state.detail || state.action.label}
+          title={runtime.detail || verb.label}
         >
-          <state.action.icon size={12} />
-          {(armed || busy) ? RUNTIME_ACTION_LABEL[phase] : state.action.label}
-        </button>
-      )}
-      {!managed && (
-        <button
-          onClick={() => saveAxomEndpoints([]).then(
-            () => addToast('success', 'Disconnected', 'The runtime keeps running — GROOVE just stopped pointing at it.'),
-            (err) => addToast('error', 'Disconnect failed', err.message),
-          )}
-          className="flex items-center gap-1.5 h-7 px-2 rounded-md text-2xs font-medium text-text-4 hover:text-text-1 hover:bg-surface-2 transition-colors cursor-pointer"
-          title="Stop pointing at this endpoint. The runtime keeps running."
-        >
-          <Unplug size={12} />
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <verb.icon size={12} />}
+          {label}
         </button>
       )}
     </div>
   );
 }
 
+// The card that replaces the input row when a runtime isn't ready to take a
+// message. The transcript above stays visible in every state — history is
+// never hidden because the process is down.
+function RuntimeStateCard({ runtime, onManage }) {
+  const { verb, run, busy, confirming, label } = useRuntimeAction(runtime);
+  const meta = RUNTIME_STATE[runtime.state] || RUNTIME_STATE.unknown;
+
+  // control:none has no lifecycle verbs — the honest sentence, and the place
+  // to go say it: the machine that owns the process.
+  const host = (() => {
+    try { return runtime.url ? new URL(runtime.url).host : null; } catch { return null; }
+  })();
+  const sentence = runtime.detail
+    || (runtime.control === 'none' && runtime.state === 'stopped'
+      ? `Stopped — start it on ${host || 'the machine it runs on'}.`
+      : meta.hint);
+
+  return (
+    <div className="flex-shrink-0 border-t border-border bg-surface-1/50 px-4 py-3">
+      <div className="rounded-lg border border-border-subtle bg-surface-0 px-4 py-3 flex items-center gap-3">
+        {/* `running` is transitional — it answers /about and the connector is
+            attaching. A spinner says "wait", where a status dot says "state". */}
+        {runtime.state === 'running'
+          ? <Loader2 size={13} className="text-accent animate-spin flex-shrink-0" />
+          : <StatusDot status={meta.dot} size="sm" />}
+        <div className="min-w-0 flex flex-col">
+          <span className="text-xs font-semibold text-text-1">
+            {runtime.name} is {meta.word}
+          </span>
+          <span className="text-2xs text-text-4 leading-relaxed truncate">{sentence}</span>
+        </div>
+        <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+          {verb ? (
+            <button
+              onClick={run}
+              disabled={busy}
+              className={cn(
+                'flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors cursor-pointer',
+                'disabled:opacity-40 disabled:pointer-events-none',
+                confirming ? 'bg-danger/10 text-danger' : 'bg-accent/15 text-accent border border-accent/25 hover:bg-accent/25',
+              )}
+            >
+              {busy ? <Loader2 size={13} className="animate-spin" /> : <verb.icon size={13} />}
+              {label}
+            </button>
+          ) : (
+            <button
+              onClick={onManage}
+              className="flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium text-text-3 hover:text-text-0 hover:bg-surface-2 transition-colors cursor-pointer"
+            >
+              <Settings2 size={13} /> Runtimes
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Runtime switcher ───────────────────────────────────────────────────────
+
+function RuntimeSwitcher({ runtimes, activeId, onManage }) {
+  const activateAxomRuntime = useGrooveStore((s) => s.activateAxomRuntime);
+  const addToast = useGrooveStore((s) => s.addToast);
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const active = runtimes.find((r) => r.id === activeId) || runtimes[0];
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  return (
+    <div className="relative flex-shrink-0" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 h-7 px-2 rounded-md hover:bg-surface-2 transition-colors cursor-pointer max-w-[16rem]"
+        title="Switch runtime"
+      >
+        <Atom size={13} className="text-accent flex-shrink-0" />
+        <span className="text-xs font-semibold text-text-0 truncate">{active?.name || 'Axom'}</span>
+        <ChevronDown size={11} className="text-text-4 flex-shrink-0" />
+      </button>
+
+      {open && (
+        <div className="absolute top-8 left-0 z-30 w-72 rounded-lg border border-border bg-surface-2 shadow-lg py-1">
+          {runtimes.map((rt) => {
+            const meta = RUNTIME_STATE[rt.state] || RUNTIME_STATE.unknown;
+            return (
+              <button
+                key={rt.id}
+                onClick={() => {
+                  setOpen(false);
+                  if (rt.id !== activeId) {
+                    activateAxomRuntime(rt.id).catch((err) => addToast('error', 'Could not switch runtime', err.message));
+                  }
+                }}
+                className={cn(
+                  'w-full flex items-center gap-2 px-3 py-2 text-left transition-colors cursor-pointer',
+                  rt.id === activeId ? 'bg-surface-3' : 'hover:bg-surface-3/60',
+                )}
+              >
+                <StatusDot status={meta.dot} size="sm" />
+                <span className="flex flex-col min-w-0">
+                  <span className="text-xs text-text-1 truncate">{rt.name}</span>
+                  <span className="font-mono text-2xs text-text-4 truncate">
+                    {meta.word} · {CONTROL_WORD[rt.control] || rt.control}
+                  </span>
+                </span>
+                {rt.id === activeId && <Check size={12} className="ml-auto text-accent flex-shrink-0" />}
+              </button>
+            );
+          })}
+          <div className="h-px bg-border-subtle my-1" />
+          <button
+            onClick={() => { setOpen(false); onManage(); }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-text-3 hover:text-text-0 hover:bg-surface-3/60 transition-colors cursor-pointer"
+          >
+            <Plus size={12} /> Add or edit runtimes…
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Runtime manager — a panel OVER the workspace, never a navigation ───────
+
+const BLANK_DRAFT = { name: '', control: 'none', url: '', host: '', user: '', command: '' };
+
+function RuntimeManager({ runtimes, activeId, onClose }) {
+  const addAxomRuntime = useGrooveStore((s) => s.addAxomRuntime);
+  const removeAxomRuntime = useGrooveStore((s) => s.removeAxomRuntime);
+  const activateAxomRuntime = useGrooveStore((s) => s.activateAxomRuntime);
+  const install = useGrooveStore((s) => s.axomInstall);
+  const addToast = useGrooveStore((s) => s.addToast);
+  const [draft, setDraft] = useState(BLANK_DRAFT);
+  const [saving, setSaving] = useState(false);
+
+  const typed = useMemo(() => parseEndpoint(draft.url), [draft.url]);
+  const runtimeInstalled = install.runtimeInstalled === true;
+
+  async function add(spec) {
+    setSaving(true);
+    try {
+      await addAxomRuntime(spec);
+      setDraft(BLANK_DRAFT);
+      addToast('success', 'Runtime added');
+    } catch (err) {
+      addToast('error', 'Could not add runtime', err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function submit() {
+    const name = draft.name.trim();
+    if (draft.control === 'ssh') {
+      if (!draft.host.trim()) return;
+      return add({
+        name: name || draft.host.trim(),
+        control: 'ssh',
+        ssh: { host: draft.host.trim(), user: draft.user.trim() || undefined, command: draft.command.trim() || undefined },
+        activate: true,
+      });
+    }
+    if (!draft.url.trim()) return;
+    return add({ name: name || typed?.host || 'Axom', control: 'none', url: draft.url.trim(), activate: true });
+  }
+
+  return (
+    <div className="absolute inset-0 z-40 flex justify-end bg-surface-0/60 backdrop-blur-sm" onMouseDown={onClose}>
+      <div
+        className="w-[26rem] max-w-full h-full bg-surface-1 border-l border-border flex flex-col"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="h-10 flex-shrink-0 px-4 flex items-center gap-2 border-b border-border-subtle">
+          <Atom size={13} className="text-accent" />
+          <span className="text-xs font-semibold text-text-0">Runtimes</span>
+          <button
+            onClick={onClose}
+            className="ml-auto h-6 w-6 flex items-center justify-center rounded text-text-4 hover:text-text-1 hover:bg-surface-2 transition-colors cursor-pointer"
+          >
+            <X size={12} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-5">
+          <div className="flex flex-col gap-1.5">
+            {runtimes.map((rt) => {
+              const meta = RUNTIME_STATE[rt.state] || RUNTIME_STATE.unknown;
+              return (
+                <div key={rt.id} className="rounded-lg border border-border-subtle bg-surface-2 px-3 py-2.5 flex items-center gap-2.5">
+                  <StatusDot status={meta.dot} size="sm" />
+                  <div className="min-w-0 flex flex-col">
+                    <span className="text-xs text-text-1 truncate">{rt.name}</span>
+                    <span className="font-mono text-2xs text-text-4 truncate" title={rt.url || ''}>
+                      {meta.word} · {CONTROL_WORD[rt.control] || rt.control}
+                    </span>
+                  </div>
+                  <div className="ml-auto flex items-center gap-1 flex-shrink-0">
+                    {rt.id !== activeId && (
+                      <button
+                        onClick={() => activateAxomRuntime(rt.id).catch((err) => addToast('error', 'Switch failed', err.message))}
+                        className="h-6 px-2 rounded text-2xs text-text-3 hover:text-text-0 hover:bg-surface-3 transition-colors cursor-pointer"
+                      >
+                        Use
+                      </button>
+                    )}
+                    <button
+                      onClick={() => removeAxomRuntime(rt.id).catch((err) => addToast('error', 'Remove failed', err.message))}
+                      className="h-6 w-6 flex items-center justify-center rounded text-text-4 hover:text-danger hover:bg-danger/10 transition-colors cursor-pointer"
+                      title="Remove this runtime. The process itself is untouched."
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {runtimeInstalled && !runtimes.some((r) => r.control === 'local') && (
+            <Button
+              variant="primary" size="lg" disabled={saving}
+              onClick={() => add({ name: 'This machine', control: 'local', activate: true })}
+            >
+              <Atom size={14} className="mr-1.5" /> Use this machine
+            </Button>
+          )}
+
+          <div className="flex flex-col gap-2.5">
+            <span className="text-2xs uppercase tracking-[0.12em] text-text-4 font-semibold">Add a runtime</span>
+            <div className="flex gap-1">
+              {[['none', 'By URL'], ['ssh', 'Over SSH']].map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setDraft({ ...draft, control: key })}
+                  className={cn(
+                    'h-7 px-2.5 rounded text-2xs font-medium transition-colors cursor-pointer',
+                    draft.control === key ? 'bg-surface-3 text-text-0' : 'text-text-4 hover:text-text-2 hover:bg-surface-2',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <Input
+              value={draft.name}
+              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+              placeholder="Name (optional)"
+              className="text-xs"
+            />
+
+            {draft.control === 'ssh' ? (
+              <>
+                <Input value={draft.host} onChange={(e) => setDraft({ ...draft, host: e.target.value })}
+                  placeholder="host — e.g. spark.local" className="font-mono text-xs" />
+                <Input value={draft.user} onChange={(e) => setDraft({ ...draft, user: e.target.value })}
+                  placeholder="ssh user (optional)" className="font-mono text-xs" />
+                <Input value={draft.command} onChange={(e) => setDraft({ ...draft, command: e.target.value })}
+                  placeholder="launch command (optional)" className="font-mono text-xs" />
+                <p className="text-2xs text-text-4 leading-relaxed">
+                  GROOVE starts and stops this runtime over SSH and keeps the port-forward
+                  healthy. It never edits your launch command.
+                </p>
+              </>
+            ) : (
+              <>
+                <Input value={draft.url} onChange={(e) => setDraft({ ...draft, url: e.target.value })}
+                  placeholder="http://127.0.0.1:8737" className="font-mono text-xs" />
+                {typed && !typed.invalid && !typed.local && (
+                  <div className="rounded-md border border-warning/25 bg-warning/[0.06] px-3 py-2.5 flex flex-col gap-1.5">
+                    <span className="flex items-center gap-1.5 text-xs font-semibold text-warning">
+                      <TriangleAlert size={12} /> {typed.host} can't be reached directly
+                    </span>
+                    <TunnelHint parsed={typed} onCopy={(v) => { navigator.clipboard.writeText(v); addToast('success', 'Copied'); }} />
+                    <p className="text-2xs text-text-4">Or add it over SSH instead and GROOVE handles the forward.</p>
+                  </div>
+                )}
+                <p className="text-2xs text-text-4 leading-relaxed">
+                  Connect-only: GROOVE reads its events and can't start or stop it.
+                </p>
+              </>
+            )}
+
+            <Button
+              variant="secondary"
+              onClick={submit}
+              disabled={saving || (draft.control === 'ssh' ? !draft.host.trim() : !draft.url.trim())}
+            >
+              <Plus size={13} className="mr-1.5" /> Add runtime
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Header — who we're connected to, and what state it's in ────────────────
 
-function RuntimeHeader({ endpoint, remote, anomalies, onSetup }) {
+function RuntimeHeader({ runtime, runtimes, activeId, endpoint, anomalies, onManage }) {
   const addToast = useGrooveStore((s) => s.addToast);
-  const about = endpoint.about;
-  const dotStatus = endpoint.status === 'connected' ? 'running'
-    : endpoint.status === 'connecting' ? 'starting' : 'crashed';
-  // The endpoint is a loopback port when it's really a tunnel to another
-  // machine — name the machine, not the forward.
-  const displayName = endpoint.remoteHost || endpoint.name;
-  const statusWord = endpoint.status === 'connected' ? 'connected'
-    : endpoint.status === 'connecting' ? 'connecting' : 'not connected';
+  const about = runtime?.about || endpoint?.about;
 
   return (
     <div className="flex-shrink-0 h-10 border-b border-border-subtle bg-surface-1 px-3 flex items-center gap-3">
-      <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
-        <StatusDot status={dotStatus} size="sm" />
-        <span className="text-xs font-semibold text-text-0 truncate">{displayName}</span>
-        <span className="text-2xs text-text-3 whitespace-nowrap">{statusWord}</span>
+      <RuntimeSwitcher runtimes={runtimes} activeId={activeId} onManage={onManage} />
+
+      {runtime?.url && (
         <button
-          onClick={() => { navigator.clipboard.writeText(endpoint.url); addToast('success', 'Endpoint copied'); }}
-          className="font-mono text-2xs text-text-4 hover:text-accent truncate max-w-[13rem] cursor-pointer transition-colors"
-          title={endpoint.viaRemote ? `Tunnelled to ${endpoint.remoteHost} — click to copy` : 'Copy endpoint URL'}
+          onClick={() => { navigator.clipboard.writeText(runtime.url); addToast('success', 'Endpoint copied'); }}
+          className="font-mono text-2xs text-text-4 hover:text-accent truncate max-w-[14rem] cursor-pointer transition-colors flex-shrink-0"
+          title={`${CONTROL_WORD[runtime.control] || runtime.control} — click to copy`}
         >
-          {endpoint.viaRemote ? `via tunnel · ${endpoint.url}` : endpoint.url}
+          {runtime.url}
         </button>
-      </div>
+      )}
 
       {/* An idle-unloaded chassis is a healthy runtime resting, not a fault —
           it reloads on the next message, so it reads as state, not error. */}
@@ -817,13 +1017,13 @@ function RuntimeHeader({ endpoint, remote, anomalies, onSetup }) {
       )}
 
       {/* State — the only place hue is allowed up here */}
-      {endpoint.status === 'error' && (
-        <span className="flex items-center gap-1.5 text-2xs text-danger min-w-0" title={endpoint.error}>
+      {runtime?.error && runtime.state !== 'connected' && (
+        <span className="flex items-center gap-1.5 text-2xs text-danger min-w-0" title={runtime.error}>
           <TriangleAlert size={11} className="flex-shrink-0" />
-          <span className="truncate">{endpoint.error || 'unreachable'}</span>
+          <span className="truncate">{runtime.error}</span>
         </span>
       )}
-      {(endpoint.drift?.novel?.length > 0 || endpoint.drift?.missing?.length > 0) && (
+      {(endpoint?.drift?.novel?.length > 0 || endpoint?.drift?.missing?.length > 0) && (
         <span
           className="text-2xs text-warning font-mono flex-shrink-0"
           title={`novel: ${endpoint.drift.novel.join(', ') || '—'} · missing: ${endpoint.drift.missing.join(', ') || '—'}`}
@@ -841,23 +1041,15 @@ function RuntimeHeader({ endpoint, remote, anomalies, onSetup }) {
       )}
 
       <div className="ml-auto flex items-center gap-2 flex-shrink-0">
-        <RuntimeControl endpoint={endpoint} remote={remote} />
+        <RuntimeControl runtime={runtime} />
         <span aria-hidden className="h-4 w-px bg-border" />
-        {onSetup && (
-          <button
-            onClick={onSetup}
-            className={cn(
-              'flex items-center gap-1.5 h-7 px-2 rounded-md text-2xs font-medium transition-colors cursor-pointer',
-              endpoint.status === 'error'
-                ? 'text-danger hover:bg-danger/10'
-                : 'text-text-4 hover:text-text-1 hover:bg-surface-2',
-            )}
-            title="Change endpoint or set up a runtime"
-          >
-            <Settings2 size={12} />
-            {endpoint.status === 'error' ? 'Fix connection' : 'Setup'}
-          </button>
-        )}
+        <button
+          onClick={onManage}
+          className="flex items-center gap-1.5 h-7 px-2 rounded-md text-2xs font-medium text-text-4 hover:text-text-1 hover:bg-surface-2 transition-colors cursor-pointer"
+          title="Add, switch or remove runtimes"
+        >
+          <Settings2 size={12} /> Runtimes
+        </button>
       </div>
     </div>
   );
@@ -865,18 +1057,32 @@ function RuntimeHeader({ endpoint, remote, anomalies, onSetup }) {
 
 // ── Sessions — a tab strip, not a sidebar ──────────────────────────────────
 
-function SessionTabs({ endpoint }) {
+// New chat is the cheap, default action: a fresh session id per chat, because
+// sessions are recency scopes runtime-side, not memory walls (SPARK_DEV_SETUP
+// ruling — one eternal session id is a bug). The strip beside it is history.
+function SessionTabs({ endpoint, runtime }) {
   const axomSelected = useGrooveStore((s) => s.axomSelected);
   const selectAxomSession = useGrooveStore((s) => s.selectAxomSession);
-  if (endpoint.sessions.length === 0) return null;
+  const sessions = endpoint?.sessions || [];
+  const target = endpoint?.name || runtime?.id;
+  if (!target) return null;
+
   return (
     <div className="flex-shrink-0 h-8 border-b border-border-subtle bg-surface-1 px-2 flex items-center gap-1 overflow-x-auto">
-      {endpoint.sessions.map((s) => {
+      <button
+        onClick={() => selectAxomSession(target, `s-${Math.random().toString(36).slice(2, 10)}`)}
+        className="flex items-center gap-1.5 h-6 px-2 rounded text-2xs font-medium text-text-3 hover:text-text-0 hover:bg-surface-2 transition-colors cursor-pointer flex-shrink-0"
+        title="Start a fresh chat — a new session scope on the same memory ledger"
+      >
+        <Plus size={12} /> New chat
+      </button>
+      {sessions.length > 0 && <span aria-hidden className="h-4 w-px bg-border flex-shrink-0" />}
+      {sessions.map((s) => {
         const active = axomSelected?.session === s.session;
         return (
           <button
             key={s.session}
-            onClick={() => selectAxomSession(endpoint.name, s.session)}
+            onClick={() => selectAxomSession(target, s.session)}
             className={cn(
               'flex items-center gap-1.5 h-6 px-2 rounded font-mono text-2xs whitespace-nowrap transition-colors cursor-pointer',
               active ? 'bg-surface-3 text-text-0' : 'text-text-4 hover:text-text-2 hover:bg-surface-2',
@@ -889,14 +1095,6 @@ function SessionTabs({ endpoint }) {
           </button>
         );
       })}
-      {/* §12: session ids are caller-chosen; the first message creates it */}
-      <button
-        onClick={() => selectAxomSession(endpoint.name, `s-${Math.random().toString(36).slice(2, 10)}`)}
-        className="h-6 w-6 flex items-center justify-center rounded text-text-4 hover:text-text-1 hover:bg-surface-2 transition-colors cursor-pointer flex-shrink-0"
-        title="New session — created on your first message"
-      >
-        <Plus size={12} />
-      </button>
     </div>
   );
 }
@@ -2019,35 +2217,67 @@ function HotInput({ sessionLive, rollup }) {
   );
 }
 
-// ── View root ───────────────────────────────────────────────────────────────
+// ── View root — the workspace is home ──────────────────────────────────────
+//
+// The splash renders in exactly one case: no runtimes configured, ever.
+// Once anything exists the tab always opens the workspace — stopped,
+// unreachable, mid-crash, doesn't matter. The transcript stays visible and
+// the input row is replaced by the state card carrying that state's one
+// action. No state navigates; no state dead-ends.
 
 export default function AxomView() {
   const axomStatus = useGrooveStore((s) => s.axomStatus);
-  const statusLoaded = useGrooveStore((s) => s.axomStatusLoaded);
-  const fetchAxomStatus = useGrooveStore((s) => s.fetchAxomStatus);
-  const [waitedTooLong, setWaitedTooLong] = useState(false);
   const axomSelected = useGrooveStore((s) => s.axomSelected);
   const axomEvents = useGrooveStore((s) => s.axomEvents);
   const axomPrompts = useGrooveStore((s) => s.axomPrompts);
   const axomAnomalies = useGrooveStore((s) => s.axomAnomalies);
   const axomStops = useGrooveStore((s) => s.axomStops);
-  const axomRemote = useGrooveStore((s) => s.axomRemote);
+  const runtimes = useGrooveStore((s) => s.axomRuntimes);
+  const activeRuntimeId = useGrooveStore((s) => s.axomActiveRuntimeId);
+  const fetchAxomRuntimes = useGrooveStore((s) => s.fetchAxomRuntimes);
+  const runtimesLive = useGrooveStore((s) => s.axomRuntimesLive);
   const selectAxomSession = useGrooveStore((s) => s.selectAxomSession);
   const sendAxomStop = useGrooveStore((s) => s.sendAxomStop);
   const [highlight, setHighlight] = useState(null);
-  // Escape hatch: a configured-but-wrong endpoint must never trap the user in
-  // a dead workspace with no way back to setup.
-  const [showSetup, setShowSetup] = useState(false);
+  const [managing, setManaging] = useState(false);
 
-  const endpoints = axomStatus?.endpoints || [];
-  // v0 renders the first endpoint; the config supports several (mesh later).
-  const endpoint = endpoints[0];
-  // Live probe when we have it; the status payload's copy otherwise.
-  const remote = axomRemote || axomStatus?.remote || null;
+  useEffect(() => { fetchAxomRuntimes(); }, [fetchAxomRuntimes]);
 
-  // Auto-select the only session so the tab is alive without a click.
+  // The daemon broadcasts `axom:runtimes` on every transition and verb, so
+  // the poll exists only for daemons that predate those broadcasts. It
+  // retires itself the moment the first one arrives — no redeploy, no
+  // version check, and no stale view on an older daemon either.
   useEffect(() => {
-    if (!endpoint || axomSelected) return;
+    if (runtimesLive) return undefined;
+    const t = setInterval(() => fetchAxomRuntimes(), 10000);
+    return () => clearInterval(t);
+  }, [fetchAxomRuntimes, runtimesLive]);
+
+  // Safety net regardless of transport: a tab that was hidden while a runtime
+  // died should be truthful the instant it's looked at again.
+  useEffect(() => {
+    function onFocus() { if (!document.hidden) fetchAxomRuntimes(); }
+    document.addEventListener('visibilitychange', onFocus);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onFocus);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [fetchAxomRuntimes]);
+
+  const runtime = useMemo(
+    () => (runtimes || []).find((r) => r.id === activeRuntimeId) || (runtimes || [])[0] || null,
+    [runtimes, activeRuntimeId],
+  );
+  // The connector keys endpoints by runtime id — that is the transcript's home.
+  const endpoint = useMemo(
+    () => (axomStatus?.endpoints || []).find((e) => e.name === runtime?.id) || null,
+    [axomStatus, runtime],
+  );
+
+  // Auto-select a session so the tab is alive without a click.
+  useEffect(() => {
+    if (!endpoint || axomSelected?.endpoint === endpoint.name) return;
     const live = endpoint.sessions.find((s) => s.live) || endpoint.sessions[0];
     if (live) selectAxomSession(endpoint.name, live.session);
   }, [endpoint, axomSelected, selectAxomSession]);
@@ -2062,69 +2292,39 @@ export default function AxomView() {
     [sessionKeyStr, axomPrompts],
   );
 
-  // The store fetches status on WS open; if that moment was missed (tab
-  // opened before connect, socket already open, daemon slow), ask again
-  // ourselves rather than depending on someone else's lifecycle.
-  useEffect(() => { if (!statusLoaded) fetchAxomStatus(); }, [statusLoaded, fetchAxomStatus]);
-  useEffect(() => {
-    if (statusLoaded) return;
-    const t = setTimeout(() => setWaitedTooLong(true), 3000);
-    return () => clearTimeout(t);
-  }, [statusLoaded]);
-
   // A highlight belongs to one session's stream — drop it on switch.
   useEffect(() => { setHighlight(null); }, [sessionKeyStr]);
 
   const answer = useMemo(() => livingAnswer(events), [events]);
 
-  // Don't answer "is anything configured?" before the daemon has told us.
-  // Showing setup during that gap looks like a forgotten connection and
-  // invites re-entering an endpoint that is already saved and connecting.
-  // But NEVER wait forever: `waitedTooLong` releases the gate after 3s so a
-  // missed fetch degrades to the setup page (recoverable) instead of an
-  // permanent spinner (a dead end). A loading state that can't time out is
-  // just a different way to strand someone.
-  if (!statusLoaded && !waitedTooLong && !showSetup) {
+  // null means we haven't heard from the daemon yet. "Nothing configured" and
+  // "we don't know yet" are different states and only one may show the splash.
+  if (runtimes === null) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <span className="flex items-center gap-2 text-xs text-text-4">
-          <Atom size={14} className="animate-pulse text-accent" /> Checking for your Axom…
-        </span>
+      <div className="h-full flex items-center justify-center bg-surface-1">
+        <Loader2 size={16} className="text-text-4 animate-spin" />
       </div>
     );
   }
 
-  if (!endpoint || showSetup) {
-    return <Onboarding onBack={endpoint ? () => setShowSetup(false) : null} />;
-  }
+  if (runtimes.length === 0) return <Onboarding />;
 
   const selectedSession = axomSelected
-    && endpoint.sessions.find((s) => s.session === axomSelected.session);
-  // Liveness comes from the EVENT STREAM, not the polled flag. Ruling with
-  // the Axom side: `pipeline_done` is the sole turn-liveness terminal — a
-  // turn is in flight iff a pipeline_start has arrived with no pipeline_done
-  // after it. Narration legally trails pipeline_done ("Answer ready.",
-  // "Done in 1 step.") and must NEVER re-light activity; nothing but these
-  // two kinds may move liveness. The /sessions poll is a lagging indicator
-  // (up to 15s stale) and is only a fallback before any events arrive.
-  //
-  // Deliberately NOT a hook: this sits below the view's early returns, where
-  // a hook renders on some paths and not others — React #310. Plain code
-  // cannot violate hook order.
-  let sessionLive = !!selectedSession?.live;
-  for (let i = events.length - 1; i >= 0; i--) {
-    if (events[i].kind === 'pipeline_done') { sessionLive = false; break; }
-    if (events[i].kind === 'pipeline_start') { sessionLive = true; break; }
-  }
-  const endpointName = endpoint.remoteHost || endpoint.name;
+    && endpoint?.sessions.find((s) => s.session === axomSelected.session);
+  const sessionLive = !!selectedSession?.live;
+  // Only a connected runtime can take a message. Every other state gets the
+  // card with its one verb — and keeps the transcript above it.
+  const canChat = runtime?.state === 'connected' && !!axomSelected;
 
   return (
-    <div className="h-full flex flex-col bg-surface-1">
+    <div className="h-full flex flex-col bg-surface-1 relative">
       <RuntimeHeader
+        runtime={runtime}
+        runtimes={runtimes}
+        activeId={activeRuntimeId}
         endpoint={endpoint}
-        remote={remote}
         anomalies={(sessionKeyStr && axomAnomalies[sessionKeyStr]) || []}
-        onSetup={() => setShowSetup(true)}
+        onManage={() => setManaging(true)}
       />
       <div className="flex-1 flex min-h-0">
         <ActivityRail
@@ -2134,13 +2334,13 @@ export default function AxomView() {
           onHighlight={setHighlight}
         />
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          <SessionTabs endpoint={endpoint} />
-          <WardrobeStrip about={endpoint.about} events={events} />
+          <SessionTabs endpoint={endpoint} runtime={runtime} />
+          <WardrobeStrip about={runtime?.about || endpoint?.about} events={events} />
           <Conversation
             events={events}
             prompts={prompts}
             sessionLive={sessionLive}
-            endpointName={endpointName}
+            endpointName={runtime?.name || 'Axom'}
             highlight={highlight}
             onHighlight={setHighlight}
           />
@@ -2153,9 +2353,19 @@ export default function AxomView() {
               onHighlight={setHighlight}
             />
           )}
-          <HotInput sessionLive={sessionLive} rollup={interruptRollup(events)} />
+          {canChat
+            ? <HotInput sessionLive={sessionLive} rollup={interruptRollup(events)} />
+            : <RuntimeStateCard runtime={runtime} onManage={() => setManaging(true)} />}
         </div>
       </div>
+
+      {managing && (
+        <RuntimeManager
+          runtimes={runtimes}
+          activeId={activeRuntimeId}
+          onClose={() => setManaging(false)}
+        />
+      )}
     </div>
   );
 }

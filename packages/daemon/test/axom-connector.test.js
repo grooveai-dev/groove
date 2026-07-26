@@ -34,6 +34,8 @@ class MockBridge {
     this.shutdowns = [];
     this.messages = [];
     this.sinceSeen = []; // ?since values observed on WS connects
+    this.epochsSeen = [];
+    this.epoch = 'epoch-A';
     this.sockets = new Set();
   }
 
@@ -50,8 +52,12 @@ class MockBridge {
         ws.on('close', () => this.sockets.delete(ws));
         const since = url.searchParams.get('since');
         this.sinceSeen.push(since);
+        this.epochsSeen.push(url.searchParams.get('epoch'));
+        // §16.4: hello first; a stale client epoch voids `since` (full replay).
+        ws.send(JSON.stringify({ kind: 'ws_hello', payload: { epoch: this.epoch, since_honored: url.searchParams.get('epoch') === this.epoch } }));
+        const staleEpoch = url.searchParams.get('epoch') && url.searchParams.get('epoch') !== this.epoch;
         // Ring replay: everything after `since`, then live.
-        const from = since ? parseInt(since.slice(3), 10) : 0;
+        const from = (since && !staleEpoch) ? parseInt(since.slice(3), 10) : 0;
         for (const e of session.events) {
           if (parseInt(e.id.slice(3), 10) > from) ws.send(JSON.stringify(e));
         }
@@ -433,6 +439,43 @@ describe('AxomConnector', () => {
     await waitFor(() => daemon.broadcasts.filter((b) => b.type === 'axom:status').length > before, 3000);
     const latest = daemon.broadcasts.filter((b) => b.type === 'axom:status').pop();
     assert.equal(latest.data.endpoints[0].sessions[0].live, false);
+  });
+
+  it('§16.4: a changed epoch resets the cursor — a runtime restart is replayed, never swallowed', async () => {
+    connect();
+    await waitFor(() => connector.status().endpoints[0]?.sessions[0]?.watching);
+    bridge.emit('s-test0001', envelope(1, 'pipeline_start'));
+    bridge.emit('s-test0001', envelope(2, 'thought'));
+    await waitFor(() => daemon.broadcasts.filter((b) => b.type === 'axom:event').length === 2);
+
+    // Runtime "restarts": new epoch, event ids reset to 1, fresh history.
+    bridge.epoch = 'epoch-B';
+    bridge.sessions['s-test0001'].events = [envelope(1, 'pipeline_start', { fresh: true }), envelope(2, 'narration', { text: 'post-restart' })];
+    bridge.sessions['s-test0001'].socket.terminate();
+
+    // Reconnect: our epoch-A + since goes up, hello says epoch-B → we reset
+    // and take the full replay. Without the reset, monotonic dedup would
+    // silently drop both replayed events (ids <= lastSeq).
+    await waitFor(() => daemon.broadcasts.some((b) => b.type === 'axom:session:reset'), 5000);
+    await waitFor(() => daemon.broadcasts.filter((b) => b.type === 'axom:event' && b.envelope.payload?.fresh).length === 1, 5000);
+    const s = connector.status().endpoints[0].sessions[0];
+    assert.equal(s.buffered, 2); // the ring holds ONLY post-restart history
+    assert.ok(bridge.epochsSeen.includes('epoch-A')); // we did present the old epoch
+  });
+
+  it('recheck collapses a stale connected state the moment the runtime is gone', async () => {
+    connect();
+    await waitFor(() => connector.status().endpoints[0]?.status === 'connected');
+    daemon.broadcasts.length = 0;
+
+    // Runtime dies (a deliberate stop); without recheck the endpoint would
+    // stay 'connected' until the next scheduled session poll failed.
+    await bridge.close();
+    connector.recheck('local');
+    await waitFor(() => connector.status().endpoints[0]?.status === 'error');
+    // The transition broadcast rode the recheck — the GUI card moves with
+    // the verb, not with a poll.
+    assert.ok(daemon.broadcasts.some((b) => b.type === 'axom:status'));
   });
 
   it('reports an unreachable endpoint honestly and recovers by retry', async () => {

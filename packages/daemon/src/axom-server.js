@@ -106,7 +106,14 @@ export class AxomServerManager {
 
   // Start a local instance. `id` doubles as the data-dir name, so the same id
   // across restarts resumes the same sovereign memory.
-  async start(id = 'default') {
+  // opts.launch: {command, cwd?, env?} — a SPEC, not a binary name (source
+  // checkouts launch as `python3 -u -m axom.cli ...` with cwd+env; the
+  // installed default is just `axom`). Specs are verbatim: GROOVE never adds
+  // or removes flags (--cpu on the Spark is policy, not ours to "improve").
+  // opts.dataDir: adopt an existing sovereign ledger instead of minting one
+  // under .groove — one central ledger per user; sessions are recency
+  // scopes, never memory walls (SPARK_DEV_SETUP.md ruling).
+  async start(id = 'default', opts = {}) {
     if (!/^[a-zA-Z0-9_-]{1,40}$/.test(id)) throw new Error('invalid instance id');
     const existing = this.instances.get(id);
     if (existing && existing.status === 'running') return this.list().find((i) => i.id === id);
@@ -124,7 +131,7 @@ export class AxomServerManager {
     }
 
     const port = this._allocatePort();
-    const dataDir = join(this.daemon.grooveDir, 'axom', 'instances', id);
+    const dataDir = opts.dataDir || join(this.daemon.grooveDir, 'axom', 'instances', id);
     mkdirSync(dataDir, { recursive: true });
 
     const args = [
@@ -144,9 +151,21 @@ export class AxomServerManager {
     this.instances.set(id, instance);
     this._broadcast();
 
+    const launch = opts.launch || { command: this._command() };
     let proc;
     try {
-      proc = spawn(this._command(), args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      if (launch.cwd || launch.env || /\s/.test(launch.command)) {
+        // Compound commands run through bash -lc — `nohup cd x && prog`-class
+        // failures taught us a spec is a shell line, not an argv[0].
+        const quotedArgs = args.map((a) => `'${String(a).replace(/'/g, `'\\''`)}'`).join(' ');
+        proc = spawn('bash', ['-lc', `exec ${launch.command} ${quotedArgs}`], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          cwd: launch.cwd || undefined,
+          env: launch.env ? { ...process.env, ...launch.env } : process.env,
+        });
+      } else {
+        proc = spawn(launch.command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      }
     } catch (err) {
       instance.status = 'error';
       instance.error = err.message;
@@ -159,7 +178,7 @@ export class AxomServerManager {
     proc.on('error', (err) => {
       instance.status = 'error';
       instance.error = err.code === 'ENOENT'
-        ? `"${this._command()}" not found — install the Axom runtime first`
+        ? `"${launch.command}" not found — install the Axom runtime first`
         : err.message;
       this._broadcast();
     });

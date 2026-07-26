@@ -143,9 +143,11 @@ describe('Watcher', () => {
     assert.throws(() => watcher.create('nope', { command: 'x' }), /Agent not found/);
   });
 
+  // Distinct commands — identical ones now re-attach to the running job rather
+  // than stacking up, so they would never reach the cap.
   it('caps active watches per agent', () => {
-    for (let i = 0; i < 5; i++) watcher.create('a1', { command: 'sleep 5', label: `w${i}` });
-    assert.throws(() => watcher.create('a1', { command: 'sleep 5' }), /already have 5/);
+    for (let i = 0; i < 5; i++) watcher.create('a1', { command: `sleep 5 # ${i}`, label: `w${i}` });
+    assert.throws(() => watcher.create('a1', { command: 'sleep 5 # 6' }), /already have 5/);
   });
 
   it('cancels a watch and stops its process', async () => {
@@ -204,6 +206,70 @@ describe('Watcher', () => {
     await settle(80);           // immediate tick on re-arm sees the sentinel
     assert.equal(daemon2.delivered.length, 1, 'completed-during-downtime job still delivered');
     watcher2.stop();
+  });
+
+  // ── no double-launch (regression: daemon rebuild re-ran a live job) ──
+  //
+  // A daemon restart resumes the agent mid-turn, so it re-issues the watch it
+  // believes never completed. Launching a second copy of a long job corrupts
+  // the first one's output and competes for the same hardware.
+
+  it('re-attaches instead of launching a second copy of a running command', async () => {
+    const marker = resolve(grooveDir, 'runs.txt');
+    const cmd = `echo run >> ${marker}; sleep 3`;
+
+    const first = watcher.create('a1', { command: cmd, label: 'champion v11' });
+    await settle(300);
+
+    const second = watcher.create('a1', { command: cmd, label: 'champion v11' });
+    assert.equal(second.id, first.id, 'the same watch is returned, not a new one');
+    assert.equal(second.reattached, true, 'the caller is told it re-attached');
+    assert.equal(
+      watcher.list().filter((w) => w.status === 'active').length, 1,
+      'only one active watch exists',
+    );
+
+    await settle(400);
+    const runs = readFileSync(marker, 'utf8').trim().split('\n').filter(Boolean);
+    assert.equal(runs.length, 1, 'the command executed exactly once');
+  });
+
+  it('does not re-attach once the original job has exited', async () => {
+    const cmd = 'exit 0';
+    const first = watcher.create('a1', { command: cmd, label: 'short' });
+    await settle(500); // job finishes and the watch fires
+
+    const second = watcher.create('a1', { command: cmd, label: 'short again' });
+    assert.notEqual(second.id, first.id, 'a finished job may legitimately be re-run');
+    assert.ok(!second.reattached);
+  });
+
+  it('reports a job that vanished while the daemon was down instead of polling to timeout', async () => {
+    const w = watcher.create('a1', { command: 'sleep 30', label: 'doomed' });
+    await settle(200);
+    watcher._killJob(watcher.watches.get(w.id));   // job dies during the outage
+    watcher.stop();
+    await settle(200);
+
+    const daemon2 = makeDaemon(grooveDir);
+    wireDelivery(daemon2);
+    const watcher2 = new Watcher(daemon2);
+    daemon2.watcher = watcher2;
+    daemon2.registry.add({ id: 'a1', name: 'fullstack-1', role: 'fullstack', provider: 'claude-code' });
+
+    watcher2.restore();
+    await settle(120);
+    assert.equal(daemon2.delivered.length, 1, 'the agent is told the job was lost');
+    assert.match(daemon2.delivered[0].message, /lost while the daemon was down/);
+    watcher2.stop();
+  });
+
+  it('appends to the run log so a re-run cannot erase the record', () => {
+    const w = watcher.create('a1', { command: 'echo hi', label: 'log' });
+    const script = readFileSync(resolve(grooveDir, 'watch-runs', w.id, 'run.sh'), 'utf8');
+    const outLine = script.split('\n').find((l) => l.includes('out.log'));
+    assert.ok(outLine.includes('>>'), 'the output redirect appends');
+    assert.ok(!/[^>]>\s*'[^']*out\.log/.test(outLine), 'the output log is never truncated');
   });
 
   it('persists watches to disk', () => {

@@ -664,6 +664,23 @@ export const useGrooveStore = create((set, get) => ({
           get().ingestAxomEvent(msg.endpoint, msg.session, msg.envelope);
           break;
 
+        // §16.4: the runtime restarted and event ids reset. Clearing is not
+        // optional — a kept transcript would stitch two runtime lives into
+        // one and the dedup would swallow the replay meant to rebuild it.
+        case 'axom:session:reset':
+          get().resetAxomSession(msg.endpoint, msg.session);
+          break;
+
+        // Byte-identical to GET /api/axom/runtimes. Receiving one proves the
+        // daemon broadcasts state transitions, which retires the GUI's poll.
+        case 'axom:runtimes':
+          set({
+            axomRuntimes: msg.data?.runtimes || [],
+            axomActiveRuntimeId: msg.data?.activeRuntimeId || null,
+            axomRuntimesLive: true,
+          });
+          break;
+
         case 'axom:instances':
           set({ axomInstances: msg.data || [] });
           break;

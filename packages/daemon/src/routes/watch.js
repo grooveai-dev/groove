@@ -20,6 +20,17 @@ export function registerWatchRoutes(app, daemon) {
       if (!who) return res.status(404).json({ error: `Unknown agent: ${agent}` });
 
       const watch = daemon.watcher.create(who.id, { command, until, label, timeoutMs, intervalMs });
+      if (watch.reattached) {
+        return res.json({
+          ok: true,
+          watchId: watch.id,
+          reattached: true,
+          message: `That command is ALREADY RUNNING under watch ${watch.id} ("${watch.label}") — `
+            + 'this request re-attached to it instead of starting a second copy. '
+            + 'Do NOT launch it again by hand. You will be resumed with the result when it finishes; '
+            + 'you can end your turn now.',
+        });
+      }
       res.json({
         ok: true,
         watchId: watch.id,

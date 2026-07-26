@@ -186,6 +186,7 @@ export class AxomConnector {
           live: !!info.live,
           ws: null,
           lastSeq: 0,
+          epoch: null,
           ring: [],
           overflow: 0,
           unknownKinds: {},
@@ -209,14 +210,35 @@ export class AxomConnector {
 
   _watchSession(ep, s) {
     if (this.destroyed) return;
-    const since = s.lastSeq > 0 ? `?since=ev-${String(s.lastSeq).padStart(6, '0')}` : '';
-    const wsUrl = `${ep.url.replace(/^http/, 'ws')}/ws/session/${encodeURIComponent(s.id)}${since}`;
+    // §16.4: reconnects carry both cursor and epoch; a stale epoch voids the
+    // cursor runtime-side and we get a full replay instead of a silent gap.
+    const params = [];
+    if (s.lastSeq > 0) params.push(`since=ev-${String(s.lastSeq).padStart(6, '0')}`);
+    if (s.epoch) params.push(`epoch=${encodeURIComponent(s.epoch)}`);
+    const query = params.length ? `?${params.join('&')}` : '';
+    const wsUrl = `${ep.url.replace(/^http/, 'ws')}/ws/session/${encodeURIComponent(s.id)}${query}`;
     const ws = new WebSocket(wsUrl);
     s.ws = ws;
 
     ws.on('message', (data) => {
       let envelope;
       try { envelope = JSON.parse(data.toString()); } catch { return; }
+      // §16.4 handshake frame — transport metadata, never a transcript event.
+      // A changed epoch means the runtime restarted and its event ids reset:
+      // our monotonic dedup would silently swallow the entire replay, so the
+      // cursor, ring, and GUI copy are all voided together.
+      if (envelope.kind === 'ws_hello') {
+        const epoch = envelope.payload?.epoch;
+        if (epoch && s.epoch && epoch !== s.epoch) {
+          s.lastSeq = 0;
+          s.ring = [];
+          s.overflow = 0;
+          s.unknownKinds = {};
+          this.daemon.broadcast({ type: 'axom:session:reset', endpoint: ep.name, session: s.id, epoch });
+        }
+        if (epoch) s.epoch = epoch;
+        return;
+      }
       const seq = seqOf(envelope.id);
       // Dedup on ring-buffer replay after reconnect — ids are monotonic.
       if (seq !== null && seq <= s.lastSeq) return;
@@ -371,6 +393,32 @@ export class AxomConnector {
 
   _broadcastStatus() {
     this.daemon.broadcast({ type: 'axom:status', data: this.status() });
+    // Runtime-level state is derived from connector state — push it too so
+    // the GUI's runtime cards move on events, not on a poll.
+    this.daemon.axomRuntimes?.broadcastStatus?.();
+  }
+
+  // Collapse the 'running but not connected' window: when a runtime is known
+  // to be answering /about, don't make the user wait out our backoff.
+  nudge(name) {
+    const ep = this.endpoints.get(name);
+    if (!ep || ep.status === 'connected' || this.destroyed) return;
+    if (ep.retryTimer) { clearTimeout(ep.retryTimer); ep.retryTimer = null; }
+    ep.backoffMs = this.backoffBaseMs;
+    this._handshake(ep);
+  }
+
+  // The inverse of nudge: after a deliberate stop, 'connected' is presumed
+  // stale — re-probe now so the endpoint transitions (and broadcasts) with the
+  // verb instead of lingering until the next scheduled poll fails.
+  recheck(name) {
+    const ep = this.endpoints.get(name);
+    if (!ep || this.destroyed) return;
+    if (ep.status === 'connected') {
+      this._pollSessions(ep).catch(() => this._endpointLost(ep));
+    } else {
+      this.nudge(name);
+    }
   }
 
   _teardownEndpoint(ep) {

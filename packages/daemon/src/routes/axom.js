@@ -122,6 +122,79 @@ export function registerAxomRoutes(app, daemon) {
     }
   });
 
+  // ── Runtimes — the one entity (plans/axom-runtime-flow-redesign.md) ─────
+  // The GUI reasons about runtimes only; endpoints/instances/ssh are backends.
+
+  app.get('/api/axom/runtimes', async (req, res) => {
+    res.json(await daemon.axomRuntimes.status());
+  });
+
+  app.post('/api/axom/runtimes', (req, res) => {
+    try {
+      const rt = daemon.axomRuntimes.add(req.body);
+      if (req.body?.activate) daemon.axomRuntimes.activate(rt.id);
+      daemon.audit.log('axom.runtime.add', { id: rt.id, control: rt.control });
+      res.json(rt);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/axom/runtimes/:id', (req, res) => {
+    try {
+      res.json(daemon.axomRuntimes.update(req.params.id, req.body || {}));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/axom/runtimes/:id', (req, res) => {
+    try {
+      daemon.axomRuntimes.remove(req.params.id);
+      daemon.audit.log('axom.runtime.remove', { id: req.params.id });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/axom/runtimes/:id/activate', (req, res) => {
+    try {
+      daemon.axomRuntimes.activate(req.params.id);
+      res.json({ ok: true, activeRuntimeId: req.params.id });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/axom/runtimes/:id/start', async (req, res) => {
+    try {
+      const result = await daemon.axomRuntimes.startRuntime(req.params.id);
+      daemon.audit.log('axom.runtime.start', { id: req.params.id });
+      res.json(result);
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/axom/runtimes/:id/stop', async (req, res) => {
+    try {
+      const result = await daemon.axomRuntimes.stopRuntime(req.params.id, { force: !!req.body?.force });
+      daemon.audit.log('axom.runtime.stop', { id: req.params.id });
+      res.json(result);
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/axom/runtimes/:id/heal', async (req, res) => {
+    try {
+      res.json(await daemon.axomRuntimes.heal(req.params.id));
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
+  });
+
   // ── Remote runtime control over SSH (manual only, never automatic) ──────
 
   app.get('/api/axom/remote', async (req, res) => {

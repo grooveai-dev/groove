@@ -59,6 +59,28 @@ export class Watcher {
     if (!command && !until) throw new Error('Provide either "command" (run it) or "until" (poll it)');
     if (command && until) throw new Error('Provide only one of "command" or "until"');
 
+    // Re-attach, never re-execute. A daemon restart resumes the agent mid-turn,
+    // so it re-issues the watch it thinks never completed — and a second copy of
+    // a long job (training, benchmark) launched against the same working dir
+    // corrupts the first one's output and competes for the GPU. If an identical
+    // command is still running for this agent, hand back the existing watch.
+    // This is the daemon-side equivalent of an flock, and it has to live here
+    // because the agent cannot know a duplicate already exists.
+    if (command) {
+      const dup = [...this.watches.values()].find(
+        (w) => w.status === 'active'
+          && w.mode === 'command'
+          && w.command === command
+          && (w.agentName === agent.name || w.agentId === agentId)
+          && this._jobAlive(w),
+      );
+      if (dup) {
+        this.daemon.audit?.log('watch.duplicate', { id: dup.id, agent: agentId, label: dup.label });
+        console.log(`[Groove:Watcher] Re-attached to running watch ${dup.id} instead of re-running: ${dup.label}`);
+        return { ...this._public(dup), reattached: true };
+      }
+    }
+
     const active = [...this.watches.values()].filter((w) => w.agentId === agentId && w.status === 'active');
     if (active.length >= MAX_WATCHES_PER_AGENT) {
       throw new Error(`You already have ${MAX_WATCHES_PER_AGENT} active watches — cancel one before adding another`);
@@ -118,11 +140,14 @@ export class Watcher {
     // Run the command in a SUBSHELL so its own `exit N` can't kill the wrapper
     // before the sentinel is written; tee output to a file, then atomically
     // publish the exit code so the poller never sees a half-written value.
+    // Append rather than truncate: if this script is ever run twice, `>` would
+    // erase the first run's record — exactly the evidence you need to work out
+    // what happened. Appending keeps both.
     const script = [
       '#!/bin/sh',
       '(',
       watch.command,
-      `) > ${shq(watch.outFile)} 2>&1`,
+      `) >> ${shq(watch.outFile)} 2>&1`,
       `echo $? > ${shq(watch.statusFile)}.tmp && mv ${shq(watch.statusFile)}.tmp ${shq(watch.statusFile)}`,
       '',
     ].join('\n');
@@ -141,6 +166,16 @@ export class Watcher {
       // Fire synchronously via the poller path so the agent still hears about it.
       watch._launchError = `Could not start the command: ${err.message}`;
     }
+  }
+
+  // Is this watch's detached job still running? Signal 0 tests for existence
+  // without delivering anything. A finished job (sentinel present) is not alive
+  // even if the pid happens to have been recycled by another process.
+  _jobAlive(watch) {
+    if (watch.mode !== 'command') return false;
+    if (watch.statusFile && existsSync(watch.statusFile)) return false; // already exited
+    if (!watch.pid) return false;
+    try { process.kill(watch.pid, 0); return true; } catch { return false; }
   }
 
   // One poll iteration — checks for completion (sentinel for command mode, the
@@ -257,6 +292,7 @@ export class Watcher {
     if (!Array.isArray(data)) return 0;
 
     let rearmed = 0;
+    let lost = 0;
     const now = Date.now();
     for (const w of data) {
       // Drop stale finished watches; keep recent ones for history.
@@ -268,10 +304,27 @@ export class Watcher {
       }
       const watch = { ...w, _poll: null, _deadline: null };
       this.watches.set(watch.id, watch);
+
+      // A command watch whose job is gone with no exit sentinel died while the
+      // daemon was down. Polling it would just burn until the timeout and then
+      // report "may still be running" — say what actually happened instead.
+      if (watch.mode === 'command' && watch.pid
+          && !existsSync(watch.statusFile || '') && !this._jobAlive(watch)) {
+        lost++;
+        this._wake(watch, {
+          outcome: 'error',
+          summary: `The job for "${watch.label}" is no longer running and never recorded an exit code — `
+            + 'it was lost while the daemon was down. Check its output before assuming it finished.',
+          output: tailFile(watch.outFile, OUTPUT_TAIL),
+        });
+        continue;
+      }
+
       this._arm(watch);
       rearmed++;
     }
-    if (rearmed > 0) console.log(`[Groove:Watcher] Restored ${rearmed} active watch(es) after restart`);
+    if (rearmed > 0) console.log(`[Groove:Watcher] Re-attached to ${rearmed} running watch(es) after restart`);
+    if (lost > 0) console.log(`[Groove:Watcher] ${lost} watch(es) lost their job while the daemon was down`);
     this._persist();
     return rearmed;
   }

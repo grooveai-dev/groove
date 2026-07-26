@@ -2106,13 +2106,15 @@ export default function AxomView() {
   // "Done in 1 step.") and must NEVER re-light activity; nothing but these
   // two kinds may move liveness. The /sessions poll is a lagging indicator
   // (up to 15s stale) and is only a fallback before any events arrive.
-  const sessionLive = useMemo(() => {
-    for (let i = events.length - 1; i >= 0; i--) {
-      if (events[i].kind === 'pipeline_done') return false;
-      if (events[i].kind === 'pipeline_start') return true;
-    }
-    return !!selectedSession?.live;
-  }, [events, selectedSession]);
+  //
+  // Deliberately NOT a hook: this sits below the view's early returns, where
+  // a hook renders on some paths and not others — React #310. Plain code
+  // cannot violate hook order.
+  let sessionLive = !!selectedSession?.live;
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].kind === 'pipeline_done') { sessionLive = false; break; }
+    if (events[i].kind === 'pipeline_start') { sessionLive = true; break; }
+  }
   const endpointName = endpoint.remoteHost || endpoint.name;
 
   return (

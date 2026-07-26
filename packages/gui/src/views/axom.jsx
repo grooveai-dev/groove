@@ -175,6 +175,7 @@ function Onboarding({ onBack }) {
   const hw = useGrooveStore((s) => s.axomHardware);
   const myEndpoint = useGrooveStore((s) => s.axomMyEndpoint);
   const install = useGrooveStore((s) => s.axomInstall);
+  const instances = useGrooveStore((s) => s.axomInstances);
   const addToast = useGrooveStore((s) => s.addToast);
   const [url, setUrl] = useState('');
   const [saving, setSaving] = useState(false);

@@ -190,36 +190,44 @@ export const createAgentsSlice = (set, get) => ({
     api.post(`/chat-history/${encodeURIComponent(agentId)}`, { message: clean }).catch(() => {});
   },
 
-  // Load server-side history on (re)connect and merge it in — the daemon is the
-  // source of truth, so this restores chats regardless of which tunnel port
-  // (and thus browser origin) we came up on.
-  //
-  // Also runs a ONE-TIME, per-origin seed: whatever chat history is stranded in
-  // THIS origin's localStorage gets pushed to the daemon for any agent the
-  // daemon doesn't yet know. Visiting each old origin once migrates its history
-  // server-side without clobbering anything already there.
+  // Load server-side history on (re)connect and UNION it with local — never a
+  // replace in either direction. The daemon store survives origin/port churn;
+  // this browser may hold messages the daemon missed (offline writes, old
+  // origins). Union by (timestamp, from, text) means a sparse side can only
+  // ever add to the rich side, and any local surplus is pushed back up so the
+  // server heals. Restoring must be incapable of destroying what it restores.
   async fetchChatHistory() {
     try {
       const { history } = await api.get('/chat-history');
       const remote = (history && typeof history === 'object') ? history : {};
 
-      if (localStorage.getItem('groove:chatImported') !== '1') {
-        const local = get().chatHistory;
-        for (const [agentId, msgs] of Object.entries(local)) {
-          // Only seed agents the daemon has nothing for — never overwrite
-          // server history with an older local copy.
-          if (Array.isArray(msgs) && msgs.length && !(remote[agentId]?.length)) {
-            api.put(`/chat-history/${encodeURIComponent(agentId)}`, { messages: msgs }).catch(() => {});
-            remote[agentId] = msgs; // reflect so the merge below keeps it
-          }
+      const unionMerge = (a = [], b = []) => {
+        const seen = new Set();
+        const out = [];
+        for (const m of [...a, ...b]) {
+          if (!m || typeof m !== 'object') continue;
+          const sig = `${m.timestamp}:${m.from}:${typeof m.text === 'string' ? m.text.slice(0, 200) : ''}`;
+          if (seen.has(sig)) continue;
+          seen.add(sig);
+          out.push(m);
         }
-        localStorage.setItem('groove:chatImported', '1');
-      }
+        out.sort((x, y) => (x.timestamp || 0) - (y.timestamp || 0));
+        return out.slice(-200);
+      };
 
       set((s) => {
         const merged = { ...s.chatHistory };
-        for (const [agentId, msgs] of Object.entries(remote)) {
-          if (Array.isArray(msgs) && msgs.length) merged[agentId] = msgs;
+        const keys = new Set([...Object.keys(merged), ...Object.keys(remote)]);
+        for (const key of keys) {
+          const local = Array.isArray(merged[key]) ? merged[key] : [];
+          const server = Array.isArray(remote[key]) ? remote[key] : [];
+          const union = unionMerge(server, local);
+          if (union.length) merged[key] = union;
+          // Local had messages the server lacks — push the union up (the
+          // server PUT is itself a merge, so this can never truncate there).
+          if (union.length > server.length) {
+            api.put(`/chat-history/${encodeURIComponent(key)}`, { messages: union }).catch(() => {});
+          }
         }
         persistChatHistory(merged);
         return { chatHistory: merged };

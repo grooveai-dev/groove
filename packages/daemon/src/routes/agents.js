@@ -89,6 +89,10 @@ export function registerAgentRoutes(app, daemon) {
       // Killed/completed agents stay visible so the user can review output.
       const purge = req.query.purge === 'true';
       if (purge) {
+        // Clear chat history while the id still resolves to a name — the
+        // store is name-keyed, and a purged name's history must not haunt a
+        // future agent spawned under the same name.
+        try { daemon.chatStore.remove(agent.name); } catch { /* best effort */ }
         daemon.registry.remove(req.params.id);
       }
 

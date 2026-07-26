@@ -438,6 +438,12 @@ export class Daemon {
   }
 
   broadcast(message) {
+    // Every rotation/resume path announces itself here — the one chokepoint
+    // for "this agent has a new id". Chat history parked under the dead id
+    // (stale client posts, pre-migration data) follows the agent.
+    if (message.type === 'rotation:complete' && message.oldAgentId && message.agentId) {
+      try { this.chatStore.remap(message.oldAgentId, message.agentId); } catch { /* best effort */ }
+    }
     if (!this.wss) return;
     const payload = JSON.stringify(message);
     for (const client of this.wss.clients) {
@@ -639,6 +645,13 @@ export class Daemon {
         this.axom.start();
         this.federation.initialize();
         this._startGarbageCollector();
+
+        // Fold id-keyed chat history into name keys now that the registry is
+        // restored — reattaches histories written by the old id-keyed store.
+        try {
+          const moved = this.chatStore.migrate();
+          if (moved) console.log(`[chat] migrated ${moved} id-keyed histories to agent names`);
+        } catch { /* best effort */ }
 
         // Regenerate the on-disk registry files once on boot. They otherwise
         // only refresh on a registry change, so a daemon upgraded with new

@@ -2023,6 +2023,8 @@ function HotInput({ sessionLive, rollup }) {
 export default function AxomView() {
   const axomStatus = useGrooveStore((s) => s.axomStatus);
   const statusLoaded = useGrooveStore((s) => s.axomStatusLoaded);
+  const fetchAxomStatus = useGrooveStore((s) => s.fetchAxomStatus);
+  const [waitedTooLong, setWaitedTooLong] = useState(false);
   const axomSelected = useGrooveStore((s) => s.axomSelected);
   const axomEvents = useGrooveStore((s) => s.axomEvents);
   const axomPrompts = useGrooveStore((s) => s.axomPrompts);
@@ -2059,6 +2061,16 @@ export default function AxomView() {
     [sessionKeyStr, axomPrompts],
   );
 
+  // The store fetches status on WS open; if that moment was missed (tab
+  // opened before connect, socket already open, daemon slow), ask again
+  // ourselves rather than depending on someone else's lifecycle.
+  useEffect(() => { if (!statusLoaded) fetchAxomStatus(); }, [statusLoaded, fetchAxomStatus]);
+  useEffect(() => {
+    if (statusLoaded) return;
+    const t = setTimeout(() => setWaitedTooLong(true), 3000);
+    return () => clearTimeout(t);
+  }, [statusLoaded]);
+
   // A highlight belongs to one session's stream — drop it on switch.
   useEffect(() => { setHighlight(null); }, [sessionKeyStr]);
 
@@ -2067,7 +2079,11 @@ export default function AxomView() {
   // Don't answer "is anything configured?" before the daemon has told us.
   // Showing setup during that gap looks like a forgotten connection and
   // invites re-entering an endpoint that is already saved and connecting.
-  if (!statusLoaded && !showSetup) {
+  // But NEVER wait forever: `waitedTooLong` releases the gate after 3s so a
+  // missed fetch degrades to the setup page (recoverable) instead of an
+  // permanent spinner (a dead end). A loading state that can't time out is
+  // just a different way to strand someone.
+  if (!statusLoaded && !waitedTooLong && !showSetup) {
     return (
       <div className="h-full flex items-center justify-center">
         <span className="flex items-center gap-2 text-xs text-text-4">

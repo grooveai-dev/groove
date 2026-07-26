@@ -43,11 +43,12 @@ export function AppShell({ children, detailContent, terminalContent }) {
     { key: 'p', meta: true, shift: true, handler: () => useGrooveStore.getState().toggleCommandPalette() },
     { key: 'j', meta: true, handler: () => { const s = useGrooveStore.getState(); s.setTerminalVisible(!s.terminalVisible); } },
     { key: 'n', meta: true, handler: () => useGrooveStore.getState().openDetail({ type: 'spawn' }) },
-    { key: '1', meta: true, handler: () => useGrooveStore.getState().setActiveView('agents') },
+    // Cmd+N follows the activity bar order (see BASE_NAV_ITEMS in activity-bar.jsx)
+    { key: '1', meta: true, handler: () => useGrooveStore.getState().setActiveView('fleet') },
     { key: '2', meta: true, handler: () => useGrooveStore.getState().setActiveView('editor') },
-    { key: '3', meta: true, handler: () => useGrooveStore.getState().setActiveView('dashboard') },
-    { key: '4', meta: true, handler: () => useGrooveStore.getState().setActiveView('marketplace') },
-    { key: '5', meta: true, handler: () => useGrooveStore.getState().setActiveView('teams') },
+    { key: '3', meta: true, handler: () => useGrooveStore.getState().setActiveView('axom') },
+    { key: '4', meta: true, handler: () => useGrooveStore.getState().setActiveView('agents') },
+    { key: '5', meta: true, handler: () => useGrooveStore.getState().setActiveView('dashboard') },
     { key: 'Escape', handler: () => {
       const s = useGrooveStore.getState();
       if (s.commandPaletteOpen) s.toggleCommandPalette();

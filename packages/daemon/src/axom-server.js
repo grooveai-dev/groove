@@ -8,8 +8,8 @@
 // The serve binary refuses a locked data-dir; we surface that error verbatim
 // rather than retrying around it.
 
-import { spawn } from 'child_process';
-import { mkdirSync, statfsSync } from 'fs';
+import { spawn, execFileSync } from 'child_process';
+import { mkdirSync, statfsSync, existsSync } from 'fs';
 import { join } from 'path';
 import os from 'os';
 import { AXOM_DEFAULT_PORT } from './axom-connector.js';
@@ -26,6 +26,27 @@ export const AXOM_REQUIREMENTS = {
   minDiskGb: 6,
   downloadGb: 4.4,
 };
+
+// Is a runtime ALREADY on this machine? Distribution gating ("Coming soon")
+// controls DOWNLOADING, never running — a machine that already has Axom must
+// be able to start it regardless of whether this build can fetch one.
+export function detectRuntime(command) {
+  const cmd = command || 'axom';
+  // A configured command may be a full invocation ("cd /x && python3 -m
+  // axom.cli"); probe the first token that looks like a path or binary.
+  const probe = cmd.trim().split(/\s+/).find((t) => !t.includes('=') && t !== 'cd') || cmd;
+  try {
+    if (probe.startsWith('/') || probe.startsWith('~')) {
+      return { installed: existsSync(probe.replace(/^~/, os.homedir())), command: cmd, source: 'path' };
+    }
+    execFileSync(process.platform === 'win32' ? 'where' : 'which', [probe], {
+      stdio: 'ignore', timeout: 5000,
+    });
+    return { installed: true, command: cmd, source: 'PATH' };
+  } catch {
+    return { installed: false, command: cmd, source: null };
+  }
+}
 
 export function hardwareReport(dir = os.homedir(), requirements = AXOM_REQUIREMENTS) {
   const totalRamGb = os.totalmem() / 2 ** 30;

@@ -242,15 +242,24 @@ function Onboarding({ onBack }) {
   const failure = configured?.status === 'error' ? diagnose(configured.error, configuredParsed) : null;
 
   const insufficient = hw?.verdict === 'insufficient';
+  // Two unrelated questions, kept apart:
+  //   · `available`        — can this BUILD download Axom? (distribution)
+  //   · `runtimeInstalled` — does this MACHINE already have one? (capability)
+  // Gating distribution must never stop someone who already has a runtime
+  // from starting it — that's how the machine serving turns all night gets
+  // told the software is "coming soon".
+  const runtimeInstalled = install.runtimeInstalled === true;
+  const runtimeRunning = instances.find((i) => i.status === 'running') || null;
   // Distribution availability is data, not an error. `available === false`
   // means this build has no local-install path yet — the card says so quietly
   // and says nothing else. Undefined means we haven't heard back, so the
   // button waits rather than flashing an action that may not exist.
-  const gated = install.available === false;
-  const checkingAvailability = install.available === undefined;
-  // Coming-soon outranks the RAM floor: telling someone their machine is too
-  // small for software they can't obtain is the worst of both messages.
-  const connectFirst = gated || insufficient;
+  const gated = !runtimeInstalled && install.available === false;
+  const checkingAvailability = !runtimeInstalled && install.available === undefined;
+  // Precedence: INSTALLED beats gated beats hardware verdict. Lead with the
+  // state that determines what the user can actually do — an installed
+  // runtime makes both the gate and the RAM floor irrelevant.
+  const connectFirst = !runtimeInstalled && (gated || insufficient);
   const ramPct = hw && req ? Math.min(100, (hw.totalRamGb / req.recommendedRamGb) * 100) : 0;
 
   return (
@@ -416,11 +425,48 @@ function Onboarding({ onBack }) {
               {!connectFirst && hw && <Badge variant="accent">recommended here</Badge>}
             </div>
             <p className="text-xs text-text-3 leading-relaxed flex-1">
-              One verified download — runtime and models (~{req?.downloadGb ?? 4.4} GB) —
-              then your Axom lives on this machine, fully self-contained.
+              {runtimeInstalled ? (
+                <>
+                  Axom is installed on this machine — start it and chat locally,
+                  no other machine involved.
+                </>
+              ) : (
+                <>
+                  One verified download — runtime and models (~{req?.downloadGb ?? 4.4} GB) —
+                  then your Axom lives on this machine, fully self-contained.
+                </>
+              )}
             </p>
 
-            {gated ? (
+            {runtimeInstalled ? (
+              <div className="flex flex-col gap-2">
+                {runtimeRunning ? (
+                  <>
+                    <div className="flex items-center gap-2 text-xs text-text-2">
+                      <StatusDot status="running" size="sm" />
+                      Running on this machine
+                      <span className="font-mono text-2xs text-text-4 ml-auto">
+                        {runtimeRunning.id}:{runtimeRunning.port}
+                      </span>
+                    </div>
+                    {onBack && (
+                      <Button variant="primary" size="lg" onClick={onBack} className="w-full">
+                        <Atom size={15} className="mr-1.5" /> Open workspace
+                      </Button>
+                    )}
+                  </>
+                ) : (
+                  <Button variant="primary" size="lg" onClick={startInstance} disabled={saving} className="w-full">
+                    <Play size={15} className="mr-1.5" /> Start runtime
+                  </Button>
+                )}
+                {install.runtimeCommand && (
+                  <span className="font-mono text-2xs text-text-4 truncate" title={install.runtimeCommand}>
+                    {install.runtimeCommand}
+                  </span>
+                )}
+              </div>
+            ) : gated ? (
               <div className="rounded-md border border-border-subtle bg-surface-2/50 px-3 py-3 flex flex-col items-center gap-1.5 text-center">
                 <span className="font-mono text-2xs uppercase tracking-[0.2em] text-text-2">
                   {install.unavailableReason || 'Coming soon'}
@@ -1976,6 +2022,7 @@ function HotInput({ sessionLive, rollup }) {
 
 export default function AxomView() {
   const axomStatus = useGrooveStore((s) => s.axomStatus);
+  const statusLoaded = useGrooveStore((s) => s.axomStatusLoaded);
   const axomSelected = useGrooveStore((s) => s.axomSelected);
   const axomEvents = useGrooveStore((s) => s.axomEvents);
   const axomPrompts = useGrooveStore((s) => s.axomPrompts);
@@ -2016,6 +2063,19 @@ export default function AxomView() {
   useEffect(() => { setHighlight(null); }, [sessionKeyStr]);
 
   const answer = useMemo(() => livingAnswer(events), [events]);
+
+  // Don't answer "is anything configured?" before the daemon has told us.
+  // Showing setup during that gap looks like a forgotten connection and
+  // invites re-entering an endpoint that is already saved and connecting.
+  if (!statusLoaded && !showSetup) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <span className="flex items-center gap-2 text-xs text-text-4">
+          <Atom size={14} className="animate-pulse text-accent" /> Checking for your Axom…
+        </span>
+      </div>
+    );
+  }
 
   if (!endpoint || showSetup) {
     return <Onboarding onBack={endpoint ? () => setShowSetup(false) : null} />;

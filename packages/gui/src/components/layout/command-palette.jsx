@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useGrooveStore } from '../../stores/groove';
 import {
-  Network, Code2, ChartSpline, Puzzle, Users, Plus,
+  Network, Code2, ChartSpline, Puzzle, Users, Plus, LayoutList,
   RotateCw, Skull, MessageSquare, Terminal, Newspaper,
   Search, Radio, ExternalLink, FolderOpen, Globe, Shield,
 } from 'lucide-react';
@@ -10,6 +10,7 @@ import { cn } from '../../lib/cn';
 import { AnimatePresence, motion } from 'framer-motion';
 
 const STATIC_COMMANDS = [
+  { id: 'nav:fleet',       label: 'Go to Fleet',       icon: LayoutList, category: 'Navigation', action: (s) => { s.setActiveView('fleet'); } },
   { id: 'nav:agents',      label: 'Go to Agents',      icon: Network,    category: 'Navigation', action: (s) => { s.setActiveView('agents'); } },
   { id: 'nav:editor',      label: 'Go to Editor',      icon: Code2,      category: 'Navigation', action: (s) => { s.setActiveView('editor'); } },
   { id: 'nav:dashboard',   label: 'Go to Dashboard',   icon: ChartSpline, category: 'Navigation', action: (s) => { s.setActiveView('dashboard'); } },

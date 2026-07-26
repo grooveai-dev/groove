@@ -18,7 +18,7 @@ import { join } from 'path';
 import os from 'os';
 import { pipeline } from 'stream/promises';
 import { Transform } from 'stream';
-import { AXOM_REQUIREMENTS } from './axom-server.js';
+import { AXOM_REQUIREMENTS, detectRuntime } from './axom-server.js';
 
 export class AxomInstaller {
   constructor(daemon, opts = {}) {
@@ -34,11 +34,18 @@ export class AxomInstaller {
   // so up front rather than offering a button that fails on click.
   getStatus() {
     const manifestUrl = this.daemon.config?.axom?.manifestUrl || null;
+    // Already-installed runtimes are NOT gated. Distribution gating controls
+    // downloading; a machine that already has Axom (the Spark, a dev box, an
+    // operator install) must be able to start it. Conflating the two told a
+    // user standing on a working runtime that it was "coming soon".
+    const runtime = detectRuntime(this.daemon.config?.axom?.command);
     return {
       ...this.status,
       available: !!manifestUrl,
       manifestUrl,
       unavailableReason: manifestUrl ? null : 'Coming soon',
+      runtimeInstalled: runtime.installed,
+      runtimeCommand: runtime.installed ? runtime.command : null,
     };
   }
 

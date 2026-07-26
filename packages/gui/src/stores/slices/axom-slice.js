@@ -17,6 +17,11 @@ const sessionKey = (endpoint, session) => `${endpoint}/${session}`;
 export const createAxomSlice = (set, get) => ({
   // ── Axom Provider ─────────────────────────────────────────
   axomStatus: { endpoints: [] },
+  // "Haven't asked yet" is NOT "nothing configured". Without this, a refresh
+  // shows the setup splash for the moment before status arrives, which reads
+  // as "my connection was forgotten" and invites the user to re-enter an
+  // endpoint they already have.
+  axomStatusLoaded: false,
   axomSelected: null, // { endpoint, session }
   axomEvents: {}, // sessionKey -> [envelope] (bounded)
   // Local interrupt ledger: id -> {text, state}. state: 'sent' (POST accepted,
@@ -45,11 +50,15 @@ export const createAxomSlice = (set, get) => ({
   async fetchAxomStatus() {
     try {
       const data = await api.get('/axom/status');
-      set({ axomStatus: data || { endpoints: [] } });
+      set({ axomStatus: data || { endpoints: [] }, axomStatusLoaded: true });
       if (data?.remote?.configured) get().fetchAxomRemote();
       const instances = await api.get('/axom/instances');
       set({ axomInstances: instances || [] });
-    } catch { /* daemon predates the axom routes */ }
+    } catch {
+      // A daemon that predates these routes genuinely has no Axom config —
+      // that IS a loaded answer, so the setup page is the correct render.
+      set({ axomStatusLoaded: true });
+    }
   },
 
   // ── Remote runtime (the machine GROOVE can start/stop over SSH) ─────────
@@ -265,8 +274,22 @@ export const createAxomSlice = (set, get) => ({
   // §12: message starts a turn on a caller-chosen session id (first message
   // creates the session). 409 means a turn is in flight — steer instead.
   async sendAxomMessage(text) {
-    const sel = get().axomSelected;
-    if (!sel) throw new Error('No Axom session selected');
+    // A fresh runtime has NO sessions until a first message creates one
+    // (§12: session ids are caller-chosen). Requiring a selection here made
+    // the first message impossible — you could never create the session you
+    // needed in order to send. So: if nothing is selected, open one.
+    let sel = get().axomSelected;
+    if (!sel) {
+      const ep = (get().axomStatus?.endpoints || []).find((e) => e.status === 'connected')
+        || (get().axomStatus?.endpoints || [])[0];
+      if (!ep) throw new Error('No Axom runtime connected');
+      const live = ep.sessions?.find((s) => s.live) || ep.sessions?.[0];
+      sel = {
+        endpoint: ep.name,
+        session: live?.session || `s-${Math.random().toString(36).slice(2, 10)}`,
+      };
+      set({ axomSelected: sel });
+    }
     // §15: an opaque per-message ref the runtime echoes in pipeline_start,
     // making prompt→turn correlation exact instead of inferred.
     const ref = `g-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;

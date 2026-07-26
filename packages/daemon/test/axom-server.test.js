@@ -206,6 +206,23 @@ describe('AxomInstaller', () => {
     assert.equal(status.manifestUrl, null);
   });
 
+  it('does not gate a runtime that is already installed', async () => {
+    // The Spark had Axom installed and got told "Coming soon" — distribution
+    // gating must control DOWNLOADING only, never running what's already here.
+    daemon.config.axom.command = process.execPath; // a path that exists
+    const status = installer.getStatus();
+    assert.equal(status.available, false);        // still can't download
+    assert.equal(status.runtimeInstalled, true);  // but CAN start
+    assert.equal(status.runtimeCommand, process.execPath);
+  });
+
+  it('reports no runtime when the configured command is absent', () => {
+    daemon.config.axom.command = '/nonexistent/axom-binary';
+    const status = installer.getStatus();
+    assert.equal(status.runtimeInstalled, false);
+    assert.equal(status.runtimeCommand, null);
+  });
+
   it('gates install server-side too — a hand-crafted POST cannot bypass it', async () => {
     await assert.rejects(() => installer.install(undefined), /Coming soon/);
   });

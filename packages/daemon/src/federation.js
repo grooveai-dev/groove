@@ -355,6 +355,12 @@ export class Federation {
     };
   }
 
+  // Public accessor for this daemon's stable id (used by cross-daemon InnerChat
+  // relay to identify and verify the sender). Same value as _daemonId().
+  getDaemonId() {
+    return this._daemonId();
+  }
+
   _daemonId() {
     // Stable ID derived from keypair — fingerprint of public key
     const idPath = resolve(this.fedDir, 'daemon.id');

@@ -1196,7 +1196,7 @@ For normal file edits within your scope, proceed without review.
     if (!sandboxedProviders.includes(providerName) && !isOneShotProvider) {
       const port = this.daemon.port || 31415;
       const capabilities = [
-        ...innerChatInstructions(port, agent.name),
+        ...innerChatInstructions(port, agent.name, this.daemon.config?.innerchatPeers),
         '',
         ...watchInstructions(port, agent.name),
         '',

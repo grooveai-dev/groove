@@ -1,6 +1,6 @@
 {
   "name": "groove-dev",
-  "version": "0.27.197",
+  "version": "0.27.198",
   "description": "Open-source agent orchestration layer — the AI company OS. Local model agent engine (GGUF/Ollama/llama-server), HuggingFace model browser, MCP integrations (Slack, Gmail, Stripe, 15+), agent scheduling (cron), business roles (CMO, CFO, EA). GUI dashboard, multi-agent coordination, zero cold-start, infinite sessions. Works with Claude Code, Codex, Gemini CLI, Ollama, any local model.",
   "license": "FSL-1.1-Apache-2.0",
   "author": "Groove Dev <hello@groovedev.ai> (https://groovedev.ai)",
@@ -58,7 +58,7 @@
     "start:desktop": "npm run start -w packages/desktop",
     "build:desktop": "npm run build -w packages/desktop",
     "dist:desktop": "npm run build && npm run dist -w packages/desktop",
-    "test": "node --test packages/daemon/test/*.test.js",
+    "test": "node --test-force-exit --test packages/daemon/test/*.test.js",
     "prepublishOnly": "npm run build"
   },
   "bundleDependencies": [

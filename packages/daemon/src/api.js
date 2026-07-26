@@ -31,6 +31,7 @@ import { registerInnerChatRoutes } from './routes/innerchat.js';
 import { registerChatHistoryRoutes } from './routes/chat-history.js';
 import { registerWatchRoutes } from './routes/watch.js';
 import { registerAutoAgentRoutes } from './routes/auto-agents.js';
+import { registerAxomRoutes } from './routes/axom.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkgVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -183,6 +184,7 @@ export function createApi(app, daemon) {
   registerChatHistoryRoutes(app, daemon);
   registerWatchRoutes(app, daemon);
   registerAutoAgentRoutes(app, daemon);
+  registerAxomRoutes(app, daemon);
 
 
   // Token usage

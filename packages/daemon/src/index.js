@@ -53,6 +53,10 @@ import { Orchestrator } from './orchestrator.js';
 import { TrajectoryCapture, ConsentManager } from '../../../moe-training/client/index.js';
 import { isFirstRun, runFirstTimeSetup, loadConfig, saveConfig, printWelcome } from './firstrun.js';
 import { bindDaemon as bindGrooveNetworkDaemon } from './providers/groove-network.js';
+import { bindDaemon as bindAxomDaemon } from './providers/axom.js';
+import { AxomConnector } from './axom-connector.js';
+import { AxomServerManager } from './axom-server.js';
+import { AxomInstaller } from './axom-install.js';
 import { setProviderPaths } from './providers/index.js';
 
 const DEFAULT_PORT = 31415;
@@ -166,6 +170,9 @@ export class Daemon {
     this.watcher = new Watcher(this);
     this.autoState = new AutoState(this.grooveDir);
     this.orchestrator = new Orchestrator(this);
+    this.axom = new AxomConnector(this);
+    this.axomServer = new AxomServerManager(this);
+    this.axomInstaller = new AxomInstaller(this);
     this.trajectoryCapture = null;
 
     // Hook teams.delete to clean up agent-loop session files
@@ -202,6 +209,7 @@ export class Daemon {
     // Give the groove-network provider a handle to the daemon so it can read
     // networkBeta config at spawn time without a circular import.
     bindGrooveNetworkDaemon(this);
+    bindAxomDaemon(this);
 
     // HTTP + WebSocket server
     this.app = express();
@@ -626,6 +634,7 @@ export class Daemon {
         this.orchestrator.start();
         this.timeline.start();
         this.gateways.start();
+        this.axom.start();
         this.federation.initialize();
         this._startGarbageCollector();
 
@@ -877,6 +886,8 @@ export class Daemon {
     this.chatStore.stop();
     this.orchestrator.stop();
     this.timeline.stop();
+    await this.axomServer.destroy();
+    this.axom.destroy();
     if (this._gcInterval) clearInterval(this._gcInterval);
     if (this._stateSaveInterval) clearInterval(this._stateSaveInterval);
     if (this._classifierInterval) clearInterval(this._classifierInterval);

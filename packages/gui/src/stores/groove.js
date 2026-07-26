@@ -14,6 +14,7 @@ import { createPreviewSlice } from './slices/preview-slice.js';
 import { createMarketplaceSlice } from './slices/marketplace-slice.js';
 import { createAutomationsSlice } from './slices/automations-slice.js';
 import { createAutoAgentsSlice } from './slices/auto-agents-slice.js';
+import { createAxomSlice } from './slices/axom-slice.js';
 
 const WS_URL = `ws://${window.location.hostname}:${window.location.port || 31415}`;
 
@@ -39,6 +40,7 @@ export const useGrooveStore = create((set, get) => ({
   ...createMarketplaceSlice(set, get),
   ...createAutomationsSlice(set, get),
   ...createAutoAgentsSlice(set, get),
+  ...createAxomSlice(set, get),
 
   // ── Connection ────────────────────────────────────────────
   connected: false,
@@ -73,6 +75,7 @@ export const useGrooveStore = create((set, get) => ({
       get().fetchTunnels();
       get().fetchBetaStatus();
       get().fetchNetworkInstallStatus();
+      get().fetchAxomStatus();
       get().fetchTrainingStatus();
       api.get('/config').then((cfg) => {
         if (cfg?.dataSharingDismissed) set({ dataSharingDismissed: true });
@@ -651,6 +654,22 @@ export const useGrooveStore = create((set, get) => ({
 
         case 'gateway:status':
           set({ gateways: msg.data || [] });
+          break;
+
+        case 'axom:status':
+          set({ axomStatus: msg.data || { endpoints: [] } });
+          break;
+
+        case 'axom:event':
+          get().ingestAxomEvent(msg.endpoint, msg.session, msg.envelope);
+          break;
+
+        case 'axom:instances':
+          set({ axomInstances: msg.data || [] });
+          break;
+
+        case 'axom:install:progress':
+          set({ axomInstall: msg.data });
           break;
 
         case 'provider:status-changed':

@@ -2,6 +2,7 @@
 
 import { randomUUID } from 'crypto';
 import { deliverInstruction } from './deliver.js';
+import { RelayClient, parsePeerRef } from './innerchat-relay.js';
 
 // An unanswered ask holds an HTTP request open and blocks the calling agent,
 // so it has to be bounded.
@@ -16,6 +17,12 @@ const MAX_EXCHANGES = 12;
 const CONTEXT_TURNS = 4;
 const MAX_TURN_CHARS = 1200;
 
+// Sender-side outbox polling for async (tell) replies from a peer. Bounded: we
+// poll a peer only after we've sent it a tell, and stop after a run of empty
+// polls — a heads-down agent gets a generous window to finish, then we let go.
+const OUTBOX_POLL_MS = 3000;
+const OUTBOX_IDLE_STOP = 10; // ~30s of silence ends the poll
+
 /**
  * Agent-to-agent consultation.
  *
@@ -29,13 +36,40 @@ const MAX_TURN_CHARS = 1200;
  * a question reaches its target whether it's mid-task, idle, or stopped.
  */
 export class InnerChat {
-  constructor(daemon) {
+  constructor(daemon, opts = {}) {
     this.daemon = daemon;
     this.threads = new Map();
     // agentId being asked -> pending record (resolve/reject/timer/threadId)
     this.awaiting = new Map();
     // asker id -> id of the agent it is currently blocked on
     this.blockedOn = new Map();
+
+    // Cross-daemon relay (spec: plans/cross-daemon-innerchat-spec.md).
+    this.relay = opts.relay || new RelayClient();
+    // Replies to async (tell) relays, queued here on the answering daemon until
+    // the sending daemon polls its outbox. Entry: { id, forDaemonId, toName,
+    // fromName, fromDaemonId, text, threadId, ts }.
+    this.relayOutbox = [];
+    // alias -> { timer, idle, busy } for active sender-side outbox pollers.
+    this._outboxPollers = new Map();
+  }
+
+  // Configured peers: [{ alias, url, daemonId }]. Empty by default — cross-daemon
+  // routing is off until the user adds a peer on both machines.
+  _peers() {
+    return Array.isArray(this.daemon.config?.innerchatPeers) ? this.daemon.config.innerchatPeers : [];
+  }
+
+  _peerByAlias(alias) {
+    return this._peers().find((p) => p.alias === alias) || null;
+  }
+
+  _peerByDaemonId(daemonId) {
+    return this._peers().find((p) => p.daemonId === daemonId) || null;
+  }
+
+  _daemonId() {
+    return this.daemon.federation.getDaemonId();
   }
 
   /**
@@ -252,6 +286,9 @@ export class InnerChat {
     if (pending.mode === 'async') {
       this._clearAwait(agentId);
       this._forwardAsyncReply(pending, answerTurn, text);
+    } else if (pending.mode === 'relay-async') {
+      this._clearAwait(agentId);
+      this._enqueueOutbox(pending, answerTurn, text);
     } else {
       pending.resolve(text);
     }
@@ -392,6 +429,228 @@ export class InnerChat {
     return pending ? this.threads.get(pending.threadId) : null;
   }
 
+  // ── Cross-daemon relay ──────────────────────────────────────
+  //
+  // A `name@alias` target routes here. The sending side (askRemote/tellRemote)
+  // signs the request with this daemon's federation key and POSTs it to the
+  // peer; the answering side (receiveRelay) verifies the signer, resolves the
+  // name in its OWN registry, and delivers through the normal InnerChat pipe
+  // with a guest identity so caps, threads, and audit all work unchanged.
+
+  // True when `to` names a peer. Lets the route layer branch cheaply.
+  isRemoteRef(to) {
+    const parsed = parsePeerRef(to);
+    return !!(parsed && parsed.alias);
+  }
+
+  // Ask an agent on a peer daemon and BLOCK for its reply (relayed over the
+  // still-open HTTP response — one-way transport suffices for ask/reply).
+  async askRemote(fromAgent, toName, alias, message, opts = {}) {
+    const peer = this._requirePeer(alias);
+    const envelope = this._signRelay('ask', fromAgent, toName, message);
+    const { ok, status, json } = await this._sendRelay(peer, envelope, opts.timeoutMs);
+    if (!ok) throw new Error(json?.error || `Peer "${alias}" refused the relay (HTTP ${status})`);
+    this.daemon.audit.log('innerchat.relay.ask', { peer: alias, from: fromAgent.name, to: toName });
+    return { reply: json.reply, remote: true, peer: alias, threadId: json.threadId };
+  }
+
+  // Send to an agent on a peer daemon WITHOUT blocking. The reply, if any, is
+  // queued in the peer's outbox and picked up by our poller, then delivered
+  // back to the local sender — keeping the one-way topology sufficient.
+  async tellRemote(fromAgent, toName, alias, message) {
+    const peer = this._requirePeer(alias);
+    const envelope = this._signRelay('tell', fromAgent, toName, message);
+    const { ok, status, json } = await this._sendRelay(peer, envelope);
+    if (!ok) throw new Error(json?.error || `Peer "${alias}" refused the relay (HTTP ${status})`);
+    this.daemon.audit.log('innerchat.relay.tell', { peer: alias, from: fromAgent.name, to: toName });
+    this._ensureOutboxPoll(peer);
+    return { delivered: true, remote: true, peer: alias, threadId: json.threadId };
+  }
+
+  _requirePeer(alias) {
+    const peer = this._peerByAlias(alias);
+    if (!peer) {
+      const aliases = this._peers().map((p) => p.alias);
+      throw new Error(
+        `No configured InnerChat peer "${alias}".`
+        + (aliases.length ? ` Known peers: ${aliases.join(', ')}.` : ' No peers are configured.'),
+      );
+    }
+    return peer;
+  }
+
+  _signRelay(kind, fromAgent, toName, message) {
+    const signed = this.daemon.federation.sign({
+      v: 1,
+      type: 'innerchat.relay',
+      kind,
+      fromName: fromAgent.name,
+      fromRole: fromAgent.role,
+      fromDaemonId: this._daemonId(),
+      toName,
+      message,
+    });
+    return { payload: signed.payload, signature: signed.signature };
+  }
+
+  _sendRelay(peer, envelope, timeoutMs) {
+    return this.relay.sendRelay(peer.url, envelope, timeoutMs);
+  }
+
+  /**
+   * Receive a relayed ask/tell from a peer daemon. The route layer has already
+   * verified the signature and confirmed the sender is a configured peer, and
+   * passes the peer's alias for display. Resolves the target in the LOCAL
+   * registry and delivers with a guest sender identity.
+   *
+   * For 'ask' this resolves with the local agent's reply text (relayed back on
+   * the open response). For 'tell' it resolves once delivered; the reply is
+   * later queued to the outbox for the sending daemon.
+   */
+  async receiveRelay({ fromName, fromRole, fromDaemonId, peerAlias, toName, message, kind, threadId, timeoutMs }) {
+    // One hop only: a `name@peer` target here would be a second relay. Refuse
+    // before resolving, so it reads as "transitive" not "no such agent".
+    if (String(toName).includes('@')) throw new Error('Transitive relay refused — InnerChat is one hop only.');
+    const toAgent = this._resolveLocal(toName);
+    if (!toAgent) {
+      const names = this.daemon.registry.getAll().map((a) => a.name);
+      const err = new Error(`No agent named "${toName}" on this daemon.`);
+      err.availableAgents = names;
+      throw err;
+    }
+    if (this.awaiting.has(toAgent.id)) {
+      throw new Error(`${toAgent.name} is already answering another message — try again shortly.`);
+    }
+    if (!message || !message.trim()) throw new Error('message is required');
+
+    const guest = {
+      id: `guest:${fromDaemonId}:${fromName}`,
+      name: peerAlias ? `${fromName}@${peerAlias}` : fromName,
+      role: fromRole || 'remote-agent',
+      remote: { daemonId: fromDaemonId, fromName },
+    };
+
+    const t = this._openThread(guest, toAgent, threadId);
+    this._checkExchangeCap(t, toAgent);
+
+    const { targetId, skipResults } = await this._deliver(t, guest, toAgent, message.trim(), kind);
+
+    if (kind === 'tell') {
+      this.awaiting.set(targetId, {
+        mode: 'relay-async',
+        threadId: t.id,
+        remote: { forDaemonId: fromDaemonId, fromName },
+        skipResults,
+        timer: setTimeout(() => this._clearAwait(targetId), MAX_TIMEOUT_MS),
+      });
+      return { delivered: true, threadId: t.id };
+    }
+
+    const reply = await this._awaitReply(t, guest.id, targetId, {
+      skipResults,
+      timeoutMs: Math.min(Number(timeoutMs) || DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS),
+    });
+    return { reply, threadId: t.id };
+  }
+
+  // Local-only resolution mirroring the route resolver: exact id/name first,
+  // then a single unambiguous partial. Never reaches across daemons (one hop).
+  _resolveLocal(ref) {
+    const all = this.daemon.registry.getAll();
+    const needle = String(ref || '').trim().toLowerCase();
+    const exact = all.find((a) => a.id === ref)
+      || all.find((a) => a.name === ref)
+      || all.find((a) => a.name.toLowerCase() === needle);
+    if (exact) return exact;
+    const partial = all.filter((a) => a.name.toLowerCase() === needle
+      || a.name.toLowerCase().includes(needle));
+    return partial.length === 1 ? partial[0] : null;
+  }
+
+  // ── Outbox (async relay replies) ────────────────────────────
+
+  _enqueueOutbox(pending, answerTurn, text) {
+    this.relayOutbox.push({
+      id: randomUUID().slice(0, 12),
+      forDaemonId: pending.remote.forDaemonId,
+      toName: pending.remote.fromName,          // the remote agent that asked
+      fromName: answerTurn.from.name,            // the local agent that answered
+      fromDaemonId: this._daemonId(),
+      text,
+      threadId: pending.threadId,
+      ts: Date.now(),
+    });
+    this.daemon.audit.log('innerchat.relay.queued', { for: pending.remote.forDaemonId, from: answerTurn.from.name });
+  }
+
+  // Drain and remove outbox entries destined for a given daemon (at-least-once:
+  // removed on read). Called by the relay/outbox route after verifying the caller.
+  drainOutbox(forDaemonId) {
+    const mine = this.relayOutbox.filter((e) => e.forDaemonId === forDaemonId);
+    if (mine.length) this.relayOutbox = this.relayOutbox.filter((e) => e.forDaemonId !== forDaemonId);
+    return mine;
+  }
+
+  // Sender-side: poll a peer for queued replies until they stop arriving.
+  _ensureOutboxPoll(peer) {
+    const existing = this._outboxPollers.get(peer.alias);
+    if (existing) { existing.idle = 0; return; }
+
+    const state = { idle: 0, busy: false, timer: null };
+    const tick = async () => {
+      if (state.busy) return;
+      state.busy = true;
+      try {
+        const entries = await this._pollOutbox(peer);
+        if (entries.length) {
+          state.idle = 0;
+          for (const e of entries) await this._deliverRemoteReply(peer, e);
+        } else {
+          state.idle += 1;
+        }
+      } catch { state.idle += 1; }
+      finally { state.busy = false; }
+      if (state.idle >= OUTBOX_IDLE_STOP) this._stopOutboxPoll(peer.alias);
+    };
+    state.timer = setInterval(tick, OUTBOX_POLL_MS);
+    if (state.timer.unref) state.timer.unref();
+    this._outboxPollers.set(peer.alias, state);
+  }
+
+  async _pollOutbox(peer) {
+    const signed = this.daemon.federation.sign({ v: 1, type: 'innerchat.outbox', fromDaemonId: this._daemonId() });
+    const { json } = await this.relay.fetchOutbox(peer.url, { payload: signed.payload, signature: signed.signature }, 5000);
+    return Array.isArray(json?.entries) ? json.entries : [];
+  }
+
+  _stopOutboxPoll(alias) {
+    const state = this._outboxPollers.get(alias);
+    if (state?.timer) clearInterval(state.timer);
+    this._outboxPollers.delete(alias);
+  }
+
+  // Deliver a peer's async reply to the local agent that sent the original tell.
+  async _deliverRemoteReply(peer, entry) {
+    const sender = this._resolveLocal(entry.toName);
+    if (!sender) {
+      this.daemon.audit.log('innerchat.relay.reply_undeliverable', { to: entry.toName, peer: peer.alias });
+      return;
+    }
+    const msg = [
+      `[InnerChat reply from ${entry.fromName}@${peer.alias}]`,
+      '',
+      entry.text,
+      '',
+      'This is a reply to a message you sent earlier to a peer agent (you were not '
+      + 'blocking on it). Fold it into your work, or reply again to continue.',
+    ].join('\n');
+    try {
+      await deliverInstruction(this.daemon, sender.id, msg, { recordFeedback: false });
+    } catch (err) {
+      this.daemon.audit.log('innerchat.relay.reply_failed', { to: sender.id, error: err.message });
+    }
+  }
+
   // Clear all outstanding timers so a shutdown (or a test) doesn't hang on
   // pending ask/tell timeouts. Blocking asks are rejected so their HTTP
   // requests don't hang either.
@@ -404,6 +663,7 @@ export class InnerChat {
       this.awaiting.delete(targetId);
     }
     this.blockedOn.clear();
+    for (const alias of [...this._outboxPollers.keys()]) this._stopOutboxPoll(alias);
   }
 }
 

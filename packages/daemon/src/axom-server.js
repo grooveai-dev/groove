@@ -1,0 +1,229 @@
+// GROOVE — Axom Server Manager (per-session local instances)
+// FSL-1.1-Apache-2.0 — see LICENSE
+//
+// Manages local `axom serve` processes per contract §11: one instance per
+// GROOVE session that wants its own Axom, each with its own port and its own
+// SOVEREIGN --data-dir (ledgers never shared — that isolation is the product,
+// not an implementation detail). Same lifecycle family as LlamaServerManager.
+// The serve binary refuses a locked data-dir; we surface that error verbatim
+// rather than retrying around it.
+
+import { spawn } from 'child_process';
+import { mkdirSync, statfsSync } from 'fs';
+import { join } from 'path';
+import os from 'os';
+import { AXOM_DEFAULT_PORT } from './axom-connector.js';
+
+const START_TIMEOUT_MS = 60000; // model load can be slow on first start
+
+// Local-inference floor, learned 2026-07-25: an 8GB Mac loaded the 4GB Q8
+// chassis fine, then llama_decode failed at the Metal working-set ceiling and
+// memory pressure took the whole machine down. Refusing is a feature. The
+// install manifest's min_ram_gb overrides these when present.
+export const AXOM_REQUIREMENTS = {
+  minRamGb: 12,
+  recommendedRamGb: 16,
+  minDiskGb: 6,
+  downloadGb: 4.4,
+};
+
+export function hardwareReport(dir = os.homedir(), requirements = AXOM_REQUIREMENTS) {
+  const totalRamGb = os.totalmem() / 2 ** 30;
+  let freeDiskGb = null;
+  try {
+    const s = statfsSync(dir);
+    freeDiskGb = (s.bavail * s.bsize) / 2 ** 30;
+  } catch { /* stat unavailable — report null, never guess */ }
+  const appleSilicon = process.platform === 'darwin' && process.arch === 'arm64';
+  const verdict = totalRamGb < requirements.minRamGb ? 'insufficient'
+    : totalRamGb < requirements.recommendedRamGb ? 'marginal' : 'ready';
+  return {
+    totalRamGb: Math.round(totalRamGb * 10) / 10,
+    cpuCores: os.cpus().length,
+    arch: process.arch,
+    platform: process.platform,
+    appleSilicon,
+    gpu: appleSilicon ? 'Metal (unified memory)' : null, // CUDA detection: v1
+    freeDiskGb: freeDiskGb === null ? null : Math.round(freeDiskGb * 10) / 10,
+    diskOk: freeDiskGb === null ? null : freeDiskGb >= requirements.minDiskGb,
+    verdict,
+    requirements,
+  };
+}
+
+export class AxomServerManager {
+  constructor(daemon, opts = {}) {
+    this.daemon = daemon;
+    this.command = opts.command || null; // resolved lazily from config
+    this.totalRamGbOverride = opts.totalRamGb; // tests inject; prod reads os
+    this.instances = new Map(); // id -> {id, proc, port, dataDir, status, startedAt, error}
+  }
+
+  _command() {
+    return this.command || this.daemon.config?.axom?.command || 'axom';
+  }
+
+  _modelDir() {
+    return this.daemon.config?.axom?.modelDir
+      || join(this.daemon.grooveDir, 'axom', 'models');
+  }
+
+  _allocatePort() {
+    const used = new Set([...this.instances.values()].map((i) => i.port));
+    for (const ep of this.daemon.axom?.endpoints?.values?.() || []) {
+      try { used.add(Number(new URL(ep.url).port)); } catch { /* non-numeric */ }
+    }
+    let port = AXOM_DEFAULT_PORT;
+    while (used.has(port)) port += 1;
+    return port;
+  }
+
+  list() {
+    return [...this.instances.values()].map(({ proc, ...rest }) => rest);
+  }
+
+  // Start a local instance. `id` doubles as the data-dir name, so the same id
+  // across restarts resumes the same sovereign memory.
+  async start(id = 'default') {
+    if (!/^[a-zA-Z0-9_-]{1,40}$/.test(id)) throw new Error('invalid instance id');
+    const existing = this.instances.get(id);
+    if (existing && existing.status === 'running') return this.list().find((i) => i.id === id);
+
+    // Hardware floor — refuse under-spec local inference instead of letting
+    // it take the host down. Mock mode is weightless and exempt.
+    if (!this.daemon.config?.axom?.mock && !this.daemon.config?.axom?.allowUnderspec) {
+      const totalRamGb = this.totalRamGbOverride ?? os.totalmem() / 2 ** 30;
+      if (totalRamGb < AXOM_REQUIREMENTS.minRamGb) {
+        throw new Error(
+          `This machine has ${Math.round(totalRamGb)}GB RAM — below Axom's ${AXOM_REQUIREMENTS.minRamGb}GB floor for local inference. `
+          + 'Connect to a remote Axom endpoint instead (axom.allowUnderspec overrides at your own risk).',
+        );
+      }
+    }
+
+    const port = this._allocatePort();
+    const dataDir = join(this.daemon.grooveDir, 'axom', 'instances', id);
+    mkdirSync(dataDir, { recursive: true });
+
+    const args = [
+      'serve',
+      '--host', '127.0.0.1',
+      '--port', String(port),
+      '--data-dir', dataDir,
+      '--model-dir', this._modelDir(),
+    ];
+    // config.axom.mock: run the scripted engine (§11 addendum) — the
+    // no-weights bring-up mode. /about reports family "mock" so the GUI can
+    // never mistake it for the real thing.
+    if (this.daemon.config?.axom?.mock) args.push('--mock');
+    const instance = {
+      id, port, dataDir, status: 'starting', startedAt: Date.now(), error: null, proc: null,
+    };
+    this.instances.set(id, instance);
+    this._broadcast();
+
+    let proc;
+    try {
+      proc = spawn(this._command(), args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (err) {
+      instance.status = 'error';
+      instance.error = err.message;
+      this._broadcast();
+      throw err;
+    }
+    instance.proc = proc;
+    let stderrTail = '';
+    proc.stderr?.on('data', (d) => { stderrTail = (stderrTail + d.toString()).slice(-2000); });
+    proc.on('error', (err) => {
+      instance.status = 'error';
+      instance.error = err.code === 'ENOENT'
+        ? `"${this._command()}" not found — install the Axom runtime first`
+        : err.message;
+      this._broadcast();
+    });
+    proc.on('exit', (code, signal) => {
+      const wasRunning = instance.status === 'running';
+      instance.status = instance.status === 'stopping' ? 'stopped' : 'error';
+      if (instance.status === 'error') {
+        // The lockfile refusal (§11: two instances on one data-dir) lands
+        // here — surface the runtime's own words, don't paraphrase.
+        instance.error = instance.error || stderrTail.trim().split('\n').pop() || `exited (code ${code}, signal ${signal})`;
+      }
+      instance.proc = null;
+      if (wasRunning) this._deregisterEndpoint(id);
+      this._broadcast();
+      this.daemon.audit.log('axom.instance.exit', { id, code, signal });
+    });
+
+    await this._waitForAbout(port, instance);
+    if (instance.status !== 'error') {
+      instance.status = 'running';
+      this._registerEndpoint(id, port);
+      this.daemon.audit.log('axom.instance.start', { id, port, dataDir });
+    }
+    this._broadcast();
+    if (instance.status === 'error') throw new Error(instance.error || 'instance failed to start');
+    return this.list().find((i) => i.id === id);
+  }
+
+  async stop(id) {
+    const instance = this.instances.get(id);
+    if (!instance) throw new Error(`no instance "${id}"`);
+    instance.status = 'stopping';
+    this._broadcast();
+    this._deregisterEndpoint(id);
+    if (instance.proc) {
+      instance.proc.kill('SIGTERM');
+      await new Promise((resolve) => {
+        const t = setTimeout(() => { instance.proc?.kill('SIGKILL'); resolve(); }, 5000);
+        instance.proc.once('exit', () => { clearTimeout(t); resolve(); });
+      });
+    } else {
+      instance.status = 'stopped';
+    }
+    this._broadcast();
+    this.daemon.audit.log('axom.instance.stop', { id });
+  }
+
+  async _waitForAbout(port, instance) {
+    const deadline = Date.now() + START_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (instance.status === 'error') return;
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/about`, { signal: AbortSignal.timeout(2000) });
+        if (res.ok) return;
+      } catch { /* not up yet */ }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    instance.status = 'error';
+    instance.error = instance.error || `no /about on port ${port} within ${START_TIMEOUT_MS / 1000}s`;
+    instance.proc?.kill('SIGKILL');
+  }
+
+  // Managed instances surface through the same connector as any endpoint —
+  // one socket, every tier (contract §5).
+  _registerEndpoint(id, port) {
+    const name = `local-${id}`;
+    const entries = (this.daemon.config.axom?.endpoints || []).filter((e) => e.name !== name);
+    entries.push({ name, url: `http://127.0.0.1:${port}`, managed: true });
+    this.daemon.config.axom = { ...(this.daemon.config.axom || {}), endpoints: entries };
+    this.daemon.axom.configure(entries);
+  }
+
+  _deregisterEndpoint(id) {
+    const name = `local-${id}`;
+    const entries = (this.daemon.config.axom?.endpoints || []).filter((e) => e.name !== name);
+    this.daemon.config.axom = { ...(this.daemon.config.axom || {}), endpoints: entries };
+    this.daemon.axom.configure(entries);
+  }
+
+  _broadcast() {
+    this.daemon.broadcast({ type: 'axom:instances', data: this.list() });
+  }
+
+  async destroy() {
+    for (const id of [...this.instances.keys()]) {
+      try { await this.stop(id); } catch { /* shutting down */ }
+    }
+  }
+}

@@ -309,6 +309,59 @@ html {
   box-shadow: 0 0 60px rgba(51,175,188,0.15), 0 0 120px rgba(51,175,188,0.04);
 }
 
+/* ── Axom Onboarding ─────────────────────────────────────── */
+
+/* Front door backdrop — one cool bloom behind the mark on the identity pane,
+   a faint cold wash under the operations pane. Nothing else. */
+.axom-hero-bg {
+  background:
+    radial-gradient(ellipse 760px 620px at 20% 38%, rgba(51, 175, 188, 0.11) 0%, transparent 68%),
+    radial-gradient(ellipse 900px 700px at 88% 62%, rgba(122, 176, 223, 0.045) 0%, transparent 70%),
+    var(--color-surface-1);
+}
+
+/* Panels read as instrument faces: light at the top edge, settling downward. */
+.axom-panel {
+  background: linear-gradient(180deg, var(--color-surface-3) 0%, var(--color-surface-1) 100%);
+}
+
+/* Hairline that carries the accent only where it matters — a top edge. */
+.axom-edge-accent {
+  background: linear-gradient(90deg, transparent 0%, rgba(51, 175, 188, 0.6) 50%, transparent 100%);
+}
+.axom-edge-muted {
+  background: linear-gradient(90deg, transparent 0%, var(--color-border) 50%, transparent 100%);
+}
+
+/* Display type — a soft vertical falloff, no color, just depth. */
+.axom-display {
+  background: linear-gradient(180deg, #f2f4f7 0%, #9aa3b0 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.axom-ring {
+  border-radius: 50%;
+  border: 1px solid rgba(51, 175, 188, 0.22);
+}
+
+@keyframes axom-orbit { to { transform: rotate(360deg); } }
+.animate-axom-orbit { animation: axom-orbit 26s linear infinite; }
+.animate-axom-orbit-slow { animation: axom-orbit 44s linear infinite reverse; }
+
+@keyframes axom-breathe {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.85; }
+}
+.animate-axom-breathe { animation: axom-breathe 6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-axom-orbit,
+  .animate-axom-orbit-slow,
+  .animate-axom-breathe { animation: none; }
+}
+
 /* ── React Flow Overrides ─────────────────────────────────── */
 
 /* Suppress node fly-in animation — nodes appear in position instantly */

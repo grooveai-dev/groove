@@ -9,7 +9,13 @@
 //
 // No imports on purpose — process.js and introducer.js both pull from here.
 
-export function innerChatInstructions(port = 31415, agentName = 'YOUR_NAME') {
+export function innerChatInstructions(port = 31415, agentName = 'YOUR_NAME', peers = []) {
+  const aliases = Array.isArray(peers) ? peers.map((p) => p.alias).filter(Boolean) : [];
+  const peerRule = aliases.length
+    ? `- Agents on peer machines are addressed as \`name@peer\` (configured peers: ${aliases.join(', ')}). `
+      + 'A plain name is always local; `name@peer` routes the same ask/tell to that daemon and relays the reply back.'
+    : '- To reach an agent on another machine, address it as `name@peer` (a peer must be configured first with '
+      + '`POST /api/innerchat/peers`); a plain name is always local.';
   return [
     '## Consulting Other Agents (InnerChat)',
     '',
@@ -56,6 +62,7 @@ export function innerChatInstructions(port = 31415, agentName = 'YOUR_NAME') {
     '- Only start a conversation when the user asks you to. Never consult other agents on your own initiative.',
     `- \`from\` must be your own agent name${agentName === 'YOUR_NAME' ? ' (it is in your $GROOVE_AGENT_NAME environment variable)' : ''}.`,
     '- Agent names are listed in `AGENTS_REGISTRY.md`, including agents on other teams.',
+    peerRule,
     '- Use `ask` when you need the reply now; use `tell` to hand off or notify without waiting.',
     '- One message per call. With `ask`, wait for the answer before deciding what to ask next.',
     '- Ground truth lives in files (specs, code, run output), not in chat — use InnerChat to',

@@ -1,5 +1,5 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
-import { Network, Code2, ChartSpline, Puzzle, Users, Box, FlaskConical, Newspaper, Settings, Globe, BookOpen, LayoutList, Bot } from 'lucide-react';
+import { Network, Code2, ChartSpline, Puzzle, Users, Box, FlaskConical, Newspaper, Settings, Globe, BookOpen, LayoutList, Bot, Atom } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Tooltip } from '../ui/tooltip';
 import { useGrooveStore } from '../../stores/groove';
@@ -7,6 +7,7 @@ import { isElectron, getPlatform } from '../../lib/electron';
 
 const BASE_NAV_ITEMS = [
   { id: 'agents',      icon: Network,       label: 'Agents' },
+  { id: 'axom',        icon: Atom,          label: 'Axom' },
   { id: 'fleet',       icon: LayoutList,    label: 'Fleet' },
   { id: 'editor',      icon: Code2,         label: 'Editor' },
   { id: 'dashboard',   icon: ChartSpline,   label: 'Dashboard' },

@@ -52,6 +52,15 @@ const KEY_PLACEHOLDERS = {
   grok: 'xai-...',
 };
 
+// installCommand is a string for most providers, but some (Ollama) return
+// {command, alt, platform} — normalize so an object can never reach JSX as a
+// child (React #31 white-screens the whole tab).
+function installCommandText(installCommand) {
+  if (!installCommand) return null;
+  if (typeof installCommand === 'string') return installCommand;
+  return installCommand.command || null;
+}
+
 function ProviderCard({ provider, onKeyChange }) {
   const [settingKey, setSettingKey] = useState(false);
   const [keyInput, setKeyInput] = useState('');
@@ -182,15 +191,15 @@ function ProviderCard({ provider, onKeyChange }) {
               </Button>
 
               {/* Manual install command */}
-              {provider.installCommand && (
+              {installCommandText(provider.installCommand) && (
                 <div className="space-y-1">
                   <p className="text-2xs text-text-4 font-sans">Or install manually in your terminal:</p>
                   <div className="flex items-center gap-1">
                     <code className="flex-1 px-2 py-1.5 bg-surface-0 border border-border-subtle rounded text-2xs font-mono text-text-2 select-all">
-                      {provider.installCommand}
+                      {installCommandText(provider.installCommand)}
                     </code>
                     <button
-                      onClick={() => { navigator.clipboard.writeText(provider.installCommand); addToast('success', 'Copied'); }}
+                      onClick={() => { navigator.clipboard.writeText(installCommandText(provider.installCommand)); addToast('success', 'Copied'); }}
                       className="p-1.5 text-text-4 hover:text-text-2 cursor-pointer"
                     >
                       <Copy size={10} />
@@ -1491,6 +1500,169 @@ function TrainingDataSection() {
   );
 }
 
+/* ── InnerChat Peers Section ──────────────────────────────── */
+
+// Cross-daemon InnerChat: agents on this daemon can reach agents on a peer
+// daemon as `name@alias`. A peer is another Groove daemon you can already
+// reach (a tunnel-forwarded localhost port, a Tailscale address). Trust is
+// mutual — both machines must list each other, and signatures ride the
+// federation keypair — so this panel also surfaces THIS daemon's id to hand
+// to the other side.
+function InnerChatPeersSection() {
+  const addToast = useGrooveStore((s) => s.addToast);
+  const [peers, setPeers] = useState([]);
+  const [ownId, setOwnId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ alias: '', url: '', daemonId: '' });
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    api.get('/innerchat/peers')
+      .then((d) => setPeers(Array.isArray(d?.peers) ? d.peers : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+    api.get('/federation').then((d) => setOwnId(d?.id || null)).catch(() => {});
+  };
+  useEffect(() => { load(); }, []);
+
+  const canSubmit = form.alias.trim() && form.url.trim() && form.daemonId.trim();
+
+  async function addPeer() {
+    if (!canSubmit) return;
+    setBusy(true);
+    try {
+      const d = await api.post('/innerchat/peers', {
+        alias: form.alias.trim(),
+        url: form.url.trim(),
+        daemonId: form.daemonId.trim().toLowerCase(),
+      });
+      setPeers(Array.isArray(d?.peers) ? d.peers : []);
+      setForm({ alias: '', url: '', daemonId: '' });
+      setAdding(false);
+      addToast('success', `Peer "${form.alias.trim()}" added`);
+    } catch (err) {
+      addToast('error', 'Could not add peer', err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removePeer(alias) {
+    try {
+      const d = await api.delete(`/innerchat/peers/${encodeURIComponent(alias)}`);
+      setPeers(Array.isArray(d?.peers) ? d.peers : []);
+      addToast('info', `Removed peer "${alias}"`);
+    } catch (err) {
+      addToast('error', 'Remove failed', err.message);
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2.5 px-0.5">
+        <span className="text-2xs font-semibold text-text-3 font-sans uppercase tracking-wider">InnerChat Peers</span>
+        <div className="flex-1 h-px bg-border-subtle" />
+        <span className="text-2xs text-text-4 font-sans">
+          {peers.length} peer{peers.length !== 1 ? 's' : ''} · address as <code className="text-text-3">name@alias</code>
+        </span>
+      </div>
+
+      <div className="rounded-lg border border-border-subtle bg-surface-1 px-4 py-3.5 flex flex-col gap-3">
+        {/* This daemon's identity — to hand to the peer machine */}
+        <div className="flex items-start gap-2.5">
+          <div className="w-6 h-6 rounded bg-indigo/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <Share2 size={12} className="text-indigo" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-medium text-text-0 font-sans leading-tight">Cross-daemon agent chat</div>
+            <div className="text-2xs text-text-4 font-sans leading-relaxed mt-0.5">
+              Agents reach a peer's agents as <code className="text-text-3">name@alias</code>. Add the peer on both
+              machines — each lists the other's URL and daemon id. This daemon's id:
+            </div>
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <code className="h-7 px-2 flex items-center bg-surface-0 border border-border-subtle rounded-md text-2xs font-mono text-text-2 truncate min-w-0">
+                {ownId || '—'}
+              </code>
+              {ownId && (
+                <Button variant="secondary" size="sm" onClick={() => { navigator.clipboard.writeText(ownId); addToast('success', 'Copied daemon id'); }} className="h-7 px-2 flex-shrink-0">
+                  <Copy size={11} />
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Peer list */}
+        {loading ? (
+          <Skeleton className="h-10 rounded-md" />
+        ) : peers.length > 0 ? (
+          <div className="flex flex-col gap-1.5">
+            {peers.map((p) => (
+              <div key={p.alias} className="flex items-center gap-2.5 px-2.5 py-2 rounded-md bg-surface-0 border border-border-subtle">
+                <MessageCircle size={12} className="text-indigo flex-shrink-0" />
+                <Badge variant="secondary" className="font-mono flex-shrink-0">@{p.alias}</Badge>
+                <code className="text-2xs font-mono text-text-2 truncate min-w-0 flex-1">{p.url}</code>
+                <code className="text-2xs font-mono text-text-4 flex-shrink-0 hidden sm:inline" title={p.daemonId}>{String(p.daemonId).slice(0, 8)}…</code>
+                <button
+                  onClick={() => removePeer(p.alias)}
+                  className="text-text-4 hover:text-danger transition-colors flex-shrink-0 cursor-pointer"
+                  title={`Remove ${p.alias}`}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-2xs text-text-4 font-sans px-1 py-1">No peers configured — add one to let agents talk across machines.</div>
+        )}
+
+        {/* Add form */}
+        {adding ? (
+          <div className="flex flex-col gap-2 pt-1 border-t border-border-subtle">
+            <div className="grid grid-cols-[1fr_2fr] gap-2">
+              <input
+                value={form.alias}
+                onChange={(e) => setForm((f) => ({ ...f, alias: e.target.value }))}
+                placeholder="alias (e.g. spark)"
+                className="h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+              <input
+                value={form.url}
+                onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+                placeholder="http://localhost:62686 (tunnel / Tailscale URL)"
+                className="h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </div>
+            <input
+              value={form.daemonId}
+              onChange={(e) => setForm((f) => ({ ...f, daemonId: e.target.value }))}
+              placeholder="peer daemon id (from the other machine's Settings)"
+              className="h-8 px-2.5 text-xs bg-surface-0 border border-border-subtle rounded-md text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => { setAdding(false); setForm({ alias: '', url: '', daemonId: '' }); }} disabled={busy}>Cancel</Button>
+              <Button variant="primary" size="sm" onClick={addPeer} disabled={!canSubmit || busy}>
+                {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                Add Peer
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setAdding(true)}
+            className="flex items-center justify-center gap-1.5 h-8 rounded-md border border-dashed border-border-subtle text-2xs font-sans text-text-3 hover:text-accent hover:border-accent/40 transition-colors cursor-pointer"
+          >
+            <Plus size={12} />
+            Add Peer
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Early Access Section ─────────────────────────────────── */
 
 function EarlyAccessSection() {
@@ -1790,6 +1962,9 @@ export default function SettingsView() {
               </div>
             </div>
           )}
+
+          {/* ═══════ INNERCHAT PEERS ═══════ */}
+          <InnerChatPeersSection />
 
           {/* ═══════ EARLY ACCESS ═══════ */}
           <EarlyAccessSection />

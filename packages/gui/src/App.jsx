@@ -25,6 +25,7 @@ import NetworkView from './views/network';
 import MemoryView from './views/memory';
 import FleetView from './views/fleet';
 import AutoAgentsView from './views/auto-agents';
+import AxomView from './views/axom';
 
 // Agent components
 import { AgentPanel } from './components/agents/agent-panel';
@@ -79,6 +80,7 @@ function ViewRouter() {
     case 'federation':  content = <FederationView />;  break;
     case 'settings':    content = <SettingsView />;    break;
     case 'fleet':       content = <FleetView />;       break;
+    case 'axom':        content = <AxomView />;        break;
     case 'memory':      content = <MemoryView />;      break;
     case 'network':     content = networkUnlocked ? <NetworkView /> : <AgentsView />; break;
     default:            content = <AgentsView />;

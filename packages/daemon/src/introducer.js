@@ -561,7 +561,7 @@ export class Introducer {
   // compaction — the spawn prompt alone can scroll out of a long session.
   _innerChatSection() {
     const port = this.daemon.port || 31415;
-    return [...innerChatInstructions(port), '', ...watchInstructions(port), '', ...logFileInstructions()];
+    return [...innerChatInstructions(port, 'YOUR_NAME', this.daemon.config?.innerchatPeers), '', ...watchInstructions(port), '', ...logFileInstructions()];
   }
 
   writeRegistryFile(projectDir) {

@@ -11,6 +11,7 @@ import { GrokProvider } from './grok.js';
 import { NanaBananaProvider } from './nano-banana.js';
 import { LocalProvider } from './local.js';
 import { GrooveNetworkProvider } from './groove-network.js';
+import { AxomProvider } from './axom.js';
 
 // Electron forks may not inherit the full shell PATH, causing `which` to miss
 // globally-installed CLI tools. Augment PATH with common npm global bin dirs.
@@ -90,6 +91,7 @@ const providers = {
   'nano-banana': new NanaBananaProvider(),
   'local': new LocalProvider(),
   'groove-network': new GrooveNetworkProvider(),
+  'axom': new AxomProvider(),
 };
 
 const installCache = new Map();

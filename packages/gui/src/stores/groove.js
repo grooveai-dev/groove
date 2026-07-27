@@ -673,6 +673,12 @@ export const useGrooveStore = create((set, get) => ({
 
         // Byte-identical to GET /api/axom/runtimes. Receiving one proves the
         // daemon broadcasts state transitions, which retires the GUI's poll.
+        // The chat list is daemon-side and broadcast on every create/rename/
+        // remove — same live-update contract as axom:runtimes, so no poll.
+        case 'axom:chats':
+          set({ axomChats: msg.data?.chats || [] });
+          break;
+
         case 'axom:runtimes':
           set({
             axomRuntimes: msg.data?.runtimes || [],

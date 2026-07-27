@@ -12,7 +12,7 @@ import {
   Shield, Database, Megaphone, Calculator, UserCheck,
   Headphones, BarChart3, Rocket, ChevronDown, Pen, Presentation,
   Sparkles, X, Search, AlertTriangle, Plug, MessageCircle, GitBranch, Globe,
-  Check, Users, Plus,
+  Check, Users, Plus, Atom, Loader2,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useToast } from '../../lib/hooks/use-toast';
@@ -46,6 +46,62 @@ function CheckMark() {
       <circle cx="7" cy="7" r="6" fill="currentColor" fillOpacity="0.15" stroke="currentColor" strokeWidth="1" />
       <path d="M4.5 7 L6.5 9 L9.5 5.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+
+// ── Axom — hook, never spawn (§10 mono-Axom) ─────────────────────────────
+//
+// One Axom per user per machine. This entry mints a fresh session on the ONE
+// runtime and opens the Axom tab on it; it starts the runtime only if nothing
+// is running. It shares no code path with agent spawning — the Axom provider
+// throws on buildSpawnCommand on purpose, so a mis-wire fails loudly instead
+// of quietly starting a second runtime.
+function AxomHookEntry({ onDone }) {
+  const runtimes = useGrooveStore((s) => s.axomRuntimes);
+  const hookAxom = useGrooveStore((s) => s.hookAxom);
+  const setActiveView = useGrooveStore((s) => s.setActiveView);
+  const addToast = useGrooveStore((s) => s.addToast);
+  const [busy, setBusy] = useState(false);
+
+  // Nothing configured yet — the Axom tab's first-run splash owns that story.
+  const configured = Array.isArray(runtimes) && runtimes.length > 0;
+  const active = configured
+    ? runtimes.find((r) => r.id === useGrooveStore.getState().axomActiveRuntimeId) || runtimes[0]
+    : null;
+
+  async function hook() {
+    setBusy(true);
+    try {
+      if (configured) await hookAxom({ runtimeId: active?.id });
+      setActiveView('axom');
+      onDone?.();
+    } catch (err) {
+      addToast('error', 'Could not open Axom', err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      onClick={hook}
+      disabled={busy}
+      className="w-full mb-5 flex items-center gap-3 p-3 rounded-md border border-accent/25 bg-accent/[0.06] hover:bg-accent/10 text-left transition-colors cursor-pointer disabled:opacity-50"
+    >
+      <div className="w-8 h-8 rounded-md bg-accent/10 border border-accent/25 flex items-center justify-center flex-shrink-0">
+        {busy ? <Loader2 size={16} className="text-accent animate-spin" /> : <Atom size={16} className="text-accent" />}
+      </div>
+      <div className="min-w-0">
+        <div className="text-xs font-semibold text-text-0 font-sans">Axom</div>
+        <div className="text-2xs text-text-3 font-sans truncate">
+          {configured
+            ? `New chat on ${active?.name || 'your Axom'} — same memory, its own thread`
+            : 'Set up your sovereign runtime'}
+        </div>
+      </div>
+      <span className="ml-auto text-2xs text-accent font-sans flex-shrink-0">Open</span>
+    </button>
   );
 }
 
@@ -97,7 +153,12 @@ export function SpawnWizard() {
   const selectedRole = role || customRole;
   const selectedProvider = providers.find((p) => p.id === provider);
   const availableModels = selectedProvider?.models || [];
-  const installedProviders = providers.filter((p) => p.authType === 'api-key' ? (p.installed && p.hasKey) : p.installed);
+  // §10 mono-Axom: Axom is hooked, never spawned — one runtime per user per
+  // machine. Its provider throws on buildSpawnCommand deliberately, so it is
+  // kept out of every list that ends in a spawn call; the hook entry below is
+  // the only way in.
+  const spawnableProviders = providers.filter((p) => p.id !== 'axom');
+  const installedProviders = spawnableProviders.filter((p) => p.authType === 'api-key' ? (p.installed && p.hasKey) : p.installed);
   const isFromModelLab = !!(detailPanel?.presetProvider || detailPanel?.presetModel);
   const presetTeamId = detailPanel?.presetTeamId || null;
   const showTeamSelector = !presetTeamId && (isFromModelLab || !activeTeamId);
@@ -255,6 +316,12 @@ export function SpawnWizard() {
         <div className="flex flex-col h-[calc(100%-57px)]">
           {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+            {/* Axom — a HOOK, not a spawn. One Axom per user per machine (§10):
+                this mints a session on the running runtime (launching it only
+                if nothing is up) and opens the Axom tab on that thread. It
+                deliberately shares no code path with agent spawning. */}
+            <AxomHookEntry onDone={() => closeDetail()} />
+
             {/* Section 1: Role Selection */}
             <div>
               <label className="text-xs font-semibold text-text-2 font-sans uppercase tracking-wider block mb-3">
@@ -437,7 +504,7 @@ export function SpawnWizard() {
                         className="w-full h-8 px-3 pr-8 text-sm rounded-md bg-surface-1 border border-border text-text-0 font-sans appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
                       >
                         <option value="">Auto</option>
-                        {providers.map((p) => (
+                        {spawnableProviders.map((p) => (
                           <option key={p.id} value={p.id} disabled={p.authType === 'api-key' ? !(p.installed && p.hasKey) : !p.installed}>
                             {p.name}{!p.installed ? ' (Not installed)' : (p.authType === 'api-key' && !p.hasKey) ? ' (No API key)' : ''}
                           </option>

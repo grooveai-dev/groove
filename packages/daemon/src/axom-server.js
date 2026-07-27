@@ -151,7 +151,9 @@ export class AxomServerManager {
     this.instances.set(id, instance);
     this._broadcast();
 
-    const launch = opts.launch || { command: this._command() };
+    // A spec may carry env/cwd without naming a command (the caller wanted the
+    // configured binary plus the blessed env) — fill the command, keep the rest.
+    const launch = { ...opts.launch, command: opts.launch?.command || this._command() };
     let proc;
     try {
       if (launch.cwd || launch.env || /\s/.test(launch.command)) {

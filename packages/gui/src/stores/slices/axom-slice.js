@@ -14,6 +14,16 @@ const PROMPT_CORRELATION_WINDOW_S = 120;
 
 const sessionKey = (endpoint, session) => `${endpoint}/${session}`;
 
+// Threads are named "Chat N" per runtime — a hat, not an identity. The count
+// walks past names already taken so a reopened list doesn't collide.
+export function nextChatLabel(chats, runtimeId) {
+  const taken = new Set((chats || []).filter((c) => c.runtimeId === runtimeId).map((c) => c.label));
+  for (let n = 1; ; n += 1) {
+    const candidate = `Chat ${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
 export const createAxomSlice = (set, get) => ({
   // ── Axom Provider ─────────────────────────────────────────
   axomStatus: { endpoints: [] },
@@ -94,6 +104,53 @@ export const createAxomSlice = (set, get) => ({
       set({ axomRuntimes: [], axomActiveRuntimeId: null });
       return null;
     }
+  },
+
+  // ── Hooks (§10 mono-Axom) ───────────────────────────────────────────────
+  //
+  // "Multiple Axoms" is an access-layer illusion the product maintains on
+  // purpose. A hook — a selector entry, a tab, a new chat — is a fresh
+  // session on the ONE runtime, never a second process. So this never routes
+  // through spawn, and the labels below name the HAT (which thread you're in),
+  // never a separate mind.
+  //
+  // The chat list is DAEMON-side and is the list of record. It survives
+  // reload, tab close and daemon restart, and it remembers rows the user
+  // cleared — so rows are never synthesized from the runtime's live session
+  // list, which would resurrect a chat the user just removed.
+  axomChats: null, // null until first answer; [] means genuinely none
+
+  async fetchAxomChats() {
+    try {
+      const data = await api.get('/axom/chats');
+      set({ axomChats: data?.chats || [] });
+      return data?.chats || [];
+    } catch {
+      set({ axomChats: [] });
+      return [];
+    }
+  },
+
+  async hookAxom({ runtimeId, session, label } = {}) {
+    const result = await api.post('/axom/hook', { runtimeId, session, label });
+    await get().fetchAxomChats();
+    await get().fetchAxomRuntimes();
+    await get().selectAxomSession(result.runtimeId, result.session);
+    return result;
+  },
+
+  async renameAxomChat(session, label) {
+    await api.patch(`/axom/chats/${encodeURIComponent(session)}`, { label });
+    await get().fetchAxomChats();
+  },
+
+  // Removes the ROW, never the conversation: the transcript stays in Axom's
+  // ledger and the daemon remembers the row is hidden so the session poll
+  // can't bring it back. Nothing here deletes anything.
+  async hideAxomChat(session) {
+    await api.delete(`/axom/chats/${encodeURIComponent(session)}`);
+    await get().fetchAxomChats();
+    if (get().axomSelected?.session === session) set({ axomSelected: null });
   },
 
   async addAxomRuntime(spec) {

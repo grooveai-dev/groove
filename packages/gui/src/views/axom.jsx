@@ -10,10 +10,10 @@
 // fail-deceptive).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Atom, Zap, OctagonX, Plug, Radio, MessageSquareQuote, Shirt, TriangleAlert, Trophy, Download, Square, Play, Plus, MemoryStick, HardDrive, Cpu, Gauge, CheckCircle2, Globe, Copy, Settings2, Loader2, ChevronDown, SendHorizontal, Wrench, Brain, Power, X, Check, ChevronRight, Type, Code2 } from 'lucide-react';
+import { Atom, Zap, OctagonX, Plug, Radio, MessageSquareQuote, Shirt, TriangleAlert, Trophy, Download, Square, Play, Plus, MemoryStick, HardDrive, Cpu, Gauge, CheckCircle2, Globe, Copy, Settings2, Loader2, ChevronDown, SendHorizontal, Wrench, Brain, Power, X, Check, Hourglass, MessageSquare, ChevronRight, Type, Code2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGrooveStore } from '../stores/groove';
-import { axomSessionKey } from '../stores/slices/axom-slice';
+import { axomSessionKey, nextChatLabel } from '../stores/slices/axom-slice';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
@@ -1057,44 +1057,159 @@ function RuntimeHeader({ runtime, runtimes, activeId, endpoint, anomalies, onMan
 
 // ── Sessions — a tab strip, not a sidebar ──────────────────────────────────
 
-// New chat is the cheap, default action: a fresh session id per chat, because
-// sessions are recency scopes runtime-side, not memory walls (SPARK_DEV_SETUP
-// ruling — one eternal session id is a bug). The strip beside it is history.
-function SessionTabs({ endpoint, runtime }) {
-  const axomSelected = useGrooveStore((s) => s.axomSelected);
-  const selectAxomSession = useGrooveStore((s) => s.selectAxomSession);
-  const sessions = endpoint?.sessions || [];
-  const target = endpoint?.name || runtime?.id;
-  if (!target) return null;
+// ── Chats — the left-hand furniture ────────────────────────────────────────
+//
+// The list is the daemon's (GET /api/axom/chats), never synthesized from the
+// runtime's live sessions: the daemon remembers rows the user cleared, and
+// re-deriving them from live sessions would resurrect exactly those.
+//
+// "Remove" hides a row. It does not delete a conversation — the transcript
+// stays in Axom's ledger — so the control says what it does and never says
+// "delete" for an operation that deletes nothing.
+
+function ChatRow({ chat, active, holder, onOpen, onRemove, onRename }) {
+  const [confirming, setConfirming] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(chat.label || '');
+
+  useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(false), 5000);
+    return () => clearTimeout(t);
+  }, [confirming]);
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => { setEditing(false); if (draft.trim() && draft !== chat.label) onRename(draft.trim()); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Escape') { setDraft(chat.label || ''); setEditing(false); }
+        }}
+        className="w-full h-7 px-2 rounded bg-surface-0 border border-accent/40 text-[12px] font-sans text-text-0 focus:outline-none"
+      />
+    );
+  }
 
   return (
-    <div className="flex-shrink-0 h-8 border-b border-border-subtle bg-surface-1 px-2 flex items-center gap-1 overflow-x-auto">
-      <button
-        onClick={() => selectAxomSession(target, `s-${Math.random().toString(36).slice(2, 10)}`)}
-        className="flex items-center gap-1.5 h-6 px-2 rounded text-2xs font-medium text-text-3 hover:text-text-0 hover:bg-surface-2 transition-colors cursor-pointer flex-shrink-0"
-        title="Start a fresh chat — a new session scope on the same memory ledger"
-      >
-        <Plus size={12} /> New chat
-      </button>
-      {sessions.length > 0 && <span aria-hidden className="h-4 w-px bg-border flex-shrink-0" />}
-      {sessions.map((s) => {
-        const active = axomSelected?.session === s.session;
-        return (
-          <button
-            key={s.session}
-            onClick={() => selectAxomSession(target, s.session)}
-            className={cn(
-              'flex items-center gap-1.5 h-6 px-2 rounded font-mono text-2xs whitespace-nowrap transition-colors cursor-pointer',
-              active ? 'bg-surface-3 text-text-0' : 'text-text-4 hover:text-text-2 hover:bg-surface-2',
-            )}
-            title={s.overflow > 0 ? `${s.overflow} events evicted from the buffer` : undefined}
-          >
-            <StatusDot status={s.live ? 'running' : 'completed'} size="sm" />
-            {s.session}
-            {s.overflow > 0 && <span className="text-warning">−{s.overflow}</span>}
-          </button>
-        );
-      })}
+    <div
+      className={cn(
+        'group flex items-center gap-2 h-7 pl-2 pr-1 rounded transition-colors cursor-pointer',
+        active ? 'bg-surface-3 text-text-0' : 'text-text-3 hover:bg-surface-2 hover:text-text-1',
+      )}
+      onClick={onOpen}
+      onDoubleClick={() => setEditing(true)}
+      title={chat.session}
+    >
+      {/* Which thread Axom is actually working on, at a glance. */}
+      {holder ? (
+        <span className="relative flex items-center justify-center w-2.5 h-2.5 flex-shrink-0" title="Axom is generating on this chat">
+          <span className="absolute inset-0 rounded-full bg-accent/30 animate-ping [animation-duration:2s]" />
+          <span className="relative w-1.5 h-1.5 rounded-full bg-accent" />
+        </span>
+      ) : (
+        <MessageSquare size={11} className="flex-shrink-0 opacity-60" />
+      )}
+      <span className="text-[12px] font-sans truncate flex-1 min-w-0">{chat.label || chat.session}</span>
+      {confirming ? (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="text-[10px] font-sans text-warning hover:text-warning/80 px-1 flex-shrink-0 cursor-pointer"
+          title="The conversation stays in Axom's memory — this only clears the row"
+        >
+          Remove?
+        </button>
+      ) : (
+        <button
+          onClick={(e) => { e.stopPropagation(); setConfirming(true); }}
+          className="h-5 w-5 flex items-center justify-center rounded text-text-4 hover:text-text-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 cursor-pointer"
+          title="Remove from list — the conversation stays in Axom's memory"
+        >
+          <X size={11} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ChatSidebar({ runtime, chats, holderSession, onShowActivity, activityOpen }) {
+  const axomSelected = useGrooveStore((s) => s.axomSelected);
+  const selectAxomSession = useGrooveStore((s) => s.selectAxomSession);
+  const hookAxom = useGrooveStore((s) => s.hookAxom);
+  const renameAxomChat = useGrooveStore((s) => s.renameAxomChat);
+  const hideAxomChat = useGrooveStore((s) => s.hideAxomChat);
+  const addToast = useGrooveStore((s) => s.addToast);
+  const [hooking, setHooking] = useState(false);
+
+  const mine = (chats || []).filter((c) => !runtime || c.runtimeId === runtime.id);
+
+  async function newChat() {
+    setHooking(true);
+    try {
+      await hookAxom({ runtimeId: runtime?.id, label: nextChatLabel(chats, runtime?.id) });
+    } catch (err) {
+      addToast('error', 'Could not open a new chat', err.message);
+    } finally {
+      setHooking(false);
+    }
+  }
+
+  return (
+    <div className="w-56 xl:w-64 flex-shrink-0 border-r border-border-subtle bg-surface-1 flex flex-col min-h-0">
+      <div className="flex-shrink-0 p-2">
+        <button
+          onClick={newChat}
+          disabled={hooking}
+          className="w-full flex items-center gap-2 h-8 px-2 rounded-md border border-border-subtle bg-surface-2 hover:bg-surface-3 hover:border-border text-text-1 transition-colors cursor-pointer disabled:opacity-50"
+          title="A fresh thread on the same Axom — same memory, its own recency scope"
+        >
+          {hooking ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+          <span className="text-[12px] font-sans font-medium">New chat</span>
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-2 pb-2 flex flex-col gap-0.5 min-h-0">
+        {chats === null && (
+          <div className="flex items-center gap-2 px-2 py-1.5 text-text-4">
+            <Loader2 size={11} className="animate-spin" />
+            <span className="text-[11px] font-sans">Loading chats…</span>
+          </div>
+        )}
+        {chats !== null && mine.length === 0 && (
+          <p className="px-2 py-1.5 text-[11px] font-sans text-text-4 leading-relaxed">
+            No chats yet. Start one — it stays here across reloads.
+          </p>
+        )}
+        {mine.map((c) => (
+          <ChatRow
+            key={c.session}
+            chat={c}
+            active={axomSelected?.session === c.session}
+            holder={holderSession === c.session}
+            onOpen={() => selectAxomSession(c.runtimeId || runtime?.id, c.session)}
+            onRename={(label) => renameAxomChat(c.session, label).catch((err) => addToast('error', 'Rename failed', err.message))}
+            onRemove={() => hideAxomChat(c.session).catch((err) => addToast('error', 'Could not remove', err.message))}
+          />
+        ))}
+      </div>
+
+      <div className="flex-shrink-0 border-t border-border-subtle p-2">
+        <button
+          onClick={onShowActivity}
+          className={cn(
+            'w-full flex items-center gap-2 h-7 px-2 rounded-md transition-colors cursor-pointer',
+            activityOpen ? 'bg-surface-3 text-text-1' : 'text-text-4 hover:text-text-1 hover:bg-surface-2',
+          )}
+          title="The raw event stream behind this chat"
+        >
+          <Radio size={12} />
+          <span className="text-[11px] font-sans">Activity</span>
+        </button>
+      </div>
+      <InstanceControls />
     </div>
   );
 }
@@ -1273,7 +1388,7 @@ function eventLine(e) {
 // envelopes never stop being one click away, because they are the ground
 // truth every line above is derived from.
 
-function ActivityRail({ events, highlight, onHighlight, live }) {
+function ActivityRail({ events, highlight, onHighlight, live, onClose }) {
   const scrollRef = useRef(null);
   const pinnedRef = useRef(true);
   const [raw, setRaw] = useState(false);
@@ -1307,7 +1422,7 @@ function ActivityRail({ events, highlight, onHighlight, live }) {
   const cited = new Set(highlight?.ids || []);
 
   return (
-    <div className="w-64 xl:w-72 flex-shrink-0 border-r border-border-subtle bg-surface-1 flex flex-col min-h-0">
+    <div className="w-72 xl:w-80 flex-shrink-0 border-l border-border-subtle bg-surface-1 flex flex-col min-h-0">
       <div className="flex-shrink-0 h-10 px-3 flex items-center gap-2 border-b border-border-subtle">
         {live ? (
           <span className="relative flex items-center justify-center w-3 h-3 flex-shrink-0">
@@ -1328,6 +1443,13 @@ function ActivityRail({ events, highlight, onHighlight, live }) {
           title={raw ? 'Show readable lines' : 'Show the raw envelopes'}
         >
           raw
+        </button>
+        <button
+          onClick={onClose}
+          className="h-6 w-6 flex items-center justify-center rounded text-text-4 hover:text-text-1 hover:bg-surface-2 transition-colors cursor-pointer"
+          title="Close"
+        >
+          <X size={12} />
         </button>
       </div>
 
@@ -1386,7 +1508,6 @@ function ActivityRail({ events, highlight, onHighlight, live }) {
           </div>
         )}
       </div>
-      <InstanceControls />
     </div>
   );
 }
@@ -1527,6 +1648,16 @@ function buildTurns(events) {
 }
 
 // ── Conversation rendering — the fleet chat's vocabulary ───────────────────
+//
+// THREE type sizes in this column, no more:
+//   · 12px sans — prose the runtime or the user wrote (answers, messages)
+//   · 11px sans — secondary material: thoughts, narration, tool lines, labels
+//   · 10px mono — ground truth only: event ids, kinds, counters
+// and ONE gutter: every non-bubble block hangs off the same 14px left rail,
+// so thoughts, tools, narration and answers form a single column the eye can
+// follow. The rail's colour is the only thing that varies — accent for the
+// answer, subtle for the instrument lines beside it. Nothing is hidden or
+// summarised away; it is sized and aligned so the information reads.
 
 function UserTurn({ text, status }) {
   return (
@@ -1574,15 +1705,15 @@ function ThoughtBlock({ block }) {
     <div>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 mb-1 text-2xs text-text-4 hover:text-text-2 font-sans transition-colors cursor-pointer"
+        className="flex items-center gap-1.5 mb-1 text-[11px] text-text-4 hover:text-text-2 font-sans transition-colors cursor-pointer"
       >
         <Brain size={11} />
         {block.items.length === 1 ? 'thought' : `${block.items.length} thoughts`}
         {block.items.length > 1 && <ChevronDown size={10} className={cn('transition-transform', open && 'rotate-180')} />}
       </button>
-      <div className="pl-3.5 border-l border-border flex flex-col gap-1">
+      <div className="pl-3.5 border-l border-border-subtle flex flex-col gap-1">
         {shown.map((t) => (
-          <p key={t.id} className="text-[11px] font-sans text-text-3 leading-relaxed italic">{t.text}</p>
+          <p key={t.id} className="text-[11px] font-sans text-text-3 leading-relaxed">{t.text}</p>
         ))}
       </div>
     </div>
@@ -1606,12 +1737,12 @@ function ActivityBlock({ block, live }) {
   if (isLive) {
     const cur = items[Math.min(cycle, items.length - 1)];
     return (
-      <div className="flex items-center gap-2 px-3 py-2 w-full rounded-md bg-surface-3/50 border border-border-subtle/30">
-        <Loader2 size={11} className="text-accent animate-spin flex-shrink-0" />
-        <span className="text-[11px] text-text-2 font-mono truncate min-w-0 flex-1 transition-opacity duration-300">
-          {cur.text}
+      <div className="pl-3.5 border-l border-border-subtle py-0.5">
+        <span className="flex items-center gap-2 min-w-0">
+          <Loader2 size={11} className="text-accent animate-spin flex-shrink-0" />
+          <span className="text-[11px] text-text-2 font-sans truncate min-w-0 flex-1">{cur.text}</span>
+          {items.length > 1 && <span className="text-[10px] text-text-4 font-mono flex-shrink-0">{items.length}</span>}
         </span>
-        {items.length > 1 && <span className="text-[10px] text-text-4 font-mono flex-shrink-0">{items.length}</span>}
       </div>
     );
   }
@@ -1620,14 +1751,14 @@ function ActivityBlock({ block, live }) {
     <div>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 px-3 py-1 text-[10px] text-text-4 hover:text-text-2 font-mono transition-colors cursor-pointer"
+        className="flex items-center gap-2 pl-3.5 py-0.5 text-[11px] text-text-4 hover:text-text-2 font-sans transition-colors cursor-pointer"
       >
         <Wrench size={10} className="opacity-50" />
         {items.length} tool call{items.length !== 1 ? 's' : ''}
         <ChevronDown size={10} className={cn('transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="ml-3.5 pl-3.5 border-l border-border flex flex-col">
+        <div className="pl-3.5 border-l border-border-subtle flex flex-col">
           {items.map((it) => (
             <div key={it.id} className="flex items-center gap-2 py-0.5 group">
               <Wrench size={10} className="text-text-4 opacity-70 flex-shrink-0" />
@@ -1652,13 +1783,13 @@ function NarrationBlock({ block, eventsById, highlight, onHighlight }) {
       <button
         onClick={() => onHighlight(active ? null : { narrationId: block.id, ids: block.cites })}
         className={cn(
-          'group w-full flex items-start gap-2 text-left rounded-md px-2 py-1 -mx-2 transition-colors cursor-pointer',
-          active ? 'bg-surface-2' : 'hover:bg-surface-2/60',
+          'group w-full flex items-start gap-2 text-left pl-3.5 border-l border-border-subtle py-0.5 transition-colors cursor-pointer',
+          active ? 'bg-surface-2/70' : 'hover:bg-surface-2/40',
         )}
         title="Show the events behind this line"
       >
-        <MessageSquareQuote size={12} className={cn('mt-0.5 flex-shrink-0', active ? 'text-accent' : 'text-text-4')} />
-        <span className="text-[12px] font-sans text-text-2 leading-relaxed">{block.text}</span>
+        <MessageSquareQuote size={11} className={cn('mt-[3px] flex-shrink-0', active ? 'text-accent' : 'text-text-4')} />
+        <span className="text-[11px] font-sans text-text-3 leading-relaxed">{block.text}</span>
         <span className={cn(
           'ml-auto flex-shrink-0 font-mono text-[10px] transition-colors',
           active ? 'text-accent' : 'text-text-4 opacity-0 group-hover:opacity-100',
@@ -1667,7 +1798,7 @@ function NarrationBlock({ block, eventsById, highlight, onHighlight }) {
         </span>
       </button>
       {active && (
-        <div className="ml-5 mt-1 rounded-md border border-border-subtle bg-surface-0 px-2 py-1.5 font-mono text-[10px] leading-5">
+        <div className="ml-3.5 mt-1 rounded-md border border-border-subtle bg-surface-0 px-2 py-1.5 font-mono text-[10px] leading-5">
           {block.cites.map((id) => {
             const ev = eventsById[id];
             return (
@@ -1692,8 +1823,8 @@ function AnswerBlock({ block, endpointName }) {
   return (
     <div>
       <div className="flex items-center gap-2 mb-1">
-        <span className="text-2xs font-semibold text-text-1 font-sans">Axom</span>
-        <span className="text-2xs text-text-4 font-sans">{endpointName}</span>
+        <span className="text-[11px] font-semibold text-text-1 font-sans">Axom</span>
+        <span className="text-[11px] text-text-4 font-sans">{endpointName}</span>
         <span className="text-[10px] text-text-4 font-mono ml-auto">{block.final ? 'resolution' : 'text'}</span>
       </div>
       <div className="pl-3.5 py-1 border-l border-accent">
@@ -1716,7 +1847,7 @@ function Divider({ icon: Icon, text, tone }) {
   return (
     <div className="flex items-center gap-3 py-2">
       <div className="flex-1 h-px bg-border-subtle" />
-      <span className={cn('flex items-center gap-1.5 text-[10px] font-sans flex-shrink-0 uppercase tracking-wide', tone || 'text-text-4')}>
+      <span className={cn('flex items-center gap-1.5 text-[11px] font-sans flex-shrink-0', tone || 'text-text-4')}>
         {Icon && <Icon size={10} />} {text}
       </span>
       <div className="flex-1 h-px bg-border-subtle" />
@@ -1734,7 +1865,7 @@ function TurnView({ turn, live, endpointName, eventsById, highlight, onHighlight
   //     "started elsewhere" there would assert something we can't back.
   const unclaimed = !prompt && !!turn.promptId;
   return (
-    <>
+    <div className="flex flex-col gap-2">
       {prompt && <UserTurn text={prompt} />}
       {unclaimed && <Divider text={ambiguous ? 'prompt not identified' : 'started elsewhere'} />}
       {turn.blocks.map((b) => {
@@ -1752,11 +1883,11 @@ function TurnView({ turn, live, endpointName, eventsById, highlight, onHighlight
         }
       })}
       {turn.stopped && <Divider icon={OctagonX} text="stopped early" tone="text-danger" />}
-    </>
+    </div>
   );
 }
 
-function Conversation({ events, prompts, sessionLive, endpointName, highlight, onHighlight }) {
+function Conversation({ events, prompts, sessionLive, endpointName, highlight, onHighlight, queuedBehind }) {
   const scrollRef = useRef(null);
   const pinnedRef = useRef(true);
   const turns = useMemo(() => buildTurns(events), [events]);
@@ -1789,7 +1920,7 @@ function Conversation({ events, prompts, sessionLive, endpointName, highlight, o
     && (!lastBlock || (lastBlock.type !== 'activity' && lastBlock.type !== 'answer'));
 
   return (
-    <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0">
+    <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-4 py-4 space-y-5 min-h-0">
       {turns.length === 0 && pending.length === 0 && (
         <div className="flex flex-col items-center justify-center h-full text-center py-8">
           <div className="w-10 h-10 rounded-xl bg-surface-3 flex items-center justify-center mb-3">
@@ -1834,7 +1965,24 @@ function Conversation({ events, prompts, sessionLive, endpointName, highlight, o
       ))}
 
       <AnimatePresence>
-        {awaiting && (
+        {/* §10 honesty constraint: hooks share one generation slot. A spinner
+            while another session holds it would claim work is happening on
+            THIS thread when nothing is. Queued says queued. */}
+        {queuedBehind ? (
+          <motion.div
+            key="queued"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            className="flex items-center gap-2 text-text-4"
+          >
+            <Hourglass size={12} className="flex-shrink-0" />
+            <span className="text-[11px] font-sans">
+              Waiting for {queuedBehind.label} to finish — same Axom, currently answering elsewhere.
+            </span>
+          </motion.div>
+        ) : awaiting && (
           <motion.div
             key="thinking"
             initial={{ opacity: 0, y: 6 }}
@@ -2078,7 +2226,7 @@ function interruptRollup(events) {
   return null;
 }
 
-function HotInput({ sessionLive, rollup }) {
+function HotInput({ sessionLive, rollup, queuedBehind }) {
   const axomSelected = useGrooveStore((s) => s.axomSelected);
   const interrupts = useGrooveStore((s) => s.axomInterrupts);
   const stops = useGrooveStore((s) => s.axomStops);
@@ -2143,6 +2291,20 @@ function HotInput({ sessionLive, rollup }) {
   return (
     <div className="bg-surface-1/50 flex-shrink-0 border-t border-border">
       <div className="px-4 py-3 flex flex-col gap-1.5">
+        {/* Said before you type, not discovered after you send. */}
+        {queuedBehind && (
+          <div className="flex items-center gap-2 px-1 text-text-4">
+            <Hourglass size={11} className="flex-shrink-0" />
+            <span className="text-[11px] font-sans">
+              {queuedBehind.label} is generating — your message will start when that turn ends.
+            </span>
+            {queuedBehind.session && (
+              <span className="font-mono text-[10px] text-text-4/70" title="the session holding the generation slot">
+                {queuedBehind.session}
+              </span>
+            )}
+          </div>
+        )}
         {(pending.length > 0 || stopState || rollup) && (
           <div className="flex items-center gap-2 flex-wrap font-mono text-[10px] text-text-4">
             {pending.map(([id, entry]) => (
@@ -2172,7 +2334,9 @@ function HotInput({ sessionLive, rollup }) {
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-            placeholder={sessionLive ? 'Steer Axom mid-flight...' : 'Message your Axom — starts a turn'}
+            placeholder={sessionLive ? 'Steer Axom mid-flight...'
+              : queuedBehind ? 'Message your Axom — queued behind the current turn'
+              : 'Message your Axom — starts a turn'}
             rows={2}
             className="w-full resize-none field-sizing-content min-h-[72px] max-h-60 px-3 py-2.5 text-[13px] leading-[20px] bg-transparent font-sans text-text-0 placeholder:text-text-4 focus:outline-none"
           />
@@ -2236,12 +2400,15 @@ export default function AxomView() {
   const activeRuntimeId = useGrooveStore((s) => s.axomActiveRuntimeId);
   const fetchAxomRuntimes = useGrooveStore((s) => s.fetchAxomRuntimes);
   const runtimesLive = useGrooveStore((s) => s.axomRuntimesLive);
+  const chats = useGrooveStore((s) => s.axomChats);
+  const fetchAxomChats = useGrooveStore((s) => s.fetchAxomChats);
   const selectAxomSession = useGrooveStore((s) => s.selectAxomSession);
   const sendAxomStop = useGrooveStore((s) => s.sendAxomStop);
   const [highlight, setHighlight] = useState(null);
   const [managing, setManaging] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
 
-  useEffect(() => { fetchAxomRuntimes(); }, [fetchAxomRuntimes]);
+  useEffect(() => { fetchAxomRuntimes(); fetchAxomChats(); }, [fetchAxomRuntimes, fetchAxomChats]);
 
   // The daemon broadcasts `axom:runtimes` on every transition and verb, so
   // the poll exists only for daemons that predate those broadcasts. It
@@ -2297,6 +2464,25 @@ export default function AxomView() {
 
   const answer = useMemo(() => livingAnswer(events), [events]);
 
+  // §10: hooks share one generation slot until multi-sequence lands. If the
+  // slot is held by a session that ISN'T this one, this thread is queued and
+  // must say so. Naming follows the prompt-ledger rule — name what we know,
+  // stay honest where we don't: a hook we minted has a label, anything else
+  // is "another session" rather than an invented name. A busy slot with no
+  // resolvable holder is still queued: claiming free invites a send that
+  // stalls with no explanation, which is the worse failure.
+  const queuedBehind = useMemo(() => {
+    if (!runtime?.generationBusy) return null;
+    const holder = runtime.generationHolder || null;
+    if (holder && holder === axomSelected?.session) return null; // our own turn
+    return {
+      session: holder,
+      // The daemon names the holder when it's a chat we minted; anything else
+      // was opened elsewhere and stays unnamed rather than invented.
+      label: runtime.generationHolderLabel || 'another session',
+    };
+  }, [runtime, axomSelected]);
+
   // null means we haven't heard from the daemon yet. "Nothing configured" and
   // "we don't know yet" are different states and only one may show the splash.
   if (runtimes === null) {
@@ -2327,14 +2513,14 @@ export default function AxomView() {
         onManage={() => setManaging(true)}
       />
       <div className="flex-1 flex min-h-0">
-        <ActivityRail
-          events={events}
-          live={sessionLive}
-          highlight={highlight}
-          onHighlight={setHighlight}
+        <ChatSidebar
+          runtime={runtime}
+          chats={chats}
+          holderSession={runtime?.generationBusy ? runtime.generationHolder : null}
+          activityOpen={activityOpen}
+          onShowActivity={() => setActivityOpen((v) => !v)}
         />
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          <SessionTabs endpoint={endpoint} runtime={runtime} />
           <WardrobeStrip about={runtime?.about || endpoint?.about} events={events} />
           <Conversation
             events={events}
@@ -2343,6 +2529,7 @@ export default function AxomView() {
             endpointName={runtime?.name || 'Axom'}
             highlight={highlight}
             onHighlight={setHighlight}
+            queuedBehind={queuedBehind}
           />
           {answer && (
             <LivingAnswerPanel
@@ -2354,9 +2541,18 @@ export default function AxomView() {
             />
           )}
           {canChat
-            ? <HotInput sessionLive={sessionLive} rollup={interruptRollup(events)} />
+            ? <HotInput sessionLive={sessionLive} rollup={interruptRollup(events)} queuedBehind={queuedBehind} />
             : <RuntimeStateCard runtime={runtime} onManage={() => setManaging(true)} />}
         </div>
+        {activityOpen && (
+          <ActivityRail
+            events={events}
+            live={sessionLive}
+            highlight={highlight}
+            onHighlight={setHighlight}
+            onClose={() => setActivityOpen(false)}
+          />
+        )}
       </div>
 
       {managing && (

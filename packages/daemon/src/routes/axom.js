@@ -158,6 +158,46 @@ export function registerAxomRoutes(app, daemon) {
     }
   });
 
+  // Mono-Axom (§10): a hook is a fresh session on the ONE runtime — never a
+  // second process. Used by the agent selector, new tabs, and new chats alike.
+  // Chats are named hooks, persisted daemon-side so the list survives a
+  // refresh. Removing one HIDES it — the conversation is the user's memory and
+  // lives in the runtime's ledger; GROOVE tidying its list never destroys it.
+  app.get('/api/axom/chats', (req, res) => {
+    res.json({ chats: daemon.axomRuntimes.chats() });
+  });
+
+  app.patch('/api/axom/chats/:session', (req, res) => {
+    try {
+      res.json(daemon.axomRuntimes.renameChat(req.params.session, req.body?.label));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/axom/chats/:session', (req, res) => {
+    try {
+      const result = daemon.axomRuntimes.hideChat(req.params.session);
+      daemon.audit.log('axom.chat.hide', { session: req.params.session });
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/axom/hook', async (req, res) => {
+    try {
+      const result = await daemon.axomRuntimes.hook(req.body?.runtimeId, {
+        session: req.body?.session,
+        label: req.body?.label,
+      });
+      daemon.audit.log('axom.hook', { runtime: result.runtimeId, session: result.session });
+      res.json(result);
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
+  });
+
   app.post('/api/axom/runtimes/:id/activate', (req, res) => {
     try {
       daemon.axomRuntimes.activate(req.params.id);

@@ -20,6 +20,25 @@ import { validateEndpoint } from './axom-connector.js';
 import { validateRemote } from './axom-remote.js';
 import { saveConfig } from './firstrun.js';
 
+// The blessed launch spec's env (SPARK_DEV_SETUP.md / §10). These change
+// runtime BEHAVIOUR, not just paths — a spec missing AXOM_MAX_CTX boots a
+// 2048-ctx runtime that looks fine and answers worse. Applied as DEFAULTS
+// only: a value the user set in their own spec always wins, because "GROOVE
+// never edits a spec's flags" is the standing ruling.
+export const BLESSED_ENV = { AXOM_MAX_CTX: '8192' };
+
+function withBlessedEnv(launch) {
+  if (!launch?.command) return launch;
+  return { ...launch, env: { ...BLESSED_ENV, ...(launch.env || {}) } };
+}
+
+// Single-quote for a POSIX shell. The spec is the user's own, but it crosses
+// an ssh command line — an unquoted path or value must not be able to end the
+// command and start another.
+function shellQuote(s) {
+  return `'${String(s).replace(/'/g, `'\\''`)}'`;
+}
+
 export function validateRuntime(rt) {
   if (!rt || typeof rt !== 'object') return 'runtime must be an object';
   if (!rt.id || !/^[a-zA-Z0-9_-]{1,40}$/.test(rt.id)) return 'invalid runtime id';
@@ -38,6 +57,18 @@ export function validateRuntime(rt) {
     if (typeof rt.launch !== 'object' || typeof rt.launch.command !== 'string'
       || rt.launch.command.length === 0 || rt.launch.command.length > 500) {
       return 'launch.command must be a non-empty string of at most 500 chars';
+    }
+    if (rt.launch.cwd !== undefined && typeof rt.launch.cwd !== 'string') {
+      return 'launch.cwd must be a string';
+    }
+    if (rt.launch.env !== undefined) {
+      if (typeof rt.launch.env !== 'object' || rt.launch.env === null || Array.isArray(rt.launch.env)) {
+        return 'launch.env must be an object of name/value pairs';
+      }
+      for (const [k, v] of Object.entries(rt.launch.env)) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) return `invalid env var name "${k}"`;
+        if (typeof v !== 'string' && typeof v !== 'number') return `env var "${k}" must be a string or number`;
+      }
     }
   }
   return null;
@@ -74,13 +105,26 @@ export class AxomRuntimes {
   // are kept until the model proves out — compat routes still read them.
   migrate() {
     const cfg = this._cfg();
-    if (Array.isArray(cfg.runtimes)) return false;
+    // Marker, not mere presence of the array: an earlier migration could write
+    // an EMPTY runtimes[] and then never retry, stranding a configured host
+    // behind a first-run splash forever. Re-run until it produces something or
+    // there is genuinely nothing legacy left to fold.
+    if (cfg.runtimesMigrated) return false;
+    if (Array.isArray(cfg.runtimes) && cfg.runtimes.length) {
+      cfg.runtimesMigrated = true;
+      return false;
+    }
     const runtimes = [];
     const remote = cfg.remote || null;
     const ep = (cfg.endpoints || [])[0] || null;
-    if (ep && remote && ep.url.endsWith(`:${remote.port || 8737}`)) {
+    // A remote host is a configured runtime whether or not an endpoint entry
+    // survives beside it — the endpoint list gets cleared by a disconnect, and
+    // dropping the host on that basis would strand a machine the user set up
+    // and show them a first-run splash instead.
+    if (remote?.host && (!ep || ep.url.endsWith(`:${remote.port || 8737}`))) {
       runtimes.push({
-        id: 'spark', name: remote.host.split('.')[0] || 'Remote', url: ep.url,
+        id: 'spark', name: remote.host.split('.')[0] || 'Remote',
+        url: ep?.url || `http://127.0.0.1:${remote.port || 8737}`,
         control: 'ssh',
         ssh: { host: remote.host, user: remote.user, sshPort: remote.sshPort, autoTunnel: true },
         launch: remote.command ? { command: remote.command } : undefined,
@@ -92,7 +136,10 @@ export class AxomRuntimes {
       runtimes.push({ id: ep.name || 'axom', name, url: ep.url, control: 'none' });
     }
     cfg.runtimes = runtimes;
-    if (runtimes.length && !cfg.activeRuntimeId) cfg.activeRuntimeId = runtimes[0].id;
+    if (runtimes.length) {
+      cfg.runtimesMigrated = true;
+      if (!cfg.activeRuntimeId) cfg.activeRuntimeId = runtimes[0].id;
+    }
     return true;
   }
 
@@ -101,7 +148,9 @@ export class AxomRuntimes {
   }
 
   start() {
-    this.migrate();
+    // Persist it: an unsaved migration re-derives on every boot, so a runtime
+    // the user later removed would come back from the legacy keys each time.
+    if (this.migrate()) this._save();
     this._syncConnector();
   }
 
@@ -231,12 +280,160 @@ export class AxomRuntimes {
         canStart: rt.control !== 'none' && derived.state === 'stopped',
         canStop: rt.control !== 'none' && (derived.state === 'connected' || derived.state === 'running'),
         canHeal: rt.control === 'ssh' && derived.state === 'unreachable',
+        ...this.generation(rt.id),
       };
     }));
     return { runtimes, activeRuntimeId: this.activeId() };
   }
 
+  // ── Mono-Axom (§10) ───────────────────────────────────────────────────────
+  //
+  // One Axom per user per machine. Every hook — a selector entry, a tab, a new
+  // chat — is a fresh SESSION on the one runtime, never a second process. The
+  // §14 lockfile is the enforcement mechanism, so racing hooks are safe: the
+  // loser is refused cleanly and joins the winner's runtime.
+
+  // Until multi-sequence lands, hooks share ONE generation slot. Concurrent
+  // work queues, and the UI is required to say so rather than looking hung.
+  generation(id) {
+    const ep = this.daemon.axom.endpoints.get(id);
+    const busySession = (ep?.sessions ? [...ep.sessions.values()] : []).find((s) => s.live);
+    return {
+      generationBusy: !!busySession,
+      generationHolder: busySession?.id || null,
+      // The holder's human name, if it is a chat this GROOVE minted. A session
+      // opened elsewhere (the REPL, another client) has none — the UI says
+      // "another session" rather than inventing one.
+      generationHolderLabel: busySession ? (this.getChat(busySession.id)?.label || null) : null,
+    };
+  }
+
+  // ── Chats — the persistent hook list ─────────────────────────────────────
+  //
+  // A chat is a named hook. It lives in daemon config, not the browser: tunnel
+  // ports move, tabs reload, and a chat list that evaporates on refresh reads
+  // as data loss even though the ledger kept everything.
+
+  chats() {
+    return (this._cfg().chats || []).filter((c) => !c.hidden);
+  }
+
+  getChat(session) {
+    return (this._cfg().chats || []).find((c) => c.session === session) || null;
+  }
+
+  _putChat(chat) {
+    const all = this._cfg().chats || [];
+    const i = all.findIndex((c) => c.session === chat.session);
+    this._cfg().chats = i >= 0 ? all.map((c) => (c.session === chat.session ? chat : c)) : [...all, chat];
+    this._save();
+  }
+
+  renameChat(session, label) {
+    const chat = this.getChat(session);
+    if (!chat) throw new Error(`no chat "${session}"`);
+    if (typeof label !== 'string' || !label.trim() || label.length > 80) {
+      throw new Error('label must be a non-empty string of at most 80 chars');
+    }
+    this._putChat({ ...chat, label: label.trim() });
+    this.broadcastChats();
+    return this.getChat(session);
+  }
+
+  // Hide, never delete. The conversation lives in the runtime's ledger and is
+  // the user's memory — GROOVE tidying its own list must never be able to
+  // destroy it. The session id is REMEMBERED so the connector's /sessions poll
+  // can't resurrect the row the user just cleared away.
+  hideChat(session) {
+    const chat = this.getChat(session);
+    if (!chat) throw new Error(`no chat "${session}"`);
+    this._putChat({ ...chat, hidden: true });
+    this.broadcastChats();
+    return { hidden: true, session, note: 'removed from the list; the conversation remains in Axom\'s memory' };
+  }
+
+  broadcastChats() {
+    this.daemon.broadcast({ type: 'axom:chats', data: { chats: this.chats() } });
+  }
+
+  // Idempotent by design: if the runtime already answers, this is a no-op. We
+  // never start a second process to satisfy a hook.
+  async ensureRunning(id) {
+    const { state } = await this.state(id);
+    if (state === 'connected' || state === 'running') return { started: false, alreadyRunning: true };
+    const rt = this.get(id);
+    if (rt.control === 'none') {
+      throw new Error(`"${rt.name}" runs on another machine — start it there, then hook in`);
+    }
+    try {
+      const result = await this.startRuntime(id);
+      return { ...result, started: result.started !== false };
+    } catch (err) {
+      // A racing hook that lost the §14 lock has NOT failed: the runtime it
+      // wanted is up, someone else just got there first. Re-derive rather
+      // than surfacing a lock error the user can do nothing about.
+      const after = await this.state(id);
+      if (after.state === 'connected' || after.state === 'running') {
+        return { started: false, alreadyRunning: true, wonBy: 'another hook' };
+      }
+      throw err;
+    }
+  }
+
+  async hook(id, { session, label } = {}) {
+    const rt = this.get(id || this.activeId());
+    if (!rt) throw new Error('no Axom runtime configured');
+    const launch = await this.ensureRunning(rt.id);
+    // §9: a hook mints its own session id — its own recency thread under the
+    // one identity. Callers may pass one to rejoin an existing thread.
+    const sessionId = session || `s-${Math.random().toString(36).slice(2, 10)}`;
+    // Persist the hook as a chat so the list survives a refresh. Rejoining an
+    // existing session must NOT un-hide a chat the user cleared away.
+    const existing = this.getChat(sessionId);
+    if (!existing) {
+      this._putChat({
+        session: sessionId,
+        runtimeId: rt.id,
+        label: label || `Chat ${this.chats().length + 1}`,
+        createdAt: Date.now(),
+      });
+    } else if (label && !existing.hidden) {
+      this._putChat({ ...existing, label });
+    }
+    this.broadcastChats();
+    this.broadcastStatus();
+    return {
+      runtimeId: rt.id,
+      name: rt.name,
+      url: rt.url,
+      session: sessionId,
+      label: this.getChat(sessionId)?.label || null,
+      launched: !!launch.started,
+      ...this.generation(rt.id),
+    };
+  }
+
   // ── Verbs — dispatch on control, never guess ─────────────────────────────
+
+  // A launch spec must mean exactly one thing in every control mode. The local
+  // path gets {cwd, env} as real spawn options; SSH has only a command string,
+  // so compose them INTO it here rather than dropping them — a spec whose env
+  // is silently ignored launches a subtly different runtime (wrong context
+  // window, wrong tree) while reporting success. Found in the wild: a spec
+  // without AXOM_MAX_CTX booted a 2048-ctx instance.
+  _sshCommand(rt) {
+    const launch = withBlessedEnv(rt.launch);
+    if (!launch?.command) return undefined;
+    const parts = [];
+    // `export`, not a `VAR=x prog` prefix: real specs are COMPOUND shell lines
+    // ("cd /x && prog"), and a prefix binds only to the first word — the var
+    // would decorate `cd` and never reach the runtime. Caught by its own test.
+    for (const [k, v] of Object.entries(launch.env || {})) {
+      parts.push(`export ${k}=${shellQuote(String(v))}; `);
+    }
+    if (launch.cwd) parts.push(`cd ${shellQuote(launch.cwd)} && `);
+    return `${parts.join('')}${launch.command}`;
+  }
 
   _sshCfg(rt) {
     let port = 8737;
@@ -244,7 +441,7 @@ export class AxomRuntimes {
     return {
       ...rt.ssh,
       port,
-      command: rt.launch?.command,
+      command: this._sshCommand(rt),
       logPath: rt.logPath,
     };
   }
@@ -263,7 +460,7 @@ export class AxomRuntimes {
     }
     // local: the spawned port becomes the runtime's URL.
     const instance = await this.daemon.axomServer.start(rt.id, {
-      launch: rt.launch,
+      launch: withBlessedEnv(rt.launch) || { env: { ...BLESSED_ENV } },
       dataDir: rt.dataDir,
     });
     this.update(id, { url: `http://127.0.0.1:${instance.port}` });

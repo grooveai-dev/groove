@@ -291,6 +291,68 @@ describe('AxomRuntimes', () => {
     assert.equal(model.getChat(session).hidden, true);
   });
 
+  it('titles a chat from its opening message, quoting rather than paraphrasing', async () => {
+    model.add(SSH_RT);
+    daemon.axom.endpoints.set('spark', { status: 'connected', sessions: new Map() });
+    const { session } = await model.hook('spark');
+    assert.match(model.getChat(session).label, /^Chat /); // placeholder to start
+    model.titleFromFirstMessage(session, '  Hey good morning\n  Axom!  ');
+    assert.equal(model.getChat(session).label, 'Hey good morning Axom!');
+    // Only the FIRST message titles it — later turns don't rewrite history.
+    model.titleFromFirstMessage(session, 'something else entirely');
+    assert.equal(model.getChat(session).label, 'Hey good morning Axom!');
+  });
+
+  it('truncates a long opening message visibly and never mid-word', async () => {
+    model.add(SSH_RT);
+    daemon.axom.endpoints.set('spark', { status: 'connected', sessions: new Map() });
+    const { session } = await model.hook('spark');
+    model.titleFromFirstMessage(session, 'Can you walk me through how the memory ledger graduation policy actually works');
+    const { label } = model.getChat(session);
+    assert.ok(label.endsWith('…'));       // truncation is visible, not silent
+    assert.ok(label.length <= 49);
+    assert.doesNotMatch(label, / …$/);     // no dangling space before the ellipsis
+    assert.ok('Can you walk me through how the memory ledger graduation policy actually works'.startsWith(label.slice(0, -1)));
+  });
+
+  it('never lets an auto-title overwrite a name the user chose', async () => {
+    model.add(SSH_RT);
+    daemon.axom.endpoints.set('spark', { status: 'connected', sessions: new Map() });
+    const { session } = await model.hook('spark');
+    model.renameChat(session, 'Ledger work');
+    model.titleFromFirstMessage(session, 'Hey good morning Axom!');
+    assert.equal(model.getChat(session).label, 'Ledger work');
+  });
+
+  // The runtime's pipeline_start carries no prompt text, so the user's words
+  // exist only in GROOVE. Browser-only storage meant a reload replayed turns
+  // from the ring with their bubbles gone — the answer with no question.
+  it('remembers sent prompts by ref so a reloaded tab can restore bubbles', () => {
+    model.recordPrompt('s-1', 'g-aaa', 'Hey good morning Axom!');
+    model.recordPrompt('s-1', 'g-bbb', 'second one');
+    model.recordPrompt('s-2', 'g-ccc', 'other session');
+    assert.deepEqual(model.prompts('s-1').map((p) => p.ref), ['g-aaa', 'g-bbb']);
+    assert.equal(model.prompts('s-1')[0].text, 'Hey good morning Axom!');
+    assert.equal(model.prompts('s-2').length, 1); // sessions never bleed
+    // Survives a fresh model over the same config — that IS the reload case.
+    assert.equal(new AxomRuntimes(daemon).prompts('s-1').length, 2);
+    // Re-recording a ref replaces rather than duplicates.
+    model.recordPrompt('s-1', 'g-aaa', 'Hey good morning Axom!');
+    assert.equal(model.prompts('s-1').length, 2);
+  });
+
+  it('drops a hidden chat\'s prompts with it, and never another chat\'s', async () => {
+    model.add(SSH_RT);
+    daemon.axom.endpoints.set('spark', { status: 'connected', sessions: new Map() });
+    const a = await model.hook('spark');
+    const b = await model.hook('spark');
+    model.recordPrompt(a.session, 'g-a', 'mine');
+    model.recordPrompt(b.session, 'g-b', 'theirs');
+    model.hideChat(a.session);
+    assert.equal(model.prompts(a.session).length, 0);
+    assert.equal(model.prompts(b.session).length, 1);
+  });
+
   it('names the generation holder only when it is a chat we minted', async () => {
     model.add(SSH_RT);
     const sessions = new Map();

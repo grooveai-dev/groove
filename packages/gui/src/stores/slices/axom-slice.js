@@ -349,6 +349,36 @@ export const createAxomSlice = (set, get) => ({
         return { axomEvents: { ...s.axomEvents, [key]: merged } };
       });
     } catch { /* session may have no ring yet — live events still flow */ }
+
+    // Restore OUR prompts from the daemon and re-pair them to their turns by
+    // §15 ref. Without this a reload replayed every turn from the ring with no
+    // bubble above it — the answer with the question missing. Turns started
+    // elsewhere still have no entry, so they still render bubble-less, which
+    // is the honest outcome rather than a fabricated placeholder.
+    try {
+      const key = sessionKey(endpoint, session);
+      const { prompts = [] } = await api.get(`/axom/sessions/${encodeURIComponent(session)}/prompts`);
+      set((s) => {
+        const known = new Set((s.axomPrompts[key] || []).map((p) => p.ref));
+        const events = s.axomEvents[key] || [];
+        const restored = prompts.filter((p) => !known.has(p.ref)).map((p) => ({
+          p,
+          started: events.find((e) => e.kind === 'pipeline_start' && e.payload?.client_ref === p.ref),
+        }))
+          // Restore ONLY prompts whose turn is still in the ring. An older
+          // prompt with nothing to attach to would sit at the transcript foot
+          // reading "sent · awaiting turn" — a live claim about a turn that
+          // finished hours ago — and one such orphan flips every unclaimed
+          // turn to "prompt not identified". Silence beats a false pending.
+          .filter((r) => r.started)
+          .map((r) => ({ text: r.p.text, ref: r.p.ref, ts: r.p.ts / 1000, attachedTo: r.started.id }));
+        if (!restored.length) return {};
+        const merged = [...restored, ...(s.axomPrompts[key] || [])]
+          .sort((a, b) => a.ts - b.ts)
+          .slice(-200);
+        return { axomPrompts: { ...s.axomPrompts, [key]: merged } };
+      });
+    } catch { /* no prompt record — turns render without bubbles, honestly */ }
   },
 
   ingestAxomEvent(endpoint, session, envelope) {
@@ -463,22 +493,49 @@ export const createAxomSlice = (set, get) => ({
     // §15: an opaque per-message ref the runtime echoes in pipeline_start,
     // making prompt→turn correlation exact instead of inferred.
     const ref = `g-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
+    const key = sessionKey(sel.endpoint, sel.session);
+    // Record BEFORE the POST resolves. The runtime emits `pipeline_start` the
+    // moment it accepts, and that WebSocket frame routinely beats the HTTP 202
+    // back to us — so recording on success lost the race: the ref arrived with
+    // no prompt to match, the turn rendered "prompt not identified", and the
+    // answer sorted above the bubble that appeared later. A prompt in flight is
+    // a true thing to show; the rejection paths below remove it again, which
+    // preserves the rule that a REJECTED prompt never appears in a transcript.
+    set((s) => ({
+      axomPrompts: {
+        ...s.axomPrompts,
+        [key]: [...(s.axomPrompts[key] || []), { text, ref, ts: Date.now() / 1000, attachedTo: null }].slice(-200),
+      },
+    }));
+    const forget = () => set((s) => ({
+      axomPrompts: { ...s.axomPrompts, [key]: (s.axomPrompts[key] || []).filter((p) => p.ref !== ref) },
+    }));
     try {
       await api.post(`/axom/sessions/${encodeURIComponent(sel.session)}/message`, {
         endpoint: sel.endpoint, text, clientRef: ref,
       });
-      // Record only after the runtime ACCEPTED it (202) — a rejected prompt
-      // never ran, so it must not appear in the transcript.
-      const key = sessionKey(sel.endpoint, sel.session);
-      set((s) => ({
-        axomPrompts: {
-          ...s.axomPrompts,
-          [key]: [...(s.axomPrompts[key] || []), { text, ref, ts: Date.now() / 1000, attachedTo: null }].slice(-200),
-        },
-      }));
+      // Safety net for the same race: if `pipeline_start` already landed while
+      // the POST was in flight, its handler found no prompt to claim. Attach
+      // retroactively on the ref — still exact, never inferred.
+      set((s) => {
+        const prompts = s.axomPrompts[key] || [];
+        const mine = prompts.find((p) => p.ref === ref);
+        if (!mine || mine.attachedTo) return {};
+        const started = (s.axomEvents[key] || []).find(
+          (e) => e.kind === 'pipeline_start' && e.payload?.client_ref === ref,
+        );
+        if (!started) return {};
+        return {
+          axomPrompts: {
+            ...s.axomPrompts,
+            [key]: prompts.map((p) => (p.ref === ref ? { ...p, attachedTo: started.id } : p)),
+          },
+        };
+      });
       await get().fetchAxomStatus();
       return { ok: true };
     } catch (err) {
+      forget();
       if (err.status === 409) return { busy: true };
       if (err.status === 413) return { tooLong: true, max: err.body?.max };
       throw err;

@@ -1537,6 +1537,17 @@ function buildTurns(events) {
     return turn;
   }
   function push(block) { current(block.id).blocks.push(block); }
+  // One loader per turn: mechanism accumulates into a single block wherever it
+  // first appeared, instead of a new row every time reasoning interleaves.
+  function activity(e) {
+    const t = current(e.id);
+    let block = t.blocks.find((b) => b.type === 'activity');
+    if (!block) {
+      block = { type: 'activity', id: e.id, items: [] };
+      t.blocks.push(block);
+    }
+    return block;
+  }
   function last(type) {
     const b = turn?.blocks[turn.blocks.length - 1];
     return b && b.type === type ? b : null;
@@ -1559,12 +1570,37 @@ function buildTurns(events) {
         break;
       }
 
-      case 'tool_start':
+      // Mechanism collapses into ONE loader per turn rather than waterfalling
+      // rows between the reasoning. Nothing is lost: every envelope is still
+      // in the activity drawer and the raw ticker, and the loader itself
+      // expands to the full list. This is presentation, not omission.
+      case 'tool_start': {
+        const name = p?.tool || p?.name || p?.tool_name || null;
+        activity(e).items.push({
+          id: e.id, kind: 'tool', name,
+          text: toolLabel(p, 'tool_start') || `tool ${payloadPreview(p)}`.trim(),
+          done: false,
+        });
+        break;
+      }
+
       case 'tool_end': {
-        const entry = { id: e.id, text: toolLabel(p, e.kind) || `${e.kind} ${payloadPreview(p)}`.trim(), done: e.kind === 'tool_end' };
-        const prev = last('activity');
-        if (prev) prev.items.push(entry);
-        else push({ type: 'activity', id: e.id, items: [entry] });
+        // An end closes ITS start (same tool name), so "3 tools" counts tools
+        // and not envelopes. An end with no matching start is its own entry —
+        // dropping it would hide work that happened.
+        const name = p?.tool || p?.name || p?.tool_name || null;
+        const items = activity(e).items;
+        const open = [...items].reverse().find((i) => i.kind === 'tool' && !i.done && (!name || i.name === name));
+        if (open) {
+          open.done = true;
+          if (!open.name && name) open.name = name;
+        } else {
+          items.push({
+            id: e.id, kind: 'tool', name,
+            text: toolLabel(p, 'tool_end') || `tool ${payloadPreview(p)}`.trim(),
+            done: true,
+          });
+        }
         break;
       }
 
@@ -1593,18 +1629,38 @@ function buildTurns(events) {
         break;
       }
 
-      // A resolution is the settled answer in its own right — authoritative
-      // and complete. It gets its own block rather than being appended to the
-      // streamed fragments, so neither text is distorted by the other.
+      // A resolution is the settled answer — authoritative and complete, NOT a
+      // continuation of the streamed fragments. Those fragments were the draft
+      // of this same answer, so rendering both reads as Axom answering twice.
+      // The resolution SUPERSEDES its draft: one answer, with the draft kept
+      // (collapsed) because it is real output and discarding it would hide
+      // what the runtime actually emitted.
       case 'resolution': {
         const chunk = payloadPreview(p);
         if (!chunk) break;
-        push({ type: 'answer', id: e.id, text: chunk, final: true, ids: [e.id] });
+        const blocks = current(e.id).blocks;
+        const draftAt = blocks.findLastIndex((b) => b.type === 'answer' && !b.final);
+        const draft = draftAt >= 0 ? blocks[draftAt] : null;
+        // Only supersede a draft that is genuinely this answer's own. A draft
+        // the resolution does not restate is separate content, and replacing
+        // it would silently drop something Axom said.
+        if (draft && draft.text.trim() !== chunk.trim()) {
+          blocks.splice(draftAt, 1);
+          push({ type: 'answer', id: e.id, text: chunk, final: true, ids: [e.id], draft });
+        } else if (draft) {
+          blocks.splice(draftAt, 1);
+          push({ type: 'answer', id: e.id, text: chunk, final: true, ids: [e.id, ...draft.ids] });
+        } else {
+          push({ type: 'answer', id: e.id, text: chunk, final: true, ids: [e.id] });
+        }
         break;
       }
 
       case 'leaf_swap':
-        push({ type: 'leaf', id: e.id, leaf: leafOf(p) ?? 'UNKNOWN' });
+        activity(e).items.push({
+          id: e.id, kind: 'leaf', done: true,
+          text: leafOf(p) ? `wearing ${leafOf(p)}` : 'leaf swap · leaf not named',
+        });
         break;
 
       case 'interrupt':
@@ -1720,48 +1776,67 @@ function ThoughtBlock({ block }) {
   );
 }
 
-// Tool activity, fleet-style: a live group cycles its entries behind a
-// spinner; a settled group collapses to a count you can open.
+// The agentic loader — the fleet's pattern, one per turn.
+//
+// Live: "Axom is working" with the tool currently running, cycling if several
+// are in flight. Settled: a single quiet line ("3 tools"), expandable to the
+// full list. The specifics live in the activity drawer; this is the summary
+// the conversation needs, not the mechanism it used to waterfall.
 function ActivityBlock({ block, live }) {
   const [open, setOpen] = useState(false);
   const [cycle, setCycle] = useState(0);
   const items = block.items;
-  const isLive = live && !items[items.length - 1]?.done;
+  const tools = items.filter((i) => i.kind === 'tool');
+  const running = items.filter((i) => !i.done);
+  const isLive = live && running.length > 0;
 
   useEffect(() => {
-    if (!isLive || items.length <= 1) return;
-    const t = setInterval(() => setCycle((i) => (i + 1) % items.length), 1500);
+    if (!isLive || running.length <= 1) return;
+    const t = setInterval(() => setCycle((i) => (i + 1) % running.length), 1500);
     return () => clearInterval(t);
-  }, [isLive, items.length]);
+  }, [isLive, running.length]);
 
   if (isLive) {
-    const cur = items[Math.min(cycle, items.length - 1)];
+    const cur = running[Math.min(cycle, running.length - 1)];
     return (
       <div className="pl-3.5 border-l border-border-subtle py-0.5">
         <span className="flex items-center gap-2 min-w-0">
           <Loader2 size={11} className="text-accent animate-spin flex-shrink-0" />
-          <span className="text-[11px] text-text-2 font-sans truncate min-w-0 flex-1">{cur.text}</span>
-          {items.length > 1 && <span className="text-[10px] text-text-4 font-mono flex-shrink-0">{items.length}</span>}
+          <span className="text-[11px] text-text-2 font-sans flex-shrink-0">Axom is working</span>
+          <span className="text-[11px] text-text-4 font-sans truncate min-w-0">{cur.text}</span>
+          {running.length > 1 && (
+            <span className="text-[10px] text-text-4 font-mono flex-shrink-0">{running.length}</span>
+          )}
         </span>
       </div>
     );
   }
+
+  if (items.length === 0) return null;
+
+  const summary = [
+    tools.length && `${tools.length} tool${tools.length === 1 ? '' : 's'}`,
+    items.length - tools.length && `${items.length - tools.length} leaf swap${items.length - tools.length === 1 ? '' : 's'}`,
+  ].filter(Boolean).join(' · ');
 
   return (
     <div>
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-2 pl-3.5 py-0.5 text-[11px] text-text-4 hover:text-text-2 font-sans transition-colors cursor-pointer"
+        title="Every step is also in the activity drawer, verbatim"
       >
-        <Wrench size={10} className="opacity-50" />
-        {items.length} tool call{items.length !== 1 ? 's' : ''}
+        <Wrench size={10} />
+        {summary}
         <ChevronDown size={10} className={cn('transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
         <div className="pl-3.5 border-l border-border-subtle flex flex-col">
           {items.map((it) => (
             <div key={it.id} className="flex items-center gap-2 py-0.5 group">
-              <Wrench size={10} className="text-text-4 opacity-70 flex-shrink-0" />
+              {it.kind === 'leaf'
+                ? <Shirt size={10} className="text-text-4 opacity-70 flex-shrink-0" />
+                : <Wrench size={10} className="text-text-4 opacity-70 flex-shrink-0" />}
               <p className="text-[11px] text-text-3 font-sans truncate flex-1 min-w-0">{it.text}</p>
               <span className="text-[10px] text-text-4 font-mono opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                 {it.id}
@@ -1839,6 +1914,30 @@ function AnswerBlock({ block, endpointName }) {
           {collapsed ? 'Show full response' : 'Collapse'}
         </button>
       )}
+      {/* The streamed draft this resolution replaced. Kept, never dropped: it
+          is output the runtime really emitted, and a reader comparing the two
+          is doing exactly what a provenance-first surface should allow. */}
+      {block.draft && <DraftBlock draft={block.draft} />}
+    </div>
+  );
+}
+
+function DraftBlock({ draft }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="ml-3.5 mt-1.5">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-[11px] text-text-4 hover:text-text-2 font-sans cursor-pointer transition-colors"
+      >
+        <ChevronDown size={11} className={cn(!open && '-rotate-90')} />
+        {open ? 'Hide streamed draft' : 'Streamed draft'}
+      </button>
+      {open && (
+        <div className="pl-3.5 mt-1 py-1 border-l border-border text-[11px] text-text-3 font-sans whitespace-pre-wrap">
+          {draft.text}
+        </div>
+      )}
     </div>
   );
 }
@@ -1877,7 +1976,6 @@ function TurnView({ turn, live, endpointName, eventsById, highlight, onHighlight
           );
           case 'answer': return <AnswerBlock key={b.id} block={b} endpointName={endpointName} />;
           case 'steer': return <SteerLine key={b.id} block={b} />;
-          case 'leaf': return <Divider key={b.id} icon={Shirt} text={`wearing ${b.leaf}`} />;
           case 'note': return <Divider key={b.id} icon={OctagonX} text={b.text} tone="text-danger" />;
           default: return null;
         }
@@ -2497,7 +2595,23 @@ export default function AxomView() {
 
   const selectedSession = axomSelected
     && endpoint?.sessions.find((s) => s.session === axomSelected.session);
-  const sessionLive = !!selectedSession?.live;
+  // Liveness comes from the EVENT STREAM, not the daemon's session poll: the
+  // poll only refreshes every 15s, so a turn that finished would keep the
+  // thinking indicator running for seconds after the answer was already on
+  // screen — the UI claiming work that had already stopped. In flight iff a
+  // `pipeline_start` has arrived with no `pipeline_done` after it (§8: that
+  // event is the sole terminal; nothing else may imply activity, and events
+  // arriving after it are legal and must not revive the indicator).
+  // NOT a hook — this sits below early returns, and a hook here throws #310.
+  const sessionLive = (() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      if (events[i].kind === 'pipeline_done') return false;
+      if (events[i].kind === 'pipeline_start') return true;
+    }
+    // No turn in this transcript yet: fall back to the daemon's view, which is
+    // all we have for a session whose history predates this tab.
+    return !!selectedSession?.live;
+  })();
   // Only a connected runtime can take a message. Every other state gets the
   // card with its one verb — and keeps the transcript above it.
   const canChat = runtime?.state === 'connected' && !!axomSelected;

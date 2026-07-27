@@ -46,6 +46,16 @@ export function registerAxomRoutes(app, daemon) {
         return res.status(400).json({ error: 'clientRef must be a string of at most 64 chars' });
       }
       const result = await daemon.axom.message(endpoint, req.params.id, text, clientRef);
+      // Title the chat from its opening message — but only once the runtime
+      // ACCEPTED the turn. A message rejected with 409/413 never ran, so it
+      // must not name the conversation it failed to start.
+      if (result.status === 202) {
+        daemon.axomRuntimes.titleFromFirstMessage(req.params.id, text);
+        // Remember what we sent, keyed by the §15 ref the runtime echoes in
+        // pipeline_start. This is what lets a reloaded tab put the user's own
+        // words back above the answer instead of "prompt not identified".
+        if (clientRef) daemon.axomRuntimes.recordPrompt(req.params.id, clientRef, text);
+      }
       daemon.audit.log('axom.message', { session: req.params.id, chars: text.length, status: result.status });
       res.status(result.status).json(result.body);
     } catch (err) {
@@ -165,6 +175,13 @@ export function registerAxomRoutes(app, daemon) {
   // lives in the runtime's ledger; GROOVE tidying its list never destroys it.
   app.get('/api/axom/chats', (req, res) => {
     res.json({ chats: daemon.axomRuntimes.chats() });
+  });
+
+  // What GROOVE sent on this session, so a reloaded tab can restore the user's
+  // bubbles. Only ever OUR OWN sends — a turn started from the REPL or another
+  // client has no entry here and must still render without a bubble.
+  app.get('/api/axom/sessions/:id/prompts', (req, res) => {
+    res.json({ prompts: daemon.axomRuntimes.prompts(req.params.id) });
   });
 
   app.patch('/api/axom/chats/:session', (req, res) => {

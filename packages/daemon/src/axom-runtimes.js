@@ -32,6 +32,22 @@ function withBlessedEnv(launch) {
   return { ...launch, env: { ...BLESSED_ENV, ...(launch.env || {}) } };
 }
 
+// A chat title is the opening message, trimmed to a glanceable length. It is
+// a QUOTE, not a summary: GROOVE has no business paraphrasing what the user
+// said, and an em-dash ellipsis makes the truncation visible rather than
+// pretending the sentence ended there.
+const TITLE_MAX = 48;
+export function summarizeForTitle(text) {
+  if (typeof text !== 'string') return null;
+  const flat = text.replace(/\s+/g, ' ').trim();
+  if (!flat) return null;
+  if (flat.length <= TITLE_MAX) return flat;
+  // Prefer a word boundary so titles don't end mid-word.
+  const cut = flat.slice(0, TITLE_MAX);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > TITLE_MAX * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
 // Single-quote for a POSIX shell. The spec is the user's own, but it crosses
 // an ssh command line — an unquoted path or value must not be able to end the
 // command and start another.
@@ -329,13 +345,29 @@ export class AxomRuntimes {
     this._save();
   }
 
+  // A chat titles itself from what it started with — "Chat 3" tells you
+  // nothing when you have six of them. Only ever replaces a PLACEHOLDER title:
+  // a name the user typed, or one already derived from the opening message, is
+  // never overwritten by a later turn.
+  titleFromFirstMessage(session, text) {
+    const chat = this.getChat(session);
+    if (!chat || chat.titled || chat.renamed) return null;
+    const title = summarizeForTitle(text);
+    if (!title) return null;
+    this._putChat({ ...chat, label: title, titled: true });
+    this.broadcastChats();
+    return title;
+  }
+
   renameChat(session, label) {
     const chat = this.getChat(session);
     if (!chat) throw new Error(`no chat "${session}"`);
     if (typeof label !== 'string' || !label.trim() || label.length > 80) {
       throw new Error('label must be a non-empty string of at most 80 chars');
     }
-    this._putChat({ ...chat, label: label.trim() });
+    // `renamed` is sticky: once the user names a chat, no later auto-title
+    // may take it back.
+    this._putChat({ ...chat, label: label.trim(), renamed: true });
     this.broadcastChats();
     return this.getChat(session);
   }
@@ -348,8 +380,42 @@ export class AxomRuntimes {
     const chat = this.getChat(session);
     if (!chat) throw new Error(`no chat "${session}"`);
     this._putChat({ ...chat, hidden: true });
+    this._forgetPrompts(session);
+    this._save();
     this.broadcastChats();
     return { hidden: true, session, note: 'removed from the list; the conversation remains in Axom\'s memory' };
+  }
+
+  // ── Prompts — what GROOVE sent, remembered where the events are ──────────
+  //
+  // The runtime's `pipeline_start` carries no prompt text, so the user's own
+  // words exist only in GROOVE. Keeping them in the browser meant a reload
+  // replayed every turn from the daemon's ring with its bubble gone — the
+  // answer with no question above it. This is OUR record of what WE sent, not
+  // invented telemetry, so the daemon is the right place for it.
+  recordPrompt(session, ref, text) {
+    if (!session || !ref) return null;
+    const all = this._cfg().prompts || {};
+    const forSession = (all[session] || []).filter((p) => p.ref !== ref);
+    // Bounded per session: a transcript this long is scrollback, not memory.
+    const next = [...forSession, { ref, text, ts: Date.now() }].slice(-200);
+    this._cfg().prompts = { ...all, [session]: next };
+    this._save();
+    return { ref, text };
+  }
+
+  prompts(session) {
+    return (this._cfg().prompts || {})[session] || [];
+  }
+
+  // A hidden chat's prompts go with it — the list is tidied, the ledger keeps
+  // the conversation itself.
+  _forgetPrompts(session) {
+    const all = this._cfg().prompts || {};
+    if (!all[session]) return;
+    const next = { ...all };
+    delete next[session];
+    this._cfg().prompts = next;
   }
 
   broadcastChats() {

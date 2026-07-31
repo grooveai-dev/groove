@@ -386,8 +386,18 @@ export const createAxomSlice = (set, get) => ({
     set((s) => {
       const buf = s.axomEvents[key] || [];
       if (buf.length && buf[buf.length - 1].id === envelope.id) return {}; // WS echo guard
+      // Streaming deltas are cosmetic and superseded by their terminal
+      // `resolution`. Once it lands, drop that firing's deltas: they are worth
+      // nothing afterwards, the daemon and runtime both omit them from replay
+      // (so keeping them would make a live tab disagree with a reloaded one),
+      // and a long answer's chunks would otherwise push real events out of the
+      // buffer and flood the activity rail.
+      const kept = envelope.kind === 'resolution'
+        ? buf.filter((e) => !(e.kind === 'resolution_delta'
+          && (e.payload?.firing_id ?? null) === (envelope.payload?.firing_id ?? envelope.firing_id ?? null)))
+        : buf;
       const updates = {
-        axomEvents: { ...s.axomEvents, [key]: [...buf, envelope].slice(-EVENT_BUFFER) },
+        axomEvents: { ...s.axomEvents, [key]: [...kept, envelope].slice(-EVENT_BUFFER) },
       };
 
       // Correlate our sent prompt with the turn it started.

@@ -141,19 +141,35 @@ export class ChatStore {
   }
 
   /**
-   * History for the GUI: live agents keyed by their CURRENT id (what the GUI
-   * looks up by), everything else under its stored name key so an agent
-   * respawned under the same name picks its history back up.
+   * History for the GUI: LIVE agents only, keyed by their current id (what the
+   * GUI looks up by). Buckets for agents that no longer exist stay on disk —
+   * a respawn under the same name picks them back up — but aren't shipped:
+   * they were 97% of a 5.6MB payload, which blew the browser's ~5MB
+   * localStorage quota and froze the local cache.
    */
   view() {
     const out = {};
-    const agents = this.daemon.registry?.getAll?.() || [];
-    const liveNames = new Map(agents.map((a) => [a.name, a.id]));
-    for (const [key, msgs] of Object.entries(this.history)) {
-      if (!Array.isArray(msgs) || !msgs.length) continue;
-      out[liveNames.get(key) || key] = msgs;
+    for (const agent of this.daemon.registry?.getAll?.() || []) {
+      const msgs = this.history[agent.name];
+      if (Array.isArray(msgs) && msgs.length) out[agent.id] = msgs;
     }
     return out;
+  }
+
+  /**
+   * Drop the oldest buckets belonging to agents that no longer exist, so a
+   * long-lived daemon's store stays bounded. Live agents are never pruned.
+   */
+  prune(maxDeadBuckets = 200) {
+    const liveNames = new Set((this.daemon.registry?.getAll?.() || []).map((a) => a.name));
+    const dead = Object.keys(this.history)
+      .filter((k) => !liveNames.has(k))
+      .map((k) => [k, lastTs(this.history[k])])
+      .sort((x, y) => y[1] - x[1]);
+    if (dead.length <= maxDeadBuckets) return 0;
+    for (const [key] of dead.slice(maxDeadBuckets)) delete this.history[key];
+    this._scheduleSave();
+    return dead.length - maxDeadBuckets;
   }
 
   getAll() {
@@ -178,18 +194,46 @@ export class ChatStore {
   }
 }
 
-// Union of two message arrays, deduped on (timestamp, from, text), time-sorted,
-// capped. Exported for tests and the migration path.
+function lastTs(msgs) {
+  return (Array.isArray(msgs) && msgs.length && msgs[msgs.length - 1]?.timestamp) || 0;
+}
+
+/**
+ * Union of two message arrays, time-sorted and capped.
+ *
+ * Messages carry a stable `id`. A streamed agent reply coalesces client-side
+ * into ONE growing message that keeps its id, so an id collision means "same
+ * message, later state" — we keep the longer text rather than accumulating a
+ * fragment per chunk. Messages without an id (older clients) fall back to a
+ * (timestamp, from, text) signature.
+ */
 export function mergeMessages(a, b) {
-  const seen = new Set();
+  const byId = new Map();
+  const bySig = new Set();
   const out = [];
+
   for (const m of [...(a || []), ...(b || [])]) {
     if (!m || typeof m !== 'object') continue;
+
+    if (m.id) {
+      const prev = byId.get(m.id);
+      if (!prev) {
+        byId.set(m.id, m);
+        out.push(m);
+      } else if (String(m.text || '').length > String(prev.text || '').length) {
+        // Same message, further along — replace in place.
+        out[out.indexOf(prev)] = m;
+        byId.set(m.id, m);
+      }
+      continue;
+    }
+
     const sig = `${m.timestamp}:${m.from}:${typeof m.text === 'string' ? m.text.slice(0, 200) : ''}`;
-    if (seen.has(sig)) continue;
-    seen.add(sig);
+    if (bySig.has(sig)) continue;
+    bySig.add(sig);
     out.push(m);
   }
+
   out.sort((x, y) => (x.timestamp || 0) - (y.timestamp || 0));
   return out.slice(-MAX_PER_AGENT);
 }

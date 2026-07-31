@@ -1,7 +1,7 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 
 import { api } from '../../lib/api';
-import { loadJSON, persistJSON, persistChatHistory } from '../helpers.js';
+import { loadJSON, persistJSON, persistChatHistory, messageId } from '../helpers.js';
 
 export const createAgentsSlice = (set, get) => ({
   // ── Agent data ────────────────────────────────────────────
@@ -167,7 +167,7 @@ export const createAgentsSlice = (set, get) => ({
   // ── Chat ──────────────────────────────────────────────────
 
   addChatMessage(agentId, from, text, isQuery = false, attachments = undefined) {
-    const msg = { from, text, timestamp: Date.now(), isQuery };
+    const msg = { id: messageId(), from, text, timestamp: Date.now(), isQuery };
     if (attachments?.length) msg.attachments = attachments;
     set((s) => {
       const history = { ...s.chatHistory };
@@ -177,6 +177,28 @@ export const createAgentsSlice = (set, get) => ({
       return { chatHistory: history };
     });
     get().persistMessageRemote(agentId, msg);
+  },
+
+  // Debounced push of an agent's recent history to the daemon.
+  //
+  // Streamed agent replies coalesce into one growing message, so posting per
+  // chunk would be both chatty and wrong. This batches ~1.5s of activity and
+  // sends the tail; the server merges/upserts by message id, so a growing
+  // message updates in place instead of leaving a trail of fragments.
+  _histSyncTimers: {},
+  syncAgentHistoryRemote(agentId) {
+    if (!agentId) return;
+    const timers = get()._histSyncTimers;
+    if (timers[agentId]) return; // a flush is already scheduled
+    timers[agentId] = setTimeout(() => {
+      delete get()._histSyncTimers[agentId];
+      const msgs = get().chatHistory[agentId];
+      if (!Array.isArray(msgs) || !msgs.length) return;
+      const clean = msgs.slice(-60).map((m) => (m.attachments?.length
+        ? { ...m, attachments: m.attachments.map(({ dataUrl, ...rest }) => rest) }
+        : m));
+      api.put(`/chat-history/${encodeURIComponent(agentId)}`, { messages: clean }).catch(() => {});
+    }, 1500);
   },
 
   // Persist one message to the daemon so history survives on the server, not
@@ -223,9 +245,11 @@ export const createAgentsSlice = (set, get) => ({
           const server = Array.isArray(remote[key]) ? remote[key] : [];
           const union = unionMerge(server, local);
           if (union.length) merged[key] = union;
-          // Local had messages the server lacks — push the union up (the
-          // server PUT is itself a merge, so this can never truncate there).
-          if (union.length > server.length) {
+          // Push local surplus up — but ONLY under a key the daemon can still
+          // resolve to an agent. Pushing under a stale id was how thousands of
+          // agent messages ended up filed against dead ids, invisible forever.
+          const resolvable = get().agents.some((a) => a.id === key || a.name === key);
+          if (resolvable && union.length > server.length) {
             api.put(`/chat-history/${encodeURIComponent(key)}`, { messages: union }).catch(() => {});
           }
         }

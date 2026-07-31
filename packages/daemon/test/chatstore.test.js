@@ -81,13 +81,16 @@ describe('ChatStore', () => {
     assert.equal(store.getAll()['ghost-id'][0].text, 'unresolvable');
   });
 
-  it('view() keys live agents by CURRENT id and parks the rest by name', () => {
+  it('view() keys live agents by CURRENT id and omits departed ones', () => {
     store.append('a1', { from: 'user', text: 'live', timestamp: 1 });
     store.history['departed-agent'] = [{ from: 'user', text: 'old', timestamp: 2 }];
     const v = store.view();
     assert.equal(v.a1[0].text, 'live');            // fullstack-1 → its live id
     assert.equal(v['fullstack-1'], undefined);
-    assert.equal(v['departed-agent'][0].text, 'old'); // no live agent — name key
+    // Departed agents stay on disk but are not shipped — the payload used to
+    // be 97% dead agents, which blew the browser's localStorage quota.
+    assert.equal(v['departed-agent'], undefined);
+    assert.equal(store.getAll()['departed-agent'][0].text, 'old');
   });
 
   it('merge() is a union — a sparse client can never truncate server history', () => {
@@ -174,5 +177,67 @@ describe('mergeMessages', () => {
       [{ from: 'u', text: 'ok', timestamp: 2 }],
     );
     assert.equal(merged.length, 2);
+  });
+});
+
+describe('ChatStore — agent-reply persistence regression', () => {
+  let dir, daemon, store;
+
+  beforeEach(() => {
+    dir = mkdtempSync(resolve(tmpdir(), 'groove-chat-reg-'));
+    daemon = makeDaemon([{ id: 'live1', name: 'fullstack-1' }]);
+    daemon.grooveDir = dir;
+    store = new ChatStore(daemon);
+  });
+  afterEach(() => {
+    store.stop();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  it('upserts a coalescing streamed reply instead of accumulating fragments', () => {
+    // The GUI grows one message as chunks stream in, keeping its id.
+    store.merge('live1', [{ id: 'm1', from: 'agent', text: 'Part one', timestamp: 10 }]);
+    store.merge('live1', [{ id: 'm1', from: 'agent', text: 'Part one\n\nPart two', timestamp: 11 }]);
+    store.merge('live1', [{ id: 'm1', from: 'agent', text: 'Part one\n\nPart two\n\nPart three', timestamp: 12 }]);
+
+    const h = store.get('live1');
+    assert.equal(h.length, 1, 'one message, not one per chunk');
+    assert.equal(h[0].text, 'Part one\n\nPart two\n\nPart three');
+  });
+
+  it('never regresses a message to an earlier, shorter state', () => {
+    store.merge('live1', [{ id: 'm1', from: 'agent', text: 'full long reply', timestamp: 20 }]);
+    store.merge('live1', [{ id: 'm1', from: 'agent', text: 'full', timestamp: 19 }]); // stale client
+    assert.equal(store.get('live1')[0].text, 'full long reply');
+  });
+
+  it('view() ships only live agents — dead buckets stay on disk but off the wire', () => {
+    store.append('live1', { id: 'a', from: 'agent', text: 'hi', timestamp: 1 });
+    store.history['long-gone-agent'] = [{ id: 'b', from: 'agent', text: 'old', timestamp: 2 }];
+
+    const v = store.view();
+    assert.deepEqual(Object.keys(v), ['live1'], 'payload carries live agents only');
+    assert.ok(store.getAll()['long-gone-agent'], 'but the data is retained on disk');
+  });
+
+  it('a respawned agent with the same name picks its history back up', () => {
+    store.append('live1', { id: 'a', from: 'agent', text: 'earlier work', timestamp: 1 });
+    // Agent dies and is later recreated with a different id, same name.
+    daemon.registry.delete('live1');
+    daemon.registry.set({ id: 'live1-new', name: 'fullstack-1' });
+    assert.equal(store.view()['live1-new'][0].text, 'earlier work');
+  });
+
+  it('prune() bounds dead buckets and never touches live agents', () => {
+    store.append('live1', { id: 'a', from: 'agent', text: 'keep me', timestamp: 999 });
+    for (let i = 0; i < 10; i++) {
+      store.history[`dead-${i}`] = [{ id: `d${i}`, from: 'agent', text: 'x', timestamp: i }];
+    }
+    const removed = store.prune(4);
+    assert.equal(removed, 6);
+    assert.equal(store.get('live1')[0].text, 'keep me');
+    assert.equal(Object.keys(store.getAll()).filter((k) => k.startsWith('dead-')).length, 4);
+    // The survivors are the most recently active dead buckets.
+    assert.ok(store.getAll()['dead-9'] && !store.getAll()['dead-0']);
   });
 });

@@ -653,6 +653,8 @@ export class Daemon {
         try {
           const moved = this.chatStore.migrate();
           if (moved) console.log(`[chat] migrated ${moved} id-keyed histories to agent names`);
+          const pruned = this.chatStore.prune();
+          if (pruned) console.log(`[chat] pruned ${pruned} histories for long-gone agents`);
         } catch { /* best effort */ }
 
         // Regenerate the on-disk registry files once on boot. They otherwise

@@ -463,6 +463,47 @@ describe('AxomConnector', () => {
     assert.ok(bridge.epochsSeen.includes('epoch-A')); // we did present the old epoch
   });
 
+  // Streaming answers: deltas are cosmetic chunks superseded by the terminal
+  // `resolution`. They must reach the GUI live but never enter the ring — the
+  // runtime omits them from its own replay, so a backfilled tab and a
+  // reconnecting one must see identical history.
+  it('delivers resolution deltas live but keeps them out of the replay ring', async () => {
+    connect();
+    await waitFor(() => connector.status().endpoints[0]?.status === 'connected');
+    await waitFor(() => connector.status().endpoints[0]?.sessions[0]?.watching);
+
+    bridge.emit('s-test0001', envelope(1, 'pipeline_start'));
+    bridge.emit('s-test0001', envelope(2, 'resolution_delta', { firing_id: 'f1', content: 'Hello ', index: 0 }));
+    bridge.emit('s-test0001', envelope(3, 'resolution_delta', { firing_id: 'f1', content: 'world', index: 1 }));
+    bridge.emit('s-test0001', envelope(4, 'resolution', { content: 'Hello world.' }));
+
+    // Every delta still BROADCASTS — delivery is untouched.
+    await waitFor(() => daemon.broadcasts.filter((b) => b.type === 'axom:event').length === 4);
+    const kinds = daemon.broadcasts.filter((b) => b.type === 'axom:event').map((b) => b.envelope.kind);
+    assert.deepEqual(kinds, ['pipeline_start', 'resolution_delta', 'resolution_delta', 'resolution']);
+
+    // ...but the ring holds only the durable history.
+    const backfill = connector.events('local', 's-test0001');
+    assert.deepEqual(backfill.events.map((e) => e.kind), ['pipeline_start', 'resolution']);
+    // Excluded, not overflowed — dropping them is by design, not pressure.
+    assert.equal(connector.status().endpoints[0].sessions[0].overflow, 0);
+    // A known kind now, so it must not read as schema drift.
+    assert.equal(connector.status().endpoints[0].sessions[0].unknownKinds.resolution_delta, undefined);
+  });
+
+  it('a delta never breaks dedup for the events that follow it', async () => {
+    connect();
+    await waitFor(() => connector.status().endpoints[0]?.status === 'connected');
+    await waitFor(() => connector.status().endpoints[0]?.sessions[0]?.watching);
+    bridge.emit('s-test0001', envelope(1, 'resolution_delta', { firing_id: 'f1', content: 'x', index: 0 }));
+    bridge.emit('s-test0001', envelope(2, 'resolution', { content: 'x!' }));
+    await waitFor(() => daemon.broadcasts.filter((b) => b.type === 'axom:event').length === 2);
+    // Replaying an id at or below the delta's must still be suppressed.
+    bridge.emit('s-test0001', envelope(1, 'resolution_delta', { firing_id: 'f1', content: 'x', index: 0 }));
+    await new Promise((r) => setTimeout(r, 120));
+    assert.equal(daemon.broadcasts.filter((b) => b.type === 'axom:event').length, 2);
+  });
+
   it('recheck collapses a stale connected state the moment the runtime is gone', async () => {
     connect();
     await waitFor(() => connector.status().endpoints[0]?.status === 'connected');

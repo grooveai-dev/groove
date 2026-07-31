@@ -33,7 +33,15 @@ export const KNOWN_KINDS = Object.freeze([
   'narration', 'narration_dropped',
   'candidate_arrived', 'evidence_scored', 'champion_changed',
   'confidence_updated', 'verifier_verdict',
+  'resolution_delta', 'context_compile',
 ]);
+
+// Cosmetic, append-only chunks of an answer still being written. The terminal
+// `resolution` always follows with the authoritative text, so a delta is
+// worthless the moment it lands — keeping them would crowd the ring with
+// history that replay deliberately omits anyway (they are transient runtime
+// side, so a `?since` replay never returns them either).
+const TRANSIENT_KINDS = new Set(['resolution_delta']);
 
 const RING_SIZE = 4096;
 const SESSION_POLL_MS = 15000;
@@ -243,13 +251,19 @@ export class AxomConnector {
       // Dedup on ring-buffer replay after reconnect — ids are monotonic.
       if (seq !== null && seq <= s.lastSeq) return;
       if (seq !== null) s.lastSeq = seq;
-      if (s.ring.length >= this.ringSize) {
-        s.ring.shift();
-        // The ring bounds memory, not delivery: overflow is counted, never
-        // silent, and every event still broadcasts — mirrors the runtime.
-        s.overflow += 1;
+      // Transient kinds broadcast but are never retained: they are superseded
+      // by a terminal event, and a backfilled tab must see the same history a
+      // reconnecting one does. `lastSeq` still advances above, so dedup and
+      // ordering are unaffected.
+      if (!TRANSIENT_KINDS.has(envelope.kind)) {
+        if (s.ring.length >= this.ringSize) {
+          s.ring.shift();
+          // The ring bounds memory, not delivery: overflow is counted, never
+          // silent, and every event still broadcasts — mirrors the runtime.
+          s.overflow += 1;
+        }
+        s.ring.push(envelope);
       }
-      s.ring.push(envelope);
       if (envelope.kind && !KNOWN_KINDS.includes(envelope.kind)) {
         s.unknownKinds[envelope.kind] = (s.unknownKinds[envelope.kind] || 0) + 1;
       }

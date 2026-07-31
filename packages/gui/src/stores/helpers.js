@@ -23,9 +23,22 @@ export function stripAttachments(history) {
   return out;
 }
 
-// The single writer for chat history. Strips attachments and refuses to
-// overwrite a populated store with an empty object — a blank write is almost
-// always a startup race or partial state, and losing chat is never acceptable.
+// Stable per-message id. Coalescing an agent's streamed reply keeps the id and
+// grows the text, so the server can upsert one message instead of accumulating
+// a fragment per chunk.
+export function messageId() {
+  return `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// The single writer for chat history.
+//
+// localStorage is a ~5MB CACHE, not the source of truth (the daemon is). Once
+// the blob exceeds quota every write silently fails and the cache freezes,
+// which is how history used to "stop persisting" with no error. So we keep
+// only the newest buckets and trim until the write actually lands.
+const LS_MAX_BUCKETS = 40;
+const LS_MAX_PER_AGENT = 60;
+
 export function persistChatHistory(history) {
   const clean = stripAttachments(history);
   try {
@@ -33,6 +46,28 @@ export function persistChatHistory(history) {
       const existing = localStorage.getItem('groove:chatHistory');
       if (existing && existing !== '{}' && existing !== 'null') return;
     }
-    localStorage.setItem('groove:chatHistory', JSON.stringify(clean));
-  } catch { /* quota — keep the last good value rather than clobbering it */ }
+  } catch { /* ignore */ }
+
+  // Newest-active buckets first, so trimming drops stale agents not live ones.
+  const entries = Object.entries(clean)
+    .filter(([, msgs]) => Array.isArray(msgs) && msgs.length)
+    .map(([k, msgs]) => [k, msgs, msgs[msgs.length - 1]?.timestamp || 0])
+    .sort((a, b) => b[2] - a[2]);
+
+  for (const [buckets, perAgent] of [
+    [entries.length, Infinity],
+    [LS_MAX_BUCKETS, LS_MAX_PER_AGENT],
+    [15, 30],
+    [5, 15],
+  ]) {
+    const subset = {};
+    for (const [k, msgs] of entries.slice(0, buckets)) {
+      subset[k] = perAgent === Infinity ? msgs : msgs.slice(-perAgent);
+    }
+    try {
+      localStorage.setItem('groove:chatHistory', JSON.stringify(subset));
+      return;
+    } catch { /* too big — fall through to a smaller subset */ }
+  }
+  // Every attempt failed; keep the last good value rather than clobbering it.
 }

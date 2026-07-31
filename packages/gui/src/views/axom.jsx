@@ -1629,6 +1629,35 @@ function buildTurns(events) {
         break;
       }
 
+      // Streaming answer chunks: append-only text for one firing, concatenated
+      // in `index` order to make the bubble grow as it is written. These are
+      // COSMETIC by contract — the terminal `resolution` always follows with
+      // the authoritative text, and it REPLACES this (never diffs against it,
+      // since the final is tag-scrubbed). Deltas are also transient: they are
+      // absent from replay, so a reloaded turn simply renders from the final.
+      case 'resolution_delta': {
+        const chunk = typeof p?.content === 'string' ? p.content : '';
+        if (!chunk) break;
+        const firing = p?.firing_id ?? null;
+        const prev = last('answer');
+        if (prev && !prev.final && prev.streaming && prev.firing === firing) {
+          // Out-of-order guard: the socket delivers in order, but `index` is
+          // the contract's own belt-and-braces and costs nothing to honour.
+          if (typeof p.index === 'number' && typeof prev.lastIndex === 'number'
+            && p.index <= prev.lastIndex) break;
+          prev.text += chunk; // append-only: glued verbatim, never re-spaced
+          if (typeof p.index === 'number') prev.lastIndex = p.index;
+          prev.ids.push(e.id);
+        } else {
+          push({
+            type: 'answer', id: e.id, text: chunk, final: false,
+            streaming: true, firing, lastIndex: typeof p.index === 'number' ? p.index : null,
+            ids: [e.id],
+          });
+        }
+        break;
+      }
+
       // A resolution is the settled answer — authoritative and complete, NOT a
       // continuation of the streamed fragments. Those fragments were the draft
       // of this same answer, so rendering both reads as Axom answering twice.
@@ -1641,6 +1670,15 @@ function buildTurns(events) {
         const blocks = current(e.id).blocks;
         const draftAt = blocks.findLastIndex((b) => b.type === 'answer' && !b.final);
         const draft = draftAt >= 0 ? blocks[draftAt] : null;
+        // A streamed bubble is this same answer mid-write, not separate output:
+        // replace it outright and offer no "draft" toggle. Keeping one would
+        // invite comparing a cleaned answer against its own raw chunks and
+        // reading normal tag-scrubbing as the runtime changing its mind.
+        if (draft?.streaming) {
+          blocks.splice(draftAt, 1);
+          push({ type: 'answer', id: e.id, text: chunk, final: true, ids: [e.id, ...draft.ids] });
+          break;
+        }
         // Only supersede a draft that is genuinely this answer's own. A draft
         // the resolution does not restate is separate content, and replacing
         // it would silently drop something Axom said.
@@ -1893,17 +1931,28 @@ function NarrationBlock({ block, eventsById, highlight, onHighlight }) {
 }
 
 function AnswerBlock({ block, endpointName }) {
-  const [collapsed, setCollapsed] = useState(block.text.length > 600);
-  const isLong = block.text.length > 600;
+  // A streaming answer is still being written: never collapse it out from
+  // under the reader, and never offer "show full" for text that isn't full yet.
+  const streaming = !!block.streaming && !block.final;
+  const isLong = !streaming && block.text.length > 600;
+  const [collapsed, setCollapsed] = useState(block.text.length > 600 && !streaming);
   return (
     <div>
       <div className="flex items-center gap-2 mb-1">
         <span className="text-[11px] font-semibold text-text-1 font-sans">Axom</span>
         <span className="text-[11px] text-text-4 font-sans">{endpointName}</span>
-        <span className="text-[10px] text-text-4 font-mono ml-auto">{block.final ? 'resolution' : 'text'}</span>
+        <span className="text-[10px] text-text-4 font-mono ml-auto">
+          {block.final ? 'resolution' : (streaming ? 'writing…' : 'text')}
+        </span>
       </div>
-      <div className="pl-3.5 py-1 border-l border-accent">
-        <StructuredMessage text={collapsed ? `${block.text.slice(0, 600)}...` : block.text} />
+      <div className={cn('pl-3.5 py-1 border-l', streaming ? 'border-accent/50' : 'border-accent')}>
+        <StructuredMessage text={collapsed && !streaming ? `${block.text.slice(0, 600)}...` : block.text} />
+        {streaming && (
+          <span
+            aria-hidden
+            className="inline-block w-[7px] h-[13px] -mb-0.5 ml-0.5 bg-accent/70 animate-pulse rounded-[1px]"
+          />
+        )}
       </div>
       {isLong && (
         <button

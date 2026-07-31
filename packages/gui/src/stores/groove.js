@@ -3,7 +3,7 @@
 
 import { create } from 'zustand';
 import { api } from '../lib/api';
-import { persistJSON, persistChatHistory } from './helpers.js';
+import { persistJSON, persistChatHistory, messageId } from './helpers.js';
 import { createUiSlice } from './slices/ui-slice.js';
 import { createAgentsSlice } from './slices/agents-slice.js';
 import { createTeamsSlice } from './slices/teams-slice.js';
@@ -258,14 +258,22 @@ export const useGrooveStore = create((set, get) => ({
             if (!isDupe) {
               if (isRecent) {
                 const sep = data.subtype === 'assistant' ? '\n\n' : ' ';
+                // Keep the id: the server upserts this one message as it grows
+                // rather than collecting a fragment per streamed chunk.
                 arr[arr.length - 1] = { ...last, text: last.text + sep + trimmed, timestamp: Date.now() };
               } else {
-                arr.push({ from: 'agent', text: trimmed, timestamp: Date.now() });
+                arr.push({ id: messageId(), from: 'agent', text: trimmed, timestamp: Date.now() });
               }
 
               history[agentId] = arr.slice(-100);
               set({ chatHistory: history });
               persistChatHistory(history);
+              // Agent replies used to be local-only, reaching the daemon just
+              // opportunistically on reconnect — by which time a rotation had
+              // often changed the id, so they were filed under a dead id and
+              // vanished while user messages (posted live) survived. Push them
+              // now, while this id still resolves to the agent.
+              get().syncAgentHistoryRemote(agentId);
             }
           }
 

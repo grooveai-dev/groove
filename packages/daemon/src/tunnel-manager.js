@@ -283,9 +283,19 @@ export class TunnelManager {
     const config = this.saved.get(id);
     if (!config) throw new Error(`Remote ${id} not found`);
 
+    // An existing entry is only reusable if the tunnel actually still carries
+    // traffic. After a laptop sleep the SSH client can survive with its forward
+    // dead: the local port still ACCEPTS connections but never forwards them, so
+    // handing this back returns a port that hangs forever instead of failing —
+    // which is what left the remote GUI on a black screen. Probe before reusing,
+    // and tear it down if it's a corpse.
     if (this.active.has(id)) {
       const existing = this.active.get(id);
-      return { localPort: existing.localPort, pid: existing.pid, name: config.name };
+      if (await this._tunnelResponds(existing.localPort)) {
+        return { localPort: existing.localPort, pid: existing.pid, name: config.name };
+      }
+      console.log(`[Groove:Tunnel] ${config.name}: existing tunnel is not responding — rebuilding`);
+      await this.disconnect(id);
     }
 
     this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'testing' } });
@@ -432,11 +442,23 @@ export class TunnelManager {
     return { localPort, pid: tunnel.pid, name: config.name, url };
   }
 
+  // Does the tunnel actually serve a request, as opposed to merely holding an
+  // open listening socket? A wedged forward passes a TCP connect test but never
+  // answers, so only an HTTP round-trip proves it.
+  async _tunnelResponds(localPort, timeoutMs = HEALTH_TIMEOUT) {
+    try {
+      const res = await fetch(`http://localhost:${localPort}/api/health`, {
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      return res.ok;
+    } catch { return false; }
+  }
+
   async disconnect(id) {
     const conn = this.active.get(id);
     if (!conn) return;
 
-    const { pid } = conn;
+    const { pid, localPort } = conn;
     try {
       const cmd = execFileSync('ps', ['-p', String(pid), '-o', 'command='], {
         encoding: 'utf8',
@@ -444,8 +466,19 @@ export class TunnelManager {
       }).trim();
       if (cmd.includes('ssh')) {
         process.kill(pid, 'SIGTERM');
+        // An SSH client stuck on a dead TCP session can sit on SIGTERM long
+        // enough that the next connect() finds the port still bound. Give it a
+        // moment, then stop asking politely — otherwise the leftover listener
+        // keeps answering (and hanging) on the port we're about to reuse.
+        const gone = await this._waitForExit(pid, 3000);
+        if (!gone) {
+          try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+          await this._waitForExit(pid, 2000);
+        }
       }
     } catch { /* process already dead */ }
+
+    if (localPort) await this._waitForPortFree(localPort, 3000);
 
     this.active.delete(id);
 
@@ -873,6 +906,26 @@ export class TunnelManager {
   }
 
   async _healthCheckAll() {
+    // Reaping now awaits process death, which can outlast the interval — don't
+    // let a second pass start on top of one already tearing a tunnel down.
+    if (this._healthRunning) return;
+    this._healthRunning = true;
+    try { await this._healthCheckPass(); } finally { this._healthRunning = false; }
+  }
+
+  async _healthCheckPass() {
+    // Timers don't fire while the machine is asleep, so an interval that should
+    // have run every HEALTH_INTERVAL arriving far later means we just woke up.
+    // Every tunnel is suspect at that point: verify them now rather than waiting
+    // for MAX_FAIL_COUNT normal cycles to notice.
+    const now = Date.now();
+    const gap = now - (this._lastHealthCheck || now);
+    this._lastHealthCheck = now;
+    const wokeFromSleep = gap > HEALTH_INTERVAL * 3;
+    if (wokeFromSleep && this.active.size > 0) {
+      console.log(`[Groove:Tunnel] Detected a ${Math.round(gap / 1000)}s gap (system sleep) — verifying tunnels`);
+    }
+
     for (const [id, conn] of this.active) {
       try {
         const start = Date.now();
@@ -889,9 +942,23 @@ export class TunnelManager {
         }
       } catch {
         conn.failCount = (conn.failCount || 0) + 1;
-        if (conn.failCount >= MAX_FAIL_COUNT) {
+        // After a sleep gap, one failure is enough — the tunnel was almost
+        // certainly cut with the network.
+        const limit = wokeFromSleep ? 1 : MAX_FAIL_COUNT;
+        if (conn.failCount >= limit) {
           conn.healthy = false;
           this.daemon.broadcast({ type: 'tunnel.unhealthy', data: { id } });
+
+          // Reap it. Previously a dead tunnel was only FLAGGED, so it stayed in
+          // `active` indefinitely and every later connect() handed back its dead
+          // port — the reason reconnecting never helped and only a full restart
+          // did. Removing it means the next connect() builds a real tunnel.
+          if (conn.failCount >= limit + 1) {
+            console.log(`[Groove:Tunnel] Reaping dead tunnel ${id} after ${conn.failCount} failed checks`);
+            this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'reaping' } });
+            await this.disconnect(id);
+            continue;
+          }
         }
       }
       this.daemon.broadcast({
@@ -899,6 +966,25 @@ export class TunnelManager {
         data: { id, latencyMs: conn.latencyMs, healthy: conn.healthy },
       });
     }
+  }
+
+  // Signal 0 only tests for existence — no signal is delivered.
+  async _waitForExit(pid, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try { process.kill(pid, 0); } catch { return true; } // gone
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    try { process.kill(pid, 0); return false; } catch { return true; }
+  }
+
+  async _waitForPortFree(port, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (!(await this._isPortInUse(port))) return true;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return !(await this._isPortInUse(port));
   }
 
   _isPortInUse(port) {

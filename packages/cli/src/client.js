@@ -33,8 +33,15 @@ export async function apiCall(method, path, body) {
   const res = await fetch(url, options);
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    const err = new Error(body.error || `HTTP ${res.status}`);
+    // Carry the response body onto the error. The daemon's actionable fields
+    // (availableAgents, didYouMean, note) are the whole point of its error
+    // messages — dropping them leaves the caller with a dead end.
+    err.status = res.status;
+    err.body = body;
+    Object.assign(err, body);
+    throw err;
   }
 
   return res.json();

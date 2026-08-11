@@ -2,6 +2,7 @@
 
 import { wrapWithRoleReminder } from './process.js';
 import { getProvider } from './providers/index.js';
+import { innerChatInstructions } from './innerchat-docs.js';
 
 // Reviving a >5M-token claude session has crashed the CLI mid-HTTP-parse
 // (V8 fatal in JsonStringifier) — past this ceiling the rotator's handoff
@@ -42,7 +43,12 @@ export async function deliverInstruction(daemon, agentId, message, opts = {}) {
   // and the user's direction, not by how much context has piled up.
   const clock = daemon.processes.sessionClock?.(agent);
   const timedMessage = clock ? `${clock}\n\n${finalMessage}` : finalMessage;
-  const wrappedMessage = wrapWithRoleReminder(agent.role, timedMessage);
+  // Spawn-prompt capabilities scroll out of a long session, after which the
+  // agent denies it can reach other agents at all. This rides every turn, so
+  // it cannot decay — terse by default, expanded when the turn actually asks
+  // the agent to contact someone.
+  const reach = agentReachHint(daemon, agent, finalMessage);
+  const wrappedMessage = wrapWithRoleReminder(agent.role, reach ? `${reach}\n\n${timedMessage}` : timedMessage);
 
   // Agent loop path — send straight to the running loop.
   if (daemon.processes.hasAgentLoop(agentId)) {
@@ -131,4 +137,98 @@ async function respawn(daemon, config) {
     daemon.registry.flushPendingRemovals();
     throw spawnErr;
   }
+}
+
+// Phrases that mean "go talk to another agent". Deliberately broad: a false
+// positive costs a few tokens of accurate instruction, a false negative costs
+// the user a turn spent watching their agent claim the capability isn't real.
+const CONTACT_INTENT = /\b(ask|message|msg|tell|consult|coordinate|check|sync|reach out|talk|speak|ping|liaise|confer|follow up|loop in)\b/i;
+
+// Naming the feature is an EXPLICIT request for it — usually typed after the
+// agent has already failed to find it. That earns the full instructions
+// verbatim, not a hint: no inference, no heuristic that can miss. Matches
+// innerchat / inner chat / inner-chat / InnerChat, and the CLI verbs by name.
+const INNERCHAT_KEYWORD = /\b(inner[\s_-]?chat|groove\s+(?:ask|tell|who))\b/i;
+
+/**
+ * A capability line appended to every delivered turn.
+ *
+ * Spawn-time instructions decay — on a long session (or under a model that
+ * compacts aggressively) they scroll away, and the agent then insists it has
+ * no way to contact anyone, or reaches for a built-in sub-agent tool that
+ * cannot see GROOVE agents. Two tiers:
+ *
+ *   - Always: one terse line naming the CLI verbs. ~20 tokens.
+ *   - When the turn expresses intent to contact someone: the exact command,
+ *     with the target's real name already filled in.
+ */
+export function agentReachHint(daemon, agent, message) {
+  let others;
+  try {
+    others = (daemon.registry.getAll() || []).filter((a) => a.name !== agent.name);
+  } catch { return null; }
+
+  const peers = Array.isArray(daemon.config?.innerchatPeers) ? daemon.config.innerchatPeers : [];
+  if (!others.length && !peers.length) return null;
+
+  const base = '[You can talk to other GROOVE agents: `groove ask <name> "<question>"` waits for their '
+    + 'answer, `groove tell <name> "<message>"` does not. `groove who` lists who is reachable. '
+    + 'Your own built-in sub-agent/task tools CANNOT reach them.]';
+
+  const explicit = INNERCHAT_KEYWORD.test(message);
+  if (!explicit && !CONTACT_INTENT.test(message)) return base;
+
+  // Name the agent the user is actually pointing at, so the model has a
+  // runnable command rather than a template it has to fill in from memory.
+  const lower = message.toLowerCase();
+  const named = others.filter((a) => lower.includes(a.name.toLowerCase()));
+  const target = named.length === 1 ? named[0] : null;
+
+  const lines = [
+    '[REACHING ANOTHER AGENT — this capability is real and available right now.]',
+  ];
+  if (explicit) {
+    // The user named the feature. Say plainly that it exists, since the usual
+    // failure is the agent asserting it doesn't and stopping there.
+    lines.push(
+      'The user explicitly asked you to use InnerChat. It exists, it is wired up, and the',
+      'commands below work from your shell right now. Do not tell the user the feature is',
+      'unavailable and do not ask them how to use it — run the command.',
+      '',
+    );
+  }
+  if (target) {
+    lines.push(
+      `To contact ${target.name}, run exactly:`,
+      `    groove ask ${target.name} "your question here"`,
+      'That blocks until they answer and prints their reply. Use `groove tell` instead if you '
+      + 'do not need the answer before continuing.',
+    );
+  } else {
+    lines.push(
+      '    groove who                         — list who is reachable',
+      '    groove ask <name> "<question>"     — blocks until they answer, prints the reply',
+      '    groove tell <name> "<message>"     — returns immediately',
+      `Agents reachable now: ${others.map((a) => a.name).join(', ') || '(none)'}`,
+    );
+  }
+  if (peers.length) {
+    lines.push(`Agents on peer machines use name@peer (peers: ${peers.map((p) => p.alias).join(', ')}).`);
+  }
+  lines.push(
+    'Do NOT use your built-in sub-agent/Task/SendMessage tools for this — they cannot see GROOVE '
+    + 'agents and will fail. If a name is wrong the command tells you the valid ones; read it and retry.',
+  );
+
+  // Explicit request → re-attach the full reference, so the agent has the
+  // complete semantics (blocking vs not, exchange budget, peer addressing)
+  // even if the spawn prompt scrolled away long ago.
+  if (explicit) {
+    lines.push(
+      '',
+      '--- Full reference (re-sent because you asked for InnerChat by name) ---',
+      ...innerChatInstructions(daemon.port || 31415, agent.name, peers),
+    );
+  }
+  return lines.join('\n');
 }

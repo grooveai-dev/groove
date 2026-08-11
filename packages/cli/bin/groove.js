@@ -21,6 +21,7 @@ import { disconnect } from '../src/commands/disconnect.js';
 import { remotes } from '../src/commands/remotes.js';
 import { audit } from '../src/commands/audit.js';
 import { federationPair, federationUnpair, federationList, federationStatus } from '../src/commands/federation.js';
+import { ask, tell, who } from '../src/commands/ask.js';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { version } = require('../../../package.json');
@@ -73,6 +74,25 @@ program
   .description('Kill all agents and stop the daemon')
   .option('-f, --force', 'Required when agents are still running')
   .action(nuke);
+
+// InnerChat — agent-to-agent messaging. Listed high in --help because an
+// agent that has lost the capability from context rediscovers it here.
+program
+  .command('ask <agent> <message>')
+  .description('Ask another agent a question and wait for their answer')
+  .option('--from <name>', 'your agent name (defaults to $GROOVE_AGENT_NAME)')
+  .action(ask);
+
+program
+  .command('tell <agent> <message>')
+  .description('Send another agent a message without waiting for a reply')
+  .option('--from <name>', 'your agent name (defaults to $GROOVE_AGENT_NAME)')
+  .action(tell);
+
+program
+  .command('who')
+  .description('List agents you can message with `groove ask` / `groove tell`')
+  .action(who);
 
 program
   .command('rotate <id>')

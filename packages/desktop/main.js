@@ -421,11 +421,43 @@ class WorkspaceManager {
     const MAX_LOAD_RETRIES = 3;
     const RETRY_DELAY_MS = 2000;
 
+    // A tunnel wedged by a laptop sleep does NOT fail the load — the local SSH
+    // listener still accepts the TCP connection, it just never forwards, so
+    // Chromium waits for response headers forever. No 'did-fail-load' fires, no
+    // 'did-finish-load' fires, and the window sits black with no error page and
+    // no Retry button. Time the load out ourselves and treat a hang as a
+    // failure, which routes it into the recovery path below.
+    const LOAD_HANG_MS = 15000;
+    let hangTimer = null;
+    const clearHangTimer = () => { if (hangTimer) { clearTimeout(hangTimer); hangTimer = null; } };
+    const armHangTimer = () => {
+      clearHangTimer();
+      hangTimer = setTimeout(() => {
+        if (win.isDestroyed()) return;
+        const url = win.webContents.getURL();
+        if (url.startsWith('data:')) return; // already showing an error page
+        console.warn(`[remote] Load of ${name} hung for ${LOAD_HANG_MS}ms — tunnel is likely wedged`);
+        win.webContents.emit('did-fail-load', null, -7, 'The connection stopped responding (timed out)');
+      }, LOAD_HANG_MS);
+    };
+    win.webContents.on('did-start-loading', armHangTimer);
+    win.webContents.on('did-stop-loading', clearHangTimer);
+    win.on('closed', clearHangTimer);
+
     win.webContents.on('did-fail-load', (_e, code, desc) => {
       if (code === -3) return;
+      clearHangTimer();
       if (loadRetries < MAX_LOAD_RETRIES) {
         loadRetries++;
-        setTimeout(() => {
+        // A plain reload can't fix a dead tunnel — rebuild it first. The reload
+        // happens inside the revive; if that throws we fall through to a retry.
+        setTimeout(async () => {
+          if (win.isDestroyed()) return;
+          const inst = this._instanceForWindow(win);
+          if (inst?.connId) {
+            try { await this._reviveInstance(inst, { force: true }); return; }
+            catch (err) { console.warn(`[remote] Revive failed: ${err.message}`); }
+          }
           if (!win.isDestroyed()) win.loadURL(remoteUrl);
         }, RETRY_DELAY_MS);
         return;
@@ -441,10 +473,17 @@ class WorkspaceManager {
         '</style></head><body>',
         '<h2>Connection Failed</h2>',
         `<p>${(desc || 'Could not reach the remote Groove daemon.').replace(/[<>"&]/g, '')}</p>`,
-        `<button onclick="location.href='${remoteUrl.replace(/'/g, "\\'")}'">Retry</button>`,
+        '<p style="font-size:12px;color:#505862">Reloading alone will not fix a connection dropped by sleep — the tunnel has to be rebuilt.</p>',
+        // window.groove.reconnect() (preload → 'groove-reconnect' → _reviveInstance)
+        // rebuilds the SSH tunnel. Plain location.href would re-request the same
+        // wedged port and hang again. Fall back to a reload if the bridge is absent.
+        '<button id="rc" onclick="this.textContent=\'Reconnecting…\';this.disabled=true;'
+          + `(window.groove&&window.groove.reconnect?window.groove.reconnect():Promise.reject())`
+          + `.catch(function(){location.href='${remoteUrl.replace(/'/g, "\\'")}'})">Reconnect</button>`,
         '</body></html>',
       ].join(''));
-      win.webContents.loadURL(failHtml);
+      win.webContents.loadURL(failHtml).catch(() => {});
+      loadRetries = 0; // a manual reconnect gets a fresh set of attempts
     });
 
     win.webContents.on('did-finish-load', () => { loadRetries = 0; });
@@ -495,15 +534,40 @@ class WorkspaceManager {
     if (this._reviving) return;
     this._reviving = true;
     try {
-      // Give the network a moment to come back before probing the tunnel.
-      await new Promise((r) => setTimeout(r, 1500));
+      // Wi-Fi reassociation and DHCP after a lid-open routinely take 5-15s. A
+      // single attempt at +1.5s reliably fails for an INTERNET host (a LAN host
+      // is reachable almost immediately, which is why same-network tunnels
+      // seemed fine while remote ones never came back). Retry with backoff.
+      const delays = [1500, 3000, 5000, 8000, 12000, 20000, 30000];
 
       const remotes = [...this.instances.values()]
         .filter((i) => i.remote && i.connId && i.window && !i.window.isDestroyed());
+      if (remotes.length === 0) return;
 
-      for (const inst of remotes) {
-        try { await this._reviveInstance(inst); }
-        catch (err) { console.warn(`[resume] Failed to revive remote "${inst.name}": ${err.message}`); }
+      const pending = new Set(remotes);
+      for (let attempt = 0; attempt < delays.length && pending.size > 0; attempt++) {
+        await new Promise((r) => setTimeout(r, delays[attempt]));
+        for (const inst of [...pending]) {
+          if (!inst.window || inst.window.isDestroyed()) { pending.delete(inst); continue; }
+          try {
+            await this._reviveInstance(inst);
+            pending.delete(inst);
+            console.log(`[resume] Revived remote "${inst.name}"`);
+          } catch (err) {
+            console.warn(`[resume] Attempt ${attempt + 1} for "${inst.name}" failed: ${err.message}`);
+          }
+        }
+      }
+
+      // Out of attempts — never leave a window sitting black with no way out.
+      for (const inst of pending) {
+        if (inst.window && !inst.window.isDestroyed()) {
+          console.warn(`[resume] Giving up on "${inst.name}" — showing the reconnect page`);
+          inst.window.webContents.emit(
+            'did-fail-load', null, -7,
+            `Could not reach ${inst.name} after waking. The network may still be coming up.`,
+          );
+        }
       }
     } finally {
       this._reviving = false;
@@ -514,7 +578,7 @@ class WorkspaceManager {
   // or the renderer just got wedged) we only RELOAD — tearing down a working
   // tunnel is how a live-but-slow connection gets killed. Only when the port is
   // genuinely dead do we re-establish the tunnel.
-  async _reviveInstance(inst) {
+  async _reviveInstance(inst, { force = false } = {}) {
     if (!inst?.window || inst.window.isDestroyed()) return;
 
     const reload = (port) => {
@@ -523,19 +587,47 @@ class WorkspaceManager {
       }
     };
 
-    if (inst.port && await this._portHealthy(inst.port)) {
+    // `force` skips the shortcut: the caller already saw the page hang, so the
+    // port answering a probe isn't good enough evidence that the tunnel works.
+    if (!force && inst.port && await this._portHealthy(inst.port)) {
       reload(inst.port); // tunnel is fine — just refresh the renderer
       return;
     }
     if (!inst.connId) return; // local window or unknown connection — nothing to re-tunnel
 
+    // Tear the old tunnel down and WAIT for it to actually let go of the port.
+    // A tunnel wedged on a dead TCP session can ignore SIGTERM for a while, and
+    // the replacement runs with ExitOnForwardFailure=yes — so re-spawning too
+    // early makes the new tunnel die on bind, which is how a wake ended up
+    // unrecoverable until the whole app was restarted.
     const old = this._sshTunnels?.get(inst.connId);
     if (old?.pid) { try { process.kill(-old.pid); } catch { try { process.kill(old.pid); } catch { /* gone */ } } }
     else if (old) { try { old.kill?.(); } catch { /* gone */ } }
+    this._sshTunnels?.delete(inst.connId);
+
+    if (inst.port) {
+      const freed = await this._waitForPortRelease(inst.port, 5000);
+      if (!freed) {
+        // Still held — escalate past a SIGTERM the wedged client never handled.
+        if (old?.pid) { try { process.kill(-old.pid, 'SIGKILL'); } catch { try { process.kill(old.pid, 'SIGKILL'); } catch { /* gone */ } } }
+        reclaimPortFromStaleTunnels(inst.port);
+        await this._waitForPortRelease(inst.port, 3000);
+      }
+    }
 
     const { localPort } = await this.connectSSH(inst.connId);
     inst.port = localPort;
     reload(localPort);
+  }
+
+  // Poll until nothing is listening on the port (or we give up).
+  async _waitForPortRelease(port, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (await isPortFree(port)) return true;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return isPortFree(port);
   }
 
   async _portHealthy(port) {

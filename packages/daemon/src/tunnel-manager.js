@@ -26,6 +26,10 @@ const CONFIRM_TIMEOUT = 15000;
 // At most one automatic rebuild per tunnel per window; beyond that it stays
 // disconnected rather than thrashing against a host that keeps dying.
 const REBUILD_COOLDOWN_MS = 10 * 60 * 1000;
+// Restarting a crashed REMOTE daemon is cheaper and safer than a rebuild, so
+// its cooldown is shorter — but still bounded: a daemon that dies right after
+// every start has a real problem more starts won't fix.
+const REMOTE_START_COOLDOWN_MS = 2 * 60 * 1000;
 
 const INJECTION_CHARS = /[;|&`$(){}[\]<>!#\n\r\\]/;
 
@@ -60,6 +64,10 @@ export class TunnelManager {
   constructor(daemon) {
     this.daemon = daemon;
     this.remotesPath = resolve(daemon.grooveDir, 'remotes.json');
+    // Live tunnel state, persisted separately from the configs so a daemon
+    // restart can re-adopt still-running ssh processes instead of forgetting
+    // them (the configs file is user data; this is runtime state).
+    this.activePath = resolve(daemon.grooveDir, 'tunnels-active.json');
     this.saved = new Map();
     this.active = new Map();
     this._healthInterval = null;
@@ -88,8 +96,9 @@ export class TunnelManager {
   }
 
   async init() {
+    await this._readopt();
     for (const [id, config] of this.saved) {
-      if (config.autoConnect) {
+      if (config.autoConnect && !this.active.has(id)) {
         try {
           await this.connect(id);
         } catch (err) {
@@ -97,6 +106,71 @@ export class TunnelManager {
         }
       }
     }
+  }
+
+  // Re-adopt tunnels whose detached ssh processes survived a daemon restart.
+  // Without this, every daemon/app restart orphaned the ssh (or shutdown killed
+  // it) and the new daemon started amnesiac — remote windows died mid-session
+  // and the user had to reconnect everything by hand.
+  async _readopt() {
+    let entries = [];
+    try {
+      if (existsSync(this.activePath)) entries = JSON.parse(readFileSync(this.activePath, 'utf8'));
+    } catch { /* corrupt — treat as none */ }
+    if (!Array.isArray(entries) || entries.length === 0) return;
+
+    let adopted = 0;
+    for (const e of entries) {
+      if (!e?.id || !e.pid || !e.localPort || !this.saved.has(e.id)) continue;
+      // Only re-adopt what is provably OUR ssh still doing THIS job: the pid
+      // must be alive, be an ssh process forwarding this port, and the port
+      // must serve HTTP.
+      let alive = false;
+      try { process.kill(e.pid, 0); alive = true; } catch { /* gone */ }
+      if (alive) alive = this._looksLikeOurSsh(e.pid, e.localPort);
+      if (alive && await this._tunnelResponds(e.localPort)) {
+        this.active.set(e.id, {
+          pid: e.pid,
+          localPort: e.localPort,
+          startedAt: e.startedAt || new Date().toISOString(),
+          lastPing: Date.now(),
+          latencyMs: null,
+          healthy: true,
+          failCount: 0,
+        });
+        adopted++;
+        const name = this.saved.get(e.id)?.name || e.id;
+        console.log(`[Groove:Tunnel] Re-adopted live tunnel to ${name} on port ${e.localPort}`);
+        this.daemon.broadcast({ type: 'tunnel.connected', data: { id: e.id, name, localPort: e.localPort, host: this.saved.get(e.id)?.host, url: `http://localhost:${e.localPort}?instance=${encodeURIComponent(name)}` } });
+      } else if (alive) {
+        // ssh survives but doesn't serve — a corpse from before the restart.
+        try { process.kill(e.pid, 'SIGTERM'); } catch { /* gone */ }
+      }
+    }
+    if (adopted > 0 && !this._healthInterval) {
+      this._healthInterval = setInterval(() => this._healthCheckAll(), HEALTH_INTERVAL);
+    }
+    this._saveActive();
+  }
+
+  // Identity check for re-adoption: is this pid an ssh forwarding this port?
+  // Guards against pid recycling handing us an unrelated process.
+  _looksLikeOurSsh(pid, localPort) {
+    try {
+      const cmd = execFileSync('ps', ['-p', String(pid), '-o', 'command='], {
+        encoding: 'utf8', timeout: 3000,
+      }).trim();
+      return cmd.includes('ssh') && cmd.includes(String(localPort));
+    } catch { return false; }
+  }
+
+  _saveActive() {
+    try {
+      const entries = [...this.active.entries()].map(([id, c]) => ({
+        id, pid: c.pid, localPort: c.localPort, startedAt: c.startedAt,
+      }));
+      writeFileSync(this.activePath, JSON.stringify(entries, null, 2), { mode: 0o600 });
+    } catch { /* best effort */ }
   }
 
   getSaved() {
@@ -406,6 +480,7 @@ export class TunnelManager {
       healthy: true,
       failCount: 0,
     });
+    this._saveActive();
 
     // Verify daemon is reachable through tunnel, start if needed
     let remoteAlive = false;
@@ -496,6 +571,7 @@ export class TunnelManager {
     if (localPort) await this._waitForPortFree(localPort, 3000);
 
     this.active.delete(id);
+    this._saveActive();
 
     const config = this.saved.get(id);
     this.daemon.audit.log('tunnel.disconnect', { id, name: config?.name });
@@ -972,6 +1048,12 @@ export class TunnelManager {
             conn.failCount = 0;
             conn.healthy = true;
             conn._wedgedStreak = 0;
+          } else if (verdict === 'remote-down') {
+            // The tunnel is carrying traffic correctly — the far daemon is what
+            // died (typically mid-upgrade). Rebuild would be useless; start it.
+            conn.healthy = false;
+            this.daemon.broadcast({ type: 'tunnel.unhealthy', data: { id } });
+            await this._startRemoteDaemon(id, conn);
           } else {
             conn.healthy = false;
             this.daemon.broadcast({ type: 'tunnel.unhealthy', data: { id } });
@@ -995,17 +1077,69 @@ export class TunnelManager {
   }
 
   // Escalating evidence that a tunnel is actually dead, not merely slow:
-  //   'alive'     — answered a long-timeout HTTP probe; leave it alone
-  //   'proc-dead' — the ssh client process is gone
-  //   'port-dead' — nothing is listening on the local port
-  //   'wedged'    — port accepts TCP but HTTP never answers (dead forward)
+  //   'alive'       — answered a long-timeout HTTP probe; leave it alone
+  //   'proc-dead'   — the ssh client process is gone
+  //   'port-dead'   — nothing is listening on the local port
+  //   'remote-down' — the tunnel forwards fine but the REMOTE end refuses:
+  //                   the probe fails fast with a connection error, not a
+  //                   timeout. Killing the tunnel won't fix that — the remote
+  //                   daemon needs starting (e.g. it died during an upgrade).
+  //   'wedged'      — port accepts TCP but HTTP hangs to timeout (dead forward)
   async _confirmDead(conn) {
-    if (await this._tunnelResponds(conn.localPort, this.confirmTimeout ?? CONFIRM_TIMEOUT)) return 'alive';
+    const started = Date.now();
+    let probeErr = null;
+    try {
+      const res = await fetch(`http://localhost:${conn.localPort}/api/health`, {
+        signal: AbortSignal.timeout(this.confirmTimeout ?? CONFIRM_TIMEOUT),
+      });
+      if (res.ok) return 'alive';
+    } catch (err) { probeErr = err; }
+
     if (conn.pid) {
       try { process.kill(conn.pid, 0); } catch { return 'proc-dead'; }
     }
     if (!(await this._isPortInUse(conn.localPort))) return 'port-dead';
+
+    // ssh is alive and its port listens. A hang (timeout) means the forward is
+    // dead; a FAST connection-level error means ssh relayed the remote side's
+    // refusal — the tunnel works, the far daemon doesn't.
+    const failedFast = Date.now() - started < 2000;
+    const timedOut = probeErr && (probeErr.name === 'TimeoutError' || probeErr.name === 'AbortError');
+    if (failedFast && !timedOut) return 'remote-down';
     return 'wedged';
+  }
+
+  // The tunnel is healthy; the daemon on the far side is what's down. Start it
+  // over ssh rather than pointlessly rebuilding the tunnel. Rate-limited: if
+  // the remote daemon won't stay up, repeated starts won't save it.
+  async _startRemoteDaemon(id, conn) {
+    this._remoteStartAt = this._remoteStartAt || new Map();
+    const last = this._remoteStartAt.get(id) || 0;
+    if (Date.now() - last < REMOTE_START_COOLDOWN_MS) return;
+    this._remoteStartAt.set(id, Date.now());
+
+    console.log(`[Groove:Tunnel] ${id}: tunnel is fine but the remote daemon is down — starting it`);
+    this.daemon.audit.log('tunnel.remote-daemon-start', { id });
+    this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'starting' } });
+    try {
+      await this.autoStart(id);
+      // Confirm it came up; a success resets the failure counters immediately
+      // instead of waiting out another health cycle.
+      for (let i = 0; i < 10; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        if (await this._tunnelResponds(conn.localPort)) {
+          conn.failCount = 0;
+          conn.healthy = true;
+          conn._wedgedStreak = 0;
+          console.log(`[Groove:Tunnel] ${id}: remote daemon is back`);
+          this.daemon.broadcast({ type: 'tunnel.health', data: { id, latencyMs: conn.latencyMs, healthy: true } });
+          return;
+        }
+      }
+      console.warn(`[Groove:Tunnel] ${id}: remote daemon did not come back after start`);
+    } catch (err) {
+      console.warn(`[Groove:Tunnel] ${id}: could not start remote daemon: ${err.message}`);
+    }
   }
 
   // Tear down a confirmed-dead tunnel and immediately rebuild it on the SAME
@@ -1075,25 +1209,17 @@ export class TunnelManager {
     throw new Error(`No available local port found (tried ${DEFAULT_LOCAL_PORT}-${DEFAULT_LOCAL_PORT + MAX_PORT_ATTEMPTS - 1})`);
   }
 
+  // Deliberately does NOT kill the ssh processes. They are spawned detached and
+  // are the user's live sessions: killing them on every daemon restart (app
+  // upgrade, promote, crash) is what nuked remote windows mid-session. State is
+  // persisted; the next daemon re-adopts whatever is still alive and serving.
+  // Explicit disconnect()/delete() remain the paths that actually kill a tunnel.
   shutdown() {
     if (this._healthInterval) {
       clearInterval(this._healthInterval);
       this._healthInterval = null;
     }
-    for (const [id] of this.active) {
-      try {
-        const conn = this.active.get(id);
-        if (conn?.pid) {
-          const cmd = execFileSync('ps', ['-p', String(conn.pid), '-o', 'command='], {
-            encoding: 'utf8',
-            timeout: 3000,
-          }).trim();
-          if (cmd.includes('ssh')) {
-            process.kill(conn.pid, 'SIGTERM');
-          }
-        }
-      } catch { /* ignore */ }
-    }
+    this._saveActive();
     this.active.clear();
   }
 }

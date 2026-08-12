@@ -10,7 +10,7 @@
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { resolve } from 'path';
 import { createServer } from 'net';
@@ -237,6 +237,104 @@ describe('TunnelManager — wake-from-sleep recovery', () => {
       const conn = mgr.active.get('dgx');
       assert.ok(conn, 'live tunnel survived the suspicious gap');
       assert.equal(conn.healthy, true);
+    } finally { live.close(); }
+  });
+
+  it('remote-down (fast refusal through a live tunnel) starts the daemon, not a rebuild', async () => {
+    // ssh alive + port listens + connections REFUSED at the far end: ssh relays
+    // the refusal as an immediate close, so the probe fails fast rather than
+    // hanging. The tunnel is fine; only the remote daemon needs starting.
+    const refusing = createServer((sock) => sock.destroy());
+    await new Promise((r) => refusing.listen(0, '127.0.0.1', r));
+    const port = refusing.address().port;
+    try {
+      mgr.saved.set('dgx', { id: 'dgx', name: 'Axom Spark', host: 'edgexpert.local', user: 'axom', port: 22 });
+      mgr.active.set('dgx', {
+        pid: process.pid, localPort: port, healthy: true, failCount: 99,
+        startedAt: new Date().toISOString(),
+      });
+
+      const started = [];
+      mgr.autoStart = async (id) => { started.push(id); };
+      mgr.connect = async () => { throw new Error('rebuild must not be attempted'); };
+
+      await mgr._healthCheckAll();
+
+      assert.deepEqual(started, ['dgx'], 'the remote daemon was started over ssh');
+      assert.equal(mgr.active.has('dgx'), true, 'the healthy tunnel was NOT torn down');
+    } finally { refusing.close(); }
+  });
+
+  it('re-adopts a surviving tunnel after a daemon restart instead of forgetting it', async () => {
+    const live = await startHealthyListener();
+    try {
+      mgr.saved.set('s19', { id: 's19', name: 'S19 Agency', host: '3.22.211.238', user: 'ubuntu', port: 22 });
+      mgr._save(); // the new daemon loads configs from disk
+      mgr.active.set('s19', {
+        pid: process.pid, localPort: live.port,
+        startedAt: new Date().toISOString(), healthy: true, failCount: 0,
+      });
+      mgr._saveActive();
+      mgr.shutdown(); // daemon going down — must NOT kill the tunnel
+
+      // "New daemon" after restart. The stand-in pid is node, not ssh, so the
+      // identity gate is stubbed — everything else runs for real.
+      const daemon2 = makeDaemon(grooveDir);
+      const mgr2 = new TunnelManager(daemon2);
+      mgr2.healthTimeout = 400;
+      mgr2._looksLikeOurSsh = (pid, port) => pid === process.pid && port === live.port;
+
+      await mgr2._readopt();
+
+      assert.equal(mgr2.active.has('s19'), true, 'the surviving tunnel was re-adopted');
+      assert.equal(mgr2.active.get('s19').localPort, live.port, 'on its original port');
+      assert.ok(
+        daemon2.broadcasts.some((b) => b.type === 'tunnel.connected'),
+        'the GUI is told the tunnel is (still) connected',
+      );
+      mgr2.shutdown();
+    } finally { live.close(); }
+  });
+
+  it('does not re-adopt a dead or hijacked pid', async () => {
+    const live = await startHealthyListener();
+    try {
+      mgr.saved.set('s19', { id: 's19', name: 'S19 Agency', host: '3.22.211.238', user: 'ubuntu', port: 22 });
+      mgr._save();
+      mgr.active.set('s19', {
+        pid: 999999, localPort: live.port, // no such process
+        startedAt: new Date().toISOString(), healthy: true, failCount: 0,
+      });
+      mgr._saveActive();
+      mgr.shutdown();
+
+      const daemon2 = makeDaemon(grooveDir);
+      const mgr2 = new TunnelManager(daemon2);
+      mgr2.healthTimeout = 400;
+      await mgr2._readopt();
+
+      assert.equal(mgr2.active.has('s19'), false, 'a dead pid is not adopted');
+      mgr2.shutdown();
+    } finally { live.close(); }
+  });
+
+  it('shutdown persists state and does not kill the tunnel process', async () => {
+    const live = await startHealthyListener();
+    try {
+      mgr.saved.set('s19', { id: 's19', name: 'S19', host: 'x', user: 'u', port: 22 });
+      mgr.active.set('s19', {
+        pid: process.pid, localPort: live.port,
+        startedAt: new Date().toISOString(), healthy: true, failCount: 0,
+      });
+      mgr.shutdown();
+
+      // Our stand-in "tunnel process" (this test runner) must still be alive —
+      // shutdown killing it would have killed the test.
+      assert.doesNotThrow(() => process.kill(process.pid, 0));
+      const persisted = JSON.parse(readFileSync(resolve(grooveDir, 'tunnels-active.json'), 'utf8'));
+      assert.equal(persisted.length, 1);
+      assert.equal(persisted[0].id, 's19');
+      assert.equal(persisted[0].localPort, live.port);
     } finally { live.close(); }
   });
 

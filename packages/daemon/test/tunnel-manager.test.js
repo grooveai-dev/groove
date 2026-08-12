@@ -66,6 +66,10 @@ describe('TunnelManager — wake-from-sleep recovery', () => {
     grooveDir = mkdtempSync(resolve(tmpdir(), 'groove-tunnel-'));
     daemon = makeDaemon(grooveDir);
     mgr = new TunnelManager(daemon);
+    // Shrink probe timeouts (production: 5s routine / 15s confirm) so the
+    // wedged-listener tests don't burn real minutes waiting them out.
+    mgr.healthTimeout = 400;
+    mgr.confirmTimeout = 1200;
   });
 
   afterEach(() => {
@@ -84,7 +88,7 @@ describe('TunnelManager — wake-from-sleep recovery', () => {
   it('_tunnelResponds rejects a tunnel that accepts but never answers', async () => {
     const wedged = await startWedgedListener();
     try {
-      assert.equal(await mgr._tunnelResponds(wedged.port, 1500), false);
+      assert.equal(await mgr._tunnelResponds(wedged.port, 800), false);
     } finally { wedged.close(); }
   });
 
@@ -132,19 +136,25 @@ describe('TunnelManager — wake-from-sleep recovery', () => {
     } finally { live.close(); }
   });
 
-  it('the health pass reaps a dead tunnel so the next connect starts clean', async () => {
+  it('the health pass reaps a proc-dead tunnel and tries to rebuild it', async () => {
     const wedged = await startWedgedListener();
     try {
       mgr.saved.set('s19', { id: 's19', name: 'S19 Agency', host: 'example.invalid', user: 'ops', port: 22 });
       mgr.active.set('s19', {
-        pid: 999999, localPort: wedged.port, healthy: true,
+        pid: 999999, // no such process → verdict 'proc-dead', reap on first confirm
+        localPort: wedged.port, healthy: true,
         failCount: 99, // already past the failure limit
         startedAt: new Date().toISOString(),
       });
 
+      const rebuilds = [];
+      mgr.connect = async (id, opts) => { rebuilds.push({ id, opts }); throw new Error('host unreachable'); };
+
       await mgr._healthCheckAll();
 
       assert.equal(mgr.active.has('s19'), false, 'dead tunnel removed from active');
+      assert.equal(rebuilds.length, 1, 'an automatic rebuild was attempted');
+      assert.equal(rebuilds[0].opts.preferredPort, wedged.port, 'rebuild asks for the same port');
       assert.ok(
         daemon.broadcasts.some((b) => b.type === 'tunnel.unhealthy'),
         'the GUI is told the tunnel went unhealthy',
@@ -152,22 +162,82 @@ describe('TunnelManager — wake-from-sleep recovery', () => {
     } finally { wedged.close(); }
   });
 
-  it('treats a long timer gap as a sleep and drops the failure tolerance', async () => {
+  it('a slow-but-alive tunnel is never reaped — the long confirm probe clears it', async () => {
+    // Answers /api/health slower than the routine probe allows but inside the
+    // confirmation window. This is a busy DGX, not a dead tunnel.
+    const sockets = [];
+    const slow = createServer((sock) => {
+      sockets.push(sock);
+      sock.on('data', () => setTimeout(() => {
+        const body = '{"ok":true}';
+        try {
+          sock.end('HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n'
+            + `Content-Length: ${body.length}\r\nConnection: close\r\n\r\n${body}`);
+        } catch { /* closed */ }
+      }, 700));
+    });
+    await new Promise((r) => slow.listen(0, '127.0.0.1', r));
+    const port = slow.address().port;
+    try {
+      mgr.saved.set('dgx', { id: 'dgx', name: 'Axom Spark', host: 'edgexpert.local', user: 'rok', port: 22 });
+      mgr.active.set('dgx', {
+        pid: process.pid, // definitely alive
+        localPort: port, healthy: true, failCount: 99,
+        startedAt: new Date().toISOString(),
+      });
+
+      mgr.connect = async () => { throw new Error('rebuild must not be attempted'); };
+      await mgr._healthCheckAll();
+
+      const conn = mgr.active.get('dgx');
+      assert.ok(conn, 'the tunnel survived');
+      assert.equal(conn.healthy, true, 'confirmed alive by the long probe');
+      assert.equal(conn.failCount, 0, 'failure count reset');
+    } finally {
+      for (const s of sockets) s.destroy();
+      slow.close();
+    }
+  });
+
+  it('a wedged tunnel needs two consecutive confirmations before it is reaped', { timeout: 30000 }, async () => {
     const wedged = await startWedgedListener();
     try {
       mgr.saved.set('s19', { id: 's19', name: 'S19 Agency', host: 'example.invalid', user: 'ops', port: 22 });
       mgr.active.set('s19', {
-        pid: 999999, localPort: wedged.port, healthy: true, failCount: 0,
+        pid: process.pid, // ssh "alive" → verdict is 'wedged', not 'proc-dead'
+        localPort: wedged.port, healthy: true, failCount: 99,
+        startedAt: new Date().toISOString(),
+      });
+      mgr.connect = async () => { throw new Error('unreachable'); };
+
+      await mgr._healthCheckAll();
+      assert.equal(mgr.active.has('s19'), true, 'first wedged verdict only flags it');
+      assert.equal(mgr.active.get('s19').healthy, false);
+
+      mgr.active.get('s19').failCount = 99; // still failing next tick
+      await mgr._healthCheckAll();
+      assert.equal(mgr.active.has('s19'), false, 'second wedged verdict reaps it');
+    } finally { wedged.close(); }
+  });
+
+  it('a timer gap fast-tracks confirmation but cannot kill a live tunnel', async () => {
+    const live = await startHealthyListener();
+    try {
+      mgr.saved.set('dgx', { id: 'dgx', name: 'Axom Spark', host: 'edgexpert.local', user: 'rok', port: 22 });
+      mgr.active.set('dgx', {
+        pid: process.pid, localPort: live.port, healthy: true, failCount: 0,
         startedAt: new Date().toISOString(),
       });
 
-      // Last check was 10 minutes ago — the machine was asleep.
+      // 10-minute gap: sleep — or just a blocked event loop on a busy daemon.
       mgr._lastHealthCheck = Date.now() - 10 * 60 * 1000;
+      mgr.connect = async () => { throw new Error('rebuild must not be attempted'); };
       await mgr._healthCheckAll();
 
-      const conn = mgr.active.get('s19');
-      assert.equal(conn?.healthy, false, 'one failure after a sleep gap is enough');
-    } finally { wedged.close(); }
+      const conn = mgr.active.get('dgx');
+      assert.ok(conn, 'live tunnel survived the suspicious gap');
+      assert.equal(conn.healthy, true);
+    } finally { live.close(); }
   });
 
   it('_waitForPortFree reports a released port', async () => {

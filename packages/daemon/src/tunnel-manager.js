@@ -20,6 +20,12 @@ const MAX_PORT_ATTEMPTS = 10;
 const HEALTH_INTERVAL = 30000;
 const HEALTH_TIMEOUT = 5000;
 const MAX_FAIL_COUNT = 3;
+// Long-timeout probe used to CONFIRM death before killing a tunnel — a busy
+// remote daemon can sit on /api/health well past the 5s routine probe.
+const CONFIRM_TIMEOUT = 15000;
+// At most one automatic rebuild per tunnel per window; beyond that it stays
+// disconnected rather than thrashing against a host that keeps dying.
+const REBUILD_COOLDOWN_MS = 10 * 60 * 1000;
 
 const INJECTION_CHARS = /[;|&`$(){}[\]<>!#\n\r\\]/;
 
@@ -295,6 +301,8 @@ export class TunnelManager {
         return { localPort: existing.localPort, pid: existing.pid, name: config.name };
       }
       console.log(`[Groove:Tunnel] ${config.name}: existing tunnel is not responding — rebuilding`);
+      // Reuse the dead tunnel's port so any GUI window pointed at it heals.
+      opts = { ...opts, preferredPort: opts.preferredPort || existing.localPort };
       await this.disconnect(id);
     }
 
@@ -328,7 +336,14 @@ export class TunnelManager {
     // Establish SSH tunnel
     this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'connecting' } });
 
-    const localPort = await this._findAvailablePort();
+    // A rebuild wants its old port back: the remote GUI window is pointed at it
+    // and will self-heal over WebSocket retry only if the port stays the same.
+    let localPort;
+    if (opts.preferredPort && !(await this._isPortInUse(opts.preferredPort))) {
+      localPort = opts.preferredPort;
+    } else {
+      localPort = await this._findAvailablePort();
+    }
     const target = `${config.user}@${config.host}`;
     const keyArgs = config.sshKeyPath ? ['-i', config.sshKeyPath] : [];
 
@@ -445,7 +460,7 @@ export class TunnelManager {
   // Does the tunnel actually serve a request, as opposed to merely holding an
   // open listening socket? A wedged forward passes a TCP connect test but never
   // answers, so only an HTTP round-trip proves it.
-  async _tunnelResponds(localPort, timeoutMs = HEALTH_TIMEOUT) {
+  async _tunnelResponds(localPort, timeoutMs = this.healthTimeout ?? HEALTH_TIMEOUT) {
     try {
       const res = await fetch(`http://localhost:${localPort}/api/health`, {
         signal: AbortSignal.timeout(timeoutMs),
@@ -915,22 +930,26 @@ export class TunnelManager {
 
   async _healthCheckPass() {
     // Timers don't fire while the machine is asleep, so an interval that should
-    // have run every HEALTH_INTERVAL arriving far later means we just woke up.
-    // Every tunnel is suspect at that point: verify them now rather than waiting
-    // for MAX_FAIL_COUNT normal cycles to notice.
+    // have run every HEALTH_INTERVAL arriving far later means we PROBABLY just
+    // woke up — but not certainly: this daemon also blocks its event loop for
+    // long stretches (execFileSync ssh calls in test/upgrade paths), which
+    // produces the same gap on a machine that never slept. So a gap only makes
+    // tunnels *suspect* — it fast-tracks them to the confirmation ladder below.
+    // It must never lower the bar for killing one (that misdiagnosis dropped a
+    // healthy DGX tunnel twice in ten minutes).
     const now = Date.now();
     const gap = now - (this._lastHealthCheck || now);
     this._lastHealthCheck = now;
-    const wokeFromSleep = gap > HEALTH_INTERVAL * 3;
-    if (wokeFromSleep && this.active.size > 0) {
-      console.log(`[Groove:Tunnel] Detected a ${Math.round(gap / 1000)}s gap (system sleep) — verifying tunnels`);
+    const suspectAll = gap > HEALTH_INTERVAL * 3;
+    if (suspectAll && this.active.size > 0) {
+      console.log(`[Groove:Tunnel] ${Math.round(gap / 1000)}s timer gap (sleep or blocked loop) — verifying tunnels`);
     }
 
     for (const [id, conn] of this.active) {
       try {
         const start = Date.now();
         const res = await fetch(`http://localhost:${conn.localPort}/api/health`, {
-          signal: AbortSignal.timeout(HEALTH_TIMEOUT),
+          signal: AbortSignal.timeout(this.healthTimeout ?? HEALTH_TIMEOUT),
         });
         if (res.ok) {
           conn.latencyMs = Date.now() - start;
@@ -942,22 +961,29 @@ export class TunnelManager {
         }
       } catch {
         conn.failCount = (conn.failCount || 0) + 1;
-        // After a sleep gap, one failure is enough — the tunnel was almost
-        // certainly cut with the network.
-        const limit = wokeFromSleep ? 1 : MAX_FAIL_COUNT;
-        if (conn.failCount >= limit) {
-          conn.healthy = false;
-          this.daemon.broadcast({ type: 'tunnel.unhealthy', data: { id } });
-
-          // Reap it. Previously a dead tunnel was only FLAGGED, so it stayed in
-          // `active` indefinitely and every later connect() handed back its dead
-          // port — the reason reconnecting never helped and only a full restart
-          // did. Removing it means the next connect() builds a real tunnel.
-          if (conn.failCount >= limit + 1) {
-            console.log(`[Groove:Tunnel] Reaping dead tunnel ${id} after ${conn.failCount} failed checks`);
-            this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'reaping' } });
-            await this.disconnect(id);
-            continue;
+        // A failed 5s probe is WEAK evidence: it can't distinguish a dead
+        // tunnel from a remote daemon that's briefly busy or our own blocked
+        // event loop. Never kill on it. Once failures accumulate (or a timer
+        // gap makes everything suspect), run the confirmation ladder, which
+        // can — a healthy verdict there resets the count.
+        if (conn.failCount >= MAX_FAIL_COUNT || suspectAll) {
+          const verdict = await this._confirmDead(conn);
+          if (verdict === 'alive') {
+            conn.failCount = 0;
+            conn.healthy = true;
+            conn._wedgedStreak = 0;
+          } else {
+            conn.healthy = false;
+            this.daemon.broadcast({ type: 'tunnel.unhealthy', data: { id } });
+            // 'wedged' (port accepts, HTTP silent even at long timeout) is the
+            // one verdict with a false-positive path — a remote event loop
+            // blocked 15s+ — so demand it twice in a row. proc-dead/port-dead
+            // are unambiguous: the ssh client is gone or nothing is listening.
+            conn._wedgedStreak = verdict === 'wedged' ? (conn._wedgedStreak || 0) + 1 : 0;
+            if (verdict !== 'wedged' || conn._wedgedStreak >= 2) {
+              await this._reapAndRebuild(id, conn, verdict);
+              continue;
+            }
           }
         }
       }
@@ -965,6 +991,51 @@ export class TunnelManager {
         type: 'tunnel.health',
         data: { id, latencyMs: conn.latencyMs, healthy: conn.healthy },
       });
+    }
+  }
+
+  // Escalating evidence that a tunnel is actually dead, not merely slow:
+  //   'alive'     — answered a long-timeout HTTP probe; leave it alone
+  //   'proc-dead' — the ssh client process is gone
+  //   'port-dead' — nothing is listening on the local port
+  //   'wedged'    — port accepts TCP but HTTP never answers (dead forward)
+  async _confirmDead(conn) {
+    if (await this._tunnelResponds(conn.localPort, this.confirmTimeout ?? CONFIRM_TIMEOUT)) return 'alive';
+    if (conn.pid) {
+      try { process.kill(conn.pid, 0); } catch { return 'proc-dead'; }
+    }
+    if (!(await this._isPortInUse(conn.localPort))) return 'port-dead';
+    return 'wedged';
+  }
+
+  // Tear down a confirmed-dead tunnel and immediately rebuild it on the SAME
+  // local port. The remote GUI window points at that port and its WebSocket
+  // retries every 2s, so a same-port rebuild heals an open window without the
+  // user noticing. Only if the rebuild fails does this surface as a disconnect.
+  // Rate-limited so a genuinely dead host degrades to disconnected instead of
+  // thrashing reconnect attempts forever.
+  async _reapAndRebuild(id, conn, reason) {
+    const { localPort } = conn;
+    console.log(`[Groove:Tunnel] Tunnel ${id} confirmed dead (${reason}) — rebuilding`);
+    this.daemon.audit.log('tunnel.reap', { id, reason, failCount: conn.failCount });
+    await this.disconnect(id);
+
+    const lastRebuild = this._rebuildAt?.get(id) || 0;
+    if (Date.now() - lastRebuild < REBUILD_COOLDOWN_MS) {
+      console.log(`[Groove:Tunnel] ${id} already auto-rebuilt recently — leaving disconnected`);
+      return;
+    }
+    this._rebuildAt = this._rebuildAt || new Map();
+    this._rebuildAt.set(id, Date.now());
+
+    try {
+      this.daemon.broadcast({ type: 'tunnel.status', data: { id, step: 'reconnecting' } });
+      await this.connect(id, { preferredPort: localPort });
+      console.log(`[Groove:Tunnel] ${id} rebuilt on port ${localPort}`);
+    } catch (err) {
+      console.warn(`[Groove:Tunnel] Auto-rebuild of ${id} failed: ${err.message}`);
+      // disconnect() above already broadcast tunnel.disconnected — the GUI is
+      // consistent; the user can reconnect manually when the host is back.
     }
   }
 

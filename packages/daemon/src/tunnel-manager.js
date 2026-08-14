@@ -4,7 +4,8 @@
 import { execFileSync, spawn } from 'child_process';
 import { existsSync, writeFileSync, readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
-import { createConnection } from 'net';
+import { createConnection, isIP } from 'net';
+import { lookup } from 'dns/promises';
 import crypto from 'crypto';
 
 function getLocalVersion() {
@@ -15,6 +16,13 @@ function getLocalVersion() {
 }
 
 const REMOTE_PORT = 31415;
+
+// Every remote `groove start` must run from the directory of the daemon's
+// EXISTING world (grooveDir is derived from cwd). The remote daemon records
+// that directory in ~/.groove/last-run-dir on each boot; starting anywhere
+// else boots a fresh empty .groove — which reads as "all my teams are gone".
+// Falls back to $HOME (matching old behavior) when no anchor exists yet.
+const ANCHOR_CD = `cd "$(cat "$HOME/.groove/last-run-dir" 2>/dev/null || echo "$HOME")" 2>/dev/null || cd "$HOME"; `;
 const DEFAULT_LOCAL_PORT = 31416;
 const MAX_PORT_ATTEMPTS = 10;
 const HEALTH_INTERVAL = 30000;
@@ -59,6 +67,49 @@ function isPermissionError(output) {
 }
 
 const PERMISSION_HINT = 'npm global install requires write access. Either install Node via nvm (recommended) or configure passwordless sudo for npm on the remote server.';
+
+// A hostname can resolve to several addresses on different interfaces — a
+// dual-homed LAN box (wired + Wi-Fi) advertises all of them over mDNS, and ssh
+// just takes the resolver's first pick. Landing on a weak Wi-Fi address gives
+// a tunnel that dies of keepalive timeout minutes later, and every reconnect
+// re-rolls the dice. Probe all candidates with a TCP handshake to the ssh port
+// and take the fastest responder — on a LAN that reliably picks wired over
+// Wi-Fi. Falls back to the original hostname if resolution or every probe
+// fails, so behavior is unchanged for the cases that already worked.
+export async function resolveBestAddress(host, port = 22, probeTimeoutMs = 2500) {
+  if (isIP(host)) return host; // literal IP — nothing to choose
+  let addrs;
+  try {
+    addrs = await lookup(host, { all: true, verbatim: true });
+  } catch { return host; }
+  if (!Array.isArray(addrs) || addrs.length <= 1) return host;
+
+  const handshake = (address) => new Promise((res) => {
+    const started = Date.now();
+    let sock;
+    try { sock = createConnection({ host: address, port }); } catch { return res(null); }
+    sock.setTimeout(probeTimeoutMs);
+    sock.on('connect', () => { sock.destroy(); res(Date.now() - started); });
+    sock.on('error', () => res(null));
+    sock.on('timeout', () => { sock.destroy(); res(null); });
+  });
+
+  // Median of three handshakes per address: one lucky round-trip can make a
+  // weak link look fine, but a flaky link rarely wins three in a row — a
+  // single retransmit (or drop, scored as the timeout) sinks its median.
+  const probe = async (address) => {
+    const times = [];
+    for (let i = 0; i < 3; i++) times.push(await handshake(address));
+    const scored = times.map((t) => (t === null ? probeTimeoutMs : t)).sort((a, b) => a - b);
+    if (times.every((t) => t === null)) return null; // never connected at all
+    return { address, ms: scored[1] };
+  };
+
+  const results = (await Promise.all(addrs.map((a) => probe(a.address)))).filter(Boolean);
+  if (results.length === 0) return host;
+  results.sort((a, b) => a.ms - b.ms);
+  return results[0].address;
+}
 
 export class TunnelManager {
   constructor(daemon) {
@@ -302,7 +353,7 @@ export class TunnelManager {
     const config = this.saved.get(id);
     if (!config) throw new Error(`Remote ${id} not found`);
 
-    const target = `${config.user}@${config.host}`;
+    const target = `${config.user}@${await resolveBestAddress(config.host, config.port || 22)}`;
     const keyArgs = config.sshKeyPath ? ['-i', config.sshKeyPath] : [];
 
     try {
@@ -418,18 +469,28 @@ export class TunnelManager {
     } else {
       localPort = await this._findAvailablePort();
     }
-    const target = `${config.user}@${config.host}`;
+    // Multi-homed hosts (mDNS names especially): pick the address that actually
+    // answers fastest instead of letting the resolver gamble on an interface.
+    const connectHost = await resolveBestAddress(config.host, config.port || 22);
+    if (connectHost !== config.host) {
+      console.log(`[Groove:Tunnel] ${config.name}: ${config.host} → ${connectHost} (fastest responding address)`);
+    }
+    const target = `${config.user}@${connectHost}`;
     const keyArgs = config.sshKeyPath ? ['-i', config.sshKeyPath] : [];
+    // Keep the host key pinned to the NAME when we connect by address, so every
+    // address of the same box shares one known_hosts entry.
+    const aliasArgs = connectHost !== config.host ? ['-o', `HostKeyAlias=${config.host}`] : [];
 
     const sshArgs = [
       '-N',
       '-L', `127.0.0.1:${localPort}:localhost:${REMOTE_PORT}`,
       '-p', String(config.port || 22),
-      '-o', 'ServerAliveInterval=30',
-      '-o', 'ServerAliveCountMax=3',
+      '-o', 'ServerAliveInterval=15',
+      '-o', 'ServerAliveCountMax=4',
       '-o', 'ExitOnForwardFailure=yes',
       '-o', 'StrictHostKeyChecking=accept-new',
       '-o', 'GSSAPIAuthentication=no',
+      ...aliasArgs,
       ...keyArgs,
       target,
     ];
@@ -635,7 +696,7 @@ export class TunnelManager {
       }
 
       // Restart remote daemon — fire and forget the SSH, verify through the tunnel
-      const cdPrefix = config.projectDir ? `cd "${config.projectDir}" && ` : '';
+      const cdPrefix = config.projectDir ? `cd "${config.projectDir}" && ` : ANCHOR_CD;
       try {
         execFileSync('ssh', [...sshBase, sshCmd(`kill $(lsof -t -i:${REMOTE_PORT}) 2>/dev/null || true; sleep 1; ${cdPrefix}GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown`)], {
           encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'],
@@ -742,7 +803,7 @@ export class TunnelManager {
     const config = this.saved.get(id);
     if (!config) throw new Error(`Remote ${id} not found`);
 
-    const target = `${config.user}@${config.host}`;
+    const target = `${config.user}@${await resolveBestAddress(config.host, config.port || 22)}`;
     const keyArgs = config.sshKeyPath ? ['-i', config.sshKeyPath] : [];
 
     // Build the remote bash command:
@@ -752,7 +813,7 @@ export class TunnelManager {
     //   4. explicitly POST /api/project-dir so the daemon's projectDir matches
     //      config.projectDir even if the backgrounded cwd didn't stick (this
     //      also updates the editor root used for /api/browse, /api/files/*)
-    const cdPrefix = config.projectDir ? `cd "${config.projectDir}" && ` : '';
+    const cdPrefix = config.projectDir ? `cd "${config.projectDir}" && ` : ANCHOR_CD;
     const setProjectDir = config.projectDir
       ? `curl -sf -X POST -H 'Content-Type: application/json' --data '{"path":"${config.projectDir}"}' http://localhost:${REMOTE_PORT}/api/project-dir > /dev/null 2>&1 || true; `
       : '';
@@ -874,7 +935,7 @@ export class TunnelManager {
     try {
       const result = execFileSync('ssh', [
         ...sshBase,
-        remoteCmd(`GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 5; curl -sf http://localhost:${REMOTE_PORT}/api/health > /dev/null && echo __DAEMON_OK__ || (echo __DAEMON_FAIL__; tail -20 /tmp/groove-daemon.log 2>/dev/null)`),
+        remoteCmd(`${ANCHOR_CD}GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 5; curl -sf http://localhost:${REMOTE_PORT}/api/health > /dev/null && echo __DAEMON_OK__ || (echo __DAEMON_FAIL__; tail -20 /tmp/groove-daemon.log 2>/dev/null)`),
       ], {
         encoding: 'utf8',
         timeout: 45000,
@@ -944,7 +1005,7 @@ export class TunnelManager {
     }).trim();
     const installedVer = verOutput.replace(/[^0-9.]/g, '') || verOutput.trim();
 
-    const restartCmd = `kill $(lsof -t -i:${REMOTE_PORT}) 2>/dev/null || true; sleep 2; GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:${REMOTE_PORT}/api/status`;
+    const restartCmd = `kill $(lsof -t -i:${REMOTE_PORT}) 2>/dev/null || true; sleep 2; ${ANCHOR_CD}GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:${REMOTE_PORT}/api/status`;
     const restartResult = execFileSync('ssh', [...sshBase, sshCmd(restartCmd)], {
       encoding: 'utf8',
       timeout: 60000,

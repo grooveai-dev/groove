@@ -601,4 +601,90 @@ describe('Rotator', () => {
 
     assert.equal(rotator.getHistory().length, 0);
   });
+
+  // ── Succession handoff ─────────────────────────────────────────
+
+  function seedForHandoff() {
+    const agent = {
+      id: 'old1', name: 'veteran', role: 'fullstack',
+      provider: 'claude-code', scope: null, model: null,
+      tokensUsed: 900_000, contextUsage: 0.7,
+      workingDir: '/tmp', teamId: 't1', prompt: 'Long-running work',
+    };
+    mockDaemon.registry.agents = [agent];
+    mockDaemon.journalist.generateSuccessionDossier = async () =>
+      '## Dossier\nEverything the veteran knows, in depth.';
+    let spawnCount = 0;
+    mockDaemon.processes.spawn = async (config) => {
+      spawnCount++;
+      const spawned = { id: 'succ' + spawnCount, ...config };
+      mockDaemon.registry.agents.push(spawned);
+      return spawned;
+    };
+    return agent;
+  }
+
+  it('succession spawns the successor ALONGSIDE the predecessor', async () => {
+    seedForHandoff();
+    const record = await rotator.successionHandoff('old1');
+
+    assert.equal(record.status, 'interviewing');
+    const ids = mockDaemon.registry.agents.map((a) => a.id);
+    assert.ok(ids.includes('old1'), 'predecessor still alive during the interview');
+    assert.ok(ids.includes(record.successorId), 'successor exists');
+
+    const successor = mockDaemon.registry.agents.find((a) => a.id === record.successorId);
+    assert.equal(successor.name, 'veteran-successor');
+    assert.ok(successor.prompt.includes('Dossier'), 'successor got the dossier');
+    assert.ok(successor.prompt.includes('innerchat/ask'), 'successor told to interview');
+    assert.ok(successor.prompt.includes(`/api/handoff/${record.id}/complete`), 'successor told how to declare takeover');
+    assert.equal(successor.metadata.handoff.predecessorId, 'old1');
+    assert.ok(broadcasts.some((b) => b.type === 'handoff:started'));
+  });
+
+  it('complete retires the predecessor and hands over the name', async () => {
+    seedForHandoff();
+    const record = await rotator.successionHandoff('old1');
+    const done = await rotator.completeHandoff(record.id);
+
+    assert.equal(done.status, 'complete');
+    const ids = mockDaemon.registry.agents.map((a) => a.id);
+    assert.ok(!ids.includes('old1'), 'predecessor retired');
+    const successor = mockDaemon.registry.agents.find((a) => a.id === record.successorId);
+    assert.equal(successor.name, 'veteran', 'successor inherited the name');
+    assert.equal(successor.metadata.handoff, undefined, 'handoff marker cleared');
+    assert.ok(broadcasts.some((b) => b.type === 'handoff:completed'));
+  });
+
+  it('inheritName:false keeps the successor name', async () => {
+    seedForHandoff();
+    const record = await rotator.successionHandoff('old1', { name: 'fresh-eyes', inheritName: false });
+    await rotator.completeHandoff(record.id);
+    const successor = mockDaemon.registry.agents.find((a) => a.id === record.successorId);
+    assert.equal(successor.name, 'fresh-eyes');
+  });
+
+  it('complete survives a daemon restart (reconstructs from successor metadata)', async () => {
+    seedForHandoff();
+    const record = await rotator.successionHandoff('old1');
+    rotator.handoffs.clear(); // simulate restart wiping in-memory state
+
+    const done = await rotator.completeHandoff(record.id);
+    assert.equal(done.status, 'complete');
+    assert.ok(!mockDaemon.registry.agents.some((a) => a.id === 'old1'), 'predecessor still retired');
+  });
+
+  it('blocks a second handoff while one is interviewing', async () => {
+    seedForHandoff();
+    await rotator.successionHandoff('old1');
+    await assert.rejects(() => rotator.successionHandoff('old1'), /already in progress/);
+  });
+
+  it('completing twice is idempotent', async () => {
+    seedForHandoff();
+    const record = await rotator.successionHandoff('old1');
+    await rotator.completeHandoff(record.id);
+    const again = await rotator.completeHandoff(record.id);
+    assert.equal(again.status, 'complete');
+  });
 });

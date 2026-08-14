@@ -1057,6 +1057,34 @@ export class Journalist {
     return brief;
   }
 
+  /**
+   * Succession dossier — the deep version of the handoff brief, for handing a
+   * long-lived agent's role to a NEW agent. The regular brief is recency-biased
+   * by design (last 3 chain entries, current session); after weeks of work the
+   * older accumulated knowledge matters just as much. The dossier adds the full
+   * handoff chain and the project decision log, and its reader is expected to
+   * fill remaining gaps by interviewing the predecessor directly.
+   */
+  async generateSuccessionDossier(agent) {
+    const brief = await this.generateHandoffBrief(agent, { reason: 'succession' });
+
+    // The whole chain (up to the retained 10 generations), not the last 3.
+    const fullChain = this.daemon.memory?.getRecentHandoffMarkdown(
+      agent.role, 10, 12000, agent.workingDir, agent.teamId,
+    ) || '';
+
+    let decisions = '';
+    try {
+      const p = resolve(this.daemon.projectDir, 'GROOVE_DECISIONS.md');
+      if (existsSync(p)) decisions = readFileSync(p, 'utf8').slice(0, 8000);
+    } catch { /* optional */ }
+
+    const parts = [brief];
+    if (fullChain) parts.push(`## Full Rotation History (oldest knowledge — read it, it is why things are the way they are)\n\n${fullChain}`);
+    if (decisions) parts.push(`## Project Decision Log\n\n${decisions}`);
+    return parts.join('\n\n');
+  }
+
   // --- Conversation Thread Extraction (for idle resume) ---
 
   /**

@@ -529,6 +529,20 @@ export const useGrooveStore = create((set, get) => ({
         case 'rotation:start':
           break;
 
+        case 'handoff:started': {
+          const d = msg.data || {};
+          get().addToast('info', `Succession started`,
+            `${d.successorName} is interviewing ${d.predecessorName} before taking over.`);
+          break;
+        }
+
+        case 'handoff:completed': {
+          const d = msg.data || {};
+          get().addToast('success', `Handoff complete`,
+            `${d.predecessorName} retired — ${d.successorName} has taken over.`);
+          break;
+        }
+
         case 'rotation:complete': {
           const newId = msg.agentId;
           const oldId = msg.oldAgentId;

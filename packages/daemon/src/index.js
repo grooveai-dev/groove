@@ -4,7 +4,8 @@
 import { createServer as createHttpServer, request as httpProxyRequest } from 'http';
 import { createServer as createNetServer } from 'net';
 import { execFileSync } from 'child_process';
-import { resolve } from 'path';
+import { resolve, dirname, basename } from 'path';
+import { homedir } from 'os';
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, readdirSync, rmdirSync, rmSync, statSync } from 'fs';
 import express from 'express';
 import { WebSocketServer } from 'ws';
@@ -630,6 +631,22 @@ export class Daemon {
         // Read back actual port (critical for port 0 / dynamic allocation)
         this.port = this.server.address().port;
         writeFileSync(this.pidFile, String(process.pid));
+
+        // Anchor for restart tooling. grooveDir — the daemon's entire world of
+        // teams/agents/state — is derived from the cwd `groove start` ran in.
+        // Remote restart paths (tunnel autoStart, upgrades, the desktop shell)
+        // each guess a cwd; a wrong guess boots a fresh empty .groove that
+        // looks exactly like total data loss. Record where this world lives at
+        // a FIXED path so every restarter can re-enter it instead of guessing.
+        // Staging/override daemons (custom GROOVE_DIR) skip this — they must
+        // not hijack the anchor of the real daemon.
+        try {
+          if (basename(this.grooveDir) === '.groove') {
+            const anchorHome = resolve(homedir(), '.groove');
+            mkdirSync(anchorHome, { recursive: true });
+            writeFileSync(resolve(anchorHome, 'last-run-dir'), dirname(this.grooveDir));
+          }
+        } catch { /* non-fatal */ }
         // Write actual port and host so CLI can find us
         writeFileSync(resolve(this.grooveDir, 'daemon.port'), String(this.port));
         writeFileSync(resolve(this.grooveDir, 'daemon.host'), this.host);

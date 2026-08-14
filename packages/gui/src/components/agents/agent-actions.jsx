@@ -1,6 +1,6 @@
 // FSL-1.1-Apache-2.0 — see LICENSE
 import { useState, useEffect } from 'react';
-import { RotateCw, Skull, Copy, Play, Trash2, FolderOpen, Cpu, ChevronDown, Zap, Shield, FileText } from 'lucide-react';
+import { RotateCw, Skull, Copy, Play, Trash2, FolderOpen, Cpu, ChevronDown, Zap, Shield, FileText, ArrowRightLeft } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -16,6 +16,9 @@ export function AgentActions({ agent }) {
 
   const [confirmKill, setConfirmKill] = useState(false);
   const [loading, setLoading] = useState(null);
+  const [showHandoff, setShowHandoff] = useState(false);
+  const [handoffName, setHandoffName] = useState('');
+  const [handoffInherit, setHandoffInherit] = useState(true);
   const [providers, setProviders] = useState([]);
   const [selectedModel, setSelectedModel] = useState(agent.model || '');
   const [editPrompt, setEditPrompt] = useState('');
@@ -66,6 +69,23 @@ export function AgentActions({ agent }) {
     setLoading(null);
   }
 
+  async function handleHandoff() {
+    setLoading('handoff');
+    try {
+      const record = await api.post(`/agents/${agent.id}/handoff`, {
+        name: handoffName.trim() || undefined,
+        inheritName: handoffInherit,
+      });
+      addToast('success', `${record.successorName} is taking over`,
+        `It will interview ${agent.name}, then retire it automatically.`);
+      setShowHandoff(false);
+      setHandoffName('');
+    } catch (err) {
+      addToast('error', 'Handoff failed', err.message);
+    }
+    setLoading(null);
+  }
+
   async function handleModelSwap(newModel) {
     setSelectedModel(newModel);
     try {
@@ -108,7 +128,42 @@ export function AgentActions({ agent }) {
               <Play size={14} /> Restart
             </Button>
           )}
+          {isAlive && (
+            <Button variant="secondary" size="sm" onClick={() => setShowHandoff((v) => !v)} disabled={!!loading} className="justify-start gap-2">
+              <ArrowRightLeft size={14} /> Hand Off
+            </Button>
+          )}
         </div>
+
+        {/* Succession: fresh agent spawns alongside, interviews this one over
+            InnerChat, then retires it — for long-lived agents whose quality is
+            degrading. Rotate is for context pressure; this is for retirement. */}
+        {showHandoff && (
+          <div className="mt-3 bg-surface-0 rounded-lg border border-border p-3 space-y-2.5">
+            <p className="text-2xs text-text-3 font-sans leading-relaxed">
+              Spawns a fresh successor with a deep handoff dossier. It interviews {agent.name} over
+              InnerChat while it's still running, then retires it and takes over.
+            </p>
+            <input
+              value={handoffName}
+              onChange={(e) => setHandoffName(e.target.value)}
+              placeholder={`Successor name (default: ${agent.name}-successor)`}
+              className="w-full h-8 px-2.5 text-xs rounded-md bg-surface-1 border border-border text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+            <label className="flex items-center gap-2 text-xs text-text-2 font-sans cursor-pointer">
+              <input
+                type="checkbox"
+                checked={handoffInherit}
+                onChange={(e) => setHandoffInherit(e.target.checked)}
+                className="accent-[var(--color-accent)]"
+              />
+              Successor takes over the name "{agent.name}" after handoff
+            </label>
+            <Button variant="primary" size="sm" onClick={handleHandoff} disabled={loading === 'handoff'} className="w-full">
+              {loading === 'handoff' ? 'Preparing dossier…' : 'Start Handoff'}
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* ── Model Selection ─────────────────────────────── */}

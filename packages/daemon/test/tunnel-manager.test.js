@@ -14,7 +14,7 @@ import { mkdtempSync, rmSync, readFileSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { resolve } from 'path';
 import { createServer } from 'net';
-import { TunnelManager } from '../src/tunnel-manager.js';
+import { TunnelManager, resolveBestAddress } from '../src/tunnel-manager.js';
 
 function makeDaemon(grooveDir) {
   const broadcasts = [];
@@ -347,5 +347,48 @@ describe('TunnelManager — wake-from-sleep recovery', () => {
 
   it('_waitForExit returns true for a pid that does not exist', async () => {
     assert.equal(await mgr._waitForExit(999999, 500), true);
+  });
+});
+
+describe('resolveBestAddress — multi-homed host selection', () => {
+  // The failure this guards: an mDNS name advertising both a wired and a weak
+  // Wi-Fi interface. ssh took whichever address the resolver listed first, so
+  // tunnels randomly landed on the bad link and died of keepalive timeout.
+
+  it('passes literal IPs through untouched', async () => {
+    assert.equal(await resolveBestAddress('10.0.0.205', 22), '10.0.0.205');
+    assert.equal(await resolveBestAddress('::1', 22), '::1');
+  });
+
+  it('falls back to the name when it does not resolve', async () => {
+    assert.equal(
+      await resolveBestAddress('no-such-host-zzz.invalid', 22, 500),
+      'no-such-host-zzz.invalid',
+    );
+  });
+
+  it('picks the address that actually answers when others are dead', async () => {
+    // 'localhost' resolves to both ::1 and 127.0.0.1 on typical systems. Bind
+    // only the IPv4 side: the resolver must pick 127.0.0.1, not the dead ::1.
+    const srv = createServer(() => {});
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const port = srv.address().port;
+    try {
+      const best = await resolveBestAddress('localhost', port, 800);
+      // On single-address systems resolution is a passthrough — accept that too.
+      assert.ok(
+        best === '127.0.0.1' || best === 'localhost',
+        `picked ${best} — expected the listening 127.0.0.1 (or passthrough)`,
+      );
+    } finally { srv.close(); }
+  });
+
+  it('falls back to the name when no candidate answers', async () => {
+    // Nobody listens on this port on any of localhost's addresses.
+    const srv = createServer(() => {});
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const deadPort = srv.address().port;
+    await new Promise((r) => srv.close(r)); // free it — now guaranteed dead
+    assert.equal(await resolveBestAddress('localhost', deadPort, 500), 'localhost');
   });
 });

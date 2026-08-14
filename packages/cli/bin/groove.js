@@ -12,6 +12,7 @@ import { agents } from '../src/commands/agents.js';
 import { status } from '../src/commands/status.js';
 import { nuke } from '../src/commands/nuke.js';
 import { rotate } from '../src/commands/rotate.js';
+import { handoff } from '../src/commands/handoff.js';
 import { teamCreate, teamSave, teamLoad, teamList, teamDelete, teamRename, teamExport, teamImport } from '../src/commands/team.js';
 import { approvals, approve, reject } from '../src/commands/approve.js';
 import { providers, setKey } from '../src/commands/providers.js';
@@ -98,6 +99,13 @@ program
   .command('rotate <id>')
   .description('Rotate an agent (kill + respawn with fresh context)')
   .action(rotate);
+
+program
+  .command('handoff <id>')
+  .description('Succession: spawn a fresh agent that interviews this one, then takes over')
+  .option('--name <name>', 'successor name (default: <agent>-successor)')
+  .option('--no-keep-name', 'successor keeps its own name instead of inheriting')
+  .action(handoff);
 
 // Teams
 const team = program.command('team').description('Manage agent teams');

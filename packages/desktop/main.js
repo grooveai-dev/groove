@@ -8,7 +8,8 @@ import { basename, dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { writeFileSync, readFileSync, unlinkSync, existsSync, renameSync, readdirSync, rmSync, mkdirSync } from 'fs';
 import { execSync } from 'child_process';
-import { createServer, createConnection } from 'net';
+import { createServer, createConnection, isIP } from 'net';
+import { lookup as dnsLookup } from 'dns/promises';
 import { getWelcomeHtml } from './splash.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -169,6 +170,42 @@ function reclaimPortFromStaleTunnels(port) {
       }
     } catch { /* lsof found nothing / unavailable */ }
   }
+}
+
+// A hostname can resolve to several addresses on different interfaces — a
+// dual-homed LAN box (wired + Wi-Fi) advertises all of them over mDNS, and ssh
+// takes the resolver's first pick. A weak Wi-Fi address gives a tunnel that
+// dies of keepalive timeout minutes later, and every reconnect re-rolls the
+// dice. Probe every candidate with a TCP handshake to the ssh port and take
+// the fastest responder; fall back to the name if nothing answers.
+async function resolveBestAddress(host, port = 22, probeTimeoutMs = 2500) {
+  if (isIP(host)) return host;
+  let addrs;
+  try {
+    addrs = await dnsLookup(host, { all: true, verbatim: true });
+  } catch { return host; }
+  if (!Array.isArray(addrs) || addrs.length <= 1) return host;
+  const handshake = (address) => new Promise((res) => {
+    const started = Date.now();
+    let sock;
+    try { sock = createConnection({ host: address, port }); } catch { return res(null); }
+    sock.setTimeout(probeTimeoutMs);
+    sock.on('connect', () => { sock.destroy(); res(Date.now() - started); });
+    sock.on('error', () => res(null));
+    sock.on('timeout', () => { sock.destroy(); res(null); });
+  });
+  // Median of three handshakes — one lucky round-trip can't crown a weak link.
+  const probe = async (address) => {
+    const times = [];
+    for (let i = 0; i < 3; i++) times.push(await handshake(address));
+    const scored = times.map((t) => (t === null ? probeTimeoutMs : t)).sort((a, b) => a - b);
+    if (times.every((t) => t === null)) return null;
+    return { address, ms: scored[1] };
+  };
+  const results = (await Promise.all(addrs.map((a) => probe(a.address)))).filter(Boolean);
+  if (results.length === 0) return host;
+  results.sort((a, b) => a.ms - b.ms);
+  return results[0].address;
 }
 
 // Reuse a connection's previous local port so the remote GUI's origin
@@ -764,6 +801,15 @@ class WorkspaceManager {
     }
     const keyArgs = sshKey ? ['-i', sshKey] : [];
 
+    // Multi-homed hosts (mDNS names especially): connect to the address that
+    // actually answers fastest instead of the resolver's first pick. HostKeyAlias
+    // keeps the known_hosts entry keyed to the name across addresses.
+    const connectHost = await resolveBestAddress(conn.host, conn.port || 22);
+    if (connectHost !== conn.host) {
+      console.log(`[tunnel] ${conn.name}: ${conn.host} → ${connectHost} (fastest responding address)`);
+    }
+    const aliasArgs = connectHost !== conn.host ? ['-o', `HostKeyAlias=${conn.host}`] : [];
+
     const spawnTunnel = () => {
       const sshArgs = [
         '-N', '-L', `${localPort}:localhost:31415`,
@@ -773,11 +819,12 @@ class WorkspaceManager {
         '-o', 'GSSAPIAuthentication=no',
         '-o', `UserKnownHostsFile=${knownHostsPath}`,
         '-o', 'ConnectTimeout=15',
-        '-o', 'ServerAliveInterval=30',
-        '-o', 'ServerAliveCountMax=3',
+        '-o', 'ServerAliveInterval=15',
+        '-o', 'ServerAliveCountMax=4',
         '-o', 'ExitOnForwardFailure=yes',
         '-o', 'BatchMode=yes',
-        `${conn.user}@${conn.host}`,
+        ...aliasArgs,
+        `${conn.user}@${connectHost}`,
       ];
       const p = spawn('ssh', sshArgs, { stdio: ['ignore', 'pipe', 'pipe'], detached: true, windowsHide: true, shell: process.platform === 'win32' });
       const state = { proc: p, exited: false, exitCode: null, stderr: '' };
@@ -864,7 +911,8 @@ class WorkspaceManager {
         ...keyArgs, '-p', String(conn.port || 22),
         '-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes',
         '-o', `UserKnownHostsFile=${knownHostsPath}`,
-        `${conn.user}@${conn.host}`, `bash -lc '${escaped}'`,
+        ...aliasArgs,
+        `${conn.user}@${connectHost}`, `bash -lc '${escaped}'`,
       ], { timeout, stdio: 'pipe', shell: process.platform === 'win32' }).toString().trim();
     };
 
@@ -929,7 +977,10 @@ class WorkspaceManager {
 
       emitProgress('Starting remote daemon...');
       try {
-        const startResult = sshExec('GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:31415/api/health > /dev/null && echo __DAEMON_OK__ || echo __DAEMON_FAIL__', 60000);
+        // cd to the remote daemon's recorded world first — grooveDir follows
+        // cwd, and starting from the wrong directory boots an empty .groove
+        // that presents as every team and agent having vanished.
+        const startResult = sshExec('cd "$(cat "$HOME/.groove/last-run-dir" 2>/dev/null || echo "$HOME")" 2>/dev/null || cd "$HOME"; GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown; sleep 4; curl -sf http://localhost:31415/api/health > /dev/null && echo __DAEMON_OK__ || echo __DAEMON_FAIL__', 60000);
         if (startResult.includes('__DAEMON_OK__')) {
           healthy = true;
         }
@@ -975,7 +1026,7 @@ class WorkspaceManager {
             if (upgraded) {
               emitProgress('Restarting remote daemon...');
               try {
-                sshExec('kill $(lsof -t -i:31415) 2>/dev/null || true; sleep 1; GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown', 15000);
+                sshExec('kill $(lsof -t -i:31415) 2>/dev/null || true; sleep 1; cd "$(cat "$HOME/.groove/last-run-dir" 2>/dev/null || echo "$HOME")" 2>/dev/null || cd "$HOME"; GROOVE_BIN=$(which groove) && nohup "$GROOVE_BIN" start > /tmp/groove-daemon.log 2>&1 < /dev/null & disown', 15000);
               } catch { /* SSH may close before nohup finishes — that's fine */ }
               emitProgress('Waiting for remote daemon...');
               await checkHealth(8, 2000);
@@ -988,10 +1039,59 @@ class WorkspaceManager {
     this._sshTunnels = this._sshTunnels || new Map();
     this._sshTunnels.set(id, proc);
 
+    // Supervise: an ssh cut down mid-session (keepalive timeout, network blip)
+    // must respawn on its own — not sit dead until the user notices a black
+    // window and wins a manual-reconnect coin toss. Deliberate teardown paths
+    // remove the proc from _sshTunnels BEFORE killing, so this only fires for
+    // deaths nobody asked for.
+    proc.on('exit', (code) => {
+      if (this._sshTunnels.get(id) !== proc) return; // replaced or torn down deliberately
+      this._sshTunnels.delete(id);
+      if (isQuitting) return; // app shutdown reaps children — not a failure
+      console.warn(`[tunnel] ssh for "${conn.name}" died unexpectedly (exit ${code}) — respawning`);
+      this._superviseRespawn(id, conn.name);
+    });
+
     conn.lastConnected = new Date().toISOString();
     this._saveSSH();
 
     return { localPort, name: conn.name };
+  }
+
+  // Bring a dead tunnel back with backoff, reloading its window when healthy.
+  // Each successful connectSSH registers its own exit supervision, so coverage
+  // continues after recovery. Gives up visibly — the window gets the error page
+  // with a Reconnect button — rather than retrying forever.
+  async _superviseRespawn(connId, name) {
+    this._respawning = this._respawning || new Set();
+    if (this._respawning.has(connId)) return;
+    this._respawning.add(connId);
+    try {
+      const delays = [2000, 5000, 10000, 20000, 30000];
+      for (const delay of delays) {
+        await new Promise((r) => setTimeout(r, delay));
+        const inst = [...this.instances.values()]
+          .find((i) => i.connId === connId && i.window && !i.window.isDestroyed());
+        if (!inst) return; // window gone — nothing to heal for
+        try {
+          await this._reviveInstance(inst, { force: true });
+          console.log(`[tunnel] "${name}" respawned and window reloaded`);
+          return;
+        } catch (err) {
+          console.warn(`[tunnel] respawn of "${name}" failed: ${err.message}`);
+        }
+      }
+      const inst = [...this.instances.values()]
+        .find((i) => i.connId === connId && i.window && !i.window.isDestroyed());
+      if (inst) {
+        inst.window.webContents.emit(
+          'did-fail-load', null, -7,
+          `The connection to ${name} dropped and could not be re-established automatically.`,
+        );
+      }
+    } finally {
+      this._respawning.delete(connId);
+    }
   }
 
   _startDaemon(id, projectDir) {

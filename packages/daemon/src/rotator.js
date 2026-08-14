@@ -4,7 +4,9 @@
 import { EventEmitter } from 'events';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
+import { randomUUID } from 'crypto';
 import { getProvider } from './providers/index.js';
+import { deliverInstruction } from './deliver.js';
 
 const DEFAULT_THRESHOLD = 0.65;      // For non-self-managing providers (was 0.75)
 const HARD_CEILING = 0.80;           // Force rotate (was 0.85) — only for non-self-managing
@@ -40,6 +42,7 @@ export class Rotator extends EventEmitter {
     this.interval = null;
     this.rotationHistory = [];
     this.rotating = new Set();
+    this.handoffs = new Map(); // handoffId -> { predecessorId, successorId, status, ... }
     this.lastRotationTime = new Map(); // agentId -> timestamp of last rotation
     this._lastContextState = new Map(); // agentId -> { contextUsage, timestamp }
     this.compactionCounts = new Map(); // agentId -> number of natural compactions
@@ -636,6 +639,182 @@ export class Rotator extends EventEmitter {
     } finally {
       this.rotating.delete(agentId);
     }
+  }
+
+  // ── Succession handoff ─────────────────────────────────────────
+  //
+  // Rotation replaces an agent with a same-name clone and is recency-biased —
+  // right for context pressure, wrong for retiring a long-lived agent. A
+  // succession spawns the successor ALONGSIDE the still-running predecessor,
+  // seeded with a deep dossier, and mandates an InnerChat interview before the
+  // predecessor is retired. The interview is the point: after weeks of work
+  // the highest-bandwidth transfer is questions answered by the agent that
+  // still remembers, not any summary.
+
+  async successionHandoff(agentId, options = {}) {
+    const registry = this.daemon.registry;
+    const agent = registry.get(agentId);
+    if (!agent) throw new Error('Agent not found');
+    if (this.rotating.has(agentId)) throw new Error('Agent is mid-rotation — try again shortly');
+    for (const h of this.handoffs.values()) {
+      if (h.status === 'interviewing' && (h.predecessorId === agentId || h.successorId === agentId)) {
+        throw new Error('A handoff is already in progress for this agent');
+      }
+    }
+
+    const handoffId = randomUUID().slice(0, 12);
+    const dossier = await this.daemon.journalist.generateSuccessionDossier(agent);
+
+    // Persist to the chain up front — even a failed handoff leaves the record.
+    if (this.daemon.memory) {
+      this.daemon.memory.appendHandoffBrief(agent.role, {
+        timestamp: new Date().toISOString(),
+        agentId: agent.id,
+        newAgentId: null,
+        reason: 'succession',
+        oldTokens: agent.tokensUsed,
+        contextUsage: agent.contextUsage,
+        brief: dossier.slice(0, 6000),
+      }, agent.workingDir, agent.teamId);
+    }
+
+    const inheritName = options.inheritName !== false;
+    const successorName = (options.name && String(options.name).trim())
+      || `${agent.name}-successor`;
+    const port = this.daemon.port || 31415;
+
+    const prompt = [
+      `# SUCCESSION — you are taking over from ${agent.name}`,
+      ``,
+      `${agent.name} has been working this role for a long time and is being retired`,
+      `for context degradation. You are its successor. Its accumulated knowledge is`,
+      `below; its live memory is still available for a short window — use it.`,
+      ``,
+      dossier,
+      ``,
+      `## Step 1 — Interview your predecessor (do this FIRST)`,
+      ``,
+      `${agent.name} is still running and has been told to expect your questions.`,
+      `Ask via InnerChat (blocking; run in the foreground):`,
+      ``,
+      '```bash',
+      `curl -s http://localhost:${port}/api/innerchat/ask -X POST -H 'Content-Type: application/json' \\`,
+      `  -d '{"from":"${successorName}","to":"${agent.name}","message":"YOUR_QUESTION"}'`,
+      '```',
+      ``,
+      `Ask about: work currently in flight and exactly where it stands; fragile or`,
+      `dangerous areas; unwritten conventions the dossier missed; what it planned to`,
+      `do next and why. Several focused rounds beat one broad one. The exchange`,
+      `budget is shared — stop when answers stop teaching you.`,
+      ``,
+      `## Step 2 — Declare takeover`,
+      ``,
+      `When you have what you need (interview done or predecessor unresponsive):`,
+      ``,
+      '```bash',
+      `curl -s -X POST http://localhost:${port}/api/handoff/${handoffId}/complete`,
+      '```',
+      ``,
+      `This retires ${agent.name}${inheritName ? ` and renames you to "${agent.name}"` : ''}. Then continue the work — you own it now.`,
+      `Do NOT start new work before completing both steps.`,
+    ].join('\n');
+
+    const successor = await this.daemon.processes.spawn({
+      role: agent.role,
+      scope: agent.scope,
+      provider: options.provider || agent.provider,
+      model: options.model || agent.model,
+      prompt,
+      permission: agent.permission || 'full',
+      workingDir: agent.workingDir,
+      name: successorName,
+      teamId: agent.teamId,
+    });
+
+    // Survives a daemon restart: /complete can reconstruct from this metadata.
+    registry.update(successor.id, {
+      metadata: {
+        ...(successor.metadata || {}),
+        handoff: { handoffId, predecessorId: agent.id, predecessorName: agent.name, inheritName },
+      },
+    });
+
+    const record = {
+      id: handoffId,
+      predecessorId: agent.id,
+      predecessorName: agent.name,
+      successorId: successor.id,
+      successorName: successor.name || successorName,
+      inheritName,
+      status: 'interviewing',
+      startedAt: new Date().toISOString(),
+    };
+    this.handoffs.set(handoffId, record);
+
+    // Heads-up to the predecessor — best effort; InnerChat will wake it anyway.
+    deliverInstruction(this.daemon, agent.id,
+      `[Succession] ${record.successorName} is taking over your role. It will interview you `
+      + `over InnerChat shortly. Answer its questions completely and concretely — in-flight work, `
+      + `fragile areas, unwritten conventions, planned next steps. Do NOT start new work. `
+      + `Anything only you know must get said now; after the interview you will be retired.`,
+      { recordFeedback: false },
+    ).catch((err) => console.warn(`  Rotator: could not brief predecessor ${agent.name}: ${err.message}`));
+
+    this.daemon.audit?.log('agent.handoff.start', { handoffId, predecessor: agent.id, successor: successor.id });
+    this.daemon.broadcast({ type: 'handoff:started', data: record });
+    if (this.daemon.timeline) {
+      this.daemon.timeline.recordEvent('handoff', {
+        agentId: successor.id, oldAgentId: agent.id,
+        agentName: record.successorName, role: agent.role, reason: 'succession',
+      });
+    }
+    return record;
+  }
+
+  async completeHandoff(handoffId) {
+    const registry = this.daemon.registry;
+    let record = this.handoffs.get(handoffId);
+    if (!record) {
+      // Daemon restarted mid-handoff — reconstruct from successor metadata.
+      const successor = registry.getAll().find((a) => a.metadata?.handoff?.handoffId === handoffId);
+      if (!successor) throw new Error('Handoff not found');
+      const h = successor.metadata.handoff;
+      record = {
+        id: handoffId, predecessorId: h.predecessorId, predecessorName: h.predecessorName,
+        successorId: successor.id, successorName: successor.name,
+        inheritName: h.inheritName, status: 'interviewing', startedAt: null,
+      };
+    }
+    if (record.status === 'complete') return record;
+
+    const successor = registry.get(record.successorId);
+    if (!successor) throw new Error('Successor no longer exists — cannot complete handoff');
+
+    const predecessor = registry.get(record.predecessorId);
+    if (predecessor) {
+      try { await this.daemon.processes.kill(predecessor.id); } catch { /* already dead */ }
+      registry.remove(predecessor.id);
+      this.daemon.locks?.release(predecessor.id);
+    }
+
+    if (record.inheritName && predecessor) {
+      registry.update(successor.id, { name: record.predecessorName });
+      record.successorName = record.predecessorName;
+    }
+    // Clear the marker — the successor is now just a normal agent.
+    const meta = { ...(successor.metadata || {}) };
+    delete meta.handoff;
+    registry.update(successor.id, { metadata: meta });
+
+    record.status = 'complete';
+    record.completedAt = new Date().toISOString();
+    this.handoffs.set(handoffId, record);
+
+    this.daemon.audit?.log('agent.handoff.complete', {
+      handoffId, predecessor: record.predecessorId, successor: record.successorId,
+    });
+    this.daemon.broadcast({ type: 'handoff:completed', data: record });
+    return record;
   }
 
   _schedulePostRotationCheck(newAgentId, oldQualityScore, record) {

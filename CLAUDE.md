@@ -134,6 +134,7 @@ groove agents             — list agents
 groove status             — daemon status
 groove nuke               — kill all + stop
 groove rotate <id>        — context rotation (kill + respawn with handoff brief)
+groove handoff <id>       — succession: fresh agent interviews this one via InnerChat, then takes over
 groove team create <name> — create a new team
 groove team rename <id>   — rename a team
 groove team list          — list teams
@@ -167,6 +168,7 @@ All endpoints on `http://localhost:31415/api/`. CORS restricted to localhost. 50
 | Health | GET | /api/health, /api/status | Health check, daemon status |
 | Agents | GET/POST/DELETE | /api/agents, /api/agents/:id | Agent CRUD, detail, update |
 | Agent Actions | POST | /api/agents/:id/rotate, instruct, query | Rotation, instructions, queries |
+| Succession | POST | /api/agents/:id/handoff, /api/handoff/:id/complete | Spawn successor + interview, retire predecessor |
 | Agent Routing | GET | /api/agents/:id/routing/recommend | Model routing recommendations |
 | Teams | GET/POST | /api/teams | List, create teams |
 | Teams | PATCH/DELETE | /api/teams/:id | Rename, delete teams |

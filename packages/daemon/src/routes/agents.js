@@ -246,6 +246,31 @@ export function registerAgentRoutes(app, daemon) {
     }
   });
 
+  // Succession handoff — spawn a fresh successor alongside a degrading agent,
+  // seeded with a deep dossier; it interviews the predecessor over InnerChat,
+  // then calls /api/handoff/:id/complete to retire it and take over.
+  app.post('/api/agents/:id/handoff', async (req, res) => {
+    try {
+      const { name, inheritName, model, provider } = req.body || {};
+      const record = await daemon.rotator.successionHandoff(req.params.id, {
+        name, inheritName, model, provider,
+      });
+      res.json(record);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Called by the successor itself when it has finished interviewing.
+  app.post('/api/handoff/:handoffId/complete', async (req, res) => {
+    try {
+      const record = await daemon.rotator.completeHandoff(req.params.handoffId);
+      res.json(record);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // Instruct an agent — send message to agent loop, resume session, or rotate
   // Agent loop = direct message to running loop (local models)
   // Resume = zero cold-start (uses --resume SESSION_ID)

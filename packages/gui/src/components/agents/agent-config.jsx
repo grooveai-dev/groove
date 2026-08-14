@@ -4,7 +4,7 @@ import {
   FolderOpen, Cpu, Zap, Shield, ChevronDown, X, Plus,
   Gauge, FolderSearch, Key, Check, Eye, EyeOff,
   AlertCircle, Layers, Activity,
-  RotateCw, Skull, Copy, Trash2,
+  RotateCw, Skull, Copy, Trash2, ArrowRightLeft,
   Plug, MessageCircle, Save, GitBranch,
 } from 'lucide-react';
 import { useGrooveStore } from '../../stores/groove';
@@ -68,6 +68,9 @@ function AgentActions({ agent }) {
 
   const [loading, setLoading] = useState(null);
   const [confirmKill, setConfirmKill] = useState(false);
+  const [showHandoff, setShowHandoff] = useState(false);
+  const [handoffName, setHandoffName] = useState('');
+  const [handoffInherit, setHandoffInherit] = useState(true);
 
   const isAlive = agent.status === 'running' || agent.status === 'starting';
 
@@ -97,10 +100,69 @@ function AgentActions({ agent }) {
     setLoading(null);
   }
 
+  async function handleHandoff() {
+    setLoading('handoff');
+    try {
+      const record = await api.post(`/agents/${agent.id}/handoff`, {
+        name: handoffName.trim() || undefined,
+        inheritName: handoffInherit,
+      });
+      addToast('success', `${record.successorName} is taking over`,
+        `It will interview ${agent.name}, then retire it automatically.`);
+      setShowHandoff(false);
+      setHandoffName('');
+    } catch (err) {
+      addToast('error', 'Handoff failed', err.message);
+    }
+    setLoading(null);
+  }
+
+  // Succession works from any state: a long-lived conversational agent spends
+  // most of its life stopped/completed between turns, and InnerChat can wake
+  // it for the interview. Only rotation requires a live process.
+  const handoffForm = showHandoff && (
+    <div className="bg-surface-0 rounded-lg border border-border p-3 space-y-2.5">
+      <p className="text-2xs text-text-3 font-sans leading-relaxed">
+        Spawns a fresh successor seeded with a deep handoff dossier. It interviews {agent.name} over
+        InnerChat (waking it if needed), then retires it and takes over the work.
+      </p>
+      <input
+        value={handoffName}
+        onChange={(e) => setHandoffName(e.target.value)}
+        placeholder={`Successor name (default: ${agent.name}-successor)`}
+        className="w-full h-8 px-2.5 text-xs rounded-md bg-surface-1 border border-border text-text-0 font-mono placeholder:text-text-4 focus:outline-none focus:ring-1 focus:ring-accent"
+      />
+      <label className="flex items-center gap-2 text-xs text-text-2 font-sans cursor-pointer">
+        <input
+          type="checkbox"
+          checked={handoffInherit}
+          onChange={(e) => setHandoffInherit(e.target.checked)}
+          className="accent-[var(--color-accent)]"
+        />
+        Successor takes over the name "{agent.name}" after handoff
+      </label>
+      <Button variant="primary" size="sm" onClick={handleHandoff} disabled={loading === 'handoff'} className="w-full">
+        {loading === 'handoff' ? 'Preparing dossier…' : 'Start Handoff'}
+      </Button>
+    </div>
+  );
+
+  const handoffButton = (
+    <Button
+      variant="secondary"
+      size="md"
+      onClick={() => setShowHandoff((v) => !v)}
+      disabled={loading === 'handoff'}
+      className="gap-1.5"
+    >
+      <ArrowRightLeft size={12} /> Hand Off
+    </Button>
+  );
+
   if (isAlive) {
     return (
       <div className="space-y-2">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <Button variant="primary" size="md" onClick={handleRotate} disabled={loading === 'rotate'} className="gap-1.5">
             <RotateCw size={12} className={loading === 'rotate' ? 'animate-spin' : ''} />
             Rotate
@@ -108,6 +170,7 @@ function AgentActions({ agent }) {
           <Button variant="info" size="md" onClick={handleClone} disabled={!!loading} className="gap-1.5">
             <Copy size={12} /> Clone
           </Button>
+          {handoffButton}
           <Button
             variant="danger"
             size="md"
@@ -119,25 +182,30 @@ function AgentActions({ agent }) {
             {confirmKill ? 'Confirm' : 'Kill'}
           </Button>
         </div>
+        {handoffForm}
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-2 gap-2">
-      <Button variant="info" size="md" onClick={handleClone} disabled={!!loading} className="gap-1.5">
-        <Copy size={12} /> Clone
-      </Button>
-      <Button
-        variant="danger"
-        size="md"
-        onClick={handleKill}
-        disabled={loading === 'kill'}
-        className="gap-1.5"
-      >
-        <Trash2 size={12} />
-        {confirmKill ? 'Confirm' : 'Remove'}
-      </Button>
+    <div className="space-y-2">
+      <div className="grid grid-cols-3 gap-2">
+        <Button variant="info" size="md" onClick={handleClone} disabled={!!loading} className="gap-1.5">
+          <Copy size={12} /> Clone
+        </Button>
+        {handoffButton}
+        <Button
+          variant="danger"
+          size="md"
+          onClick={handleKill}
+          disabled={loading === 'kill'}
+          className="gap-1.5"
+        >
+          <Trash2 size={12} />
+          {confirmKill ? 'Confirm' : 'Remove'}
+        </Button>
+      </div>
+      {handoffForm}
     </div>
   );
 }

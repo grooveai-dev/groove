@@ -124,5 +124,10 @@ describe('ClaudeCodeProvider resume handshake (CLI >= 2.1.212)', () => {
 describe('ClaudeCodeProvider models', () => {
   it('offers Fable 5', () => {
     assert.ok(ClaudeCodeProvider.models.some((m) => m.id === 'claude-fable-5'));
+    assert.ok(ClaudeCodeProvider.models.some((m) => m.id === 'claude-fable-5-1'));
+    // Routing guard: Opus 5 must stay models[0] — the Router defaults to it and
+    // putting a Fable model first would silently route heavy agents onto a tier
+    // priced at twice Opus.
+    assert.equal(ClaudeCodeProvider.models[0].id, 'claude-opus-5');
   });
 });

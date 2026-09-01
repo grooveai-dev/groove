@@ -39,7 +39,12 @@ export class ClaudeCodeProvider extends Provider {
   static authType = 'subscription';
   static managesOwnContext = true; // Claude Code compacts context internally (~25-37% → 2-8%)
   static models = [
+    // Order matters: the Router defaults to models[0] and tier lookups take the
+    // FIRST model of a tier. Opus 5 stays first so auto-routing doesn't silently
+    // move heavy agents onto the Fable price tier (2× Opus per token) — Fable is
+    // an explicit user choice.
     { id: 'claude-opus-5', name: 'Claude Opus 5', tier: 'heavy', contextWindow: 1_000_000 },
+    { id: 'claude-fable-5-1', name: 'Claude Fable 5.1', tier: 'heavy', contextWindow: 1_000_000 },
     { id: 'claude-fable-5', name: 'Claude Fable 5', tier: 'heavy', contextWindow: 1_000_000 },
     { id: 'claude-opus-4-8', name: 'Claude Opus 4.8', tier: 'heavy', contextWindow: 1_000_000 },
     { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', tier: 'heavy', contextWindow: 1_000_000 },
